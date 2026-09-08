@@ -1,0 +1,125 @@
+name: draftpad
+
+on:
+  push:
+    # Branches other than main are verified through their pull request, so that
+    # a single commit does not trigger two identical runs.
+    branches:
+      - main
+    paths:
+      - "draftpad/**"
+      - ".github/workflows/draftpad.yml"
+  pull_request:
+    paths:
+      - "draftpad/**"
+      - ".github/workflows/draftpad.yml"
+
+concurrency:
+  group: draftpad-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: draftpad
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+        with:
+          version: 10
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: draftpad/pnpm-lock.yaml
+      - name: Rust toolchain
+        run: |
+          rustup update stable
+          rustup default stable
+          rustup component add rustfmt clippy
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      # `tauri::generate_context!` verifies that frontendDist (dist/) exists.
+      - run: pnpm build
+      - name: Rust lint
+        working-directory: draftpad/src-tauri
+        run: |
+          cargo fmt --check
+          cargo clippy --all-targets -- -D warnings
+      - run: pnpm tauri build
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: draftpad-${{ matrix.os }}
+          if-no-files-found: error
+          path: |
+            draftpad/src-tauri/target/release/bundle/dmg/*.dmg
+            draftpad/src-tauri/target/release/bundle/nsis/*.exe
+
+  # Publishes the binaries built above whenever the version in tauri.conf.json
+  # names a release that does not exist yet. Merging without a version bump is
+  # therefore a no-op.
+  release:
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - id: meta
+        run: |
+          version="$(jq -re .version draftpad/src-tauri/tauri.conf.json)"
+          tag="draftpad-v${version}"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          if gh release view "${tag}" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::${tag} already exists; skipping the release."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.meta.outputs.exists == 'false'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: draftpad-*
+          merge-multiple: true
+          path: artifacts
+      - if: steps.meta.outputs.exists == 'false'
+        run: |
+          # Collect by name rather than by path: how deeply upload-artifact
+          # nests the files depends on the glob patterns it was given.
+          mapfile -t assets < <(find artifacts -type f \( -name '*.dmg' -o -name '*.exe' \) | sort)
+          if [ "${#assets[@]}" -ne 2 ]; then
+            echo "::error::expected one .dmg and one .exe, found ${#assets[@]}"
+            find artifacts -type f
+            exit 1
+          fi
+          cat > notes.md <<'NOTES'
+          ## ダウンロード
+
+          - macOS 11 以降(Apple Silicon): `.dmg`
+          - Windows 10 (1809) / 11 (x64): `-setup.exe`
+
+          コード署名・公証はしていません。macOS では初回起動時に警告が出るので、
+          Finder で右クリック →「開く」から起動してください。
+          NOTES
+          gh release create "${{ steps.meta.outputs.tag }}" \
+            --title "draftpad ${{ steps.meta.outputs.version }}" \
+            --notes-file notes.md \
+            --generate-notes \
+            --target "${GITHUB_SHA}" \
+            "${assets[@]}"

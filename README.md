@@ -12,4 +12,4 @@ Claude Code で作成したアプリケーションを集めたリポジトリ�
 
 ## アプリケーション一覧
 
-まだありません。
+- [draftpad](./draftpad/) — チャット用の下書き専用テキストエディタ。Tauri v2 + CodeMirror 6 製(macOS / Windows)
