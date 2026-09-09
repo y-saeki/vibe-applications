@@ -114,8 +114,17 @@ jobs:
           - macOS 11 以降(Apple Silicon): `.dmg`
           - Windows 10 (1809) / 11 (x64): `-setup.exe`
 
-          コード署名・公証はしていません。macOS では初回起動時に警告が出るので、
-          Finder で右クリック →「開く」から起動してください。
+          ## macOS で「壊れているため開けません」と表示される場合
+
+          コード署名・公証をしていないため、ダウンロードした `.app` は Gatekeeper に拒否されます。
+          ファイルは壊れていません。`.app` を「アプリケーション」フォルダに移したうえで、
+          次のコマンドで `com.apple.quarantine` 属性を外してください。
+
+          ```sh
+          xattr -dr com.apple.quarantine /Applications/draftpad.app
+          ```
+
+          macOS Sequoia (15.0) 以降では、Control クリック →「開く」による回避はできません。
           NOTES
           gh release create "${{ steps.meta.outputs.tag }}" \
             --title "draftpad ${{ steps.meta.outputs.version }}" \
