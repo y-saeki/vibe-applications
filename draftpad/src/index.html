@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>draftpad</title>
+    <link rel="stylesheet" href="main.css" />
+  </head>
+  <body>
+    <div id="titlebar" data-tauri-drag-region></div>
+    <main id="editor"></main>
+    <footer id="statusbar">
+      <div class="statusbar-group">
+        <span id="status-chars">文字数: 0</span>
+        <span id="status-lines">行数: 1</span>
+      </div>
+      <div class="statusbar-group">
+        <select id="language-select" aria-label="言語"></select>
+        <label class="statusbar-check">
+          <input type="checkbox" id="always-on-top" />
+          常に手前に表示
+        </label>
+      </div>
+    </footer>
+
+    <div id="preferences" class="overlay" hidden>
+      <div class="panel" role="dialog" aria-labelledby="preferences-title">
+        <div class="panel-header">
+          <h1 id="preferences-title">環境設定</h1>
+          <button type="button" id="preferences-close" class="close-button" aria-label="閉じる">×</button>
+        </div>
+        <div class="form-row">
+          <label for="pref-mode">モード</label>
+          <select id="pref-mode">
+            <option value="normal">Normal</option>
+            <option value="vim">Vim</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label for="pref-theme">テーマ</label>
+          <select id="pref-theme">
+            <option value="system">システムに合わせる</option>
+            <option value="light">ライト</option>
+            <option value="dark">ダーク</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label for="pref-font-size">フォントサイズ</label>
+          <span class="form-control-with-unit">
+            <input id="pref-font-size" type="number" min="10" max="100" step="1" />
+            <span>px</span>
+          </span>
+        </div>
+        <div class="form-row">
+          <label for="pref-font-family">フォント</label>
+          <input id="pref-font-family" type="text" list="font-list" autocomplete="off" spellcheck="false" />
+          <datalist id="font-list"></datalist>
+        </div>
+        <div class="form-row">
+          <label for="pref-tab-size">タブ幅</label>
+          <input id="pref-tab-size" type="number" min="1" max="10" step="1" />
+        </div>
+        <div class="form-row">
+          <label for="pref-quick-suggestions">入力候補を表示</label>
+          <input id="pref-quick-suggestions" type="checkbox" />
+        </div>
+        <div class="panel-footer" id="pref-version"></div>
+      </div>
+    </div>
+
+    <div id="palette" class="overlay" hidden>
+      <div class="panel palette-panel" role="dialog" aria-label="コマンドパレット">
+        <input id="palette-input" type="text" placeholder="コマンドを入力…" autocomplete="off" spellcheck="false" />
+        <ul id="palette-list" role="listbox"></ul>
+      </div>
+    </div>
+
+    <script type="module" src="main.js"></script>
+  </body>
+</html>

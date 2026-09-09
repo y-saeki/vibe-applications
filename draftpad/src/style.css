@@ -1,0 +1,260 @@
+:root {
+  --bg: #ffffff;
+  --fg: #1f2328;
+  --muted: #6e7781;
+  --border: #d0d7de;
+  --panel: #f6f8fa;
+  --accent: #2b6cb0;
+  --accent-fg: #ffffff;
+  --overlay: rgba(0, 0, 0, 0.35);
+  --statusbar-height: 26px;
+  --titlebar-height: 0px;
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  --bg: #282c34;
+  --fg: #abb2bf;
+  --muted: #7f848e;
+  --border: #3e4451;
+  --panel: #21252b;
+  --accent: #61afef;
+  --accent-fg: #1e2227;
+  --overlay: rgba(0, 0, 0, 0.55);
+  color-scheme: dark;
+}
+
+/* macOS uses a transparent overlay title bar; keep the top strip draggable. */
+:root[data-platform="macos"] {
+  --titlebar-height: 28px;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--fg);
+  font: 12px -apple-system, "Segoe UI", system-ui, sans-serif;
+}
+
+#titlebar {
+  flex: none;
+  height: var(--titlebar-height);
+}
+
+#editor {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+#editor .cm-editor {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+}
+
+#editor .cm-editor.cm-focused {
+  outline: none;
+}
+
+#editor .cm-scroller {
+  overflow: auto;
+}
+
+#editor .cm-content {
+  padding: 8px 0;
+}
+
+#editor .cm-line {
+  padding: 0 12px;
+}
+
+#editor .cm-vim-panel {
+  font-family: inherit;
+  font-size: 11px;
+  padding: 2px 8px;
+}
+
+#statusbar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  height: var(--statusbar-height);
+  padding: 0 8px;
+  border-top: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 11px;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.statusbar-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  white-space: nowrap;
+}
+
+.statusbar-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+
+#statusbar select,
+#statusbar input {
+  font: inherit;
+  color: inherit;
+}
+
+.overlay[hidden] {
+  display: none;
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: calc(var(--titlebar-height) + 40px);
+  background: var(--overlay);
+  user-select: none;
+  -webkit-user-select: none;
+  z-index: 10;
+}
+
+.panel {
+  width: min(420px, calc(100vw - 32px));
+  max-height: calc(100vh - var(--titlebar-height) - 80px);
+  overflow: auto;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.panel-header h1 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.close-button {
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.form-row {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.form-row input[type="text"],
+.form-row input[type="number"],
+.form-row select {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 3px 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--panel);
+  color: var(--fg);
+  font: inherit;
+}
+
+.form-row input[type="number"] {
+  width: 80px;
+}
+
+.form-row input[type="checkbox"] {
+  justify-self: start;
+}
+
+.form-control-with-unit {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.panel-footer {
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 11px;
+  text-align: right;
+}
+
+.palette-panel {
+  padding: 8px;
+}
+
+#palette-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--panel);
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+}
+
+#palette-list {
+  max-height: 280px;
+  margin: 8px 0 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+
+#palette-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 5px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+#palette-list li[aria-selected="true"] {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+
+#palette-list .palette-keys {
+  opacity: 0.7;
+  font-variant-numeric: tabular-nums;
+}
+
+#palette-list .palette-empty {
+  color: var(--muted);
+  cursor: default;
+}
