@@ -66,6 +66,50 @@ jobs:
             draftpad/src-tauri/target/release/bundle/dmg/*.dmg
             draftpad/src-tauri/target/release/bundle/nsis/*.exe
 
+  # The pull request itself only shows a check mark, so point at the binaries
+  # the run just uploaded instead of making the reader walk the Actions tab.
+  notify:
+    needs: build
+    if: github.event_name == 'pull_request' && needs.build.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      # Resolves the pull request without a checkout.
+      GH_REPO: ${{ github.repository }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - name: Comment the download links
+        run: |
+          artifacts="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts")"
+          if [ "$(jq '.artifacts | length' <<<"${artifacts}")" -eq 0 ]; then
+            echo "::error::the run uploaded no artifacts"
+            exit 1
+          fi
+          # `--edit-last --create-if-none` keeps a single comment per pull
+          # request: the first push creates it, later ones rewrite it.
+          jq -r --arg run_url "${RUN_URL}" --arg sha "${HEAD_SHA}" '
+            def platform: {
+              "draftpad-macos-latest": "macOS (.dmg)",
+              "draftpad-windows-latest": "Windows (.exe)"
+            }[.] // .;
+            def megabytes: . / 1048576 * 10 | round / 10;
+            "## ビルド成果物",
+            "",
+            (.artifacts | sort_by(.name)[]
+              | "- [\(.name | platform)](\($run_url)/artifacts/\(.id)) — \(.size_in_bytes | megabytes) MB"),
+            "",
+            "\($sha[0:7]) を base ブランチにマージした状態のビルドです。ダウンロードには GitHub へのログインが必要です。",
+            "",
+            "- [run のサマリ](\($run_url))",
+            "- 保持期限: \(.artifacts[0].expires_at | fromdateiso8601 | strftime("%Y-%m-%d"))"
+          ' <<<"${artifacts}" \
+            | gh pr comment "${PR_NUMBER}" --edit-last --create-if-none --body-file -
+
   # Publishes the binaries built above whenever the version in tauri.conf.json
   # names a release that does not exist yet. Merging without a version bump is
   # therefore a no-op.
