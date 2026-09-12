@@ -10,6 +10,11 @@ export interface Command {
   title: string
   /** Shortcut in "Mod+Shift+P" form; "Mod" is Cmd on macOS and Ctrl elsewhere. */
   keys?: string
+  /**
+   * Kept out of the command palette. For commands that only make sense from
+   * the menu or a shortcut, such as opening the palette itself.
+   */
+  hiddenInPalette?: boolean
   run: () => void | Promise<void>
 }
 
@@ -30,7 +35,7 @@ export function createCommands(actions: CommandActions, platform: string): Comma
   const isMac = platform === 'macos'
   const commands: Command[] = [
     { id: 'preferences', title: '環境設定…', keys: 'Mod+,', run: actions.openPreferences },
-    { id: 'command_palette', title: 'コマンドパレット…', keys: 'Mod+Shift+P', run: actions.openPalette },
+    { id: 'command_palette', title: 'コマンドパレット…', keys: 'Mod+Shift+P', hiddenInPalette: true, run: actions.openPalette },
     { id: 'find', title: '検索・置換', keys: 'Mod+F', run: actions.openSearch },
     { id: 'increase_font_size', title: 'フォントを大きく', keys: 'Mod+=', run: () => actions.changeFontSize(1) },
     { id: 'decrease_font_size', title: 'フォントを小さく', keys: 'Mod+-', run: () => actions.changeFontSize(-1) },
