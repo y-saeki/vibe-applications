@@ -83,6 +83,15 @@ pnpm build                         # フロントエンドのバンドル(dist/)
 cd src-tauri && cargo fmt --check && cargo clippy --all-targets -- -D warnings
 ```
 
+### Pull Request のビルド
+
+`draftpad/` を変更する Pull Request では、GitHub Actions が macOS / Windows の両方をビルドします。両方が成功すると、
+成果物へのダウンロードリンクを Pull Request にコメントします。push のたびにコメントを増やさず、同じコメントを
+書き換えます。
+
+リンク先のダウンロードには GitHub へのログインが必要です。成果物には保持期限があり、過ぎるとリンクは無効になります
+(期限はコメントに書かれます)。
+
 ## 使い方
 
 ウィンドウ全体がエディタです。書いた内容はそのまま保存され、コピーして貼り付け先へ送る、という使い方を想定しています。
