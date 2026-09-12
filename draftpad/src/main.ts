@@ -40,7 +40,7 @@ function byId<T extends HTMLElement>(id: string): T {
 }
 
 async function main(): Promise<void> {
-  const { state, platform, version } = await loadState()
+  const { state, platform, version, openPreferences: startWithPreferences } = await loadState()
   const isMac = platform === 'macos'
   document.documentElement.dataset.platform = platform
 
@@ -51,9 +51,13 @@ async function main(): Promise<void> {
   let editor: Editor | undefined
   const theme = new ThemeController(state.theme, (resolved) => editor?.setDark(resolved === 'dark'))
 
+  // The overlays only exist further down, so the gear button goes through a
+  // late-bound reference to the same action the command table gets.
+  let openPreferences = (): void => {}
   const statusBar = new StatusBar(byId('statusbar'), {
     onLanguageChange: (language) => store.set({ language }),
     onAlwaysOnTopChange: (alwaysOnTop) => store.set({ alwaysOnTop }),
+    onOpenPreferences: () => openPreferences(),
   })
   statusBar.setLanguage(state.language)
   statusBar.setAlwaysOnTop(state.alwaysOnTop)
@@ -100,12 +104,14 @@ async function main(): Promise<void> {
   let commands: Command[] = []
   const palette = new Palette(byId('palette'), () => commands, platform, focusEditor)
 
+  openPreferences = () => {
+    palette.close()
+    preferences.open()
+  }
+
   commands = createCommands(
     {
-      openPreferences: () => {
-        palette.close()
-        preferences.open()
-      },
+      openPreferences,
       openPalette: () => {
         preferences.close()
         palette.open()
@@ -195,6 +201,7 @@ async function main(): Promise<void> {
   )
 
   ed.focus()
+  if (startWithPreferences) openPreferences()
 }
 
 main().catch((err: unknown) => {

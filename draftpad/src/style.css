@@ -119,6 +119,27 @@ body {
   color: inherit;
 }
 
+.statusbar-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  border: none;
+  border-radius: 3px;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+}
+
+.statusbar-button:hover {
+  color: var(--fg);
+}
+
+.statusbar-button:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+}
+
 .overlay[hidden] {
   display: none;
 }

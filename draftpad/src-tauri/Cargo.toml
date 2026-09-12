@@ -23,6 +23,22 @@ serde_json = "1"
 [target.'cfg(any(target_os = "macos", target_os = "windows"))'.dependencies]
 font-kit = "0.14"
 
+# The taskbar jump list (`src/jumplist.rs`) is built with the Shell COM API, and
+# the task it adds relaunches the executable, so a second launch has to be
+# routed back into the running instance.
+[target.'cfg(target_os = "windows")'.dependencies]
+tauri-plugin-single-instance = "2"
+windows = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Storage_EnhancedStorage",
+    "Win32_System_Com",
+    "Win32_System_Com_StructuredStorage",
+    "Win32_System_Variant",
+    "Win32_UI_Shell",
+    "Win32_UI_Shell_Common",
+    "Win32_UI_Shell_PropertiesSystem",
+] }
+
 [profile.release]
 codegen-units = 1
 lto = true

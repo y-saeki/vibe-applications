@@ -26,6 +26,8 @@ export interface Loaded {
   /** `std::env::consts::OS` on the Rust side: "macos", "windows", "linux", ... */
   platform: string
   version: string
+  /** True when this process was started by the Windows jump list "設定" task. */
+  openPreferences: boolean
 }
 
 export const FONT_SIZE_MIN = 10
