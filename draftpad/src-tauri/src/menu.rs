@@ -3,16 +3,21 @@
 //!
 //! Menu items with an application-level meaning are forwarded to the webview
 //! as a `menu` event carrying the item id, and `src/commands.ts` maps the id
-//! onto its command table. The Edit menu is made of predefined items because
-//! WKWebView only routes Cmd+C/V/X/Z/A to the page when such items exist.
+//! onto its command table. The Edit menu uses predefined items for cut, copy,
+//! paste and select all because WKWebView only routes Cmd+C/V/X/A to the page
+//! when such items exist. Undo and redo are forwarded items instead: the
+//! predefined ones drive WKWebView's own undo manager, which knows nothing
+//! about the editor's history.
 
 use tauri::menu::{AboutMetadata, MenuBuilder, MenuItemBuilder, SubmenuBuilder};
 use tauri::{AppHandle, Emitter, Manager};
 
-const FORWARDED_IDS: [&str; 5] = [
+const FORWARDED_IDS: [&str; 7] = [
     "preferences",
     "quit",
     "close",
+    "undo",
+    "redo",
     "increase_font_size",
     "decrease_font_size",
 ];
@@ -44,8 +49,8 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
         .build()?;
 
     let edit = SubmenuBuilder::new(app, "Edit")
-        .undo()
-        .redo()
+        .item(&item("undo", "Undo", "CmdOrCtrl+Z")?)
+        .item(&item("redo", "Redo", "CmdOrCtrl+Shift+Z")?)
         .separator()
         .cut()
         .copy()

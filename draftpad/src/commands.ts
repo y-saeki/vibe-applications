@@ -12,6 +12,8 @@ export interface Command {
 
 export interface CommandActions {
   openPreferences: () => void
+  undo: () => void
+  redo: () => void
   quit: () => Promise<void>
   toggleFullscreen: () => Promise<void>
   changeFontSize: (delta: number) => void
@@ -22,6 +24,11 @@ export function createCommands(actions: CommandActions, platform: string): Comma
   const isMac = platform === 'macos'
   const commands: Command[] = [
     { id: 'preferences', title: '環境設定…', keys: 'Mod+,', run: actions.openPreferences },
+    // Undo and redo carry no `keys`: CodeMirror's own keymap already binds them
+    // inside the editor, and a window-wide shortcut would take Ctrl+Z away from
+    // the text fields in the preferences panel.
+    { id: 'undo', title: '元に戻す', run: actions.undo },
+    { id: 'redo', title: 'やり直す', run: actions.redo },
     { id: 'find', title: '検索・置換', keys: 'Mod+F', run: actions.openSearch },
     { id: 'increase_font_size', title: 'フォントを大きく', keys: 'Mod+=', run: () => actions.changeFontSize(1) },
     { id: 'decrease_font_size', title: 'フォントを小さく', keys: 'Mod+-', run: () => actions.changeFontSize(-1) },
