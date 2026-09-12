@@ -47,8 +47,18 @@ pnpm tauri build
 - macOS: `macos/draftpad.app`、`dmg/draftpad_<version>_aarch64.dmg`(Apple Silicon 向け)
 - Windows: `nsis/draftpad_<version>_x64-setup.exe`
 
+### バージョニング
+
+[セマンティック バージョニング](https://semver.org/lang/ja/)に従います。0.x の間は、ユーザーに見える機能の追加や
+挙動の変更で minor を、修正だけなら patch を上げます。
+
+バージョンの実体は `src-tauri/tauri.conf.json` の `version` の 1 箇所だけです。Release のタグ名、配布物のファイル名、
+環境設定パネルの表示のすべてがここから決まります。`package.json` と `src-tauri/Cargo.toml` の `version` は実際には
+参照されませんが(Tauri は `tauri.conf.json` に `version` があればそちらを使います)、紛らわしいので同じ値に揃えます。
+
 `main` ブランチで `src-tauri/tauri.conf.json` の `version` が上がると、GitHub Actions が
-`draftpad-v<version>` タグの Release を作り、上記の 2 つを添付します。
+`draftpad-v<version>` タグの Release を作り、上記の 2 つを添付します。上げずにマージした場合、タグが既に存在するため
+Release は作られません。リリースするつもりの変更では、マージ前にバージョンを上げてください。
 
 ### macOS で「壊れているため開けません」と表示される場合
 
