@@ -8,12 +8,18 @@ mod jumplist;
 mod menu;
 mod state;
 
+use std::time::Duration;
+
 use tauri::{AppHandle, Manager, WebviewWindow};
 
 /// Smallest window size we will restore, matching `minWidth`/`minHeight` in
 /// `tauri.conf.json`.
 const MIN_WIDTH: f64 = 320.0;
 const MIN_HEIGHT: f64 = 200.0;
+
+/// How long the main window may stay hidden waiting for the frontend to show
+/// it. Only a frontend that fails to start ever gets this far.
+const SHOW_FALLBACK: Duration = Duration::from_secs(10);
 
 pub fn run() {
     let builder = tauri::Builder::default();
@@ -47,7 +53,12 @@ pub fn run() {
             // be applied before anything is drawn. The position is deliberately
             // not restored: the window is always centered.
             restore_window_size(app.handle(), &window);
-            window.show()?;
+            // Showing it is the frontend's job: Windows anchors the IME's
+            // composition string and candidate list to the caret, and a window
+            // that is activated before anything inside it holds the caret
+            // leaves both at the top-left of the screen. `src/main.ts` shows
+            // the window once the editor has the focus.
+            show_after_fallback(window.clone());
             #[cfg(target_os = "macos")]
             menu::install(app.handle())?;
             #[cfg(target_os = "windows")]
@@ -81,4 +92,21 @@ fn restore_window_size(app: &AppHandle, window: &WebviewWindow) {
     if let Err(err) = window.center() {
         eprintln!("draftpad: failed to center window: {err}");
     }
+}
+
+/// Shows `window` if the frontend has not shown it within [`SHOW_FALLBACK`], so
+/// that a frontend which fails to start leaves a visible window rather than an
+/// invisible process.
+fn show_after_fallback(window: WebviewWindow) {
+    std::thread::spawn(move || {
+        std::thread::sleep(SHOW_FALLBACK);
+        // Showing a window the frontend already showed would pull it back in
+        // front of whatever the user moved on to.
+        if window.is_visible().unwrap_or(false) {
+            return;
+        }
+        if let Err(err) = window.show() {
+            eprintln!("draftpad: failed to show the window: {err}");
+        }
+    });
 }
