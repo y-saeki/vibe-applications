@@ -1,64 +1,27 @@
 # draftpad
 
-チャットなどに送る文章を下書きするための、単一バッファのテキストエディタです。
-Tauri v2 + CodeMirror 6 で作られており、方針は「高速」「シンプル」「macOS / Windows 対応」。
+ファイルや保存の概念を持たない、高速・軽量・シンプルな下書き用エディタです。
+macOS / Windows 対応。
 
-- 本文は入力のたびに自動保存され、次回起動時にそのまま復元されます。ファイルの概念はありません
+- 書いた内容は自動的に引き継がれ、次回起動するとそのまま続きから書けます
 - 起動は速く、閉じると終了します(常駐しません)
 - 日本語 IME 前提。既定フォントは OS ごとの日本語対応等幅フォント
 - 20 言語のシンタックスハイライト、正規表現対応の検索・置換、単語補完、Vim モード
 - ライト / ダークテーマ(OS 追従または固定)
 - 文字数(コードポイント数)と行数の表示、「常に手前に表示」
-- 環境設定はステータスバー右下の歯車から開けます(Windows ではタスクバーアイコンの右クリックメニューからも)
 
 ## 動作環境
 
-- macOS 11 以降(Apple Silicon / Intel)
-- Windows 10 (1809 以降) / Windows 11。WebView2 ランタイムが必要です(通常はプリインストール済み。無い場合はインストーラが自動で取得します)
+- macOS 11 以降 (Apple Silicon のみ)
+- Windows 11 (x64 のみ)
 
-## 開発に必要なもの
+## インストール
 
-| ツール | 備考 |
-|---|---|
-| [Rust](https://rustup.rs/)(stable) | `rustup` でインストール |
-| Node.js 22 以降 | |
-| [pnpm](https://pnpm.io/) 10.16 以降 | `minimumReleaseAge` を使うため |
-| macOS: Xcode Command Line Tools | `xcode-select --install` |
-| Windows: Visual Studio Build Tools | 「C++ によるデスクトップ開発」を選択。Rust は MSVC ツールチェーンを既定にする |
+[Releases](https://github.com/y-saeki/vibe-applications/releases) の `draftpad-v<version>` から、
+お使いの OS 向けのファイルをダウンロードしてください。
 
-詳細は [Tauri の Prerequisites](https://v2.tauri.app/start/prerequisites/) を参照してください。
-
-## セットアップと実行
-
-```sh
-cd draftpad
-pnpm install          # フロントエンドの依存を取得
-pnpm tauri dev        # 開発モードで起動(フロントエンドを監視し、Rust 側を自動ビルド)
-```
-
-配布用ビルド:
-
-```sh
-pnpm tauri build
-```
-
-成果物は `src-tauri/target/release/bundle/` 以下に出力されます。
-
-- macOS: `macos/draftpad.app`、`dmg/draftpad_<version>_aarch64.dmg`(Apple Silicon 向け)
-- Windows: `nsis/draftpad_<version>_x64-setup.exe`
-
-### バージョニング
-
-[セマンティック バージョニング](https://semver.org/lang/ja/)に従います。0.x の間は、ユーザーに見える機能の追加や
-挙動の変更で minor を、修正だけなら patch を上げます。
-
-バージョンの実体は `src-tauri/tauri.conf.json` の `version` の 1 箇所だけです。Release のタグ名、配布物のファイル名、
-環境設定パネルの表示のすべてがここから決まります。`package.json` と `src-tauri/Cargo.toml` の `version` は実際には
-参照されませんが(Tauri は `tauri.conf.json` に `version` があればそちらを使います)、紛らわしいので同じ値に揃えます。
-
-`main` ブランチで `src-tauri/tauri.conf.json` の `version` が上がると、GitHub Actions が
-`draftpad-v<version>` タグの Release を作り、上記の 2 つを添付します。上げずにマージした場合、タグが既に存在するため
-Release は作られません。リリースするつもりの変更では、マージ前にバージョンを上げてください。
+- macOS: `draftpad_<version>_aarch64.dmg`。開いて `draftpad.app` を「アプリケーション」フォルダへ入れます
+- Windows: `draftpad_<version>_x64-setup.exe`。実行するとインストーラが起動します
 
 ### macOS で「壊れているため開けません」と表示される場合
 
@@ -72,30 +35,19 @@ Release は作られません。リリースするつもりの変更では、マ
 xattr -dr com.apple.quarantine /Applications/draftpad.app
 ```
 
-macOS Sequoia (15.0) 以降では、以前あった Control クリック →「開く」による回避はできません。
-自分でビルドした `.app` には quarantine 属性が付かないため、この操作は不要です。
+この操作に不安を感じる場合、無理に実行せず、本アプリケーションの利用を避けてください。
 
-### 検証コマンド
+### Windows で「WindowsによってPCが保護されました」と表示される場合
 
-```sh
-pnpm typecheck                     # TypeScript の型検査
-pnpm build                         # フロントエンドのバンドル(dist/)
-cd src-tauri && cargo fmt --check && cargo clippy --all-targets -- -D warnings
-```
+コード署名を行っていないため、ダウンロードしたインストーラは SmartScreen に警告されます。
+「詳細情報」をクリックすると「実行」ボタンが出るので、押すとインストールを続けられます。
 
-### Pull Request のビルド
-
-`draftpad/` を変更する Pull Request では、GitHub Actions が macOS / Windows の両方をビルドします。両方が成功すると、
-成果物へのダウンロードリンクを Pull Request にコメントします。push のたびにコメントを増やさず、同じコメントを
-書き換えます。
-
-リンク先のダウンロードには GitHub へのログインが必要です。成果物には保持期限があり、過ぎるとリンクは無効になります
-(期限はコメントに書かれます)。
+この操作に不安を感じる場合、無理に実行せず、本アプリケーションの利用を避けてください。
 
 ## 使い方
 
-ウィンドウ全体がエディタです。書いた内容はそのまま保存され、コピーして貼り付け先へ送る、という使い方を想定しています。
-コピーはプレーンテキストのみをクリップボードに書くので、貼り付け先に書式が混入しません。
+ウィンドウ全体がエディタです。書いた内容をコピーして貼り付け先へ持っていく、という使い方を想定しています。
+コピー時はプレーンテキストのみをクリップボードに書き出すため、貼り付け先に書式が混入しません。
 
 ### 環境設定を開く
 
@@ -106,14 +58,6 @@ cd src-tauri && cargo fmt --check && cargo clippy --all-targets -- -D warnings
 | キーボードショートカット | ⌘ , | Ctrl + , |
 | メニューバー `draftpad` → `Preferences…` | ○ | — |
 | タスクバーアイコンの右クリックメニュー → `設定` | — | ○ |
-
-Windows のタスクバーメニュー(ジャンプリスト)の項目はショートカットなので、押すと draftpad が
-もう一度起動されます。すでに起動していれば、その 2 つ目のプロセスは引数を既存のウィンドウへ渡して
-自分は終了します。このため Windows 版は多重起動しません(同じ `state.json` を 2 つのプロセスが
-奪い合わないという利点もあります)。macOS 版の挙動は変わりません。
-
-ジャンプリストは起動のたびに登録し直します。インストーラや配布物には手を入れていないので、
-バージョンを上げたり別の場所へ移したりしても、次の起動で正しい実行ファイルを指し直します。
 
 ### キーボードショートカット
 
@@ -128,9 +72,6 @@ Windows のタスクバーメニュー(ジャンプリスト)の項目はショ�
 | 閉じる(= 終了) | ⌘ W | Ctrl + W |
 | 終了 | ⌘ Q | Ctrl + Q / Alt + F4 |
 | 環境設定・パレットを閉じる | Esc | Esc |
-
-macOS ではメニューバーのアクセラレータとして、Windows ではアプリ内のキー処理として実装しています。
-Windows にはメニューバーがありません。
 
 ### 検索・置換
 
@@ -161,69 +102,12 @@ Markdown、プレーンテキスト、YAML、Batch、HTML、XML、Dockerfile、J
 Solidity、MySQL、pgSQL、PHP、PowerShell、Rust。ステータスバーのセレクトかコマンドパレットで切り替えます。
 Markdown のフェンスコードブロック(```js など)も同じ文法でハイライトされます。
 
-## 設定と下書きの保存場所
-
-設定と本文は 1 つの JSON にまとめて保存されます。書き込みは一時ファイルに書いてから置き換える方式なので、
-途中でプロセスが落ちても壊れたファイルは残りません。壊れていた場合は `state.json.broken` として退避します。
-
-- macOS: `~/Library/Application Support/com.ysaeki.draftpad/state.json`
-- Windows: `%APPDATA%\com.ysaeki.draftpad\state.json`
-
-ウィンドウのサイズは保存しますが、位置は保存しません(常に画面中央に開きます)。
-
-## 依存関係の方針
-
-Tauri 公式・CodeMirror 公式・Microsoft 公式以外の依存は次の 2 つだけです。
-
-- `@replit/codemirror-vim`(Vim モード)。外す場合は `src/vim.ts` と `Editor` の `vim` Compartment を削除
-- `font-kit`(フォント一覧の取得)。外す場合は `src-tauri/src/fonts.rs` と `list_fonts` コマンドを削除
-
-Windows 向けのビルドだけが使う依存が 2 つあります。どちらもタスクバーメニューのためのもので、
-外す場合は `src-tauri/src/jumplist.rs` と `lib.rs` の該当箇所をまとめて削除してください。
-
-- `windows`(Microsoft 公式の Win32 バインディング)。ジャンプリストを作る Shell COM API に使います
-- `tauri-plugin-single-instance`(Tauri 公式)。ジャンプリストから起動された 2 つ目のプロセスの
-  引数を、動作中のインスタンスへ渡します
-
-### 更新の運用(サプライチェーン対策)
-
-- npm: `pnpm-workspace.yaml` の `minimumReleaseAge: 10080` により、公開から 7 日未満のバージョンは解決しません。
-  `pnpm-lock.yaml` をコミットし、更新は `pnpm update` を明示的に実行したときだけ行います
-- Cargo: 同等の設定は Cargo 本体に未実装です(RFC 3923 `registry.global-min-publish-age` が承認済みで、クライアント側の実装待ち)。
-  `Cargo.lock` をコミットし、`cargo update` を自動では実行しません。クライアント側が安定したら `.cargo/config.toml` に設定を追加してください
-
-## ディレクトリ構成
-
-```
-draftpad/
-  build.mjs             esbuild によるバンドル(dist/)。--serve で開発サーバー
-  src/
-    main.ts             起動処理と各部品の配線
-    editor.ts           CodeMirror の構成(Compartment で動的切替)
-    languages.ts        言語一覧と遅延ロード
-    modes/              Batch / Solidity / PHP の自作ハイライト
-    state.ts            永続化する状態と保存のデバウンス
-    commands.ts         コマンド表(メニュー・ショートカット・パレット共用)
-    preferences.ts      環境設定パネル
-    palette.ts          コマンドパレット
-    statusbar.ts        ステータスバー
-    theme.ts            ライト / ダークの解決
-  src-tauri/
-    src/lib.rs          Tauri Builder。起動時のウィンドウサイズ復元
-    src/state.rs        state.json の読み書き(原子的書き込み)
-    src/commands.rs     load_state / save_state / list_fonts / quit_app
-    src/menu.rs         macOS のメニュー
-    src/jumplist.rs     Windows のタスクバーメニュー(ジャンプリスト)
-    src/fonts.rs        フォント列挙
-    tauri.conf.json     ウィンドウ・バンドル設定
-    capabilities/       webview に許可する API
-```
-
 ## 制限事項
 
-- 自動アップデートはありません。更新は新しいバイナリを取得してください
-- 配布物はコード署名・公証をしていません(ダウンロードした macOS 版は[初回のみ属性の解除が必要](#macos-で壊れているため開けませんと表示される場合))
-- コマンドパレットに出るのはアプリのコマンドのみで、エディタの全操作は含みません
+- 自動アップデートはありません。更新するときは新しいバージョンを同じ手順で入れ直してください
+- 配布物はコード署名・公証をしていません
 - ウィンドウ位置は記憶しません(サイズのみ)
-- Windows 版は多重起動しません(タスクバーメニューの項目が実行ファイルを起動し直す作りのため)
-- Batch / Solidity / PHP のハイライトは簡易的な自作パーサです
+
+## 開発者向けの情報
+
+ビルド方法、ディレクトリ構成、リリースの手順などは [DEVELOPMENT.md](./DEVELOPMENT.md) にあります。

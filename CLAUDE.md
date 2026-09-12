@@ -30,8 +30,30 @@ version's documentation.
 ## Each application carries a README
 
 Every application directory has a `README.md` covering what the application does, how to
-set it up, and how to run it. Write it as the entry point for someone who has just opened
-the directory and knows nothing about it.
+install it, and how to use it. Write it for the person who wants to run the application and
+has no interest in its source: what it is, how to get it, how to use it, what it cannot do.
+
+Anything a reader only needs in order to build or change the application — prerequisites,
+build and verification commands, release and versioning, implementation notes, directory
+layout, dependency policy — goes in `DEVELOPMENT.md` next to it, and the README links to it
+in one line at the end.
+
+Keeping the README to its audience means, concretely:
+
+- The feature list near the top says what the application is good at. It is not a manual:
+  no per-feature instructions there.
+- Never explain how something works internally. What the user sees is the whole story; the
+  mechanism behind it belongs in `DEVELOPMENT.md`.
+- Document only what the user is asked to do. Workarounds that no longer apply, paths that
+  were never suggested, and behaviour the application does not have are noise — leave them
+  out rather than mentioning them to rule them out.
+- State the platforms actually shipped, not the ones the framework could target. The
+  release workflow's build matrix is the source of truth.
+- An unsigned build trips the OS on every platform it ships to (macOS Gatekeeper, Windows
+  SmartScreen). Cover each one in the install section — omitting one leaves those users
+  stuck.
+- Prefer repeating a short phrase over an in-page anchor link to another section: anchors
+  built from Japanese headings break silently when the heading is reworded.
 
 ## Write issues and pull requests in Japanese
 
