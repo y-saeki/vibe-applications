@@ -12,8 +12,8 @@ macOS / Windows 対応。
 
 ## 動作環境
 
-- macOS 11 以降(Apple Silicon)
-- Windows 10 (1809 以降) / Windows 11(x64)
+- macOS 11 以降 (Apple Silicon のみ)
+- Windows 11 (x64 のみ)
 
 ## インストール
 
