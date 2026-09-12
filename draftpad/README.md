@@ -35,6 +35,8 @@ macOS / Windows 対応。
 xattr -dr com.apple.quarantine /Applications/draftpad.app
 ```
 
+この操作に不安を感じる場合、無理に実行せず、本アプリケーションの利用を避けてください。
+
 ### Windows で「WindowsによってPCが保護されました」と表示される場合
 
 コード署名を行っていないため、ダウンロードしたインストーラは SmartScreen に警告されます。
