@@ -7,6 +7,12 @@
   --accent: #2b6cb0;
   --accent-fg: #ffffff;
   --overlay: rgba(0, 0, 0, 0.35);
+  --control-bg: #ffffff;
+  --control-hover: #eef1f4;
+  --control-active: #e2e6ea;
+  --focus-ring: rgba(43, 108, 176, 0.25);
+  --ui-font: -apple-system, "Segoe UI", system-ui, sans-serif;
+  --control-height: 28px;
   --statusbar-height: 26px;
   --titlebar-height: 0px;
   color-scheme: light;
@@ -21,6 +27,10 @@
   --accent: #61afef;
   --accent-fg: #1e2227;
   --overlay: rgba(0, 0, 0, 0.55);
+  --control-bg: #31363f;
+  --control-hover: #3a4150;
+  --control-active: #454d5d;
+  --focus-ring: rgba(97, 175, 239, 0.3);
   color-scheme: dark;
 }
 
@@ -41,7 +51,7 @@ body {
   overflow: hidden;
   background: var(--bg);
   color: var(--fg);
-  font: 12px -apple-system, "Segoe UI", system-ui, sans-serif;
+  font: 12px var(--ui-font);
 }
 
 #titlebar {
@@ -81,6 +91,190 @@ body {
   font-family: inherit;
   font-size: 11px;
   padding: 2px 8px;
+}
+
+/* CodeMirror's own theme sizes the search panel and the go-to-line dialog
+   relative to the editor font and shrinks their controls to 70% of it, which
+   leaves them unreadable at any normal font size. Everything below dresses
+   those panels as ordinary application chrome instead: the UI font at a fixed
+   size, and controls large enough to hit. */
+#editor .cm-panels {
+  border-color: var(--border);
+  background: var(--panel);
+  color: var(--fg);
+}
+
+#editor .cm-panels-top {
+  border-bottom: 1px solid var(--border);
+}
+
+#editor .cm-panels-bottom {
+  border-top: 1px solid var(--border);
+}
+
+/* The Vim status line is a panel too and keeps the editor font; only these two
+   take the UI font, at a size of their own so that the editor font size does
+   not drag the chrome around with it. */
+#editor .cm-panel.cm-search,
+#editor .cm-panel.cm-dialog {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  padding: 8px 40px 8px 10px;
+  font: 13px var(--ui-font);
+}
+
+/* Lay the search panel out as three aligned rows — find, options, replace —
+   instead of letting one long line wrap wherever it runs out of room. The two
+   breaks are the panel's own ::before and ::after: zero-height flex items that
+   take a whole line each. (The <br> the panel itself puts before the replace
+   row cannot do this: WebKit and Blink give a <br> no box inside a flex
+   container.) The order values only place those two breaks — every control
+   keeps its position in the document, so the visual order still matches the
+   tab order. */
+#editor .cm-panel.cm-search::before,
+#editor .cm-panel.cm-search::after {
+  content: "";
+  flex-basis: 100%;
+  height: 0;
+}
+
+#editor .cm-panel.cm-search::before {
+  order: 2;
+}
+
+#editor .cm-panel.cm-search::after {
+  order: 4;
+}
+
+#editor .cm-panel.cm-search br {
+  display: none;
+}
+
+#editor .cm-panel.cm-search input[name="search"],
+#editor .cm-panel.cm-search button[name="next"],
+#editor .cm-panel.cm-search button[name="prev"],
+#editor .cm-panel.cm-search button[name="select"] {
+  order: 1;
+}
+
+#editor .cm-panel.cm-search label {
+  order: 3;
+}
+
+#editor .cm-panel.cm-search input[name="replace"],
+#editor .cm-panel.cm-search button[name="replace"],
+#editor .cm-panel.cm-search button[name="replaceAll"] {
+  order: 5;
+}
+
+#editor .cm-panel .cm-textfield,
+#editor .cm-panel .cm-button,
+#editor .cm-panel label {
+  margin: 0;
+  font: inherit;
+}
+
+#editor .cm-panel .cm-textfield {
+  flex: 0 1 240px;
+  min-width: 120px;
+  height: var(--control-height);
+  box-sizing: border-box;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--control-bg);
+  color: var(--fg);
+}
+
+#editor .cm-panel .cm-textfield::placeholder {
+  color: var(--muted);
+}
+
+#editor .cm-panel .cm-textfield:focus {
+  border-color: var(--accent);
+  outline: none;
+  box-shadow: 0 0 0 2px var(--focus-ring);
+}
+
+#editor .cm-panel .cm-button {
+  height: var(--control-height);
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--control-bg);
+  color: var(--fg);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+#editor .cm-panel .cm-button:hover {
+  background: var(--control-hover);
+}
+
+#editor .cm-panel .cm-button:active {
+  background: var(--control-active);
+}
+
+#editor .cm-panel .cm-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+#editor .cm-panel label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+#editor .cm-panel input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+#editor .cm-panel input[type="checkbox"]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+#editor .cm-panel [name="close"],
+#editor .cm-panel .cm-dialog-close {
+  position: absolute;
+  top: 7px;
+  right: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+#editor .cm-panel [name="close"]:hover,
+#editor .cm-panel .cm-dialog-close:hover {
+  background: var(--control-hover);
+  color: var(--fg);
+}
+
+#editor .cm-panel [name="close"]:focus-visible,
+#editor .cm-panel .cm-dialog-close:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 #statusbar {
