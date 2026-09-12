@@ -77,8 +77,13 @@ export class Preferences {
   open(): void {
     this.sync()
     this.root.hidden = false
-    this.mode.focus()
+    this.focus()
     void this.loadFonts()
+  }
+
+  /** Puts the caret back in the panel, for when the window regains it. */
+  focus(): void {
+    this.mode.focus()
   }
 
   close(): void {

@@ -191,11 +191,28 @@ async function main(): Promise<void> {
     }),
   )
 
+  // ---- the caret and the window ------------------------------------------
+  // Windows anchors the IME's composition string and its candidate list to the
+  // caret. A window that is activated with nothing focused inside it has no
+  // caret to offer, so both end up at the top-left of the screen instead of
+  // over the editor. Keeping something focused whenever the window is active
+  // is what stops that.
+  window.addEventListener('focus', () => {
+    const focused = document.activeElement
+    if (focused && focused !== document.body) return
+    if (preferences.isOpen) preferences.focus()
+    else ed.focus()
+  })
+
   ed.focus()
   if (startWithPreferences) openPreferences()
+  // The window has been hidden since launch for the same reason: it becomes
+  // visible, and takes the keyboard, only now that the caret is in place.
+  await appWindow.show()
 }
 
 main().catch((err: unknown) => {
   console.error(err)
   document.body.textContent = `draftpad の起動に失敗しました: ${String(err)}`
+  void getCurrentWindow().show()
 })
