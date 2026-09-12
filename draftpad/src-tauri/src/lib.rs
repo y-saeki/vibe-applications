@@ -1,3 +1,5 @@
+#[cfg(target_os = "windows")]
+mod autofill;
 mod commands;
 mod fonts;
 #[cfg(target_os = "windows")]
@@ -49,7 +51,10 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             menu::install(app.handle())?;
             #[cfg(target_os = "windows")]
-            jumplist::install();
+            {
+                autofill::disable(&window);
+                jumplist::install();
+            }
             Ok(())
         })
         .run(tauri::generate_context!())
