@@ -54,7 +54,6 @@ xattr -dr com.apple.quarantine /Applications/draftpad.app
 | 方法 | macOS | Windows |
 |---|---|---|
 | ステータスバー右下の歯車 | ○ | ○ |
-| コマンドパレットの「環境設定…」 | ○ | ○ |
 | キーボードショートカット | ⌘ , | Ctrl + , |
 | メニューバー `draftpad` → `Preferences…` | ○ | — |
 | タスクバーアイコンの右クリックメニュー → `設定` | — | ○ |
@@ -64,14 +63,13 @@ xattr -dr com.apple.quarantine /Applications/draftpad.app
 | 操作 | macOS | Windows |
 |---|---|---|
 | 環境設定を開く | ⌘ , | Ctrl + , |
-| コマンドパレット | ⌘ ⇧ P | Ctrl + Shift + P |
 | 検索・置換 | ⌘ F | Ctrl + F |
 | 次を検索 / 前を検索 | ⌘ G / ⌘ ⇧ G | F3 / Shift + F3 |
 | フォントを大きく / 小さく | ⌘ = / ⌘ - | Ctrl + = / Ctrl + - |
 | フルスクリーン切替 | ⌃ ⌘ F | F11 |
 | 閉じる(= 終了) | ⌘ W | Ctrl + W |
 | 終了 | ⌘ Q | Ctrl + Q / Alt + F4 |
-| 環境設定・パレットを閉じる | Esc | Esc |
+| 環境設定を閉じる | Esc | Esc |
 
 ### 検索・置換
 
@@ -99,7 +97,7 @@ macOS の Osaka は候補一覧では「Osaka」というファミリ名で出�
 ### 対応言語
 
 Markdown、プレーンテキスト、YAML、Batch、HTML、XML、Dockerfile、JavaScript、TypeScript、Ruby、Go、CSS、LESS、SCSS、
-Solidity、MySQL、pgSQL、PHP、PowerShell、Rust。ステータスバーのセレクトかコマンドパレットで切り替えます。
+Solidity、MySQL、pgSQL、PHP、PowerShell、Rust。ステータスバーのセレクトで切り替えます。
 Markdown のフェンスコードブロック(```js など)も同じ文法でハイライトされます。
 
 ## 制限事項

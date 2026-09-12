@@ -126,9 +126,8 @@ draftpad/
     languages.ts        言語一覧と遅延ロード
     modes/              Batch / Solidity / PHP の自作ハイライト(簡易的なパーサ)
     state.ts            永続化する状態と保存のデバウンス
-    commands.ts         コマンド表(メニュー・ショートカット・パレット共用)
+    commands.ts         コマンド表(メニュー・ショートカット共用)
     preferences.ts      環境設定パネル
-    palette.ts          コマンドパレット
     statusbar.ts        ステータスバー
     theme.ts            ライト / ダークの解決
   src-tauri/
