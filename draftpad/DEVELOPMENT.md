@@ -2,6 +2,9 @@
 
 draftpad をビルド・変更するための情報です。使い方やインストール方法は [README.md](./README.md) を参照してください。
 
+フロントエンドは CodeMirror 6、シェルは Tauri v2(Rust)です。配布対象は macOS(Apple Silicon)と
+Windows(x64)の 2 つで、どちらも GitHub Actions でビルドします。
+
 ## 開発に必要なもの
 
 | ツール | 備考 |
@@ -63,9 +66,10 @@ cd src-tauri && cargo fmt --check && cargo clippy --all-targets -- -D warnings
 `draftpad-v<version>` タグの Release を作り、上記の 2 つを添付します。上げずにマージした場合、タグが既に存在するため
 Release は作られません。リリースするつもりの変更では、マージ前にバージョンを上げてください。
 
-配布物はコード署名・公証をしていないため、ダウンロードした macOS 版は初回のみ `com.apple.quarantine` 属性の
-解除が必要です(手順は [README.md](./README.md#macos-で壊れているため開けませんと表示される場合))。
-自分でビルドした `.app` には属性が付かないため、この操作は不要です。
+配布物はコード署名・公証をしていません。そのため、ダウンロードした macOS 版は初回のみ `com.apple.quarantine`
+属性の解除が必要で、Windows 版はインストーラ実行時に SmartScreen の警告が出ます。どちらも手順は README.md に
+書いてあります。自分でビルドした `.app` には quarantine 属性が付かないため、開発中にこの操作は要りません。
+macOS Sequoia (15.0) 以降では、以前あった Control クリック →「開く」による回避はできません。
 
 ## プラットフォーム固有の実装
 
@@ -79,6 +83,16 @@ Windows のタスクバーメニュー(ジャンプリスト)の項目はショ�
 
 ジャンプリストは起動のたびに登録し直します。インストーラや配布物には手を入れていないので、
 バージョンを上げたり別の場所へ移したりしても、次の起動で正しい実行ファイルを指し直します。
+
+## 状態の保存
+
+設定と本文は 1 つの JSON にまとめて保存します。書き込みは一時ファイルに書いてから置き換える方式なので、
+途中でプロセスが落ちても壊れたファイルは残りません。壊れていた場合は `state.json.broken` として退避します。
+
+- macOS: `~/Library/Application Support/com.ysaeki.draftpad/state.json`
+- Windows: `%APPDATA%\com.ysaeki.draftpad\state.json`
+
+ウィンドウのサイズは保存しますが、位置は保存しません(常に画面中央に開きます)。
 
 ## 依存関係の方針
 
@@ -110,7 +124,7 @@ draftpad/
     main.ts             起動処理と各部品の配線
     editor.ts           CodeMirror の構成(Compartment で動的切替)
     languages.ts        言語一覧と遅延ロード
-    modes/              Batch / Solidity / PHP の自作ハイライト
+    modes/              Batch / Solidity / PHP の自作ハイライト(簡易的なパーサ)
     state.ts            永続化する状態と保存のデバウンス
     commands.ts         コマンド表(メニュー・ショートカット・パレット共用)
     preferences.ts      環境設定パネル
