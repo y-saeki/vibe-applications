@@ -4,10 +4,9 @@ import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 
-import { comboFromEvent, createCommands, indexByKeys, type Command } from './commands'
+import { comboFromEvent, createCommands, indexByKeys } from './commands'
 import { Editor } from './editor'
 import { defaultFontFamily } from './fonts'
-import { Palette } from './palette'
 import { Preferences } from './preferences'
 import { clamp, FONT_SIZE_MAX, FONT_SIZE_MIN, loadState, Store, type StateKey } from './state'
 import { StatusBar } from './statusbar'
@@ -51,8 +50,8 @@ async function main(): Promise<void> {
   let editor: Editor | undefined
   const theme = new ThemeController(state.theme, (resolved) => editor?.setDark(resolved === 'dark'))
 
-  // The overlays only exist further down, so the gear button goes through a
-  // late-bound reference to the same action the command table gets.
+  // The preferences panel only exists further down, so the gear button goes
+  // through a late-bound reference to the same action the command table gets.
   let openPreferences = (): void => {}
   const statusBar = new StatusBar(byId('statusbar'), {
     onLanguageChange: (language) => store.set({ language }),
@@ -98,31 +97,18 @@ async function main(): Promise<void> {
   })
   window.addEventListener('blur', () => void store.flush())
 
-  // ---- overlays -----------------------------------------------------------
+  // ---- preferences --------------------------------------------------------
   const focusEditor = (): void => ed.focus()
   const preferences = new Preferences(byId('preferences'), store, { version, defaultFontFamily: fontFamily, onClose: focusEditor })
-  let commands: Command[] = []
-  const palette = new Palette(byId('palette'), () => commands, platform, focusEditor)
 
-  openPreferences = () => {
-    palette.close()
-    preferences.open()
-  }
+  openPreferences = () => preferences.open()
 
-  commands = createCommands(
+  const commands = createCommands(
     {
       openPreferences,
-      openPalette: () => {
-        preferences.close()
-        palette.open()
-      },
       quit,
       toggleFullscreen: async () => appWindow.setFullscreen(!(await appWindow.isFullscreen())),
       changeFontSize: (delta) => store.set({ fontSize: clamp(store.state.fontSize + delta, FONT_SIZE_MIN, FONT_SIZE_MAX) }),
-      toggleVim: () => store.set({ editorMode: store.state.editorMode === 'vim' ? 'normal' : 'vim' }),
-      toggleAlwaysOnTop: () => store.set({ alwaysOnTop: !store.state.alwaysOnTop }),
-      setTheme: (value) => store.set({ theme: value }),
-      setLanguage: (language) => store.set({ language }),
       openSearch: () => ed.openSearch(),
     },
     platform,
@@ -174,10 +160,7 @@ async function main(): Promise<void> {
     'keydown',
     (event) => {
       if (event.key !== 'Escape') return
-      if (palette.isOpen) {
-        event.preventDefault()
-        palette.close()
-      } else if (preferences.isOpen) {
+      if (preferences.isOpen) {
         event.preventDefault()
         preferences.close()
       }

@@ -9,11 +9,10 @@
 use tauri::menu::{AboutMetadata, MenuBuilder, MenuItemBuilder, SubmenuBuilder};
 use tauri::{AppHandle, Emitter, Manager};
 
-const FORWARDED_IDS: [&str; 6] = [
+const FORWARDED_IDS: [&str; 5] = [
     "preferences",
     "quit",
     "close",
-    "command_palette",
     "increase_font_size",
     "decrease_font_size",
 ];
@@ -56,12 +55,7 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
 
     let view = SubmenuBuilder::new(app, "View")
         .item(&item("close", "Close", "CmdOrCtrl+W")?)
-        .fullscreen()
-        .item(&item(
-            "command_palette",
-            "Command Palette…",
-            "CmdOrCtrl+Shift+P",
-        )?);
+        .fullscreen();
     #[cfg(debug_assertions)]
     let view = view.item(&item(
         "devtools",
