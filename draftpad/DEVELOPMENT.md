@@ -89,6 +89,11 @@ Windows のタスクバーメニュー(ジャンプリスト)の項目はショ�
 ジャンプリストは起動のたびに登録し直します。インストーラや配布物には手を入れていないので、
 バージョンを上げたり別の場所へ移したりしても、次の起動で正しい実行ファイルを指し直します。
 
+Windows の WebView2 はテキスト入力をフォームの一部とみなすため、検索・置換や環境設定の入力欄に
+フォーカスすると「保存された情報」の候補が出ます。draftpad にフォームはないので、起動時に
+`ICoreWebView2Settings4` の `IsGeneralAutofillEnabled` と `IsPasswordAutosaveEnabled` を false にして
+止めています(`src-tauri/src/autofill.rs`)。macOS の WKWebView にこの挙動はありません。
+
 ## 状態の保存
 
 設定と本文は 1 つの JSON にまとめて保存します。書き込みは一時ファイルに書いてから置き換える方式なので、
@@ -106,12 +111,16 @@ Tauri 公式・CodeMirror 公式・Microsoft 公式以外の依存は次の 2 �
 - `@replit/codemirror-vim`(Vim モード)。外す場合は `src/vim.ts` と `Editor` の `vim` Compartment を削除
 - `font-kit`(フォント一覧の取得)。外す場合は `src-tauri/src/fonts.rs` と `list_fonts` コマンドを削除
 
-Windows 向けのビルドだけが使う依存が 2 つあります。どちらもタスクバーメニューのためのもので、
-外す場合は `src-tauri/src/jumplist.rs` と `lib.rs` の該当箇所をまとめて削除してください。
+Windows 向けのビルドだけが使う依存が 3 つあります。
 
 - `windows`(Microsoft 公式の Win32 バインディング)。ジャンプリストを作る Shell COM API に使います
 - `tauri-plugin-single-instance`(Tauri 公式)。ジャンプリストから起動された 2 つ目のプロセスの
   引数を、動作中のインスタンスへ渡します
+- `webview2-com`(WebView2 COM API のバインディング)。Tauri 自身が使っているものと同じクレートで、
+  オートフィルを切るために WebView2 の設定へ触ります
+
+前の 2 つはタスクバーメニューのためのもので、外す場合は `src-tauri/src/jumplist.rs` と `lib.rs` の
+該当箇所をまとめて削除してください。`webview2-com` は `src-tauri/src/autofill.rs` だけで使います。
 
 ### 更新の運用(サプライチェーン対策)
 
@@ -141,6 +150,7 @@ draftpad/
     src/commands.rs     load_state / save_state / list_fonts / quit_app
     src/menu.rs         macOS のメニュー
     src/jumplist.rs     Windows のタスクバーメニュー(ジャンプリスト)
+    src/autofill.rs     Windows の WebView2 オートフィル抑止
     src/fonts.rs        フォント列挙
     tauri.conf.json     ウィンドウ・バンドル設定
     capabilities/       webview に許可する API

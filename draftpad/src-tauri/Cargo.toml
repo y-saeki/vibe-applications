@@ -1,6 +1,6 @@
 [package]
 name = "draftpad"
-version = "0.4.0"
+version = "0.4.1"
 description = "A draft-only text editor for chat messages"
 edition = "2021"
 publish = false
@@ -25,9 +25,12 @@ font-kit = "0.14"
 
 # The taskbar jump list (`src/jumplist.rs`) is built with the Shell COM API, and
 # the task it adds relaunches the executable, so a second launch has to be
-# routed back into the running instance.
+# routed back into the running instance. `src/autofill.rs` reaches the WebView2
+# settings through the same handle Tauri hands out, so the binding crate has to
+# be the one Tauri itself uses.
 [target.'cfg(target_os = "windows")'.dependencies]
 tauri-plugin-single-instance = "2"
+webview2-com = "0.38"
 windows = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_Storage_EnhancedStorage",
