@@ -106,6 +106,14 @@ async function main(): Promise<void> {
   const commands = createCommands(
     {
       openPreferences,
+      // The preferences panel owns the keyboard while it is open, so the
+      // editor's history stays out of the way.
+      undo: () => {
+        if (!preferences.isOpen) ed.undo()
+      },
+      redo: () => {
+        if (!preferences.isOpen) ed.redo()
+      },
       quit,
       toggleFullscreen: async () => appWindow.setFullscreen(!(await appWindow.isFullscreen())),
       changeFontSize: (delta) => store.set({ fontSize: clamp(store.state.fontSize + delta, FONT_SIZE_MIN, FONT_SIZE_MAX) }),

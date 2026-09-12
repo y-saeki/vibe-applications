@@ -2,12 +2,12 @@
 // it can be swapped at runtime without rebuilding the editor.
 
 import { autocompletion, closeBrackets, closeBracketsKeymap, completeAnyWord, completionKeymap } from '@codemirror/autocomplete'
-import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
+import { defaultKeymap, history, historyKeymap, indentWithTab, redo as redoCommand, undo as undoCommand } from '@codemirror/commands'
 import { bracketMatching, defaultHighlightStyle, indentOnInput, indentUnit, syntaxHighlighting } from '@codemirror/language'
 import { highlightSelectionMatches, openSearchPanel, search, searchKeymap } from '@codemirror/search'
 import { Compartment, EditorState, type Extension } from '@codemirror/state'
 import { oneDark } from '@codemirror/theme-one-dark'
-import { drawSelection, dropCursor, EditorView, keymap } from '@codemirror/view'
+import { drawSelection, dropCursor, EditorView, keymap, type KeyBinding } from '@codemirror/view'
 
 import { languageExtension } from './languages'
 import type { State } from './state'
@@ -42,6 +42,11 @@ const phrases = EditorState.phrases.of({
   go: '移動',
   Completions: '入力候補',
 })
+
+// historyKeymap binds redo to Mod-y everywhere and to Ctrl-Shift-z on Linux
+// only, so Windows needs this one; on macOS it repeats the Cmd-Shift-z binding
+// historyKeymap already has.
+const redoKeymap: KeyBinding[] = [{ key: 'Mod-Shift-z', run: redoCommand, preventDefault: true }]
 
 function fontTheme(size: number, family: string): Extension {
   return EditorView.theme({
@@ -96,7 +101,7 @@ export class Editor {
         EditorView.lineWrapping,
         EditorView.contentAttributes.of({ spellcheck: 'false', autocorrect: 'off', autocapitalize: 'off' }),
         phrases,
-        keymap.of([...closeBracketsKeymap, ...searchKeymap, ...historyKeymap, ...completionKeymap, ...defaultKeymap, indentWithTab]),
+        keymap.of([...closeBracketsKeymap, ...searchKeymap, ...redoKeymap, ...historyKeymap, ...completionKeymap, ...defaultKeymap, indentWithTab]),
         EditorView.updateListener.of((update) => {
           if (update.docChanged) options.onDocChanged()
         }),
@@ -127,6 +132,16 @@ export class Editor {
 
   openSearch(): void {
     openSearchPanel(this.view)
+    this.view.focus()
+  }
+
+  undo(): void {
+    undoCommand(this.view)
+    this.view.focus()
+  }
+
+  redo(): void {
+    redoCommand(this.view)
     this.view.focus()
   }
 

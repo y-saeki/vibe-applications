@@ -62,6 +62,8 @@ xattr -dr com.apple.quarantine /Applications/draftpad.app
 
 | 操作 | macOS | Windows |
 |---|---|---|
+| 元に戻す | ⌘ Z | Ctrl + Z |
+| やり直す | ⌘ ⇧ Z | Ctrl + Shift + Z |
 | 環境設定を開く | ⌘ , | Ctrl + , |
 | 検索・置換 | ⌘ F | Ctrl + F |
 | 次を検索 / 前を検索 | ⌘ G / ⌘ ⇧ G | F3 / Shift + F3 |
