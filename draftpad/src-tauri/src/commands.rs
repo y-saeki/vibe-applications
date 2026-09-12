@@ -15,6 +15,19 @@ pub struct Loaded {
     /// `std::env::consts::OS`: "macos", "windows", "linux", ...
     pub platform: &'static str,
     pub version: String,
+    /// Set when the Windows jump list task started this process, so the
+    /// frontend opens the Preferences panel as soon as it is wired up.
+    pub open_preferences: bool,
+}
+
+#[cfg(target_os = "windows")]
+fn started_for_preferences() -> bool {
+    crate::jumplist::started_for_preferences()
+}
+
+#[cfg(not(target_os = "windows"))]
+fn started_for_preferences() -> bool {
+    false
 }
 
 #[tauri::command]
@@ -25,6 +38,7 @@ pub fn load_state(app: AppHandle) -> Result<Loaded, String> {
         state,
         platform: std::env::consts::OS,
         version: app.package_info().version.to_string(),
+        open_preferences: started_for_preferences(),
     })
 }
 

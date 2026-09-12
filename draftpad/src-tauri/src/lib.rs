@@ -1,5 +1,7 @@
 mod commands;
 mod fonts;
+#[cfg(target_os = "windows")]
+mod jumplist;
 #[cfg(target_os = "macos")]
 mod menu;
 mod state;
@@ -12,7 +14,23 @@ const MIN_WIDTH: f64 = 320.0;
 const MIN_HEIGHT: f64 = 200.0;
 
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    // A jump list task can only start the executable again, so the second
+    // process forwards its arguments to this one and exits.
+    #[cfg(target_os = "windows")]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+        if let Some(window) = app.get_webview_window("main") {
+            let _ = window.unminimize();
+            let _ = window.set_focus();
+        }
+        if argv.iter().any(|arg| arg == jumplist::PREFERENCES_ARG) {
+            // Same path the macOS menu takes; `src/commands.ts` maps the id.
+            if let Err(err) = tauri::Emitter::emit(app, "menu", "preferences") {
+                eprintln!("draftpad: failed to forward the jump list task: {err}");
+            }
+        }
+    }));
+    builder
         .invoke_handler(tauri::generate_handler![
             commands::load_state,
             commands::save_state,
@@ -30,6 +48,8 @@ pub fn run() {
             window.show()?;
             #[cfg(target_os = "macos")]
             menu::install(app.handle())?;
+            #[cfg(target_os = "windows")]
+            jumplist::install();
             Ok(())
         })
         .run(tauri::generate_context!())

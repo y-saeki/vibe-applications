@@ -1,10 +1,12 @@
-// Status bar: character/line counts, language selector, always-on-top toggle.
+// Status bar: character/line counts, language selector, always-on-top toggle
+// and the gear button that opens Preferences.
 
 import { LANGUAGES } from './languages'
 
 export interface StatusBarHandlers {
   onLanguageChange: (id: string) => void
   onAlwaysOnTopChange: (enabled: boolean) => void
+  onOpenPreferences: () => void
 }
 
 export class StatusBar {
@@ -28,6 +30,7 @@ export class StatusBar {
     }
     this.language.addEventListener('change', () => handlers.onLanguageChange(this.language.value))
     this.alwaysOnTop.addEventListener('change', () => handlers.onAlwaysOnTopChange(this.alwaysOnTop.checked))
+    q<HTMLButtonElement>('#open-preferences').addEventListener('click', () => handlers.onOpenPreferences())
   }
 
   setCounts(chars: number, lines: number): void {
