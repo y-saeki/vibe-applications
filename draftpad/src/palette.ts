@@ -54,7 +54,7 @@ export class Palette {
 
   private render(): void {
     const query = this.input.value.trim().toLowerCase()
-    const all = this.commands()
+    const all = this.commands().filter((command) => !command.hiddenInPalette)
     this.matches = (query ? all.filter((c) => c.title.toLowerCase().includes(query) || c.id.includes(query)) : all).slice(
       0,
       MAX_ROWS,
