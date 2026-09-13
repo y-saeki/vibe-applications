@@ -80,10 +80,16 @@ test('turns Vim mode on, and the editor stops taking plain typing', async ({ lau
   await app.page.locator('#pref-mode').selectOption('vim')
   await app.expectSaved((state) => state.editorMode === 'vim')
   await app.page.keyboard.press('Escape')
+  await expect(app.editor).toBeFocused()
 
-  await app.typeInEditor('iinserted')
-  // Normal mode swallows the leading "i"; the rest is inserted.
-  await app.expectSaved((state) => state.text === 'inserted')
+  // Normal mode: a letter is a command, so nothing reaches the draft.
+  await app.page.keyboard.press('j')
+  await expect(app.chars).toHaveText('文字数: 0')
+
+  // "i" switches to insert mode, and it is text again.
+  await app.page.keyboard.press('i')
+  await app.typeInEditor('書けた')
+  await app.expectSaved((state) => state.text === '書けた')
 })
 
 test('starts in Vim mode when that is what was saved', async ({ launch }) => {

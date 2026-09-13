@@ -5,8 +5,7 @@ test('counts what is typed', async ({ launch }) => {
 
   await app.typeInEditor('hello')
   await expect(app.chars).toHaveText('文字数: 5')
-  await app.page.keyboard.press('Enter')
-  await app.page.keyboard.type('world')
+  await app.typeInEditor('\nworld')
   await expect(app.chars).toHaveText('文字数: 11')
   await expect(app.lines).toHaveText('行数: 2')
 })

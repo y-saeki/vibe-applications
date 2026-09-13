@@ -95,17 +95,26 @@ export class App {
   }
 
   /**
-   * Types into the editor, which draftpad has already focused: at startup, and
-   * again whenever the preferences panel closes.
+   * Puts `text` into the editor, one insertion per line rather than one event
+   * per character — which is also what happens when an IME commits a phrase.
    *
-   * Deliberately no click first. CodeMirror applies a click's selection through
-   * the DOM, and WebKit reports that change late enough that it can land after
-   * the first keystroke — which puts the rest of the text in front of it. The
-   * focus assertion is the precondition that makes the click unnecessary.
+   * Character-by-character typing races with CodeMirror in WebKit: it re-syncs
+   * the DOM after the first character of an empty line, the caret can come back
+   * at offset 0, and everything typed next lands in front of it, so
+   * "閉じる前に残す" arrives as "じる前に残す閉". A single insertion has nothing
+   * to interleave with.
+   *
+   * Newlines are pressed, so they still go through the keymap. There is no
+   * click: draftpad focuses the editor itself, at startup and whenever the
+   * preferences panel closes, and asserting that makes the precondition checked
+   * rather than assumed.
    */
   async typeInEditor(text: string): Promise<void> {
     await expect(this.editor).toBeFocused()
-    await this.page.keyboard.type(text)
+    for (const [index, line] of text.split('\n').entries()) {
+      if (index > 0) await this.page.keyboard.press('Enter')
+      if (line) await this.page.keyboard.insertText(line)
+    }
   }
 }
 
