@@ -55,6 +55,17 @@ Keeping the README to its audience means, concretely:
 - Prefer repeating a short phrase over an in-page anchor link to another section: anchors
   built from Japanese headings break silently when the heading is reworded.
 
+## Tests move with the feature
+
+An application's tests are part of the change that touches its behaviour, not a follow-up.
+Behaviour that arrives comes with the cases that cover it; behaviour that is removed takes its
+cases with it, in the same commit. A suite that still describes the previous version is worse
+than no suite, because the next person trusts it.
+
+This is not a demand for coverage of everything. Each application's `DEVELOPMENT.md` says what
+its tests are for and what they cannot reach. That is the scope — and what it lists as out of
+reach stays out of reach rather than being faked with a case that asserts nothing.
+
 ## Write issues and pull requests in Japanese
 
 GitHub issues and pull requests — titles and bodies alike — are written in Japanese.

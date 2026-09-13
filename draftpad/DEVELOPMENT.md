@@ -39,9 +39,16 @@ pnpm tauri build
 ## 検証コマンド
 
 ```sh
-pnpm typecheck                     # TypeScript の型検査
+pnpm typecheck                     # TypeScript の型検査(src/ と tests/)
 pnpm build                         # フロントエンドのバンドル(dist/)
-cd src-tauri && cargo fmt --check && cargo clippy --all-targets -- -D warnings
+pnpm test:e2e                      # フロントエンドの E2E テスト
+cd src-tauri && cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test
+```
+
+`pnpm test:e2e` は初回だけブラウザの取得が必要です。
+
+```sh
+pnpm exec playwright install chromium webkit
 ```
 
 ## Pull Request のビルド
@@ -52,6 +59,55 @@ cd src-tauri && cargo fmt --check && cargo clippy --all-targets -- -D warnings
 
 リンク先のダウンロードには GitHub へのログインが必要です。成果物には保持期限があり、過ぎるとリンクは無効になります
 (期限はコメントに書かれます)。
+
+## テスト
+
+手元と CI で走るものは 2 つです。
+
+| 対象 | 実行 | 場所 |
+|---|---|---|
+| フロントエンド(`src/`)の E2E | `pnpm test:e2e` | `tests/e2e/` |
+| `state.json` の読み書き | `cargo test` | `src-tauri/src/state.rs` の `mod tests` |
+
+### フロントエンドの E2E テスト
+
+[Playwright](https://playwright.dev/) が `src/` を**そのまま**ブラウザで動かします。Rust 側だけを
+`tests/e2e/harness/backend.ts` が差し替える形で、`@tauri-apps/api/mocks` の `mockIPC` が
+`window.__TAURI_INTERNALS__.invoke` を乗っ取ります。`load_state` が返す状態・`platform`・
+`list_fonts` の一覧・保存の失敗はテストごとに指定でき、アプリが投げた `invoke` は順番どおりに
+記録されるので、「終了前に保存したか」のような順序まで確認できます。
+
+ブラウザは 2 つ動かします。配布している 2 つの webview に対応させたものです。
+
+| Playwright の project | 実機での相手 |
+|---|---|
+| `chromium` | Windows の WebView2 |
+| `webkit` | macOS の WKWebView |
+
+`platform` は差し替えられるので、macOS 側の経路(メニューバーから届く `menu` イベント)と
+Windows 側の経路(アプリ内のキー処理)を、どちらも Linux のランナー 1 台で確認できます。
+`tests/e2e/menu.spec.ts` と `tests/e2e/shortcuts.spec.ts` がその 2 つです。
+
+届かない範囲もあります。webview の中に無いものは一切見えません。
+
+- macOS のメニューバーそのもの、Windows のタスクバーメニュー(ジャンプリスト)
+- IME の未確定文字列と変換候補の位置
+- 常に手前に表示・フルスクリーン・ウィンドウサイズが実際にどうなるか
+  (`invoke` が正しく呼ばれたところまでは確認します)
+- コード署名していない配布物を各 OS が警告する挙動
+
+これらは実機で確認するしかありません。裏を返せば、実機で見るべきものはこの一覧に絞られます。
+
+### CI
+
+`draftpad/` を変更する Pull Request では、上の 2 つが両方走ります。E2E テストは
+`ubuntu-latest` で 1 回、`cargo test` は macOS / Windows のビルドと同じジョブの中です。
+E2E テストが落ちると、その run に `playwright-report` が添付されます。
+
+CI では失敗したテストを 1 回だけ再実行します。1 回目の trace が残るためですが、再実行で
+通ったもの(flaky)は成功扱いにしません。`pnpm test:e2e` が `--fail-on-flaky-tests` を
+渡しているので、ジョブは赤になります。緑のチェックの裏に不安定なテストが隠れない、という
+のがここの意図です。
 
 ## バージョニングとリリース
 
@@ -118,6 +174,16 @@ Tauri 公式・CodeMirror 公式・Microsoft 公式以外の依存は次の 2 �
 - `@replit/codemirror-vim`(Vim モード)。外す場合は `src/vim.ts` と `Editor` の `vim` Compartment を削除
 - `font-kit`(フォント一覧の取得)。外す場合は `src-tauri/src/fonts.rs` と `list_fonts` コマンドを削除
 
+上の方針は配布物に入る依存の話です。テストのためだけの開発依存が 2 つあり、どちらも配布物には
+入りません。
+
+- `@playwright/test`(Microsoft 公式)。フロントエンドの E2E テスト
+- `@types/node`(DefinitelyTyped)。`tests/` と `playwright.config.ts` の型付けだけに使います。
+  `src/` には `tsconfig.test.json` で分けてあるので Node の型は入りません
+
+`tests/e2e/harness/backend.ts` のバンドルは、バンドルに使っている `esbuild` をそのまま使います。
+Rust 側のテストは追加の crate を使いません(一時ディレクトリは `mod tests` の中で自作しています)。
+
 Windows 向けのビルドだけが使う依存が 3 つあります。
 
 - `windows`(Microsoft 公式の Win32 バインディング)。ジャンプリストを作る Shell COM API に使います
@@ -141,6 +207,13 @@ Windows 向けのビルドだけが使う依存が 3 つあります。
 ```
 draftpad/
   build.mjs             esbuild によるバンドル(dist/)。--serve で開発サーバー
+  playwright.config.ts  E2E テストの設定(chromium / webkit の 2 project)
+  tsconfig.test.json    tests/ 用。Node の型を足すためだけに分けてある
+  tests/e2e/
+    fixtures.ts         アプリを起動する launch フィクスチャと共通のロケータ
+    global-setup.ts     harness/backend.ts を harness/dist/ へバンドル
+    harness/backend.ts  偽の Rust 側(mockIPC)。invoke を記録し、状態を返す
+    *.spec.ts           起動 / 編集 / 環境設定 / ショートカット / メニュー
   src/
     main.ts             起動処理と各部品の配線
     editor.ts           CodeMirror の構成(Compartment で動的切替)
