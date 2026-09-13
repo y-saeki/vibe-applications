@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "node build.mjs --serve",
     "build": "node build.mjs",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
+    "test:e2e": "playwright test",
     "tauri": "tauri"
   },
   "dependencies": {
@@ -23,7 +24,9 @@
     "@tauri-apps/api": "^2.5.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.56.0",
     "@tauri-apps/cli": "^2.5.0",
+    "@types/node": "^26.4.1",
     "esbuild": "^0.27.0",
     "typescript": "^7.0.0"
   }
