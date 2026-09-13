@@ -104,6 +104,11 @@ Windows 側の経路(アプリ内のキー処理)を、どちらも Linux のラ
 `ubuntu-latest` で 1 回、`cargo test` は macOS / Windows のビルドと同じジョブの中です。
 E2E テストが落ちると、その run に `playwright-report` が添付されます。
 
+CI では失敗したテストを 1 回だけ再実行します。1 回目の trace が残るためですが、再実行で
+通ったもの(flaky)は成功扱いにしません。`pnpm test:e2e` が `--fail-on-flaky-tests` を
+渡しているので、ジョブは赤になります。緑のチェックの裏に不安定なテストが隠れない、という
+のがここの意図です。
+
 ## バージョニングとリリース
 
 [セマンティック バージョニング](https://semver.org/lang/ja/)に従います。0.x の間は、ユーザーに見える機能の追加や

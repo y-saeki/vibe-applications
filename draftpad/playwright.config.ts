@@ -15,6 +15,9 @@ export default defineConfig({
   globalSetup: './tests/e2e/global-setup.ts',
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
+  // A retry on CI keeps the trace of the first attempt, but a test that only
+  // passes on the retry is a failure: `pnpm test:e2e` passes
+  // --fail-on-flaky-tests so a flake cannot hide behind a green check.
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? [['github'], ['html', { open: 'never' }]] : [['list']],
   use: {

@@ -94,13 +94,18 @@ export class App {
     )
   }
 
+  /**
+   * Types into the editor, which draftpad has already focused: at startup, and
+   * again whenever the preferences panel closes.
+   *
+   * Deliberately no click first. CodeMirror applies a click's selection through
+   * the DOM, and WebKit reports that change late enough that it can land after
+   * the first keystroke — which puts the rest of the text in front of it. The
+   * focus assertion is the precondition that makes the click unnecessary.
+   */
   async typeInEditor(text: string): Promise<void> {
-    await this.editor.click()
+    await expect(this.editor).toBeFocused()
     await this.page.keyboard.type(text)
-  }
-
-  text(): Promise<string> {
-    return this.page.evaluate(() => document.querySelector('.cm-content')!.textContent ?? '')
   }
 }
 
