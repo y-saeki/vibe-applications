@@ -88,6 +88,11 @@ pnpm exec playwright install chromium webkit
 Windows 側の経路(アプリ内のキー処理)を、どちらも Linux のランナー 1 台で確認できます。
 `tests/e2e/menu.spec.ts` と `tests/e2e/shortcuts.spec.ts` がその 2 つです。
 
+開発サーバは Content-Security-Policy を送りません。配布物はこれを持つため(`src-tauri/tauri.conf.json` の
+`csp`)、ポリシーが禁じている読み込みはテストでは通り、インストールしたアプリでだけ失敗します。
+`tests/e2e/csp.spec.ts` だけが同じポリシーの下でページを開くので、`data:` URI のような自分のファイル以外の
+読み込みを足したときはここに追います。
+
 届かない範囲もあります。webview の中に無いものは一切見えません。
 
 - macOS のメニューバーそのもの、Windows のタスクバーメニュー(ジャンプリスト)

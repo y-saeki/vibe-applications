@@ -1,6 +1,8 @@
 // Launches draftpad's real frontend in a browser with the Rust side faked, and
 // gives the specs the handful of locators and queries they all need.
 
+import { readFileSync } from 'node:fs'
+
 import { test as base, expect, type Locator, type Page } from '@playwright/test'
 
 import type { BackendConfig, Call, State } from './harness/backend'
@@ -12,6 +14,23 @@ export type { State }
 export type LaunchOptions = Partial<BackendConfig> & {
   /** What the OS reports for `prefers-color-scheme`. */
   colorScheme?: 'light' | 'dark'
+  /**
+   * Serves the page under the Content-Security-Policy the built app runs with.
+   * The dev server sends none, so an asset the policy forbids loads here and
+   * nowhere else.
+   */
+  csp?: boolean
+}
+
+/** The policy in src-tauri/tauri.conf.json, as a header value. */
+function productionCsp(): string {
+  const path = new URL('../../src-tauri/tauri.conf.json', import.meta.url)
+  const conf = JSON.parse(readFileSync(path, 'utf8')) as {
+    app: { security: { csp: Record<string, string> } }
+  }
+  return Object.entries(conf.app.security.csp)
+    .map(([directive, value]) => `${directive} ${value}`)
+    .join('; ')
 }
 
 const DEFAULT_CONFIG: BackendConfig = {
@@ -39,6 +58,8 @@ export class App {
   constructor(
     readonly page: Page,
     readonly platform: string,
+    /** Every Content-Security-Policy complaint the page has logged. */
+    readonly cspViolations: string[],
   ) {
     this.editor = page.locator('.cm-content')
     this.chars = page.locator('#status-chars')
@@ -121,15 +142,29 @@ export class App {
 export const test = base.extend<{ launch: (options?: LaunchOptions) => Promise<App> }>({
   launch: async ({ page }, use) => {
     await use(async (options: LaunchOptions = {}) => {
-      const { colorScheme, ...overrides } = options
+      const { colorScheme, csp, ...overrides } = options
       const config: BackendConfig = { ...DEFAULT_CONFIG, ...overrides }
       if (colorScheme) await page.emulateMedia({ colorScheme })
+      if (csp) {
+        const policy = productionCsp()
+        await page.route((url) => url.pathname === '/', async (route) => {
+          const response = await route.fetch()
+          await route.fulfill({
+            response,
+            headers: { ...response.headers(), 'content-security-policy': policy },
+          })
+        })
+      }
+      const cspViolations: string[] = []
+      page.on('console', (message) => {
+        if (/content security policy/i.test(message.text())) cspViolations.push(message.text())
+      })
       await page.addInitScript((value: BackendConfig) => {
         window.__draftpad = { config: value, calls: [], saved: null }
       }, config)
       await page.addInitScript({ path: HARNESS_BUNDLE })
       await page.goto('/')
-      const app = new App(page, config.platform)
+      const app = new App(page, config.platform, cspViolations)
       // main() shows the window as its very last step, so this is the signal
       // that the whole frontend is wired up.
       await expect.poll(() => app.commands(), { timeout: 15000 }).toContain('plugin:window|show')
