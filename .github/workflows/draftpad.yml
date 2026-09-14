@@ -43,6 +43,9 @@ jobs:
           cache: pnpm
           cache-dependency-path: draftpad/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
+      # TypeScript sees the same sources on every platform, so the Windows and
+      # macOS runners do not need to repeat this.
+      - run: pnpm typecheck
       - run: pnpm exec playwright install --with-deps chromium webkit
       - run: pnpm test:e2e
       - if: failure()
@@ -51,6 +54,62 @@ jobs:
           name: playwright-report
           path: draftpad/playwright-report
           retention-days: 7
+
+  # The Rust side is checked on both platforms because the crate compiles
+  # different modules on each (the jump list and the WebView2 settings on
+  # Windows, font enumeration on both). This runs beside `build` rather than
+  # ahead of it: the two compile the same dependencies in different profiles,
+  # so chaining them would only make the run as long as their sum.
+  rust:
+    name: rust checks (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: draftpad
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    env:
+      # Neither clippy nor the tests read a backtrace, and generating debug
+      # info is expensive on Windows, where it means writing PDBs.
+      CARGO_PROFILE_DEV_DEBUG: 0
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+        with:
+          version: 10
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: draftpad/pnpm-lock.yaml
+      - name: Rust toolchain
+        run: |
+          rustup update stable
+          rustup default stable
+          rustup component add rustfmt clippy
+      # After the toolchain, whose version is part of the cache key.
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: draftpad/src-tauri
+          # A pull request reads main's cache but does not write one of its
+          # own: the cache is shared across a repository under a 10 GB limit,
+          # and four of these jobs writing a Windows `target/` per push would
+          # evict each other long before they paid off.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: pnpm install --frozen-lockfile
+      # `tauri::generate_context!` verifies that frontendDist (dist/) exists.
+      - run: pnpm build
+      - name: Rust lint
+        working-directory: draftpad/src-tauri
+        run: |
+          cargo fmt --check
+          cargo clippy --all-targets -- -D warnings
+      - name: Rust tests
+        working-directory: draftpad/src-tauri
+        run: cargo test
 
   build:
     name: build (${{ matrix.os }})
@@ -84,19 +143,12 @@ jobs:
         run: |
           rustup update stable
           rustup default stable
-          rustup component add rustfmt clippy
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: draftpad/src-tauri
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: pnpm install --frozen-lockfile
-      - run: pnpm typecheck
-      # `tauri::generate_context!` verifies that frontendDist (dist/) exists.
       - run: pnpm build
-      - name: Rust lint
-        working-directory: draftpad/src-tauri
-        run: |
-          cargo fmt --check
-          cargo clippy --all-targets -- -D warnings
-      - name: Rust tests
-        working-directory: draftpad/src-tauri
-        run: cargo test
       - run: pnpm tauri build
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -152,7 +204,7 @@ jobs:
   # names a release that does not exist yet. Merging without a version bump is
   # therefore a no-op.
   release:
-    needs: [build, frontend]
+    needs: [build, frontend, rust]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
