@@ -18,6 +18,18 @@ That file, and how it is written, is a developer-facing detail: it belongs in
 `README.md` is for people who install and use draftpad. `DEVELOPMENT.md` is for people who
 build or change it. The root `CLAUDE.md` describes what goes where.
 
+## Chrome is built from the tokens, not from numbers
+
+Every size, spacing and color in `src/style.css` comes from a custom property in its
+`:root` blocks, and `pnpm lint:style` fails the build when a rule writes a number or a
+color of its own. Adding a control therefore means reaching for a token — and when none
+fits, adding one to `:root` and raising that family's budget in `lint-style.mjs` in the
+same commit, rather than reaching for a literal.
+
+Before adding a token, try the existing ones: a value one or two pixels away from a token
+that already exists almost always wants to be that token. `DEVELOPMENT.md` has the
+families, the value rules and the three judgements the check cannot make.
+
 ## Keeping the tests in step
 
 `DEVELOPMENT.md` describes the two suites. When draftpad's behaviour changes, the file that

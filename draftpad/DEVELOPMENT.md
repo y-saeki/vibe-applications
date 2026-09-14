@@ -40,6 +40,7 @@ pnpm tauri build
 
 ```sh
 pnpm typecheck                     # TypeScript の型検査(src/ と tests/)
+pnpm lint:style                    # style.css がトークンだけで組まれているかの検査
 pnpm build                         # フロントエンドのバンドル(dist/)
 pnpm test:e2e                      # フロントエンドの E2E テスト
 cd src-tauri && cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test
@@ -111,7 +112,7 @@ Windows 側の経路(アプリ内のキー処理)を、どちらも Linux のラ
 `cargo test` は macOS / Windows それぞれの rust checks ジョブの中です。E2E テストが落ちると、その run に
 `playwright-report` が添付されます。
 
-検証は 3 系統のジョブが同時に走ります。`frontend`(E2E と型検査)、`rust checks (macos-latest / windows-latest)`
+検証は 3 系統のジョブが同時に走ります。`frontend`(E2E・型検査・`lint:style`)、`rust checks (macos-latest / windows-latest)`
 (`cargo fmt` / `clippy` / `cargo test`)、`build (macos-latest / windows-latest)`(`pnpm tauri build` と成果物の
 アップロード)です。成果物リンクのコメントは `build` の後に付きます。rust checks と build は同じ依存クレートを
 それぞれ別のプロファイル(dev と release)でコンパイルするため、順に走らせると所要時間が単純に足し算になります。
@@ -224,30 +225,62 @@ Tauri の NSIS スクリプトはビルド時のテンプレートなので、`t
 上流の変更を取り込んでください。テンプレートが壊れていれば Windows の `build` ジョブが
 `pnpm tauri build` で失敗します。
 
-## UI の寸法
+## UI の寸法と色
 
-ステータスバー・検索パネル・環境設定パネルの寸法は、`src/style.css` の `:root` にあるカスタムプロパティから
-決めています。UI ライブラリもデザインガイドラインの文書も置いていません。この一覧がその代わりで、部品を足す
-ときは数値を直接書かずにここから引きます。値を変えれば、使っているすべての部品が一緒に動きます。
+ステータスバー・検索パネル・環境設定パネルは、`src/style.css` の `:root` にあるカスタムプロパティだけで
+組み立てます。UI ライブラリは入れていません。デザインガイドラインという別の文書も置いていません。
+トークンの一覧そのものが仕様で、`pnpm lint:style` がそれを守らせます。値はここに書きません。CSS が唯一の
+出どころで、文書に写すと片方が古くなるだけです。
 
-| プロパティ | 値 | 使うところ |
+| ファミリ | トークン | 役割 |
 |---|---|---|
-| `--font-size-body` | 13px | パネルとその中のコントロール |
-| `--font-size-caption` | 12px | ステータスバー、Vim のステータス行、バージョン表示 |
-| `--control-height` | 28px | テキスト入力・セレクト・ボタン |
-| `--control-radius` | 6px | 同上の角丸 |
-| `--checkbox-size` | 16px | チェックボックス |
-| `--icon-size` / `--icon-button-size` | 16px / 24px | アイコンと、アイコンだけのボタン(歯車、×) |
-| `--space-1` 〜 `--space-5` | 4px 刻み(4 / 8 / 12 / 16 / 20) | 余白。`--space-2` はコントロール同士の間隔、`--space-3` はバーとパネルの左右の内側余白(エディタの行の左右余白と同じ)、`--space-4` は項目のグループ同士の間隔、`--space-5` は環境設定パネルの内側余白 |
-| `--statusbar-height` | 32px | ステータスバー |
+| 文字サイズ | `--font-size-title` / `-body` / `-caption` | 環境設定の見出し / パネル本文 / ステータスバーとバージョン表示 |
+| 余白 | `--space-1` 〜 `--space-5` | 4px 刻みの 5 段。コントロール同士、バーとパネルの内側、グループ同士 |
+| 角丸 | `--radius-sm` / `-md` / `-lg` | 部品の大きさに対応した 3 段(チェックボックスとアイコンボタン / 高さ `--control-height` のコントロール / パネル) |
+| 寸法 | `--control-height`、`--checkbox-size`、`--icon-size`、`--icon-button-size`、`--statusbar-height`、`--titlebar-height` | コントロールとバーの大きさ |
+| レイアウト | `--field-width`、`--field-width-narrow`、`--label-width`、`--panel-width`、`--panel-inset` | 入力欄・ラベル列・環境設定パネルの配置 |
+| パレット | `--bg`、`--fg`、`--muted`、`--border` など | 色、影、チェックマークの画像 |
 
-基準にしたのは Windows 11 のメモ帳のステータスバー(高さ約 32px、12px の文字、項目の間に罫線)です。
-macOS では `-apple-system`、Windows では Segoe UI が当たるだけで、寸法は共通です。OS ごとに変えたく
-なったら `:root[data-platform="macos"]` でプロパティを上書きしてください(タイトルバーの高さがすでに
-そうなっています)。
+基準にしたのは Windows 11 のメモ帳のステータスバーです。macOS では `-apple-system`、Windows では Segoe UI が
+当たるだけで、寸法は共通です。OS ごとに変えたくなったら `:root[data-platform="macos"]` でトークンを上書き
+してください(`--titlebar-height` がすでにそうなっています)。
 
-エディタ本文のフォントサイズは設定項目なので、この一覧には含めません。CodeMirror が自分で描く部分
-(ツールチップ、入力候補)の色は `src/dark-theme.ts` にあります。
+エディタ本文のフォントサイズは設定項目なので、このトークンには含めません。CodeMirror が自分で描く部分の色は
+`src/dark-theme.ts` にあり、構文ハイライトの色だけは直値です(パレットとは別の体系なので意図的にそうしています)。
+
+### `pnpm lint:style` が見ているもの
+
+`lint-style.mjs` が `src/style.css` を読んで、次に当たると落ちます。依存はありません。
+
+- `:root` の外に 3px 以上の長さが書かれている(罫線とフォーカスリングの 1〜2px だけは許します)
+- `:root` の外に色が直接書かれている
+- `:root` の外でトークンを宣言している(在庫が 2 つに割れるため)
+- 宣言したのに使われていないトークンがある
+- `var()` で参照しているのに宣言がないトークンがある。CSS は未定義のカスタムプロパティを黙って無視するので、
+  綴り間違いは画面を見ても気付けません
+- ファミリの値の規則から外れている。余白は 4 の倍数、文字サイズは 11〜18px の整数、角丸は 8px 以下の偶数、
+  それ以外の長さは 4 の倍数
+- ファミリの個数が予算を超えている
+
+検査が壊れて黙って通るようになるのを防ぐため、実行のたびに、まず `lint-style.mjs` 末尾のフィクスチャに対して
+ルールを走らせます。上の各項目に 1 つずつ、報告されるはずの最小の CSS が並んでいて、どれかが報告されなく
+なったら「この検査は主張どおりのことを見ていない」と言って落ちます。フィクスチャはスクリプトの中にあるので、
+ルールを変えたときに追随させ忘れる別ファイルにはなりません。
+
+### トークンを足すとき
+
+個数の予算は `lint-style.mjs` の先頭にあります。上限は現在の個数そのままなので、1 つ足すには予算も上げる
+必要があります。上げるのは構いません。ただ 1 行の差分として残るので、レビューで「本当に必要か」を必ず一度
+通ることになります。気まぐれで 5px の文字サイズを足すのは、値の規則の側で止まります。
+
+機械で決められないことが 3 つ残ります。
+
+- **既存で足りないか。** 1〜2px の違いで新しい値が欲しくなったときは、たいてい既存に寄せたほうが揃います。
+  足す前にこれを試してください
+- **どのファミリか。** 段階のあるもの(文字サイズ・余白・角丸)は序数か大小で名付け、役割が 1 つに決まるもの
+  (`--label-width` など)は用途で名付けます
+- **1 箇所しか使わない値をトークンにするか。** します。在庫を 1 箇所にまとめるのが目的なので、使用箇所が
+  1 つでも `:root` に置きます。ただし予算を食うので、既存で足りるならそちらが先です
 
 ## 環境設定パネル
 
@@ -327,6 +360,7 @@ Windows 向けのビルドだけが使う依存が 3 つあります。
 ```
 draftpad/
   build.mjs             esbuild によるバンドル(dist/)。--serve で開発サーバー
+  lint-style.mjs        style.css がトークンだけで組まれているかの検査(pnpm lint:style)
   playwright.config.ts  E2E テストの設定(chromium / webkit の 2 project)
   tsconfig.test.json    tests/ 用。Node の型を足すためだけに分けてある
   tests/e2e/
@@ -344,7 +378,7 @@ draftpad/
     preferences.ts      環境設定パネル
     statusbar.ts        ステータスバー
     theme.ts            ライト / ダークの解決
-    style.css           ステータスバーとパネルのスタイル。寸法のトークンもここ
+    style.css           ステータスバーとパネルのスタイル。寸法と色のトークンもここ
   src-tauri/
     src/lib.rs          Tauri Builder。起動時のウィンドウサイズ復元
     src/state.rs        state.json の読み書き(原子的書き込み)
