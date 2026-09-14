@@ -6,9 +6,9 @@ import { defaultKeymap, history, historyKeymap, indentWithTab, redo as redoComma
 import { bracketMatching, defaultHighlightStyle, indentOnInput, indentUnit, syntaxHighlighting } from '@codemirror/language'
 import { highlightSelectionMatches, openSearchPanel, search, searchKeymap } from '@codemirror/search'
 import { Compartment, EditorState, type Extension } from '@codemirror/state'
-import { oneDark } from '@codemirror/theme-one-dark'
 import { drawSelection, dropCursor, EditorView, keymap, type KeyBinding } from '@codemirror/view'
 
+import { darkTheme } from './dark-theme'
 import { languageExtension } from './languages'
 import type { State } from './state'
 import { vimExtension } from './vim'
@@ -64,7 +64,7 @@ function completionExtension(enabled: boolean): Extension {
 }
 
 function colorExtension(dark: boolean): Extension {
-  return dark ? oneDark : syntaxHighlighting(defaultHighlightStyle)
+  return dark ? darkTheme : syntaxHighlighting(defaultHighlightStyle)
 }
 
 export class Editor {
