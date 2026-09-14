@@ -275,19 +275,18 @@ select {
    viewport-relative bound is layout rather than part of the scale, so there is
    no token for it.
 
-   The rows are spaced rather than stacked flush. Opening the picker leaves the
-   focus on the current row, so hovering the row beside it puts the same
-   highlight on two rows at once; touching, they read as one tall block instead
-   of two items. */
+   The rows are spaced by their own margins rather than by a gap, and the
+   padding here is horizontal only so the ends match: the browser hides a
+   closed picker with `display: none`, which any `display` written here would
+   beat, and the list would sit open on the page from the moment it loads.
+   (`dialog:not([open])` is hidden the same way; the preferences panel spells
+   its own display out for the opposite reason.) */
 select::picker(select) {
   appearance: base-select;
   box-sizing: border-box;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
   max-height: 50vh;
   overflow-y: auto;
-  padding: var(--space-1);
+  padding: 0 var(--space-1);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: var(--control-bg);
@@ -312,10 +311,15 @@ select:open::picker-icon {
   transform: rotate(180deg);
 }
 
-/* Rows the height of a control, with the highlight inset far enough from the
-   border that the rounded corners read as corners. */
+/* Rows the height of a control, inset far enough from the picker's border that
+   the rounded corners read as corners, and set apart from each other: opening
+   the picker leaves the focus on the current row, so hovering the row beside it
+   puts the same highlight on both, and touching they read as one tall block
+   rather than as two items. Adjacent margins collapse, so the space between two
+   rows is one --space-1 rather than two. */
 select option {
   min-height: var(--control-height);
+  margin-block: var(--space-1);
   padding: 0 var(--space-2);
   border-radius: var(--radius-sm);
   background: transparent;

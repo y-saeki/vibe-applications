@@ -64,6 +64,23 @@ test('switches the grammar from the status bar and remembers it', async ({ launc
   await app.expectSaved((state) => state.language === 'rust')
 })
 
+test('keeps the list shut until it is asked for', async ({ launch }) => {
+  const app = await launch()
+  const firstOption = app.languageSelect.locator('option').first()
+
+  // The browser hides a closed picker with `display: none`, and a `display`
+  // written for it in style.css beats that: the list then sits open over the
+  // window from the moment the app loads, on every select at once. Nothing
+  // else here would notice, because every other case opens the list first.
+  await expect(firstOption).toBeHidden()
+
+  await app.languageSelect.click()
+  const styleable = await app.page.evaluate(() => CSS.supports('appearance', 'base-select'))
+  // Where the engine does not take the base appearance the list is a window of
+  // the platform's own, which never enters the page.
+  if (styleable) await expect(firstOption).toBeVisible()
+})
+
 test('picks a language from the dropped-open list', async ({ launch }) => {
   const app = await launch()
   const styleable = await app.page.evaluate(() => CSS.supports('appearance', 'base-select'))
