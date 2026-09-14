@@ -48,6 +48,9 @@ jobs:
       # TypeScript sees the same sources on every platform, so the Windows and
       # macOS runners do not need to repeat this.
       - run: pnpm typecheck
+      # Whether the chrome is still built out of its tokens. Static and
+      # instant, so it sits here rather than in the browser suite.
+      - run: pnpm lint:style
       - run: pnpm exec playwright install --with-deps chromium webkit
       - run: pnpm test:e2e
       - if: failure()

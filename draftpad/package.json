@@ -1,12 +1,13 @@
 {
   "name": "draftpad",
   "private": true,
-  "version": "0.5.1",
+  "version": "0.6.0",
   "type": "module",
   "scripts": {
     "dev": "node build.mjs --serve",
     "build": "node build.mjs",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
+    "lint:style": "node lint-style.mjs",
     "test:e2e": "playwright test --fail-on-flaky-tests",
     "tauri": "tauri"
   },

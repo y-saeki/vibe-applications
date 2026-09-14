@@ -107,6 +107,18 @@ export class App {
       .toBe(true)
   }
 
+  /**
+   * True when a select's dropped-open list is one the page styles rather than
+   * the platform's own window. That needs both an engine that can do it and
+   * the platform draftpad asks for it on, so it reads the result rather than
+   * either half: `CSS.supports` alone would say yes on a Mac.
+   */
+  listIsOurs(): Promise<boolean> {
+    return this.page.evaluate(
+      () => getComputedStyle(document.querySelector('#language-select')!).appearance === 'base-select',
+    )
+  }
+
   /** Delivers a "menu" event, the way src-tauri/src/menu.rs does on macOS. */
   async runMenuCommand(id: string): Promise<void> {
     await this.page.evaluate(
