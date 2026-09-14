@@ -18,19 +18,28 @@
   color-scheme: light;
 }
 
+/* The editor-only properties are read by src/dark-theme.ts, which dresses the
+   parts CodeMirror paints itself. */
 :root[data-theme="dark"] {
-  --bg: #282c34;
-  --fg: #abb2bf;
-  --muted: #7f848e;
-  --border: #3e4451;
-  --panel: #21252b;
-  --accent: #61afef;
-  --accent-fg: #1e2227;
-  --overlay: rgba(0, 0, 0, 0.55);
-  --control-bg: #31363f;
-  --control-hover: #3a4150;
-  --control-active: #454d5d;
-  --focus-ring: rgba(97, 175, 239, 0.3);
+  --bg: #151515;
+  --fg: #d8d8d8;
+  --muted: #8b8b8b;
+  --border: #2c2c2c;
+  --panel: #111111;
+  --accent: #6cb6ff;
+  --accent-fg: #0b0b0b;
+  --overlay: rgba(0, 0, 0, 0.6);
+  --control-bg: #1c1c1c;
+  --control-hover: #262626;
+  --control-active: #333333;
+  --focus-ring: rgba(108, 182, 255, 0.32);
+  --editor-caret: #6cb6ff;
+  --editor-selection: #2c4a6e;
+  --editor-selection-match: rgba(255, 255, 255, 0.1);
+  --editor-search-match: rgba(108, 182, 255, 0.24);
+  --editor-search-match-outline: rgba(108, 182, 255, 0.55);
+  --editor-search-match-selected: rgba(255, 175, 90, 0.35);
+  --editor-bracket: rgba(255, 255, 255, 0.14);
   color-scheme: dark;
 }
 

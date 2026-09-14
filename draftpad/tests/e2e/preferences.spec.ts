@@ -36,6 +36,11 @@ test('switches to the dark look and remembers it', async ({ launch }) => {
   await app.page.locator('#pref-theme').selectOption('dark')
   await expect(app.page.locator('html')).toHaveAttribute('data-theme', 'dark')
   await app.expectSaved((state) => state.theme === 'dark')
+
+  // The editor is painted by CodeMirror (src/dark-theme.ts) and the status bar
+  // by style.css; the palette has to reach both, not just the chrome.
+  await expect(app.page.locator('.cm-editor')).toHaveCSS('background-color', 'rgb(21, 21, 21)')
+  await expect(app.page.locator('#statusbar')).toHaveCSS('background-color', 'rgb(17, 17, 17)')
 })
 
 test('applies the font size and pulls out-of-range values back in', async ({ launch }) => {
