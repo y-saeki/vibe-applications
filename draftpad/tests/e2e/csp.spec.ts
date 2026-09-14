@@ -21,20 +21,29 @@ test('paints the checked boxes without tripping the policy', async ({ launch }) 
   expect(app.cspViolations).toEqual([])
 })
 
-test('paints the select chevron without tripping the policy', async ({ launch }) => {
+test('paints the masked marks without tripping the policy', async ({ launch }) => {
   const app = await launch({ csp: true })
-
-  // The arrow on a select is a masked data: URI, which the policy covers under
-  // img-src. A policy that blocked it would leave the select with no arrow at
-  // all rather than failing outright.
-  const styleable = await app.page.evaluate(() => CSS.supports('appearance', 'base-select'))
-  if (styleable) {
-    const mask = await app.page.evaluate(
-      () => getComputedStyle(document.querySelector('#language-select')!, '::picker-icon').maskImage,
+  const maskOf = (selector: string, pseudo: string) =>
+    app.page.evaluate(
+      (target) => getComputedStyle(document.querySelector(target.selector)!, target.pseudo).maskImage,
+      { selector, pseudo },
     )
-    expect(mask).toMatch(/url\("data:image\/svg\+xml/)
+
+  // The × that closes a panel and the arrow on a select are data: URIs painted
+  // through a mask, which the policy covers under img-src. A policy that
+  // blocked one would leave the button or the select simply blank rather than
+  // failing outright.
+  await app.gear.click()
+  await expect(app.preferences).toBeVisible()
+  expect(await maskOf('#preferences-close', '::before')).toMatch(/url\("data:image\/svg\+xml/)
+
+  await app.page.keyboard.press('Escape')
+  // The arrow only exists where the engine takes the base appearance; where it
+  // does not, the platform draws the select and there is nothing to load.
+  if (await app.page.evaluate(() => CSS.supports('appearance', 'base-select'))) {
+    expect(await maskOf('#language-select', '::picker-icon')).toMatch(/url\("data:image\/svg\+xml/)
+    await app.languageSelect.click()
   }
-  await app.languageSelect.click()
   expect(app.cspViolations).toEqual([])
 })
 

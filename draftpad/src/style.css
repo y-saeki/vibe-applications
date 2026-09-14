@@ -9,6 +9,9 @@
   --bg: #ffffff;
   --fg: #1f2328;
   --muted: #6e7781;
+  /* Weaker than --muted: a placeholder has to read as an empty field rather
+     than as something already typed. */
+  --placeholder: #848d97;
   --border: #d0d7de;
   --panel: #f6f8fa;
   --accent: #2b6cb0;
@@ -23,6 +26,8 @@
      asset serves both themes; the tick below cannot do that because a
      background color cannot reach a pseudo-element of an input. */
   --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%23000000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' d='M4.5 6.5 8 10 11.5 6.5'/%3E%3C/svg%3E");
+  /* Masked the same way, for the buttons that close a panel. */
+  --close-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%23000000' stroke-width='1.5' stroke-linecap='round' d='M4 4 12 12M12 4 4 12'/%3E%3C/svg%3E");
   /* The tick inside a checked box, in whichever color reads on --accent. */
   --check-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%23ffffff' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round' d='M3.5 8.5 6.5 11.5 12.5 4.5'/%3E%3C/svg%3E");
 
@@ -69,6 +74,7 @@
   --bg: #151515;
   --fg: #d8d8d8;
   --muted: #aaaaaa;
+  --placeholder: #6f6f6f;
   --border: #2c2c2c;
   --panel: #111111;
   --accent: #6cb6ff;
@@ -173,7 +179,7 @@ option {
 
 #editor .cm-panel .cm-textfield::placeholder,
 .form-row input[type="text"]::placeholder {
-  color: var(--muted);
+  color: var(--placeholder);
 }
 
 #editor .cm-panel .cm-textfield:focus,
@@ -203,15 +209,33 @@ option {
   background: none;
   color: var(--muted);
   font: inherit;
-  /* The × is a glyph where the gear is an SVG, so it is sized like one. */
-  font-size: var(--icon-size);
-  line-height: 1;
   cursor: pointer;
 }
 
 .icon-button svg {
   width: var(--icon-size);
   height: var(--icon-size);
+}
+
+/* The × is drawn rather than typed. A glyph sits where the font's metrics put
+   it, which is not the middle of the button and moves from one platform to the
+   next; a mask box the size of an icon is centred by the flex rule above.
+   CodeMirror writes the character into its own close buttons, so collapsing the
+   text is what lets this reach those too. */
+#preferences-close,
+#editor .cm-panel [name="close"],
+#editor .cm-panel .cm-dialog-close {
+  font-size: 0;
+}
+
+#preferences-close::before,
+#editor .cm-panel [name="close"]::before,
+#editor .cm-panel .cm-dialog-close::before {
+  content: "";
+  width: var(--icon-size);
+  height: var(--icon-size);
+  background: currentColor;
+  mask: var(--close-icon) center / contain no-repeat;
 }
 
 .icon-button:hover,
