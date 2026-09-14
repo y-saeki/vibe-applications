@@ -7,11 +7,13 @@ name: draftpad version
 # It is a workflow of its own because it listens for label changes, and adding
 # those to draftpad.yml would re-run the macOS and Windows builds every time a
 # label moves.
+#
+# There is deliberately no paths filter. A check that is skipped never reports,
+# and a required check that never reports blocks the pull request for good, so
+# the job runs everywhere and decides for itself whether it has anything to say.
 on:
   pull_request:
     types: [opened, synchronize, reopened, labeled, unlabeled]
-    paths:
-      - "draftpad/**"
 
 concurrency:
   group: draftpad-version-${{ github.ref }}
@@ -25,17 +27,35 @@ jobs:
     name: version bump
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
     env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
       BASE_REF: ${{ github.base_ref }}
       # A pull request that is not meant to ship carries this label instead of
       # a bump, so that skipping the release is a decision rather than an
       # oversight.
       NO_RELEASE: ${{ contains(github.event.pull_request.labels.*.name, 'no-release') }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Find out whether this pull request touches draftpad
+        id: scope
+        run: |
+          files="$(gh pr diff --name-only "${PR_NUMBER}")"
+          if printf '%s\n' "${files}" | grep -q '^draftpad/'; then
+            echo "touched=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "touched=false" >> "${GITHUB_OUTPUT}"
+            echo "::notice::no file under draftpad/ changed, so there is nothing to release."
+          fi
+      - if: steps.scope.outputs.touched == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       # tauri.conf.json is the one that decides the release, but a mismatch in
       # the other three is confusing enough to be worth catching here.
       - name: Check that the four version fields agree
+        if: steps.scope.outputs.touched == 'true'
         run: |
           cd draftpad
           conf="$(jq -re .version src-tauri/tauri.conf.json)"
@@ -59,6 +79,7 @@ jobs:
       # started from: a version another pull request has already merged is just
       # as unreleasable as an unchanged one.
       - name: Check that the version is ahead of the base branch
+        if: steps.scope.outputs.touched == 'true'
         run: |
           git fetch --depth=1 origin "${BASE_REF}"
           base="$(git show FETCH_HEAD:draftpad/src-tauri/tauri.conf.json | jq -re .version)"
