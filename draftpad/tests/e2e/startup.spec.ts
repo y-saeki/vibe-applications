@@ -22,6 +22,18 @@ test('restores the saved settings', async ({ launch }) => {
   expect(await app.commands()).toContain('plugin:window|set_always_on_top')
 })
 
+test('restores the search toggles', async ({ launch }) => {
+  const app = await launch({
+    state: { searchCaseSensitive: true, searchRegexp: true, searchWholeWord: false },
+  })
+
+  await app.press('KeyF')
+  await expect(app.searchPanel).toBeVisible()
+  await expect(app.searchMatchCase).toBeChecked()
+  await expect(app.searchRegexp).toBeChecked()
+  await expect(app.searchWholeWord).not.toBeChecked()
+})
+
 test('follows the OS when the theme is "system"', async ({ launch }) => {
   const app = await launch({ state: { theme: 'system' }, colorScheme: 'dark' })
 
