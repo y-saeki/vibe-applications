@@ -256,15 +256,15 @@ option {
 
 /* A select's dropped-open list is the platform's own window unless the page
    asks for the base appearance, which turns it into an ordinary element this
-   sheet can dress (Chromium 135, WebKit 27 — so WebView2, and macOS once its
-   Safari is new enough). Where it is not supported these declarations are
-   dropped and the platform's popup opens as before: the same control either
-   way, groomed to match the rest of the chrome on a current OS.
+   sheet can dress (Chromium 135, WebKit 27).
 
-   Nothing here needs guarding for those engines. A native select is not a flex
-   container, so the button's gap and alignment are inert on it, and an OS menu
-   ignores what `option` says. */
-select {
+   Only Windows asks. macOS opens its own menu, which already looks like the
+   rest of the system there and is what draftpad wants on that platform; the
+   scope says so rather than leaving it to whether the installed Safari happens
+   to be old enough, which would have switched the look out from under anyone
+   who updated. Where the engine cannot do it either, the declarations are
+   dropped and the platform's popup opens as before. */
+:root[data-platform="windows"] select {
   appearance: base-select;
   align-items: center;
   justify-content: space-between;
@@ -281,7 +281,7 @@ select {
    beat, and the list would sit open on the page from the moment it loads.
    (`dialog:not([open])` is hidden the same way; the preferences panel spells
    its own display out for the opposite reason.) */
-select::picker(select) {
+:root[data-platform="windows"] select::picker(select) {
   appearance: base-select;
   box-sizing: border-box;
   max-height: 50vh;
@@ -297,7 +297,7 @@ select::picker(select) {
 
 /* Each select keeps the size, border and background it has above; the arrow is
    all that moves from the platform to here. */
-select::picker-icon {
+:root[data-platform="windows"] select::picker-icon {
   flex: none;
   width: var(--icon-size);
   height: var(--icon-size);
@@ -307,7 +307,7 @@ select::picker-icon {
   mask: var(--chevron) center / contain no-repeat;
 }
 
-select:open::picker-icon {
+:root[data-platform="windows"] select:open::picker-icon {
   transform: rotate(180deg);
 }
 
@@ -317,7 +317,7 @@ select:open::picker-icon {
    puts the same highlight on both, and touching they read as one tall block
    rather than as two items. Adjacent margins collapse, so the space between two
    rows is one --space-1 rather than two. */
-select option {
+:root[data-platform="windows"] select option {
   min-height: var(--control-height);
   margin-block: var(--space-1);
   padding: 0 var(--space-2);
@@ -329,8 +329,8 @@ select option {
 /* The platform's own highlight is a mid grey with nothing to do with this
    palette. Keyboard navigation moves the focus between the rows, so the two
    selectors are the same state seen from the pointer and from the keyboard. */
-select option:hover,
-select option:focus {
+:root[data-platform="windows"] select option:hover,
+:root[data-platform="windows"] select option:focus {
   background: var(--control-active);
   outline: none;
 }
@@ -339,7 +339,7 @@ select option:focus {
    does: a row can be current and pointed at once, and a highlight that has to
    mean both ends up meaning neither. The base appearance keeps this column in
    every row, so the labels line up whether or not a row carries one. */
-select option::checkmark {
+:root[data-platform="windows"] select option::checkmark {
   color: var(--accent);
 }
 
@@ -556,10 +556,6 @@ select option::checkmark {
 /* The language selector otherwise arrives in the platform's own control grey,
    which reads as a hole in the bar. Keep it flat until it is pointed at. */
 #statusbar select {
-  /* A native select is as wide as its widest option, so the bar never moved
-     as the language changed. The base appearance fits the selected label, so
-     the floor that held it steady has to be said out loud. */
-  min-width: var(--language-width);
   padding: 2px var(--space-1);
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
@@ -576,6 +572,14 @@ select option::checkmark {
 #statusbar select:focus-visible {
   outline: 1px solid var(--accent);
   outline-offset: 1px;
+}
+
+/* A native select is as wide as its widest option, so the bar never moved as
+   the language changed. Where the list is ours (see the dropdown section) the
+   button fits the selected label instead, so the floor that used to come for
+   free has to be said out loud. */
+:root[data-platform="windows"] #statusbar select {
+  min-width: var(--language-width);
 }
 
 /* ---- Preferences ------------------------------------------------------- */

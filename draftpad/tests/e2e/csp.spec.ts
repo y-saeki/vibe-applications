@@ -38,9 +38,9 @@ test('paints the masked marks without tripping the policy', async ({ launch }) =
   expect(await maskOf('#preferences-close', '::before')).toMatch(/url\("data:image\/svg\+xml/)
 
   await app.page.keyboard.press('Escape')
-  // The arrow only exists where the engine takes the base appearance; where it
-  // does not, the platform draws the select and there is nothing to load.
-  if (await app.page.evaluate(() => CSS.supports('appearance', 'base-select'))) {
+  // The arrow only exists where the list is ours; where the platform draws the
+  // select, it draws the arrow too and there is nothing here to load.
+  if (await app.listIsOurs()) {
     expect(await maskOf('#language-select', '::picker-icon')).toMatch(/url\("data:image\/svg\+xml/)
     await app.languageSelect.click()
   }

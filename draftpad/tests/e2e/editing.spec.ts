@@ -75,10 +75,18 @@ test('keeps the list shut until it is asked for', async ({ launch }) => {
   await expect(firstOption).toBeHidden()
 
   await app.languageSelect.click()
-  const styleable = await app.page.evaluate(() => CSS.supports('appearance', 'base-select'))
-  // Where the engine does not take the base appearance the list is a window of
-  // the platform's own, which never enters the page.
-  if (styleable) await expect(firstOption).toBeVisible()
+  // A list the platform owns is a window of its own, which never enters the
+  // page whether it is open or not.
+  if (await app.listIsOurs()) await expect(firstOption).toBeVisible()
+})
+
+test('leaves the list to macOS', async ({ launch }) => {
+  const app = await launch({ platform: 'macos' })
+
+  // The menu macOS opens already looks like the rest of that system, so the
+  // base appearance is asked for on Windows only. Without saying so, an engine
+  // new enough would take the list over there on its own.
+  expect(await app.listIsOurs()).toBe(false)
 })
 
 test('picks a language from the dropped-open list', async ({ launch }) => {
@@ -100,8 +108,7 @@ test('picks a language from the dropped-open list', async ({ launch }) => {
 
 test('walks the dropped-open list with the keyboard', async ({ launch }) => {
   const app = await launch()
-  const styleable = await app.page.evaluate(() => CSS.supports('appearance', 'base-select'))
-  test.skip(!styleable, 'this engine opens the platform list, not one the page can drive')
+  test.skip(!(await app.listIsOurs()), 'the platform owns the list here, so the page cannot drive it')
 
   // The list is laid out by this sheet once the engine takes the base
   // appearance, so its own styling is what could stop the rows taking the
