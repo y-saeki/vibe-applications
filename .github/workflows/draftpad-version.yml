@@ -77,7 +77,9 @@ jobs:
           echo "VERSION=${conf}" >> "${GITHUB_ENV}"
       # Against the tip of the base branch rather than the sha the pull request
       # started from: a version another pull request has already merged is just
-      # as unreleasable as an unchanged one.
+      # as unreleasable as an unchanged one. The checkout above is the merge
+      # ref, so a branch that simply predates someone else's release reads as
+      # unchanged here rather than as a downgrade.
       - name: Check that the version is ahead of the base branch
         if: steps.scope.outputs.touched == 'true'
         run: |
