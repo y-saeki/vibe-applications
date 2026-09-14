@@ -54,8 +54,9 @@ pnpm exec playwright install chromium webkit
 ## Pull Request のビルド
 
 `draftpad/` を変更する Pull Request では、GitHub Actions が macOS / Windows の両方をビルドします。両方が成功すると、
-成果物へのダウンロードリンクを Pull Request にコメントします。push のたびにコメントを増やさず、同じコメントを
-書き換えます。
+成果物へのダウンロードリンクを Pull Request にコメントします。push のたびに新しいコメントを投稿するので、再ビルドの
+完了も通知で届きます。前回までのコメントは outdated として畳まれますが、消えはしないので、保持期限内なら過去の
+ビルドもそこから辿れます。
 
 リンク先のダウンロードには GitHub へのログインが必要です。成果物には保持期限があり、過ぎるとリンクは無効になります
 (期限はコメントに書かれます)。
@@ -105,9 +106,18 @@ Windows 側の経路(アプリ内のキー処理)を、どちらも Linux のラ
 
 ### CI
 
-`draftpad/` を変更する Pull Request では、上の 2 つが両方走ります。E2E テストは
-`ubuntu-latest` で 1 回、`cargo test` は macOS / Windows のビルドと同じジョブの中です。
-E2E テストが落ちると、その run に `playwright-report` が添付されます。
+`draftpad/` を変更する Pull Request では、上の 2 つが両方走ります。E2E テストは `ubuntu-latest` で 1 回、
+`cargo test` は macOS / Windows それぞれの rust checks ジョブの中です。E2E テストが落ちると、その run に
+`playwright-report` が添付されます。
+
+検証は 3 系統のジョブが同時に走ります。`frontend`(E2E と型検査)、`rust checks (macos-latest / windows-latest)`
+(`cargo fmt` / `clippy` / `cargo test`)、`build (macos-latest / windows-latest)`(`pnpm tauri build` と成果物の
+アップロード)です。成果物リンクのコメントは `build` の後に付きます。rust checks と build は同じ依存クレートを
+それぞれ別のプロファイル(dev と release)でコンパイルするため、順に走らせると所要時間が単純に足し算になります。
+依存クレートは [`Swatinem/rust-cache`](https://github.com/Swatinem/rust-cache) でキャッシュします。Pull Request
+への push でも書き込むので、2 回目以降の push はクレートのダウンロードとコンパイルを省けます。キャッシュは
+リポジトリ全体で 10 GB を共有し、超えると古いものから捨てられます。Pull Request が書いたキャッシュはクローズ時に
+消えます。
 
 CI では失敗したテストを 1 回だけ再実行します。1 回目の trace が残るためですが、再実行で
 通ったもの(flaky)は成功扱いにしません。`pnpm test:e2e` が `--fail-on-flaky-tests` を

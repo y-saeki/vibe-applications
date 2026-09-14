@@ -43,6 +43,9 @@ jobs:
           cache: pnpm
           cache-dependency-path: draftpad/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
+      # TypeScript sees the same sources on every platform, so the Windows and
+      # macOS runners do not need to repeat this.
+      - run: pnpm typecheck
       - run: pnpm exec playwright install --with-deps chromium webkit
       - run: pnpm test:e2e
       - if: failure()
@@ -51,6 +54,63 @@ jobs:
           name: playwright-report
           path: draftpad/playwright-report
           retention-days: 7
+
+  # The Rust side is checked on both platforms because the crate compiles
+  # different modules on each (the jump list and the WebView2 settings on
+  # Windows, font enumeration on both). This runs beside `build` rather than
+  # ahead of it: the two compile the same dependencies in different profiles,
+  # so chaining them would only make the run as long as their sum.
+  rust:
+    name: rust checks (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: draftpad
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    env:
+      # Neither clippy nor the tests read a backtrace, and generating debug
+      # info is expensive on Windows, where it means writing PDBs.
+      CARGO_PROFILE_DEV_DEBUG: 0
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+        with:
+          version: 10
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: draftpad/pnpm-lock.yaml
+      - name: Rust toolchain
+        run: |
+          rustup update stable
+          rustup default stable
+          rustup component add rustfmt clippy
+      # After the toolchain, whose version is part of the cache key.
+      # Every push writes a cache, pull requests included. Splitting the jobs
+      # moved the dependency download onto `tauri build`, which a cache main
+      # alone writes cannot take back: a pull request only reads that one on
+      # its first push, and it is the later ones that pay for a rebuild.
+      # Caches are evicted least-recently-used past 10 GB per repository, and
+      # the ones a pull request wrote go away when it closes.
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: draftpad/src-tauri
+      - run: pnpm install --frozen-lockfile
+      # `tauri::generate_context!` verifies that frontendDist (dist/) exists.
+      - run: pnpm build
+      - name: Rust lint
+        working-directory: draftpad/src-tauri
+        run: |
+          cargo fmt --check
+          cargo clippy --all-targets -- -D warnings
+      - name: Rust tests
+        working-directory: draftpad/src-tauri
+        run: cargo test
 
   build:
     name: build (${{ matrix.os }})
@@ -84,19 +144,11 @@ jobs:
         run: |
           rustup update stable
           rustup default stable
-          rustup component add rustfmt clippy
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: draftpad/src-tauri
       - run: pnpm install --frozen-lockfile
-      - run: pnpm typecheck
-      # `tauri::generate_context!` verifies that frontendDist (dist/) exists.
       - run: pnpm build
-      - name: Rust lint
-        working-directory: draftpad/src-tauri
-        run: |
-          cargo fmt --check
-          cargo clippy --all-targets -- -D warnings
-      - name: Rust tests
-        working-directory: draftpad/src-tauri
-        run: cargo test
       - run: pnpm tauri build
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -112,15 +164,42 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
+      issues: write
       pull-requests: write
     env:
       GH_TOKEN: ${{ github.token }}
       # Resolves the pull request without a checkout.
       GH_REPO: ${{ github.repository }}
+      OWNER: ${{ github.repository_owner }}
+      REPO_NAME: ${{ github.event.repository.name }}
       PR_NUMBER: ${{ github.event.pull_request.number }}
       HEAD_SHA: ${{ github.event.pull_request.head.sha }}
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:
+      # Collected before the new comment is posted, so that it is not in the
+      # list. The marker is the first line of every comment this job writes.
+      - name: Collect the comments this job wrote before
+        run: |
+          gh api graphql \
+            -f owner="${OWNER}" -f name="${REPO_NAME}" -F number="${PR_NUMBER}" \
+            -f query='
+              query($owner: String!, $name: String!, $number: Int!) {
+                repository(owner: $owner, name: $name) {
+                  pullRequest(number: $number) {
+                    comments(last: 100) {
+                      nodes { id isMinimized body }
+                    }
+                  }
+                }
+              }' \
+            --jq '
+              .data.repository.pullRequest.comments.nodes[]
+              | select(.isMinimized | not)
+              | select(.body | startswith("<!-- draftpad-build-artifacts -->"))
+              | .id
+            ' > "${RUNNER_TEMP}/previous-comments.txt"
+      # A new comment every time: editing the previous one sends no
+      # notification, so a rebuild would pass unnoticed.
       - name: Comment the download links
         run: |
           artifacts="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts")"
@@ -128,14 +207,13 @@ jobs:
             echo "::error::the run uploaded no artifacts"
             exit 1
           fi
-          # `--edit-last --create-if-none` keeps a single comment per pull
-          # request: the first push creates it, later ones rewrite it.
           jq -r --arg run_url "${RUN_URL}" --arg sha "${HEAD_SHA}" '
             def platform: {
               "draftpad-macos-latest": "macOS (.dmg)",
               "draftpad-windows-latest": "Windows (.exe)"
             }[.] // .;
             def megabytes: . / 1048576 * 10 | round / 10;
+            "<!-- draftpad-build-artifacts -->",
             "## ビルド成果物",
             "",
             (.artifacts | sort_by(.name)[]
@@ -146,13 +224,26 @@ jobs:
             "- [run のサマリ](\($run_url))",
             "- 保持期限: \(.artifacts[0].expires_at | fromdateiso8601 | strftime("%Y-%m-%d"))"
           ' <<<"${artifacts}" \
-            | gh pr comment "${PR_NUMBER}" --edit-last --create-if-none --body-file -
+            | gh pr comment "${PR_NUMBER}" --body-file -
+      # Collapsed as outdated rather than deleted: the older builds stay
+      # downloadable until they expire. A failure here is not worth failing
+      # the run over, since the comment above is already posted.
+      - name: Hide the previous comments
+        run: |
+          while read -r id; do
+            gh api graphql -f id="${id}" -f query='
+              mutation($id: ID!) {
+                minimizeComment(input: { subjectId: $id, classifier: OUTDATED }) {
+                  minimizedComment { isMinimized }
+                }
+              }' >/dev/null || echo "::warning::could not collapse the comment ${id}"
+          done < "${RUNNER_TEMP}/previous-comments.txt"
 
   # Publishes the binaries built above whenever the version in tauri.conf.json
   # names a release that does not exist yet. Merging without a version bump is
   # therefore a no-op.
   release:
-    needs: [build, frontend]
+    needs: [build, frontend, rust]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
