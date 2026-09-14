@@ -13,9 +13,26 @@
   --focus-ring: rgba(43, 108, 176, 0.25);
   /* The tick inside a checked box, in whichever color reads on --accent. */
   --check-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%23ffffff' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round' d='M3.5 8.5 6.5 11.5 12.5 4.5'/%3E%3C/svg%3E");
+
+  /* Sizing. Every piece of chrome — the status bar, the search panel, the
+     preferences panel — is laid out from these, so a new control lands at the
+     same size and spacing as the rest without numbers of its own. The set is
+     listed in DEVELOPMENT.md; the editor's own font is a setting and stays
+     out of it. */
   --ui-font: -apple-system, "Segoe UI", system-ui, sans-serif;
-  --control-height: 28px;
-  --statusbar-height: 26px;
+  --font-size-body: 13px; /* panels and their controls */
+  --font-size-caption: 12px; /* the status bar, hints, the version line */
+  --control-height: 28px; /* text fields, selects, buttons */
+  --control-radius: 6px;
+  --checkbox-size: 16px;
+  --icon-size: 16px;
+  --icon-button-size: 24px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px; /* the side inset of the bar and the panels; the editor's lines use the same */
+  --space-4: 16px;
+  --space-5: 20px;
+  --statusbar-height: 32px;
   --titlebar-height: 0px;
   color-scheme: light;
 }
@@ -25,7 +42,7 @@
 :root[data-theme="dark"] {
   --bg: #151515;
   --fg: #d8d8d8;
-  --muted: #8b8b8b;
+  --muted: #aaaaaa;
   --border: #2c2c2c;
   --panel: #111111;
   --accent: #6cb6ff;
@@ -63,13 +80,15 @@ body {
   overflow: hidden;
   background: var(--bg);
   color: var(--fg);
-  font: 12px var(--ui-font);
+  font: var(--font-size-body) var(--ui-font);
 }
 
 #titlebar {
   flex: none;
   height: var(--titlebar-height);
 }
+
+/* ---- Controls shared by every panel ------------------------------------ */
 
 /* Left alone, a checkbox is drawn by the platform in its own greys, which sit
    on top of the theme rather than in it. Draw the box from the palette instead;
@@ -79,11 +98,11 @@ input[type="checkbox"] {
   appearance: none;
   -webkit-appearance: none;
   flex: none;
-  width: 13px;
-  height: 13px;
+  width: var(--checkbox-size);
+  height: var(--checkbox-size);
   margin: 0;
   border: 1px solid var(--border);
-  border-radius: 3px;
+  border-radius: 4px;
   background: var(--control-bg);
   cursor: pointer;
 }
@@ -94,7 +113,7 @@ input[type="checkbox"]:hover {
 
 input[type="checkbox"]:checked {
   border-color: var(--accent);
-  background: var(--accent) var(--check-mark) center / 11px 11px no-repeat;
+  background: var(--accent) var(--check-mark) center / calc(var(--checkbox-size) - 2px) calc(var(--checkbox-size) - 2px) no-repeat;
 }
 
 input[type="checkbox"]:focus-visible {
@@ -109,6 +128,81 @@ option {
   background: var(--control-bg);
   color: var(--fg);
 }
+
+/* Text fields and selects, in the search panel and the preferences panel
+   alike. */
+#editor .cm-panel .cm-textfield,
+.form-row input[type="text"],
+.form-row input[type="number"],
+.form-row select {
+  height: var(--control-height);
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--control-radius);
+  background: var(--control-bg);
+  color: var(--fg);
+  font: inherit;
+}
+
+#editor .cm-panel .cm-textfield::placeholder,
+.form-row input[type="text"]::placeholder {
+  color: var(--muted);
+}
+
+#editor .cm-panel .cm-textfield:focus,
+.form-row input[type="text"]:focus,
+.form-row input[type="number"]:focus,
+.form-row select:focus {
+  border-color: var(--accent);
+  outline: none;
+  box-shadow: 0 0 0 2px var(--focus-ring);
+}
+
+/* A button that is only an icon: the gear in the status bar, the × that
+   closes a panel. */
+.icon-button,
+#editor .cm-panel [name="close"],
+#editor .cm-panel .cm-dialog-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: var(--icon-button-size);
+  height: var(--icon-button-size);
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.icon-button svg {
+  width: var(--icon-size);
+  height: var(--icon-size);
+}
+
+.icon-button:hover,
+#editor .cm-panel [name="close"]:hover,
+#editor .cm-panel .cm-dialog-close:hover {
+  background: var(--control-hover);
+  color: var(--fg);
+}
+
+.icon-button:focus-visible,
+#editor .cm-panel [name="close"]:focus-visible,
+#editor .cm-panel .cm-dialog-close:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* ---- Editor ------------------------------------------------------------ */
 
 #editor {
   display: flex;
@@ -131,17 +225,18 @@ option {
 }
 
 #editor .cm-content {
-  padding: 8px 0;
+  padding: var(--space-2) 0;
 }
 
 #editor .cm-line {
-  padding: 0 12px;
+  padding: 0 var(--space-3);
 }
 
+/* The Vim status line keeps the editor font, at the status bar's size. */
 #editor .cm-vim-panel {
   font-family: inherit;
-  font-size: 11px;
-  padding: 2px 8px;
+  font-size: var(--font-size-caption);
+  padding: var(--space-1) var(--space-3);
 }
 
 /* CodeMirror's own theme sizes the search panel and the go-to-line dialog
@@ -163,17 +258,17 @@ option {
   border-top: 1px solid var(--border);
 }
 
-/* The Vim status line is a panel too and keeps the editor font; only these two
-   take the UI font, at a size of their own so that the editor font size does
-   not drag the chrome around with it. */
+/* Only these two take the UI font, at a size of their own so that the editor
+   font size does not drag the chrome around with it. The right padding leaves
+   room for the close button. */
 #editor .cm-panel.cm-search,
 #editor .cm-panel.cm-dialog {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px 8px;
-  padding: 8px 40px 8px 10px;
-  font: 13px var(--ui-font);
+  gap: var(--space-2);
+  padding: var(--space-2) 40px var(--space-2) var(--space-3);
+  font: var(--font-size-body) var(--ui-font);
 }
 
 /* Lay the search panel out as three aligned rows — find, options, replace —
@@ -220,42 +315,20 @@ option {
   order: 5;
 }
 
-#editor .cm-panel .cm-textfield,
-#editor .cm-panel .cm-button,
-#editor .cm-panel label {
-  margin: 0;
-  font: inherit;
-}
-
 #editor .cm-panel .cm-textfield {
   flex: 0 1 240px;
   min-width: 120px;
-  height: var(--control-height);
-  box-sizing: border-box;
-  padding: 0 8px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--control-bg);
-  color: var(--fg);
-}
-
-#editor .cm-panel .cm-textfield::placeholder {
-  color: var(--muted);
-}
-
-#editor .cm-panel .cm-textfield:focus {
-  border-color: var(--accent);
-  outline: none;
-  box-shadow: 0 0 0 2px var(--focus-ring);
 }
 
 #editor .cm-panel .cm-button {
   height: var(--control-height);
-  padding: 0 12px;
+  margin: 0;
+  padding: 0 var(--space-3);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--control-radius);
   background: var(--control-bg);
   color: var(--fg);
+  font: inherit;
   white-space: nowrap;
   cursor: pointer;
 }
@@ -276,66 +349,37 @@ option {
 #editor .cm-panel label {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--space-2);
+  margin: 0;
+  font: inherit;
   white-space: nowrap;
   cursor: pointer;
   user-select: none;
   -webkit-user-select: none;
 }
 
-/* The search panel runs at 13px, so its boxes are a size up from the status
-   bar's. */
-#editor .cm-panel input[type="checkbox"] {
-  width: 15px;
-  height: 15px;
-  border-radius: 4px;
-  background-size: 13px 13px;
-}
-
+/* Centred on the first row of controls. */
 #editor .cm-panel [name="close"],
 #editor .cm-panel .cm-dialog-close {
   position: absolute;
-  top: 7px;
-  right: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  border: none;
-  border-radius: 4px;
-  background: none;
-  color: var(--muted);
-  font-size: 16px;
-  line-height: 1;
-  cursor: pointer;
+  top: calc(var(--space-2) + (var(--control-height) - var(--icon-button-size)) / 2);
+  right: var(--space-2);
 }
 
-#editor .cm-panel [name="close"]:hover,
-#editor .cm-panel .cm-dialog-close:hover {
-  background: var(--control-hover);
-  color: var(--fg);
-}
-
-#editor .cm-panel [name="close"]:focus-visible,
-#editor .cm-panel .cm-dialog-close:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-}
+/* ---- Status bar -------------------------------------------------------- */
 
 #statusbar {
   flex: none;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--space-4);
   height: var(--statusbar-height);
-  padding: 0 8px;
+  padding: 0 var(--space-3);
   border-top: 1px solid var(--border);
   background: var(--panel);
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--font-size-caption);
   user-select: none;
   -webkit-user-select: none;
 }
@@ -343,14 +387,21 @@ option {
 .statusbar-group {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-4);
   white-space: nowrap;
+}
+
+/* The counts are read-only cells; a hairline keeps them apart the way the
+   platform's own status bars do. */
+.statusbar-cell + .statusbar-cell {
+  padding-left: var(--space-4);
+  border-left: 1px solid var(--border);
 }
 
 .statusbar-check {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-2);
   cursor: pointer;
 }
 
@@ -363,7 +414,7 @@ option {
 /* The language selector otherwise arrives in the platform's own control grey,
    which reads as a hole in the bar. Keep it flat until it is pointed at. */
 #statusbar select {
-  padding: 1px 2px;
+  padding: 2px var(--space-1);
   border: 1px solid transparent;
   border-radius: 4px;
   background: transparent;
@@ -381,27 +432,7 @@ option {
   outline-offset: 1px;
 }
 
-
-.statusbar-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 2px;
-  border: none;
-  border-radius: 3px;
-  background: none;
-  color: inherit;
-  cursor: pointer;
-}
-
-.statusbar-button:hover {
-  color: var(--fg);
-}
-
-.statusbar-button:focus-visible {
-  outline: 1px solid var(--accent);
-  outline-offset: 1px;
-}
+/* ---- Preferences ------------------------------------------------------- */
 
 /* The panel is opened with showModal(), which puts it in the top layer: it
    covers the whole window without entering the z-index race CodeMirror runs
@@ -444,10 +475,11 @@ option {
 }
 
 .panel {
-  width: min(420px, calc(100vw - 32px));
+  width: min(440px, calc(100vw - 32px));
   max-height: calc(100vh - var(--titlebar-height) - 80px);
   overflow: auto;
-  padding: 16px;
+  box-sizing: border-box;
+  padding: var(--space-5);
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--bg);
@@ -458,43 +490,31 @@ option {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 12px;
+  margin-bottom: var(--space-4);
 }
 
 .panel-header h1 {
   margin: 0;
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 600;
 }
 
-.close-button {
-  border: none;
-  background: none;
-  color: var(--muted);
-  font-size: 18px;
-  line-height: 1;
-  cursor: pointer;
-}
-
+/* Label, then control, on one line the height of a control. */
 .form-row {
   display: grid;
-  grid-template-columns: 120px 1fr;
+  grid-template-columns: 128px 1fr;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 10px;
+  gap: var(--space-4);
+  min-height: var(--control-height);
+}
+
+.form-row + .form-row {
+  margin-top: var(--space-3);
 }
 
 .form-row input[type="text"],
-.form-row input[type="number"],
 .form-row select {
   width: 100%;
-  box-sizing: border-box;
-  padding: 3px 6px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: var(--panel);
-  color: var(--fg);
-  font: inherit;
 }
 
 .form-row input[type="number"] {
@@ -508,12 +528,12 @@ option {
 .form-control-with-unit {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-2);
 }
 
 .panel-footer {
-  margin-top: 12px;
+  margin-top: var(--space-4);
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--font-size-caption);
   text-align: right;
 }
