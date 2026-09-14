@@ -108,3 +108,38 @@ test('starts in Vim mode when that is what was saved', async ({ launch }) => {
 
   await expect(app.page.locator('.cm-scroller')).toHaveClass(/cm-vimMode/)
 })
+
+test('covers the search bar, which closes it like the rest of the backdrop', async ({ launch }) => {
+  const app = await launch()
+  const searchField = app.searchPanel.getByPlaceholder('検索')
+
+  await app.press('f')
+  await expect(searchField).toBeVisible()
+  await app.gear.click()
+  await expect(app.preferences).toBeVisible()
+
+  // CodeMirror stacks its own panels above the page; the panel is a modal
+  // dialog, so the top layer puts it over them and the search bar greys out
+  // and stops taking the pointer like the rest of the window.
+  const box = (await searchField.boundingBox())!
+  const point = { x: box.x + box.width / 2, y: box.y + box.height / 2 }
+  const topmost = await app.page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.id, point)
+  expect(topmost).toBe('preferences')
+
+  await app.page.mouse.click(point.x, point.y)
+  await expect(app.preferences).toBeHidden()
+  await expect(searchField).not.toBeFocused()
+})
+
+test('dims the window with the palette alone, not the browser\'s own backdrop', async ({ launch }) => {
+  const app = await launch({ colorScheme: 'light' })
+
+  await app.gear.click()
+  await expect(app.preferences).toHaveCSS('background-color', 'rgba(0, 0, 0, 0.35)')
+  // Browsers paint ::backdrop themselves, and it would sit under that colour
+  // and deepen it by a different amount on each engine.
+  const backdrop = await app.page.evaluate(
+    () => getComputedStyle(document.getElementById('preferences')!, '::backdrop').backgroundColor,
+  )
+  expect(backdrop).toBe('rgba(0, 0, 0, 0)')
+})

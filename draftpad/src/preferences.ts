@@ -31,9 +31,9 @@ export class Preferences {
   private fontsLoaded = false
 
   constructor(
-    private readonly root: HTMLElement,
+    private readonly root: HTMLDialogElement,
     private readonly store: Store,
-    private readonly options: PreferencesOptions,
+    options: PreferencesOptions,
   ) {
     const q = <T extends Element>(selector: string) => root.querySelector(selector) as T
     this.mode = q('#pref-mode')
@@ -62,21 +62,28 @@ export class Preferences {
     this.quickSuggestions.addEventListener('change', () => store.set({ quickSuggestions: this.quickSuggestions.checked }))
 
     q<HTMLButtonElement>('#preferences-close').addEventListener('click', () => this.close())
+    // The dialog fills the window and draws the dim itself, so anything outside
+    // the panel is a click on it rather than on a child.
     root.addEventListener('mousedown', (event) => {
       if (event.target === root) this.close()
     })
+    // Escape closes the dialog without going through close(), so the hand-back
+    // hangs off the event every path ends at.
+    root.addEventListener('close', () => options.onClose())
     store.subscribe(() => {
-      if (!this.root.hidden) this.sync()
+      if (this.isOpen) this.sync()
     })
   }
 
   get isOpen(): boolean {
-    return !this.root.hidden
+    return this.root.open
   }
 
   open(): void {
     this.sync()
-    this.root.hidden = false
+    // Modal rather than plain open(): the top layer puts the panel over the
+    // editor's own chrome, and the rest of the window stops taking input.
+    this.root.showModal()
     this.focus()
     void this.loadFonts()
   }
@@ -87,9 +94,7 @@ export class Preferences {
   }
 
   close(): void {
-    if (this.root.hidden) return
-    this.root.hidden = true
-    this.options.onClose()
+    this.root.close()
   }
 
   private sync(): void {
