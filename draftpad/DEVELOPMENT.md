@@ -11,7 +11,7 @@ Windows(x64)の 2 つで、どちらも GitHub Actions でビルドします。
 |---|---|
 | [Rust](https://rustup.rs/)(stable) | `rustup` でインストール |
 | Node.js 22 以降 | |
-| [pnpm](https://pnpm.io/) 10.16 以降 | `minimumReleaseAge` を使うため |
+| [pnpm](https://pnpm.io/) 12 以降 | CI もこのバージョンを使います |
 | macOS: Xcode Command Line Tools | `xcode-select --install` |
 | Windows: Visual Studio Build Tools | 「C++ によるデスクトップ開発」を選択。Rust は MSVC ツールチェーンを既定にする |
 
@@ -214,6 +214,11 @@ Windows 向けのビルドだけが使う依存が 3 つあります。
 
 - npm: `pnpm-workspace.yaml` の `minimumReleaseAge: 10080` により、公開から 7 日未満のバージョンは解決しません。
   `pnpm-lock.yaml` をコミットし、更新は `pnpm update` を明示的に実行したときだけ行います
+- npm(インストールスクリプト): 依存のインストールスクリプトは `pnpm-workspace.yaml` の `allowBuilds` で
+  明示的に許可したものだけが走ります。挙動を決めていない依存が現れると install が失敗するので、新しい依存を
+  足したときは `allowBuilds` に `true` / `false` を書いてください。現在は `esbuild: false` の 1 件だけで、
+  これはプラットフォーム別のバイナリを選ぶだけのスクリプトであり、そのバイナリは pnpm が optional な依存として
+  すでに入れているため不要です
 - Cargo: 同等の設定は Cargo 本体に未実装です(RFC 3923 `registry.global-min-publish-age` が承認済みで、クライアント側の実装待ち)。
   `Cargo.lock` をコミットし、`cargo update` を自動では実行しません。クライアント側が安定したら `.cargo/config.toml` に設定を追加してください
 
