@@ -21,6 +21,23 @@ test('paints the checked boxes without tripping the policy', async ({ launch }) 
   expect(app.cspViolations).toEqual([])
 })
 
+test('paints the select chevron without tripping the policy', async ({ launch }) => {
+  const app = await launch({ csp: true })
+
+  // The arrow on a select is a masked data: URI, which the policy covers under
+  // img-src. A policy that blocked it would leave the select with no arrow at
+  // all rather than failing outright.
+  const styleable = await app.page.evaluate(() => CSS.supports('appearance', 'base-select'))
+  if (styleable) {
+    const mask = await app.page.evaluate(
+      () => getComputedStyle(document.querySelector('#language-select')!, '::picker-icon').maskImage,
+    )
+    expect(mask).toMatch(/url\("data:image\/svg\+xml/)
+  }
+  await app.languageSelect.click()
+  expect(app.cspViolations).toEqual([])
+})
+
 test('starts up without tripping the policy', async ({ launch }) => {
   const app = await launch({ csp: true })
 

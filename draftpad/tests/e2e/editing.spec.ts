@@ -64,6 +64,23 @@ test('switches the grammar from the status bar and remembers it', async ({ launc
   await app.expectSaved((state) => state.language === 'rust')
 })
 
+test('picks a language from the dropped-open list', async ({ launch }) => {
+  const app = await launch()
+  const styleable = await app.page.evaluate(() => CSS.supports('appearance', 'base-select'))
+  // Without the base appearance the list is the platform's own window, which
+  // nothing inside the page can reach. The case above covers the same choice
+  // arriving through the DOM, which is the path that works on both.
+  test.skip(!styleable, 'this engine opens the platform list, not one the page can drive')
+
+  await app.languageSelect.click()
+  const rust = app.languageSelect.locator('option', { hasText: 'Rust' })
+  await expect(rust).toBeVisible()
+  await rust.click()
+
+  await expect(app.editor).toHaveAttribute('data-language', 'rust')
+  await app.expectSaved((state) => state.language === 'rust')
+})
+
 test('remembers the always-on-top toggle and passes it to the window', async ({ launch }) => {
   const app = await launch()
 

@@ -17,7 +17,12 @@
   --control-hover: #eef1f4;
   --control-active: #e2e6ea;
   --focus-ring: rgba(43, 108, 176, 0.25);
-  --shadow-panel: 0 8px 32px rgba(0, 0, 0, 0.25);
+  --shadow-panel: 0 8px 32px rgba(0, 0, 0, 0.25); /* the preferences panel */
+  --shadow-popup: 0 4px 16px rgba(0, 0, 0, 0.18); /* a dropped-open list */
+  /* The chevron on a select. Painted with currentColor through a mask, so one
+     asset serves both themes; the tick below cannot do that because a
+     background color cannot reach a pseudo-element of an input. */
+  --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%23000000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' d='M4.5 6.5 8 10 11.5 6.5'/%3E%3C/svg%3E");
   /* The tick inside a checked box, in whichever color reads on --accent. */
   --check-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%23ffffff' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round' d='M3.5 8.5 6.5 11.5 12.5 4.5'/%3E%3C/svg%3E");
 
@@ -53,6 +58,7 @@
   --label-width: 128px; /* the preferences label column */
   --panel-width: 440px;
   --panel-inset: 40px; /* the preferences panel's distance from the window */
+  --language-width: 128px; /* the floor under the status bar's language selector */
 
   color-scheme: light;
 }
@@ -220,6 +226,85 @@ option {
 #editor .cm-panel .cm-dialog-close:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
+}
+
+/* ---- Dropdowns --------------------------------------------------------- */
+
+/* A select's dropped-open list is the platform's own window unless the page
+   asks for the base appearance, which turns it into an ordinary element this
+   sheet can dress (Chromium 135, WebKit 27 — so WebView2, and macOS once its
+   Safari is new enough). Where it is not supported these declarations are
+   dropped and the platform's popup opens as before: the same control either
+   way, groomed to match the rest of the chrome on a current OS.
+
+   Nothing here needs guarding for those engines. A native select is not a flex
+   container, so the button's gap and alignment are inert on it, and an OS menu
+   ignores what `option` says. */
+select {
+  appearance: base-select;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-1);
+}
+
+/* Half the window at most, whatever its size; the 20 languages scroll. A
+   viewport-relative bound is layout rather than part of the scale, so there is
+   no token for it. */
+select::picker(select) {
+  appearance: base-select;
+  box-sizing: border-box;
+  max-height: 50vh;
+  overflow-y: auto;
+  padding: var(--space-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--control-bg);
+  box-shadow: var(--shadow-popup);
+  color: var(--fg);
+  font: inherit;
+}
+
+/* Each select keeps the size, border and background it has above; the arrow is
+   all that moves from the platform to here. */
+select::picker-icon {
+  flex: none;
+  width: var(--icon-size);
+  height: var(--icon-size);
+  /* Drops the disclosure triangle the base appearance comes with. */
+  content: "";
+  background: currentColor;
+  mask: var(--chevron) center / contain no-repeat;
+}
+
+select:open::picker-icon {
+  transform: rotate(180deg);
+}
+
+/* Rows the height of a control, with the highlight inset far enough from the
+   border that the rounded corners read as corners. */
+select option {
+  min-height: var(--control-height);
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--fg);
+}
+
+/* The platform's own highlight is a mid grey with nothing to do with this
+   palette. Keyboard navigation moves the focus between the rows, so the two
+   selectors are the same state seen from the pointer and from the keyboard. */
+select option:hover,
+select option:focus {
+  background: var(--control-active);
+  outline: none;
+}
+
+/* The tick says which row is the current one, and it is the only thing that
+   does: a row can be current and pointed at once, and a highlight that has to
+   mean both ends up meaning neither. The base appearance keeps this column in
+   every row, so the labels line up whether or not a row carries one. */
+select option::checkmark {
+  color: var(--accent);
 }
 
 /* ---- Editor ------------------------------------------------------------ */
@@ -435,6 +520,10 @@ option {
 /* The language selector otherwise arrives in the platform's own control grey,
    which reads as a hole in the bar. Keep it flat until it is pointed at. */
 #statusbar select {
+  /* A native select is as wide as its widest option, so the bar never moved
+     as the language changed. The base appearance fits the selected label, so
+     the floor that held it steady has to be said out loud. */
+  min-width: var(--language-width);
   padding: 2px var(--space-1);
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
