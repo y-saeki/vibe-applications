@@ -101,9 +101,11 @@ Windows 側の経路(アプリ内のキー処理)を、どちらも Linux のラ
 - IME の未確定文字列と変換候補の位置
 - 常に手前に表示・フルスクリーン・ウィンドウサイズが実際にどうなるか
   (`invoke` が正しく呼ばれたところまでは確認します)
-- 展開したドロップダウンの macOS での見た目。Playwright の WebKit は `appearance: base-select` に
-  未対応で、プラットフォームのメニューが開く側の経路しか通りません(Chromium 側は
-  `tests/e2e/editing.spec.ts` がリストの行をクリックして確認します)
+- 展開したドロップダウンの macOS での見た目。Playwright が同梱する WebKit は 26.0 で、
+  `appearance: base-select` は WebKit 27 からなので、プラットフォームのメニューが開く側の経路しか
+  通りません。該当のテストは `CSS.supports()` を見て自分をスキップするため、Playwright が 27 以降を
+  同梱したら自動的に走り始めます(Chromium 側は `tests/e2e/editing.spec.ts` がリストの行をクリックして
+  確認しています)
 - コード署名していない配布物を各 OS が警告する挙動
 - Windows インストーラの画面と挙動(`src-tauri/installer.nsi`)
 
@@ -255,7 +257,8 @@ Tauri の NSIS スクリプトはビルド時のテンプレートなので、`t
 
 `<select>` を展開したリストは、既定ではプラットフォームが描く別ウィンドウで、CSS が一切届きません。
 `appearance: base-select` を指定すると、リストがページの中の普通の要素(`::picker(select)`)になり、
-このスタイルシートで組めるようになります。対応は Chromium 135 / WebKit 27 以降です。
+このスタイルシートで組めるようになります。対応は Chromium 135 / WebKit 27 以降です
+(MDN の browser-compat-data で確認できます)。
 
 | 環境 | 展開時の見た目 |
 |---|---|
