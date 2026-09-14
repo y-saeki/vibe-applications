@@ -1,39 +1,59 @@
+/* draftpad's chrome — the status bar, the search panel, the preferences panel.
+   Every size, spacing and color it uses is a custom property declared below,
+   and nothing outside these blocks writes a number or a color of its own.
+   `pnpm lint:style` enforces that, and also caps how many of these there may
+   be; DEVELOPMENT.md says what each family is for. */
+
 :root {
+  /* ---- Palette ---- */
   --bg: #ffffff;
   --fg: #1f2328;
   --muted: #6e7781;
   --border: #d0d7de;
   --panel: #f6f8fa;
   --accent: #2b6cb0;
-  --accent-fg: #ffffff;
   --overlay: rgba(0, 0, 0, 0.35);
   --control-bg: #ffffff;
   --control-hover: #eef1f4;
   --control-active: #e2e6ea;
   --focus-ring: rgba(43, 108, 176, 0.25);
+  --shadow-panel: 0 8px 32px rgba(0, 0, 0, 0.25);
   /* The tick inside a checked box, in whichever color reads on --accent. */
   --check-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%23ffffff' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round' d='M3.5 8.5 6.5 11.5 12.5 4.5'/%3E%3C/svg%3E");
 
-  /* Sizing. Every piece of chrome — the status bar, the search panel, the
-     preferences panel — is laid out from these, so a new control lands at the
-     same size and spacing as the rest without numbers of its own. The set is
-     listed in DEVELOPMENT.md; the editor's own font is a setting and stays
-     out of it. */
+  /* ---- Type ---- */
   --ui-font: -apple-system, "Segoe UI", system-ui, sans-serif;
+  --font-size-title: 16px; /* the preferences heading */
   --font-size-body: 13px; /* panels and their controls */
-  --font-size-caption: 12px; /* the status bar, hints, the version line */
+  --font-size-caption: 12px; /* the status bar, the version line */
+
+  /* ---- Spacing ---- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+
+  /* ---- Corners ---- */
+  --radius-sm: 4px; /* checkboxes and icon buttons */
+  --radius-md: 6px; /* controls one --control-height tall */
+  --radius-lg: 8px; /* the preferences panel */
+
+  /* ---- Control and chrome metrics ---- */
   --control-height: 28px; /* text fields, selects, buttons */
-  --control-radius: 6px;
   --checkbox-size: 16px;
   --icon-size: 16px;
   --icon-button-size: 24px;
-  --space-1: 4px;
-  --space-2: 8px;
-  --space-3: 12px; /* the side inset of the bar and the panels; the editor's lines use the same */
-  --space-4: 16px;
-  --space-5: 20px;
   --statusbar-height: 32px;
   --titlebar-height: 0px;
+
+  /* ---- Layout ---- */
+  --field-width: 240px; /* a text field's preferred width */
+  --field-width-narrow: 80px; /* a number field's */
+  --label-width: 128px; /* the preferences label column */
+  --panel-width: 440px;
+  --panel-inset: 40px; /* the preferences panel's distance from the window */
+
   color-scheme: light;
 }
 
@@ -46,7 +66,6 @@
   --border: #2c2c2c;
   --panel: #111111;
   --accent: #6cb6ff;
-  --accent-fg: #0b0b0b;
   --overlay: rgba(0, 0, 0, 0.6);
   --control-bg: #1c1c1c;
   --control-hover: #262626;
@@ -102,7 +121,7 @@ input[type="checkbox"] {
   height: var(--checkbox-size);
   margin: 0;
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: var(--control-bg);
   cursor: pointer;
 }
@@ -140,7 +159,7 @@ option {
   margin: 0;
   padding: 0 var(--space-2);
   border: 1px solid var(--border);
-  border-radius: var(--control-radius);
+  border-radius: var(--radius-md);
   background: var(--control-bg);
   color: var(--fg);
   font: inherit;
@@ -174,11 +193,12 @@ option {
   margin: 0;
   padding: 0;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: none;
   color: var(--muted);
   font: inherit;
-  font-size: 16px;
+  /* The × is a glyph where the gear is an SVG, so it is sized like one. */
+  font-size: var(--icon-size);
   line-height: 1;
   cursor: pointer;
 }
@@ -259,7 +279,7 @@ option {
 }
 
 /* Only these two take the UI font, at a size of their own so that the editor
-   font size does not drag the chrome around with it. The right padding leaves
+   font size does not drag the chrome around with it. The right inset leaves
    room for the close button. */
 #editor .cm-panel.cm-search,
 #editor .cm-panel.cm-dialog {
@@ -267,7 +287,7 @@ option {
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2);
-  padding: var(--space-2) 40px var(--space-2) var(--space-3);
+  padding: var(--space-2) calc(var(--space-2) * 2 + var(--icon-button-size)) var(--space-2) var(--space-3);
   font: var(--font-size-body) var(--ui-font);
 }
 
@@ -315,9 +335,10 @@ option {
   order: 5;
 }
 
+/* Down to half its width before the row wraps instead. */
 #editor .cm-panel .cm-textfield {
-  flex: 0 1 240px;
-  min-width: 120px;
+  flex: 0 1 var(--field-width);
+  min-width: calc(var(--field-width) / 2);
 }
 
 #editor .cm-panel .cm-button {
@@ -325,7 +346,7 @@ option {
   margin: 0;
   padding: 0 var(--space-3);
   border: 1px solid var(--border);
-  border-radius: var(--control-radius);
+  border-radius: var(--radius-md);
   background: var(--control-bg);
   color: var(--fg);
   font: inherit;
@@ -416,7 +437,7 @@ option {
 #statusbar select {
   padding: 2px var(--space-1);
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: transparent;
   cursor: pointer;
 }
@@ -451,7 +472,7 @@ option {
   height: 100%;
   max-height: none;
   margin: 0;
-  padding: calc(var(--titlebar-height) + 40px) 0 0;
+  padding: calc(var(--titlebar-height) + var(--panel-inset)) 0 0;
   border: none;
   background: var(--overlay);
   color: inherit;
@@ -474,16 +495,19 @@ option {
   background: transparent;
 }
 
+/* Inset from the window on every side: --panel-inset above, the same below
+   once the panel is as tall as it may get, and a --space-4 gutter when the
+   window is too narrow for --panel-width. */
 .panel {
-  width: min(440px, calc(100vw - 32px));
-  max-height: calc(100vh - var(--titlebar-height) - 80px);
+  width: min(var(--panel-width), calc(100vw - var(--space-4) * 2));
+  max-height: calc(100vh - var(--titlebar-height) - var(--panel-inset) * 2);
   overflow: auto;
   box-sizing: border-box;
   padding: var(--space-5);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   background: var(--bg);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+  box-shadow: var(--shadow-panel);
 }
 
 .panel-header {
@@ -495,14 +519,14 @@ option {
 
 .panel-header h1 {
   margin: 0;
-  font-size: 16px;
+  font-size: var(--font-size-title);
   font-weight: 600;
 }
 
 /* Label, then control, on one line the height of a control. */
 .form-row {
   display: grid;
-  grid-template-columns: 128px 1fr;
+  grid-template-columns: var(--label-width) 1fr;
   align-items: center;
   gap: var(--space-4);
   min-height: var(--control-height);
@@ -518,7 +542,7 @@ option {
 }
 
 .form-row input[type="number"] {
-  width: 80px;
+  width: var(--field-width-narrow);
 }
 
 .form-row input[type="checkbox"] {
