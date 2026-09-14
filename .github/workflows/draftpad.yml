@@ -164,15 +164,42 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
+      issues: write
       pull-requests: write
     env:
       GH_TOKEN: ${{ github.token }}
       # Resolves the pull request without a checkout.
       GH_REPO: ${{ github.repository }}
+      OWNER: ${{ github.repository_owner }}
+      REPO_NAME: ${{ github.event.repository.name }}
       PR_NUMBER: ${{ github.event.pull_request.number }}
       HEAD_SHA: ${{ github.event.pull_request.head.sha }}
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:
+      # Collected before the new comment is posted, so that it is not in the
+      # list. The marker is the first line of every comment this job writes.
+      - name: Collect the comments this job wrote before
+        run: |
+          gh api graphql \
+            -f owner="${OWNER}" -f name="${REPO_NAME}" -F number="${PR_NUMBER}" \
+            -f query='
+              query($owner: String!, $name: String!, $number: Int!) {
+                repository(owner: $owner, name: $name) {
+                  pullRequest(number: $number) {
+                    comments(last: 100) {
+                      nodes { id isMinimized body }
+                    }
+                  }
+                }
+              }' \
+            --jq '
+              .data.repository.pullRequest.comments.nodes[]
+              | select(.isMinimized | not)
+              | select(.body | startswith("<!-- draftpad-build-artifacts -->"))
+              | .id
+            ' > "${RUNNER_TEMP}/previous-comments.txt"
+      # A new comment every time: editing the previous one sends no
+      # notification, so a rebuild would pass unnoticed.
       - name: Comment the download links
         run: |
           artifacts="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts")"
@@ -180,14 +207,13 @@ jobs:
             echo "::error::the run uploaded no artifacts"
             exit 1
           fi
-          # `--edit-last --create-if-none` keeps a single comment per pull
-          # request: the first push creates it, later ones rewrite it.
           jq -r --arg run_url "${RUN_URL}" --arg sha "${HEAD_SHA}" '
             def platform: {
               "draftpad-macos-latest": "macOS (.dmg)",
               "draftpad-windows-latest": "Windows (.exe)"
             }[.] // .;
             def megabytes: . / 1048576 * 10 | round / 10;
+            "<!-- draftpad-build-artifacts -->",
             "## ビルド成果物",
             "",
             (.artifacts | sort_by(.name)[]
@@ -198,7 +224,20 @@ jobs:
             "- [run のサマリ](\($run_url))",
             "- 保持期限: \(.artifacts[0].expires_at | fromdateiso8601 | strftime("%Y-%m-%d"))"
           ' <<<"${artifacts}" \
-            | gh pr comment "${PR_NUMBER}" --edit-last --create-if-none --body-file -
+            | gh pr comment "${PR_NUMBER}" --body-file -
+      # Collapsed as outdated rather than deleted: the older builds stay
+      # downloadable until they expire. A failure here is not worth failing
+      # the run over, since the comment above is already posted.
+      - name: Hide the previous comments
+        run: |
+          while read -r id; do
+            gh api graphql -f id="${id}" -f query='
+              mutation($id: ID!) {
+                minimizeComment(input: { subjectId: $id, classifier: OUTDATED }) {
+                  minimizedComment { isMinimized }
+                }
+              }' >/dev/null || echo "::warning::could not collapse the comment ${id}"
+          done < "${RUNNER_TEMP}/previous-comments.txt"
 
   # Publishes the binaries built above whenever the version in tauri.conf.json
   # names a release that does not exist yet. Merging without a version bump is
