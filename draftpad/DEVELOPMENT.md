@@ -114,9 +114,10 @@ Windows 側の経路(アプリ内のキー処理)を、どちらも Linux のラ
 (`cargo fmt` / `clippy` / `cargo test`)、`build (macos-latest / windows-latest)`(`pnpm tauri build` と成果物の
 アップロード)です。成果物リンクのコメントは `build` の後に付きます。rust checks と build は同じ依存クレートを
 それぞれ別のプロファイル(dev と release)でコンパイルするため、順に走らせると所要時間が単純に足し算になります。
-依存クレートは [`Swatinem/rust-cache`](https://github.com/Swatinem/rust-cache) でキャッシュしますが、
-リポジトリ全体で 10 GB という上限があるため、書き込むのは `main` への push だけです。Pull Request は `main` の
-キャッシュを読むだけで、自分のキャッシュは残しません。
+依存クレートは [`Swatinem/rust-cache`](https://github.com/Swatinem/rust-cache) でキャッシュします。Pull Request
+への push でも書き込むので、2 回目以降の push はクレートのダウンロードとコンパイルを省けます。キャッシュは
+リポジトリ全体で 10 GB を共有し、超えると古いものから捨てられます。Pull Request が書いたキャッシュはクローズ時に
+消えます。
 
 CI では失敗したテストを 1 回だけ再実行します。1 回目の trace が残るためですが、再実行で
 通ったもの(flaky)は成功扱いにしません。`pnpm test:e2e` が `--fail-on-flaky-tests` を

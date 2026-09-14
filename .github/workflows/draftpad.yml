@@ -91,14 +91,15 @@ jobs:
           rustup default stable
           rustup component add rustfmt clippy
       # After the toolchain, whose version is part of the cache key.
+      # Every push writes a cache, pull requests included. Splitting the jobs
+      # moved the dependency download onto `tauri build`, which a cache main
+      # alone writes cannot take back: a pull request only reads that one on
+      # its first push, and it is the later ones that pay for a rebuild.
+      # Caches are evicted least-recently-used past 10 GB per repository, and
+      # the ones a pull request wrote go away when it closes.
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: draftpad/src-tauri
-          # A pull request reads main's cache but does not write one of its
-          # own: the cache is shared across a repository under a 10 GB limit,
-          # and four of these jobs writing a Windows `target/` per push would
-          # evict each other long before they paid off.
-          save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: pnpm install --frozen-lockfile
       # `tauri::generate_context!` verifies that frontendDist (dist/) exists.
       - run: pnpm build
@@ -146,7 +147,6 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: draftpad/src-tauri
-          save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - run: pnpm tauri build
