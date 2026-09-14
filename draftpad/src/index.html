@@ -28,8 +28,8 @@
       </div>
     </footer>
 
-    <div id="preferences" class="overlay" hidden>
-      <div class="panel" role="dialog" aria-labelledby="preferences-title">
+    <dialog id="preferences" aria-labelledby="preferences-title">
+      <div class="panel">
         <div class="panel-header">
           <h1 id="preferences-title">環境設定</h1>
           <button type="button" id="preferences-close" class="close-button" aria-label="閉じる">×</button>
@@ -71,7 +71,7 @@
         </div>
         <div class="panel-footer" id="pref-version"></div>
       </div>
-    </div>
+    </dialog>
 
     <script type="module" src="main.js"></script>
   </body>

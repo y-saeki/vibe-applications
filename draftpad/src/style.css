@@ -403,21 +403,44 @@ option {
   outline-offset: 1px;
 }
 
-.overlay[hidden] {
-  display: none;
-}
+/* The panel is opened with showModal(), which puts it in the top layer: it
+   covers the whole window without entering the z-index race CodeMirror runs
+   inside the editor (panels at 300, tooltips at 500), and everything behind it
+   stops taking the pointer and the keyboard.
 
-.overlay {
+   The author sheet beats the "dialog:not([open]) { display: none }" the
+   browser ships, so the display switch is spelled out here. */
+#preferences {
+  display: none;
   position: fixed;
   inset: 0;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  max-height: none;
+  margin: 0;
+  padding: calc(var(--titlebar-height) + 40px) 0 0;
+  border: none;
+  background: var(--overlay);
+  color: inherit;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+#preferences[open] {
   display: flex;
   align-items: flex-start;
   justify-content: center;
-  padding-top: calc(var(--titlebar-height) + 40px);
-  background: var(--overlay);
-  user-select: none;
-  -webkit-user-select: none;
-  z-index: 10;
+}
+
+/* The dim is the dialog's own background rather than ::backdrop's, because
+   ::backdrop only started inheriting custom properties in Safari 17.4 and
+   --overlay has to reach it. Browsers dim ::backdrop themselves anyway
+   (Chromium at 10% black), which would sit under --overlay and deepen it by a
+   different amount on each engine, so that default is cleared here. */
+#preferences::backdrop {
+  background: transparent;
 }
 
 .panel {
