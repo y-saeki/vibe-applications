@@ -1,14 +1,14 @@
 # draftpad
 
-ファイルや保存の概念を持たない、高速・軽量・シンプルな下書き用エディタです。
+ファイルや保存の概念を持たない、高速・軽量・シンプルな下書き用エディタです。  
 macOS / Windows 対応。
 
 - 書いた内容は自動的に引き継がれ、次回起動するとそのまま続きから書けます
-- 起動は速く、閉じると終了します(常駐しません)
-- 日本語 IME 前提。既定フォントは OS ごとの日本語対応等幅フォント
+- 起動は速く、閉じると終了します。常駐しません
 - 20 言語のシンタックスハイライト、正規表現対応の検索・置換、単語補完、Vim モード
-- ライト / ダークテーマ(OS 追従または固定)
-- 文字数(コードポイント数)と行数の表示、「常に手前に表示」
+- ライト / ダークテーマ対応
+
+<img width="2138" height="1700" alt="CleanShot 2026-09-14 at 19 20 04@2x" src="https://github.com/user-attachments/assets/98b3bf4b-dfbf-4e72-8807-6f2c3ed10b24" />
 
 ## 動作環境
 
@@ -17,17 +17,17 @@ macOS / Windows 対応。
 
 ## インストール
 
-[Releases](https://github.com/y-saeki/vibe-applications/releases) の `draftpad-v<version>` から、
-お使いの OS 向けのファイルをダウンロードしてください。
+[Releases](https://github.com/y-saeki/vibe-applications/releases) の `draftpad-v<version>` から、お使いの OS 向けのファイルをダウンロードしてください。
 
-- macOS: `draftpad_<version>_aarch64.dmg`。開いて `draftpad.app` を「アプリケーション」フォルダへ入れます
-- Windows: `draftpad_<version>_x64-setup.exe`。実行するとインストーラが起動します
+- macOS: `draftpad_<version>_aarch64.dmg`
+  - 開いて `draftpad.app` を「アプリケーション」フォルダへ入れます
+- Windows: `draftpad_<version>_x64-setup.exe`
+  - 実行するとインストーラが起動します。インストーラの案内に従ってください
 
 ### macOS で「壊れているため開けません」と表示される場合
 
-コード署名・公証を行っていないため、ダウンロードした `.app` は Gatekeeper に拒否されます。
-「"draftpad.app" は壊れているため開けません。ゴミ箱に入れる必要があります。」と表示されますが、
-ファイルは壊れていません。ダウンロード時に付与される `com.apple.quarantine` 属性が原因です。
+コード署名・公証を行っていないため、ダウンロードした `.app` は Gatekeeper に拒否されます。  
+「"draftpad.app" は壊れているため開けません。ゴミ箱に入れる必要があります。」と表示されますが、ファイルは壊れていません。ダウンロード時に付与される `com.apple.quarantine` 属性が原因です。
 
 `.app` を「アプリケーション」フォルダに移したうえで、次のコマンドで属性を外してください。
 
@@ -39,14 +39,14 @@ xattr -dr com.apple.quarantine /Applications/draftpad.app
 
 ### Windows で「WindowsによってPCが保護されました」と表示される場合
 
-コード署名を行っていないため、ダウンロードしたインストーラは SmartScreen に警告されます。
+コード署名を行っていないため、ダウンロードしたインストーラは SmartScreen に警告されます。  
 「詳細情報」をクリックすると「実行」ボタンが出るので、押すとインストールを続けられます。
 
 この操作に不安を感じる場合、無理に実行せず、本アプリケーションの利用を避けてください。
 
 ## 使い方
 
-ウィンドウ全体がエディタです。書いた内容をコピーして貼り付け先へ持っていく、という使い方を想定しています。
+ウィンドウ全体がエディタです。書いた内容をコピーして貼り付け先へ持っていく、という使い方を想定しています。  
 コピー時はプレーンテキストのみをクリップボードに書き出すため、貼り付け先に書式が混入しません。
 
 ### 環境設定を開く
@@ -75,7 +75,7 @@ xattr -dr com.apple.quarantine /Applications/draftpad.app
 
 ### 検索・置換
 
-検索パネルには「正規表現」「大文字小文字を区別」「単語単位」のトグルがあります。
+検索パネルには「正規表現」「大文字小文字を区別」「単語単位」のトグルがあります。  
 正規表現モードでは置換文字列に `$1` `$2` … と `$&` が使えます(例: `(\d+)` → `$1円`)。
 
 ### 環境設定の項目
@@ -85,29 +85,51 @@ xattr -dr com.apple.quarantine /Applications/draftpad.app
 | モード | Normal / Vim |
 | テーマ | システムに合わせる / ライト / ダーク |
 | フォントサイズ | 10〜100 px |
-| フォント | CSS の `font-family` として解釈します。空欄なら OS 別の既定値。候補にはインストール済みフォントのファミリ名が出ます |
+| フォント | CSS の `font-family` として解釈します。<br>空欄なら OS 別の既定値。<br>候補にはインストール済みフォントのファミリ名が出ます |
 | タブ幅 | 1〜10 |
 | 入力候補を表示 | 文書内の単語を候補として補完します |
 
-既定フォント:
+#### 既定フォント:
 
 - macOS: `"Osaka-Mono", "Osaka−等幅", Menlo, "Hiragino Sans", monospace`
 - Windows: `"BIZ UDGothic", "BIZ UDゴシック", "MS Gothic", "ＭＳ ゴシック", Consolas, "Yu Gothic", monospace`
 
-macOS の Osaka は候補一覧では「Osaka」というファミリ名で出ます。等幅の面を使うには `Osaka-Mono` と入力してください。
+macOS の Osaka は候補一覧では「Osaka」というファミリ名で出ます。  
+等幅の Osaka を使うには `Osaka-Mono` を指定してください。
 
 ### 対応言語
 
-Markdown、プレーンテキスト、YAML、Batch、HTML、XML、Dockerfile、JavaScript、TypeScript、Ruby、Go、CSS、LESS、SCSS、
-Solidity、MySQL、pgSQL、PHP、PowerShell、Rust。ステータスバーのセレクトで切り替えます。
-Markdown のフェンスコードブロック(```js など)も同じ文法でハイライトされます。
+以下の言語のシンタックスハイライトに対応しています。
+
+- Markdown
+- plaintext
+- YAML
+- Batch
+- HTML
+- XML
+- Dockerfile
+- JavaScript
+- TypeScript
+- Ruby
+- Go
+- CSS
+- LESS
+- SCSS
+- Solidity
+- MySQL
+- pgSQL
+- PHP
+- PowerShell
+- Rust
+
+Markdown のフェンスコードブロック(```js など)を使用した場合、ブロック内のみ指定文法でハイライトされます。
 
 ## 制限事項
 
 - 自動アップデートはありません。更新するときは新しいバージョンを同じ手順で入れ直してください
 - 配布物はコード署名・公証をしていません
-- ウィンドウ位置は記憶しません(サイズのみ)
+- ウィンドウ位置は記憶しません
 
-## 開発者向けの情報
+## 開発者向け情報
 
 ビルド方法、ディレクトリ構成、リリースの手順などは [DEVELOPMENT.md](./DEVELOPMENT.md) にあります。
