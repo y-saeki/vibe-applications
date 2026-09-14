@@ -34,14 +34,16 @@ jobs:
         working-directory: draftpad
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+      # pnpm ships a self-contained binary and installs Node.js itself, so
+      # one step covers both. It needs pnpm 11 or newer.
+      - uses: pnpm/setup@703c52620218391530e48b9e8870d5c0082e1b9b # v2.1.0
         with:
-          version: 10
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
-        with:
-          node-version: 22
-          cache: pnpm
+          version: 12
+          runtime: node@22
+          cache: true
           cache-dependency-path: draftpad/pnpm-lock.yaml
+          # `pnpm install --frozen-lockfile` is a step of its own below.
+          install: false
       - run: pnpm install --frozen-lockfile
       # TypeScript sees the same sources on every platform, so the Windows and
       # macOS runners do not need to repeat this.
@@ -77,14 +79,16 @@ jobs:
       CARGO_PROFILE_DEV_DEBUG: 0
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+      # pnpm ships a self-contained binary and installs Node.js itself, so
+      # one step covers both. It needs pnpm 11 or newer.
+      - uses: pnpm/setup@703c52620218391530e48b9e8870d5c0082e1b9b # v2.1.0
         with:
-          version: 10
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
-        with:
-          node-version: 22
-          cache: pnpm
+          version: 12
+          runtime: node@22
+          cache: true
           cache-dependency-path: draftpad/pnpm-lock.yaml
+          # `pnpm install --frozen-lockfile` is a step of its own below.
+          install: false
       - name: Rust toolchain
         run: |
           rustup update stable
@@ -132,14 +136,16 @@ jobs:
             bundle: nsis/*.exe
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+      # pnpm ships a self-contained binary and installs Node.js itself, so
+      # one step covers both. It needs pnpm 11 or newer.
+      - uses: pnpm/setup@703c52620218391530e48b9e8870d5c0082e1b9b # v2.1.0
         with:
-          version: 10
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
-        with:
-          node-version: 22
-          cache: pnpm
+          version: 12
+          runtime: node@22
+          cache: true
           cache-dependency-path: draftpad/pnpm-lock.yaml
+          # `pnpm install --frozen-lockfile` is a step of its own below.
+          install: false
       - name: Rust toolchain
         run: |
           rustup update stable
