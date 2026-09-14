@@ -120,6 +120,15 @@ Windows 側の経路(アプリ内のキー処理)を、どちらも Linux のラ
 リポジトリ全体で 10 GB を共有し、超えると古いものから捨てられます。Pull Request が書いたキャッシュはクローズ時に
 消えます。
 
+バージョンの検査だけは `.github/workflows/draftpad-version.yml` という別のワークフローです。ラベルの付け外しでも
+走らせる必要があり、それを `draftpad.yml` に足すと macOS / Windows のビルドまで巻き添えで走ってしまうためです。
+数秒で終わるので、ラベルを触るたびに走っても実害はありません。
+
+こちらには `paths` を書いていません。スキップされたジョブはステータスを報告せず、required status check に
+指定したものが報告されないと Pull Request はいつまでもマージできなくなるためです。代わりに全部の Pull Request で
+走り、`draftpad/` 以下が 1 つも変わっていなければジョブ自身が何もせずに通します。required に指定するならこちらだけ
+安全です(`draftpad.yml` 側のジョブは `paths` で絞っているので、指定すると同じ理由で詰まります)。
+
 CI では失敗したテストを 1 回だけ再実行します。1 回目の trace が残るためですが、再実行で
 通ったもの(flaky)は成功扱いにしません。`pnpm test:e2e` が `--fail-on-flaky-tests` を
 渡しているので、ジョブは赤になります。緑のチェックの裏に不安定なテストが隠れない、という
@@ -133,10 +142,29 @@ CI では失敗したテストを 1 回だけ再実行します。1 回目の tr
 バージョンの実体は `src-tauri/tauri.conf.json` の `version` の 1 箇所だけです。Release のタグ名、配布物のファイル名、
 環境設定パネルの表示のすべてがここから決まります。`package.json` と `src-tauri/Cargo.toml` の `version` は実際には
 参照されませんが(Tauri は `tauri.conf.json` に `version` があればそちらを使います)、紛らわしいので同じ値に揃えます。
+`Cargo.toml` を書き換えたら `cargo update -p draftpad` で `Cargo.lock` も追随させてください。
 
 `main` ブランチで `src-tauri/tauri.conf.json` の `version` が上がると、GitHub Actions が
 `draftpad-v<version>` タグの Release を作り、上記の 2 つを添付します。上げずにマージした場合、タグが既に存在するため
-Release は作られません。リリースするつもりの変更では、マージ前にバージョンを上げてください。
+Release は作られません。
+
+### 上げ忘れを CI が止めます
+
+上げ忘れても Release ジョブは黙ってスキップするだけなので、`draftpad-version.yml` が Pull Request を赤くします。
+`draftpad/` を変更する Pull Request では、次のどれかに当たると落ちます。
+
+- バージョンが base ブランチの先端と同じ、または古い
+- 上の 4 つのファイルのバージョンが食い違っている
+
+`draftpad/` 以下に変更が 1 つもない Pull Request は対象外です(その場合は何も確認せずに通ります)。
+
+リリースするつもりがない変更(ドキュメントだけ、CI だけ、など)では、Pull Request に `no-release` ラベルを
+付けてください。付いていればバージョンが据え置きでも通ります。上げるか、上げない理由をラベルで示すか、
+どちらかを必ず選ぶことになります。
+
+ビルド成果物のコメントにもバージョンが出ます。据え置きのまま `no-release` で通した Pull Request では、
+Release が作られないことをそこで警告します。動作確認の前に必ず読む場所なので、macOS 側で作業していて
+インストーラを開かない場合でも目に入ります。
 
 配布物はコード署名・公証をしていません。そのため、ダウンロードした macOS 版は初回のみ `com.apple.quarantine`
 属性の解除が必要で、Windows 版はインストーラ実行時に SmartScreen の警告が出ます。どちらも手順は README.md に
