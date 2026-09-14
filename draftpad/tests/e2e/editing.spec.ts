@@ -81,6 +81,26 @@ test('picks a language from the dropped-open list', async ({ launch }) => {
   await app.expectSaved((state) => state.language === 'rust')
 })
 
+test('walks the dropped-open list with the keyboard', async ({ launch }) => {
+  const app = await launch()
+  const styleable = await app.page.evaluate(() => CSS.supports('appearance', 'base-select'))
+  test.skip(!styleable, 'this engine opens the platform list, not one the page can drive')
+
+  // The list is laid out by this sheet once the engine takes the base
+  // appearance, so its own styling is what could stop the rows taking the
+  // focus. The keyboard is the path that shows it.
+  await app.languageSelect.click()
+  await expect(app.languageSelect.locator('option').first()).toBeVisible()
+  // Two rows down from Markdown: plain text is the one in between, and it
+  // carries no grammar, so nothing would be left to assert on the editor.
+  await app.page.keyboard.press('ArrowDown')
+  await app.page.keyboard.press('ArrowDown')
+  await app.page.keyboard.press('Enter')
+
+  await expect(app.editor).toHaveAttribute('data-language', 'yaml')
+  await app.expectSaved((state) => state.language === 'yaml')
+})
+
 test('remembers the always-on-top toggle and passes it to the window', async ({ launch }) => {
   const app = await launch()
 
