@@ -41,6 +41,12 @@ test('switches to the dark look and remembers it', async ({ launch }) => {
   // by style.css; the palette has to reach both, not just the chrome.
   await expect(app.page.locator('.cm-editor')).toHaveCSS('background-color', 'rgb(21, 21, 21)')
   await expect(app.page.locator('#statusbar')).toHaveCSS('background-color', 'rgb(17, 17, 17)')
+
+  // The controls the platform would otherwise draw in its own greys: the
+  // language selector stays flat against the bar, the checkbox takes the
+  // palette rather than the system one.
+  await expect(app.languageSelect).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
+  await expect(app.alwaysOnTop).toHaveCSS('background-color', 'rgb(28, 28, 28)')
 })
 
 test('applies the font size and pulls out-of-range values back in', async ({ launch }) => {

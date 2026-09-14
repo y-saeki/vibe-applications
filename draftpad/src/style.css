@@ -11,6 +11,8 @@
   --control-hover: #eef1f4;
   --control-active: #e2e6ea;
   --focus-ring: rgba(43, 108, 176, 0.25);
+  /* The tick inside a checked box, in whichever color reads on --accent. */
+  --check-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%23ffffff' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round' d='M3.5 8.5 6.5 11.5 12.5 4.5'/%3E%3C/svg%3E");
   --ui-font: -apple-system, "Segoe UI", system-ui, sans-serif;
   --control-height: 28px;
   --statusbar-height: 26px;
@@ -33,6 +35,7 @@
   --control-hover: #262626;
   --control-active: #333333;
   --focus-ring: rgba(108, 182, 255, 0.32);
+  --check-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%230b0b0b' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round' d='M3.5 8.5 6.5 11.5 12.5 4.5'/%3E%3C/svg%3E");
   --editor-caret: #6cb6ff;
   --editor-selection: #2c4a6e;
   --editor-selection-match: rgba(255, 255, 255, 0.1);
@@ -66,6 +69,45 @@ body {
 #titlebar {
   flex: none;
   height: var(--titlebar-height);
+}
+
+/* Left alone, a checkbox is drawn by the platform in its own greys, which sit
+   on top of the theme rather than in it. Draw the box from the palette instead;
+   the tick is an image because a background color cannot reach a pseudo-element
+   of an input. */
+input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  flex: none;
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--control-bg);
+  cursor: pointer;
+}
+
+input[type="checkbox"]:hover {
+  background: var(--control-hover);
+}
+
+input[type="checkbox"]:checked {
+  border-color: var(--accent);
+  background: var(--accent) var(--check-mark) center / 11px 11px no-repeat;
+}
+
+input[type="checkbox"]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* A dropped-open list is drawn outside the page: Chromium (so WebView2) takes
+   these colors, while the native menu WKWebView opens follows color-scheme
+   alone. */
+option {
+  background: var(--control-bg);
+  color: var(--fg);
 }
 
 #editor {
@@ -241,17 +283,13 @@ body {
   -webkit-user-select: none;
 }
 
+/* The search panel runs at 13px, so its boxes are a size up from the status
+   bar's. */
 #editor .cm-panel input[type="checkbox"] {
   width: 15px;
   height: 15px;
-  margin: 0;
-  accent-color: var(--accent);
-  cursor: pointer;
-}
-
-#editor .cm-panel input[type="checkbox"]:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+  border-radius: 4px;
+  background-size: 13px 13px;
 }
 
 #editor .cm-panel [name="close"],
@@ -321,6 +359,28 @@ body {
   font: inherit;
   color: inherit;
 }
+
+/* The language selector otherwise arrives in the platform's own control grey,
+   which reads as a hole in the bar. Keep it flat until it is pointed at. */
+#statusbar select {
+  padding: 1px 2px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+}
+
+#statusbar select:hover {
+  border-color: var(--border);
+  background: var(--control-bg);
+  color: var(--fg);
+}
+
+#statusbar select:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+}
+
 
 .statusbar-button {
   display: inline-flex;
