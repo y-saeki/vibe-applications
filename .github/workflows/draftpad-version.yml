@@ -1,0 +1,78 @@
+name: draftpad version
+
+# Raising the version is a manual step, and forgetting it fails quietly: the
+# release job skips a tag that already exists, so the change never reaches
+# anyone and nothing says so. This check turns that into a red pull request.
+#
+# It is a workflow of its own because it listens for label changes, and adding
+# those to draftpad.yml would re-run the macOS and Windows builds every time a
+# label moves.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+    paths:
+      - "draftpad/**"
+
+concurrency:
+  group: draftpad-version-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    name: version bump
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      BASE_REF: ${{ github.base_ref }}
+      # A pull request that is not meant to ship carries this label instead of
+      # a bump, so that skipping the release is a decision rather than an
+      # oversight.
+      NO_RELEASE: ${{ contains(github.event.pull_request.labels.*.name, 'no-release') }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      # tauri.conf.json is the one that decides the release, but a mismatch in
+      # the other three is confusing enough to be worth catching here.
+      - name: Check that the four version fields agree
+        run: |
+          cd draftpad
+          conf="$(jq -re .version src-tauri/tauri.conf.json)"
+          pkg="$(jq -re .version package.json)"
+          toml="$(awk '/^\[package\]/{p=1;next} /^\[/{p=0} p && /^version *=/{gsub(/[" ]/,"");sub(/^version=/,"");print;exit}' src-tauri/Cargo.toml)"
+          lock="$(awk '/^name = "draftpad"$/{getline;gsub(/[" ]/,"");sub(/^version=/,"");print;exit}' src-tauri/Cargo.lock)"
+          for pair in "package.json:${pkg}" "src-tauri/Cargo.toml:${toml}" "src-tauri/Cargo.lock:${lock}"; do
+            name="${pair%%:*}"
+            value="${pair#*:}"
+            if [ -z "${value}" ]; then
+              echo "::error::could not read a version out of draftpad/${name}"
+              exit 1
+            fi
+            if [ "${value}" != "${conf}" ]; then
+              echo "::error::draftpad/${name} says ${value}, but draftpad/src-tauri/tauri.conf.json says ${conf}. Cargo.lock follows Cargo.toml through \`cargo update -p draftpad\`."
+              exit 1
+            fi
+          done
+          echo "VERSION=${conf}" >> "${GITHUB_ENV}"
+      # Against the tip of the base branch rather than the sha the pull request
+      # started from: a version another pull request has already merged is just
+      # as unreleasable as an unchanged one.
+      - name: Check that the version is ahead of the base branch
+        run: |
+          git fetch --depth=1 origin "${BASE_REF}"
+          base="$(git show FETCH_HEAD:draftpad/src-tauri/tauri.conf.json | jq -re .version)"
+          if [ "${VERSION}" = "${base}" ]; then
+            if [ "${NO_RELEASE}" = "true" ]; then
+              echo "::notice::draftpad stays at ${VERSION}; the no-release label says that is deliberate."
+              exit 0
+            fi
+            echo "::error::draftpad is still ${VERSION}, the same as ${BASE_REF}, so merging this would publish nothing. Raise the version in draftpad/src-tauri/tauri.conf.json and the three files that mirror it, or label this pull request no-release."
+            exit 1
+          fi
+          newest="$(printf '%s\n%s\n' "${base}" "${VERSION}" | sort -V | tail -1)"
+          if [ "${newest}" != "${VERSION}" ]; then
+            echo "::error::draftpad is ${VERSION} here but already ${base} on ${BASE_REF}."
+            exit 1
+          fi
+          echo "::notice::draftpad goes from ${base} to ${VERSION}."
