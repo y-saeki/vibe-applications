@@ -101,6 +101,7 @@ Windows 側の経路(アプリ内のキー処理)を、どちらも Linux のラ
 - 常に手前に表示・フルスクリーン・ウィンドウサイズが実際にどうなるか
   (`invoke` が正しく呼ばれたところまでは確認します)
 - コード署名していない配布物を各 OS が警告する挙動
+- Windows インストーラの画面と挙動(`src-tauri/installer.nsi`)
 
 これらは実機で確認するしかありません。裏を返せば、実機で見るべきものはこの一覧に絞られます。
 
@@ -157,7 +158,7 @@ Windows のタスクバーメニュー(ジャンプリスト)の項目はショ�
 自分は終了します。このため Windows 版は多重起動しません(同じ `state.json` を 2 つのプロセスが
 奪い合わないという利点もあります)。macOS 版の挙動は変わりません。
 
-ジャンプリストは起動のたびに登録し直します。インストーラや配布物には手を入れていないので、
+ジャンプリストは起動のたびにアプリ自身が登録し直します。インストーラは関与しないので、
 バージョンを上げたり別の場所へ移したりしても、次の起動で正しい実行ファイルを指し直します。
 
 Windows は IME の未確定文字列と変換候補をキャレットの位置に合わせて表示します。キャレットを持つ要素が
@@ -171,6 +172,29 @@ Windows の WebView2 はテキスト入力をフォームの一部とみなす�
 フォーカスすると「保存された情報」の候補が出ます。draftpad にフォームはないので、起動時に
 `ICoreWebView2Settings4` の `IsGeneralAutofillEnabled` と `IsPasswordAutosaveEnabled` を false にして
 止めています(`src-tauri/src/autofill.rs`)。macOS の WKWebView にこの挙動はありません。
+
+### Windows インストーラ(NSIS)
+
+自動アップデートに対応していないぶん、手動の入れ直しが軽く済むようにインストーラへ手を入れています。
+Tauri の NSIS スクリプトはビルド時のテンプレートなので、`tauri.conf.json` の
+`bundle.windows.nsis.template` で `src-tauri/installer.nsi` を指し、Tauri のものを置き換えています。
+
+`src-tauri/installer.nsi` は Tauri の
+[`installer.nsi`](https://github.com/tauri-apps/tauri/blob/tauri-cli-v2.11.4/crates/tauri-bundler/src/bundle/windows/nsis/installer.nsi)
+(`@tauri-apps/cli` v2.11.4 のもの)をそのまま写し、次の 4 点だけを変えたものです。変更箇所には
+`; draftpad:` で始まるコメントを付けてあります。
+
+| 変更 | 内容 |
+|---|---|
+| 更新方法の既定 | 旧バージョンを検出したときのラジオボタンで、「アンインストールしてから入れる」ではなく「上書きする」を最初から選んでおきます |
+| 起動中の draftpad | 確認ダイアログを出さずに終了させます。インストーラ・アンインストーラのどちらも |
+| インストール後 | ログの画面で止まらず、完了画面まで自動で進みます |
+| デスクトップショートカット | 完了画面のチェックボックスは、上書きインストールのときだけ外した状態で出します。新規インストールと、アンインストールを挟んだときは従来どおり入った状態です |
+
+`utils.nsh` や言語ファイルは Tauri が出力先へ書き出すものをそのまま使うので、写しているのは
+`installer.nsi` 1 ファイルだけです。`@tauri-apps/cli` を上げたときは上流の同ファイルと diff を取り、
+上流の変更を取り込んでください。テンプレートが壊れていれば Windows の `build` ジョブが
+`pnpm tauri build` で失敗します。
 
 ## 状態の保存
 
@@ -252,6 +276,7 @@ draftpad/
     src/jumplist.rs     Windows のタスクバーメニュー(ジャンプリスト)
     src/autofill.rs     Windows の WebView2 オートフィル抑止
     src/fonts.rs        フォント列挙
+    installer.nsi       Windows インストーラ(NSIS)のテンプレート
     tauri.conf.json     ウィンドウ・バンドル設定
     capabilities/       webview に許可する API
 ```
