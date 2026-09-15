@@ -13,11 +13,10 @@ import { languageExtension } from './languages'
 import type { State } from './state'
 import { vimExtension } from './vim'
 
-/** The three toggles in the search panel, as they are persisted. */
+/** The two toggles in the search panel, as they are persisted. */
 export interface SearchOptions {
   caseSensitive: boolean
   regexp: boolean
-  wholeWord: boolean
 }
 
 export interface EditorOptions {
@@ -35,9 +34,7 @@ const phrases = EditorState.phrases.of({
   Replace: '置換',
   next: '次へ',
   previous: '前へ',
-  all: 'すべて選択',
   'match case': '大文字小文字を区別',
-  'by word': '単語単位',
   regexp: '正規表現',
   replace: '置換',
   'replace all': 'すべて置換',
@@ -50,6 +47,14 @@ const phrases = EditorState.phrases.of({
   go: '移動',
   Completions: '入力候補',
 })
+
+// Multiple selections stay off (EditorState.allowMultipleSelections), so a
+// selection holding several ranges collapses to its main one. That makes
+// searchKeymap's Mod-Shift-l — select every match of the selection — do
+// nothing, so it goes along with the panel's "all" button that style.css
+// hides. Mod-d keeps the half that still works: selecting the word under the
+// cursor.
+const searchBindings = searchKeymap.filter((binding) => binding.key !== 'Mod-Shift-l')
 
 // historyKeymap binds redo to Mod-y everywhere and to Ctrl-Shift-z on Linux
 // only, so Windows needs this one; on macOS it repeats the Cmd-Shift-z binding
@@ -80,12 +85,12 @@ function colorExtension(dark: boolean): Extension {
 // the flags from the one before it, so setting them here is enough to carry the
 // toggles over from the previous run.
 function searchExtension(initial: Readonly<State>): Extension {
-  return search({ caseSensitive: initial.searchCaseSensitive, regexp: initial.searchRegexp, wholeWord: initial.searchWholeWord })
+  return search({ caseSensitive: initial.searchCaseSensitive, regexp: initial.searchRegexp })
 }
 
 function searchOptionsOf(state: EditorState): SearchOptions {
   const query = getSearchQuery(state)
-  return { caseSensitive: query.caseSensitive, regexp: query.regexp, wholeWord: query.wholeWord }
+  return { caseSensitive: query.caseSensitive, regexp: query.regexp }
 }
 
 export class Editor {
@@ -122,12 +127,12 @@ export class Editor {
         EditorView.lineWrapping,
         EditorView.contentAttributes.of({ spellcheck: 'false', autocorrect: 'off', autocapitalize: 'off' }),
         phrases,
-        keymap.of([...closeBracketsKeymap, ...searchKeymap, ...redoKeymap, ...historyKeymap, ...completionKeymap, ...defaultKeymap, indentWithTab]),
+        keymap.of([...closeBracketsKeymap, ...searchBindings, ...redoKeymap, ...historyKeymap, ...completionKeymap, ...defaultKeymap, indentWithTab]),
         EditorView.updateListener.of((update) => {
           if (update.docChanged) options.onDocChanged()
           const before = searchOptionsOf(update.startState)
           const after = searchOptionsOf(update.state)
-          if (after.caseSensitive !== before.caseSensitive || after.regexp !== before.regexp || after.wholeWord !== before.wholeWord) {
+          if (after.caseSensitive !== before.caseSensitive || after.regexp !== before.regexp) {
             options.onSearchOptionsChanged(after)
           }
         }),

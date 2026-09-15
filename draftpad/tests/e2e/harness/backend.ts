@@ -20,7 +20,6 @@ export interface State {
   alwaysOnTop: boolean
   searchCaseSensitive: boolean
   searchRegexp: boolean
-  searchWholeWord: boolean
   windowWidth: number | null
   windowHeight: number | null
 }
@@ -67,7 +66,6 @@ const DEFAULT_STATE: State = {
   alwaysOnTop: false,
   searchCaseSensitive: false,
   searchRegexp: false,
-  searchWholeWord: false,
   windowWidth: null,
   windowHeight: null,
 }

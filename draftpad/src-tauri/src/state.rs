@@ -26,7 +26,6 @@ pub struct State {
     pub always_on_top: bool,
     pub search_case_sensitive: bool,
     pub search_regexp: bool,
-    pub search_whole_word: bool,
     pub window_width: Option<f64>,
     pub window_height: Option<f64>,
 }
@@ -45,7 +44,6 @@ impl Default for State {
             always_on_top: false,
             search_case_sensitive: false,
             search_regexp: false,
-            search_whole_word: false,
             window_width: None,
             window_height: None,
         }
@@ -149,7 +147,6 @@ mod tests {
         assert!(!state.always_on_top);
         assert!(!state.search_case_sensitive);
         assert!(!state.search_regexp);
-        assert!(!state.search_whole_word);
         assert_eq!(state.window_width, None);
     }
 
@@ -168,7 +165,6 @@ mod tests {
             always_on_top: true,
             search_case_sensitive: true,
             search_regexp: true,
-            search_whole_word: true,
             window_width: Some(800.0),
             window_height: Some(600.0),
         };
@@ -187,7 +183,6 @@ mod tests {
         assert!(read.always_on_top);
         assert!(read.search_case_sensitive);
         assert!(read.search_regexp);
-        assert!(read.search_whole_word);
         assert_eq!(read.window_width, Some(800.0));
         assert_eq!(read.window_height, Some(600.0));
     }

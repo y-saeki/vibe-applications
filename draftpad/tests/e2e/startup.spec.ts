@@ -24,14 +24,13 @@ test('restores the saved settings', async ({ launch }) => {
 
 test('restores the search toggles', async ({ launch }) => {
   const app = await launch({
-    state: { searchCaseSensitive: true, searchRegexp: true, searchWholeWord: false },
+    state: { searchCaseSensitive: true, searchRegexp: true },
   })
 
   await app.press('KeyF')
   await expect(app.searchPanel).toBeVisible()
   await expect(app.searchMatchCase).toBeChecked()
   await expect(app.searchRegexp).toBeChecked()
-  await expect(app.searchWholeWord).not.toBeChecked()
 })
 
 test('follows the OS when the theme is "system"', async ({ launch }) => {

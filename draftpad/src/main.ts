@@ -80,7 +80,6 @@ async function main(): Promise<void> {
       store.set({
         searchCaseSensitive: options.caseSensitive,
         searchRegexp: options.regexp,
-        searchWholeWord: options.wholeWord,
       }),
   })
   const ed = editor

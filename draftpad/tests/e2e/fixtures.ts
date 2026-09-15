@@ -56,7 +56,6 @@ export class App {
   readonly searchPanel: Locator
   readonly searchMatchCase: Locator
   readonly searchRegexp: Locator
-  readonly searchWholeWord: Locator
 
   constructor(
     readonly page: Page,
@@ -73,10 +72,9 @@ export class App {
     this.preferences = page.locator('#preferences')
     this.searchPanel = page.locator('.cm-search')
     // CodeMirror builds the panel itself; the labels are the phrases in
-    // src/editor.ts, which is the only handle the page gives these three.
+    // src/editor.ts, which is the only handle the page gives these two.
     this.searchMatchCase = this.searchPanel.getByLabel('大文字小文字を区別')
     this.searchRegexp = this.searchPanel.getByLabel('正規表現')
-    this.searchWholeWord = this.searchPanel.getByLabel('単語単位')
   }
 
   /** "Mod" from src/commands.ts: Cmd on macOS, Ctrl elsewhere. */

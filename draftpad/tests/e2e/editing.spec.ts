@@ -131,9 +131,8 @@ test('remembers the search toggles once they are switched', async ({ launch }) =
   await app.press('KeyF')
   await expect(app.searchPanel).toBeVisible()
   await app.searchMatchCase.check()
-  await app.searchWholeWord.check()
 
-  await app.expectSaved((state) => state.searchCaseSensitive && state.searchWholeWord && !state.searchRegexp)
+  await app.expectSaved((state) => state.searchCaseSensitive && !state.searchRegexp)
 })
 
 test('remembers the always-on-top toggle and passes it to the window', async ({ launch }) => {
