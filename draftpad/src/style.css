@@ -64,6 +64,8 @@
   --panel-width: 440px;
   --panel-inset: 40px; /* the preferences panel's distance from the window */
   --language-width: 128px; /* the floor under the status bar's language selector */
+  --count-width: 104px; /* the status bar's character count, separator included */
+  --count-width-narrow: 96px; /* its line count, which needs fewer digits */
 
   color-scheme: light;
 }
@@ -535,7 +537,10 @@ option {
   justify-content: space-between;
   gap: var(--space-4);
   height: var(--statusbar-height);
-  padding: 0 var(--space-3);
+  /* Thinner on the right: an icon button is --icon-button-size around an
+     --icon-size glyph, so it already brings a gutter of its own and an equal
+     padding at both ends would read as a wider gap on that side. */
+  padding: 0 var(--space-2) 0 var(--space-3);
   border-top: 1px solid var(--border);
   background: var(--panel);
   color: var(--muted);
@@ -547,22 +552,40 @@ option {
 .statusbar-group {
   display: flex;
   align-items: center;
-  gap: var(--space-4);
   white-space: nowrap;
 }
 
-/* The counts are read-only cells; a hairline keeps them apart the way the
-   platform's own status bars do. */
-.statusbar-cell + .statusbar-cell {
-  padding-left: var(--space-4);
-  border-left: 1px solid var(--border);
+/* The controls at the right end sit close together; the counts at the left end
+   are spaced by their own padding instead, so that group takes no gap. */
+.statusbar-actions {
+  gap: var(--space-1);
 }
 
-.statusbar-check {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  cursor: pointer;
+/* The counts are read-only cells; a hairline closes each of them off the way
+   the platform's own status bars do.
+
+   Each cell is as wide as its longest reading rather than as wide as what it
+   currently says, so the separators and everything to their right stay put as
+   the digits come and go. The widths count the padding and the hairline, and
+   the figures are lined up on the same advance. */
+.statusbar-cell {
+  box-sizing: border-box;
+  min-width: var(--count-width);
+  padding-right: var(--space-4);
+  border-right: 1px solid var(--border);
+  font-variant-numeric: tabular-nums;
+}
+
+.statusbar-cell + .statusbar-cell {
+  min-width: var(--count-width-narrow);
+  padding-left: var(--space-4);
+}
+
+/* Always-on-top is a state of the window rather than a field to fill in, so
+   the button carries it: pressed, it takes the accent instead of a tick. */
+#always-on-top[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  color: var(--accent);
 }
 
 #statusbar select,

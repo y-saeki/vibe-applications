@@ -51,6 +51,6 @@ test('starts up without tripping the policy', async ({ launch }) => {
   const app = await launch({ csp: true })
 
   await app.typeInEditor('csp')
-  await expect(app.chars).toHaveText('文字数: 3')
+  await expect(app.chars).toHaveText('3 文字')
   expect(app.cspViolations).toEqual([])
 })
