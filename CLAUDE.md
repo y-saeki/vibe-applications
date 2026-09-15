@@ -93,6 +93,19 @@ pull request is merged. Reference an issue that should stay open — or one in a
 repository — without a keyword instead (`Refs #12`). A pull request with no originating
 issue gets no such line.
 
+## Opening a pull request needs no separate go-ahead
+
+Branching, committing, pushing and opening the pull request are part of carrying out the
+work here, not a further request to put to the user. What stays theirs is everything past
+that point: merging, closing a pull request, and deleting branches.
+
+## A pull request you opened stays yours
+
+Subscribe to its activity as soon as it exists, without being asked to, and keep at it until
+it merges or closes: push the fix when CI turns red, and answer the review comments it
+collects. Ask before anything that widens the change beyond what the pull request set out
+to do.
+
 ## Keep the pull request body in step with the branch
 
 A pull request body describes the branch as it stands, not as it stood when the pull
