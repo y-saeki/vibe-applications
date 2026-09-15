@@ -74,6 +74,13 @@ async function main(): Promise<void> {
       store.markTextChanged()
       updateCounts()
     },
+    // The panel owns these toggles, so the store only records them; there is no
+    // entry for them in `apply` below, and nothing to push back at the editor.
+    onSearchOptionsChanged: (options) =>
+      store.set({
+        searchCaseSensitive: options.caseSensitive,
+        searchRegexp: options.regexp,
+      }),
   })
   const ed = editor
   store.setTextProvider(() => ed.getText())

@@ -54,6 +54,8 @@ export class App {
   readonly gear: Locator
   readonly preferences: Locator
   readonly searchPanel: Locator
+  readonly searchMatchCase: Locator
+  readonly searchRegexp: Locator
 
   constructor(
     readonly page: Page,
@@ -69,6 +71,10 @@ export class App {
     this.gear = page.locator('#open-preferences')
     this.preferences = page.locator('#preferences')
     this.searchPanel = page.locator('.cm-search')
+    // CodeMirror builds the panel itself; the labels are the phrases in
+    // src/editor.ts, which is the only handle the page gives these two.
+    this.searchMatchCase = this.searchPanel.getByLabel('大文字小文字を区別')
+    this.searchRegexp = this.searchPanel.getByLabel('正規表現')
   }
 
   /** "Mod" from src/commands.ts: Cmd on macOS, Ctrl elsewhere. */

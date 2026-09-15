@@ -24,6 +24,8 @@ pub struct State {
     pub tab_size: u32,
     pub quick_suggestions: bool,
     pub always_on_top: bool,
+    pub search_case_sensitive: bool,
+    pub search_regexp: bool,
     pub window_width: Option<f64>,
     pub window_height: Option<f64>,
 }
@@ -40,6 +42,8 @@ impl Default for State {
             tab_size: 4,
             quick_suggestions: true,
             always_on_top: false,
+            search_case_sensitive: false,
+            search_regexp: false,
             window_width: None,
             window_height: None,
         }
@@ -141,6 +145,8 @@ mod tests {
         assert_eq!(state.tab_size, 4);
         assert!(state.quick_suggestions);
         assert!(!state.always_on_top);
+        assert!(!state.search_case_sensitive);
+        assert!(!state.search_regexp);
         assert_eq!(state.window_width, None);
     }
 
@@ -157,6 +163,8 @@ mod tests {
             tab_size: 2,
             quick_suggestions: false,
             always_on_top: true,
+            search_case_sensitive: true,
+            search_regexp: true,
             window_width: Some(800.0),
             window_height: Some(600.0),
         };
@@ -173,6 +181,8 @@ mod tests {
         assert_eq!(read.tab_size, 2);
         assert!(!read.quick_suggestions);
         assert!(read.always_on_top);
+        assert!(read.search_case_sensitive);
+        assert!(read.search_regexp);
         assert_eq!(read.window_width, Some(800.0));
         assert_eq!(read.window_height, Some(600.0));
     }

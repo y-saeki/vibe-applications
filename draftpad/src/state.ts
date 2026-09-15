@@ -17,6 +17,8 @@ export interface State {
   tabSize: number
   quickSuggestions: boolean
   alwaysOnTop: boolean
+  searchCaseSensitive: boolean
+  searchRegexp: boolean
   windowWidth: number | null
   windowHeight: number | null
 }
