@@ -65,6 +65,16 @@ test('applies the font size and pulls out-of-range values back in', async ({ lau
   await app.expectSaved((state) => state.fontSize === 100)
 })
 
+test('applies the font weight and remembers it', async ({ launch }) => {
+  const app = await launch()
+
+  await app.gear.click()
+  await app.page.locator('#pref-font-weight').selectOption('700')
+  // The theme puts the weight on the scroller; the text takes it by inheritance.
+  await expect(app.editor).toHaveCSS('font-weight', '700')
+  await app.expectSaved((state) => state.fontWeight === 700)
+})
+
 test('pulls an out-of-range tab width back in', async ({ launch }) => {
   const app = await launch()
   const tabSize = app.page.locator('#pref-tab-size')

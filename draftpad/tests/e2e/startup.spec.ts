@@ -22,6 +22,14 @@ test('restores the saved settings', async ({ launch }) => {
   expect(await app.commands()).toContain('plugin:window|set_always_on_top')
 })
 
+test('starts at the saved font weight, snapped onto the scale the panel offers', async ({ launch }) => {
+  const app = await launch({ state: { fontWeight: 460 } })
+
+  await expect(app.editor).toHaveCSS('font-weight', '500')
+  await app.gear.click()
+  await expect(app.page.locator('#pref-font-weight')).toHaveValue('500')
+})
+
 test('restores the search toggles', async ({ launch }) => {
   const app = await launch({
     state: { searchCaseSensitive: true, searchRegexp: true },
