@@ -125,6 +125,17 @@ test('walks the dropped-open list with the keyboard', async ({ launch }) => {
   await app.expectSaved((state) => state.language === 'yaml')
 })
 
+test('remembers the search toggles once they are switched', async ({ launch }) => {
+  const app = await launch()
+
+  await app.press('KeyF')
+  await expect(app.searchPanel).toBeVisible()
+  await app.searchMatchCase.check()
+  await app.searchWholeWord.check()
+
+  await app.expectSaved((state) => state.searchCaseSensitive && state.searchWholeWord && !state.searchRegexp)
+})
+
 test('remembers the always-on-top toggle and passes it to the window', async ({ launch }) => {
   const app = await launch()
 

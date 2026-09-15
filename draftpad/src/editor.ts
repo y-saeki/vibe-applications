@@ -4,7 +4,7 @@
 import { autocompletion, closeBrackets, closeBracketsKeymap, completeAnyWord, completionKeymap } from '@codemirror/autocomplete'
 import { defaultKeymap, history, historyKeymap, indentWithTab, redo as redoCommand, undo as undoCommand } from '@codemirror/commands'
 import { bracketMatching, defaultHighlightStyle, indentOnInput, indentUnit, syntaxHighlighting } from '@codemirror/language'
-import { highlightSelectionMatches, openSearchPanel, search, searchKeymap } from '@codemirror/search'
+import { getSearchQuery, highlightSelectionMatches, openSearchPanel, search, searchKeymap } from '@codemirror/search'
 import { Compartment, EditorState, type Extension } from '@codemirror/state'
 import { drawSelection, dropCursor, EditorView, keymap, type KeyBinding } from '@codemirror/view'
 
@@ -13,6 +13,13 @@ import { languageExtension } from './languages'
 import type { State } from './state'
 import { vimExtension } from './vim'
 
+/** The three toggles in the search panel, as they are persisted. */
+export interface SearchOptions {
+  caseSensitive: boolean
+  regexp: boolean
+  wholeWord: boolean
+}
+
 export interface EditorOptions {
   parent: HTMLElement
   initial: Readonly<State>
@@ -20,6 +27,7 @@ export interface EditorOptions {
   defaultFontFamily: string
   dark: boolean
   onDocChanged: () => void
+  onSearchOptionsChanged: (options: SearchOptions) => void
 }
 
 const phrases = EditorState.phrases.of({
@@ -67,6 +75,19 @@ function colorExtension(dark: boolean): Extension {
   return dark ? darkTheme : syntaxHighlighting(defaultHighlightStyle)
 }
 
+// The search extension reads these when it builds the initial query, which is
+// the one the panel shows the first time it opens. Every later query inherits
+// the flags from the one before it, so setting them here is enough to carry the
+// toggles over from the previous run.
+function searchExtension(initial: Readonly<State>): Extension {
+  return search({ caseSensitive: initial.searchCaseSensitive, regexp: initial.searchRegexp, wholeWord: initial.searchWholeWord })
+}
+
+function searchOptionsOf(state: EditorState): SearchOptions {
+  const query = getSearchQuery(state)
+  return { caseSensitive: query.caseSensitive, regexp: query.regexp, wholeWord: query.wholeWord }
+}
+
 export class Editor {
   readonly view: EditorView
   private readonly language = new Compartment()
@@ -97,13 +118,18 @@ export class Editor {
         bracketMatching(),
         closeBrackets(),
         highlightSelectionMatches(),
-        search(),
+        searchExtension(initial),
         EditorView.lineWrapping,
         EditorView.contentAttributes.of({ spellcheck: 'false', autocorrect: 'off', autocapitalize: 'off' }),
         phrases,
         keymap.of([...closeBracketsKeymap, ...searchKeymap, ...redoKeymap, ...historyKeymap, ...completionKeymap, ...defaultKeymap, indentWithTab]),
         EditorView.updateListener.of((update) => {
           if (update.docChanged) options.onDocChanged()
+          const before = searchOptionsOf(update.startState)
+          const after = searchOptionsOf(update.state)
+          if (after.caseSensitive !== before.caseSensitive || after.regexp !== before.regexp || after.wholeWord !== before.wholeWord) {
+            options.onSearchOptionsChanged(after)
+          }
         }),
       ],
     })

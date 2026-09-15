@@ -18,6 +18,9 @@ export interface State {
   tabSize: number
   quickSuggestions: boolean
   alwaysOnTop: boolean
+  searchCaseSensitive: boolean
+  searchRegexp: boolean
+  searchWholeWord: boolean
   windowWidth: number | null
   windowHeight: number | null
 }
@@ -62,6 +65,9 @@ const DEFAULT_STATE: State = {
   tabSize: 4,
   quickSuggestions: true,
   alwaysOnTop: false,
+  searchCaseSensitive: false,
+  searchRegexp: false,
+  searchWholeWord: false,
   windowWidth: null,
   windowHeight: null,
 }
