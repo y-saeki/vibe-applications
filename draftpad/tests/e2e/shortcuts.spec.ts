@@ -12,6 +12,14 @@ test('Ctrl+F opens search and replace', async ({ launch }) => {
   await expect(app.searchPanel.getByPlaceholder('検索')).toBeVisible()
 })
 
+test('the search panel has no select-all button', async ({ launch }) => {
+  const app = await launch({ platform: 'windows' })
+
+  await app.press('KeyF')
+  await expect(app.searchPanel.getByRole('button', { name: '次へ' })).toBeVisible()
+  await expect(app.searchPanel.locator('button[name="select"]')).toBeHidden()
+})
+
 test('Ctrl+, opens the preferences panel', async ({ launch }) => {
   const app = await launch({ platform: 'windows' })
 

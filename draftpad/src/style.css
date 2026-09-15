@@ -439,10 +439,18 @@ option {
   display: none;
 }
 
+/* CodeMirror's own "select all matches" button. Its command puts a range on
+   every match, and draftpad leaves multiple selections off (see src/editor.ts),
+   so all but one of them is dropped and the button appears to do nothing.
+   CodeMirror builds the panel and offers no say over which buttons it holds,
+   so the button is taken out of it here. */
+#editor .cm-panel.cm-search button[name="select"] {
+  display: none;
+}
+
 #editor .cm-panel.cm-search input[name="search"],
 #editor .cm-panel.cm-search button[name="next"],
-#editor .cm-panel.cm-search button[name="prev"],
-#editor .cm-panel.cm-search button[name="select"] {
+#editor .cm-panel.cm-search button[name="prev"] {
   order: 1;
 }
 
