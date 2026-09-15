@@ -21,6 +21,32 @@ test('paints the checked boxes without tripping the policy', async ({ launch }) 
   expect(app.cspViolations).toEqual([])
 })
 
+test('paints the masked marks without tripping the policy', async ({ launch }) => {
+  const app = await launch({ csp: true })
+  const maskOf = (selector: string, pseudo: string) =>
+    app.page.evaluate(
+      (target) => getComputedStyle(document.querySelector(target.selector)!, target.pseudo).maskImage,
+      { selector, pseudo },
+    )
+
+  // The × that closes a panel and the arrow on a select are data: URIs painted
+  // through a mask, which the policy covers under img-src. A policy that
+  // blocked one would leave the button or the select simply blank rather than
+  // failing outright.
+  await app.gear.click()
+  await expect(app.preferences).toBeVisible()
+  expect(await maskOf('#preferences-close', '::before')).toMatch(/url\("data:image\/svg\+xml/)
+
+  await app.page.keyboard.press('Escape')
+  // The arrow only exists where the list is ours; where the platform draws the
+  // select, it draws the arrow too and there is nothing here to load.
+  if (await app.listIsOurs()) {
+    expect(await maskOf('#language-select', '::picker-icon')).toMatch(/url\("data:image\/svg\+xml/)
+    await app.languageSelect.click()
+  }
+  expect(app.cspViolations).toEqual([])
+})
+
 test('starts up without tripping the policy', async ({ launch }) => {
   const app = await launch({ csp: true })
 

@@ -74,6 +74,13 @@ async function main(): Promise<void> {
       store.markTextChanged()
       updateCounts()
     },
+    // The panel owns these toggles, so the store only records them; there is no
+    // entry for them in `apply` below, and nothing to push back at the editor.
+    onSearchOptionsChanged: (options) =>
+      store.set({
+        searchCaseSensitive: options.caseSensitive,
+        searchRegexp: options.regexp,
+      }),
   })
   const ed = editor
   store.setTextProvider(() => ed.getText())
@@ -99,7 +106,7 @@ async function main(): Promise<void> {
 
   // ---- preferences --------------------------------------------------------
   const focusEditor = (): void => ed.focus()
-  const preferences = new Preferences(byId('preferences'), store, { version, defaultFontFamily: fontFamily, onClose: focusEditor })
+  const preferences = new Preferences(byId<HTMLDialogElement>('preferences'), store, { version, defaultFontFamily: fontFamily, onClose: focusEditor })
 
   openPreferences = () => preferences.open()
 
@@ -164,17 +171,6 @@ async function main(): Promise<void> {
       true,
     )
   }
-  window.addEventListener(
-    'keydown',
-    (event) => {
-      if (event.key !== 'Escape') return
-      if (preferences.isOpen) {
-        event.preventDefault()
-        preferences.close()
-      }
-    },
-    true,
-  )
 
   // ---- window size (position is intentionally not remembered) ------------
   window.addEventListener(

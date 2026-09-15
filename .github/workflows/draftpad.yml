@@ -48,6 +48,9 @@ jobs:
       # TypeScript sees the same sources on every platform, so the Windows and
       # macOS runners do not need to repeat this.
       - run: pnpm typecheck
+      # Whether the chrome is still built out of its tokens. Static and
+      # instant, so it sits here rather than in the browser suite.
+      - run: pnpm lint:style
       - run: pnpm exec playwright install --with-deps chromium webkit
       - run: pnpm test:e2e
       - if: failure()
@@ -170,18 +173,39 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
+      contents: read
       issues: write
       pull-requests: write
     env:
       GH_TOKEN: ${{ github.token }}
-      # Resolves the pull request without a checkout.
       GH_REPO: ${{ github.repository }}
       OWNER: ${{ github.repository_owner }}
       REPO_NAME: ${{ github.event.repository.name }}
       PR_NUMBER: ${{ github.event.pull_request.number }}
       HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      BASE_REF: ${{ github.base_ref }}
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      # The comment is what gets read before installing the build, on either
+      # platform, so it is where an unchanged version is worth saying out loud.
+      # draftpad-version.yml already fails the pull request over it; this is
+      # the same fact where the person about to install is looking.
+      - name: Work out what the build's version means
+        run: |
+          version="$(jq -re .version draftpad/src-tauri/tauri.conf.json)"
+          git fetch --depth=1 origin "${BASE_REF}"
+          base="$(git show FETCH_HEAD:draftpad/src-tauri/tauri.conf.json | jq -re .version)"
+          if [ "${version}" = "${base}" ]; then
+            note="⚠️ バージョンは ${version} のまま(${BASE_REF} と同じ)です。このままマージしても Release は作られません。"
+          else
+            note="バージョンは ${base} から ${version} に上がります。"
+          fi
+          {
+            echo "VERSION_NOTE<<NOTE_EOF"
+            echo "${note}"
+            echo "NOTE_EOF"
+          } >> "${GITHUB_ENV}"
       # Collected before the new comment is posted, so that it is not in the
       # list. The marker is the first line of every comment this job writes.
       - name: Collect the comments this job wrote before
@@ -213,7 +237,7 @@ jobs:
             echo "::error::the run uploaded no artifacts"
             exit 1
           fi
-          jq -r --arg run_url "${RUN_URL}" --arg sha "${HEAD_SHA}" '
+          jq -r --arg run_url "${RUN_URL}" --arg sha "${HEAD_SHA}" --arg version_note "${VERSION_NOTE}" '
             def platform: {
               "draftpad-macos-latest": "macOS (.dmg)",
               "draftpad-windows-latest": "Windows (.exe)"
@@ -224,6 +248,8 @@ jobs:
             "",
             (.artifacts | sort_by(.name)[]
               | "- [\(.name | platform)](\($run_url)/artifacts/\(.id)) — \(.size_in_bytes | megabytes) MB"),
+            "",
+            $version_note,
             "",
             "\($sha[0:7]) を base ブランチにマージした状態のビルドです。ダウンロードには GitHub へのログインが必要です。",
             "",

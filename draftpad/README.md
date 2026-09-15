@@ -8,7 +8,7 @@ macOS / Windows 対応。
 - 20 言語のシンタックスハイライト、正規表現対応の検索・置換、単語補完、Vim モード
 - ライト / ダークテーマ対応
 
-<img width="2138" height="1700" alt="CleanShot 2026-09-14 at 19 20 04@2x" src="https://github.com/user-attachments/assets/98b3bf4b-dfbf-4e72-8807-6f2c3ed10b24" />
+<img width="2384" height="1914" alt="CleanShot 2026-09-15 at 05 26 00@2x" src="https://github.com/user-attachments/assets/d61f09c3-f448-499a-914c-c7bf0acfc89f" />
 
 ## 動作環境
 
@@ -23,6 +23,10 @@ macOS / Windows 対応。
   - 開いて `draftpad.app` を「アプリケーション」フォルダへ入れます
 - Windows: `draftpad_<version>_x64-setup.exe`
   - 実行するとインストーラが起動します。インストーラの案内に従ってください
+  - 更新するときも同じファイルを実行します。既定で上書きインストールになり、デスクトップ
+    ショートカットは今の状態のまま残ります
+  - 更新時に draftpad が起動していると、確認なしで終了します。直前に書いた数文字が
+    引き継がれないことがあるので、書きかけのものがあるときは先に閉じてください
 
 ### macOS で「壊れているため開けません」と表示される場合
 
@@ -75,7 +79,8 @@ xattr -dr com.apple.quarantine /Applications/draftpad.app
 
 ### 検索・置換
 
-検索パネルには「正規表現」「大文字小文字を区別」「単語単位」のトグルがあります。  
+検索パネルには「正規表現」「大文字小文字を区別」のトグルがあります。  
+これらの状態は引き継がれるので、次に起動したときも同じ設定のまま検索できます。  
 正規表現モードでは置換文字列に `$1` `$2` … と `$&` が使えます(例: `(\d+)` → `$1円`)。
 
 ### 環境設定の項目

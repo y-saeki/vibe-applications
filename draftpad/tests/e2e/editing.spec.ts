@@ -64,6 +64,77 @@ test('switches the grammar from the status bar and remembers it', async ({ launc
   await app.expectSaved((state) => state.language === 'rust')
 })
 
+test('keeps the list shut until it is asked for', async ({ launch }) => {
+  const app = await launch()
+  const firstOption = app.languageSelect.locator('option').first()
+
+  // The browser hides a closed picker with `display: none`, and a `display`
+  // written for it in style.css beats that: the list then sits open over the
+  // window from the moment the app loads, on every select at once. Nothing
+  // else here would notice, because every other case opens the list first.
+  await expect(firstOption).toBeHidden()
+
+  await app.languageSelect.click()
+  // A list the platform owns is a window of its own, which never enters the
+  // page whether it is open or not.
+  if (await app.listIsOurs()) await expect(firstOption).toBeVisible()
+})
+
+test('leaves the list to macOS', async ({ launch }) => {
+  const app = await launch({ platform: 'macos' })
+
+  // The menu macOS opens already looks like the rest of that system, so the
+  // base appearance is asked for on Windows only. Without saying so, an engine
+  // new enough would take the list over there on its own.
+  expect(await app.listIsOurs()).toBe(false)
+})
+
+test('picks a language from the dropped-open list', async ({ launch }) => {
+  const app = await launch()
+  const styleable = await app.page.evaluate(() => CSS.supports('appearance', 'base-select'))
+  // Without the base appearance the list is the platform's own window, which
+  // nothing inside the page can reach. The case above covers the same choice
+  // arriving through the DOM, which is the path that works on both.
+  test.skip(!styleable, 'this engine opens the platform list, not one the page can drive')
+
+  await app.languageSelect.click()
+  const rust = app.languageSelect.locator('option', { hasText: 'Rust' })
+  await expect(rust).toBeVisible()
+  await rust.click()
+
+  await expect(app.editor).toHaveAttribute('data-language', 'rust')
+  await app.expectSaved((state) => state.language === 'rust')
+})
+
+test('walks the dropped-open list with the keyboard', async ({ launch }) => {
+  const app = await launch()
+  test.skip(!(await app.listIsOurs()), 'the platform owns the list here, so the page cannot drive it')
+
+  // The list is laid out by this sheet once the engine takes the base
+  // appearance, so its own styling is what could stop the rows taking the
+  // focus. The keyboard is the path that shows it.
+  await app.languageSelect.click()
+  await expect(app.languageSelect.locator('option').first()).toBeVisible()
+  // Two rows down from Markdown: plain text is the one in between, and it
+  // carries no grammar, so nothing would be left to assert on the editor.
+  await app.page.keyboard.press('ArrowDown')
+  await app.page.keyboard.press('ArrowDown')
+  await app.page.keyboard.press('Enter')
+
+  await expect(app.editor).toHaveAttribute('data-language', 'yaml')
+  await app.expectSaved((state) => state.language === 'yaml')
+})
+
+test('remembers the search toggles once they are switched', async ({ launch }) => {
+  const app = await launch()
+
+  await app.press('KeyF')
+  await expect(app.searchPanel).toBeVisible()
+  await app.searchMatchCase.check()
+
+  await app.expectSaved((state) => state.searchCaseSensitive && !state.searchRegexp)
+})
+
 test('remembers the always-on-top toggle and passes it to the window', async ({ launch }) => {
   const app = await launch()
 
