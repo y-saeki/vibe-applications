@@ -5,8 +5,8 @@ test('carries the previous text over and counts it', async ({ launch }) => {
 
   await expect(app.editor).toContainText('おはよう')
   // Code points, not UTF-16 units: the emoji counts as one character.
-  await expect(app.chars).toHaveText('文字数: 8')
-  await expect(app.lines).toHaveText('行数: 2')
+  await expect(app.chars).toHaveText('8 文字')
+  await expect(app.lines).toHaveText('2 行')
 })
 
 test('restores the saved settings', async ({ launch }) => {
@@ -15,7 +15,7 @@ test('restores the saved settings', async ({ launch }) => {
   })
 
   await expect(app.languageSelect).toHaveValue('rust')
-  await expect(app.alwaysOnTop).toBeChecked()
+  await expect(app.alwaysOnTop).toHaveAttribute('aria-pressed', 'true')
   await expect(app.page.locator('html')).toHaveAttribute('data-theme', 'dark')
   await expect(app.editor).toHaveAttribute('data-language', 'rust')
   // The window setting is the backend's to apply.

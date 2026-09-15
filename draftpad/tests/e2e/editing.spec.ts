@@ -1,13 +1,13 @@
-import { expect, test } from './fixtures'
+import { type App, expect, test } from './fixtures'
 
 test('counts what is typed', async ({ launch }) => {
   const app = await launch()
 
   await app.typeInEditor('hello')
-  await expect(app.chars).toHaveText('文字数: 5')
+  await expect(app.chars).toHaveText('5 文字')
   await app.typeInEditor('\nworld')
-  await expect(app.chars).toHaveText('文字数: 11')
-  await expect(app.lines).toHaveText('行数: 2')
+  await expect(app.chars).toHaveText('11 文字')
+  await expect(app.lines).toHaveText('2 行')
 })
 
 test('hands the text to the backend without being asked to save', async ({ launch }) => {
@@ -138,8 +138,54 @@ test('remembers the search toggles once they are switched', async ({ launch }) =
 test('remembers the always-on-top toggle and passes it to the window', async ({ launch }) => {
   const app = await launch()
 
-  await app.alwaysOnTop.check()
+  await app.alwaysOnTop.click()
+  await expect(app.alwaysOnTop).toHaveAttribute('aria-pressed', 'true')
   await app.expectSaved((state) => state.alwaysOnTop)
   const call = (await app.calls()).find((entry) => entry.cmd === 'plugin:window|set_always_on_top')
   expect(call?.args).toMatchObject({ value: true })
 })
+
+test('works the always-on-top toggle from the keyboard, and says which way it is', async ({ launch }) => {
+  const app = await launch({ state: { alwaysOnTop: true } })
+
+  // It is a button rather than a checkbox, so the state a screen reader reads
+  // out is aria-pressed and nothing else says it.
+  await expect(app.alwaysOnTop).toHaveAttribute('aria-pressed', 'true')
+  await app.alwaysOnTop.focus()
+  await app.page.keyboard.press('Space')
+  await expect(app.alwaysOnTop).toHaveAttribute('aria-pressed', 'false')
+  await app.expectSaved((state) => !state.alwaysOnTop)
+
+  await app.page.keyboard.press('Enter')
+  await expect(app.alwaysOnTop).toHaveAttribute('aria-pressed', 'true')
+})
+
+test('keeps the bar still however many digits the counts run to', async ({ launch }) => {
+  // 111,999 characters over 1,000 lines: six digits and four, the widest
+  // readings the two cells are built for.
+  const app = await launch({ state: { text: Array.from({ length: 1000 }, () => 'あ'.repeat(111)).join('\n') } })
+
+  await expect(app.chars).toHaveText('111999 文字')
+  await expect(app.lines).toHaveText('1000 行')
+  // Each cell is held at the width its token gives it, separator included, so
+  // the longest reading does not push it wider than the shortest one.
+  expect((await app.chars.boundingBox())?.width).toBe(await token(app, '--count-width'))
+  expect((await app.lines.boundingBox())?.width).toBe(await token(app, '--count-width-narrow'))
+
+  // Which is what the bar is really being asked for: emptying the draft takes
+  // the counts from their widest reading to their shortest, and nothing to the
+  // right of them moves.
+  const wide = await app.languageSelect.boundingBox()
+  await app.press('KeyA')
+  await app.page.keyboard.press('Backspace')
+  await expect(app.chars).toHaveText('0 文字')
+  expect((await app.languageSelect.boundingBox())?.x).toBe(wide?.x)
+})
+
+/** A length token as the sheet declares it, in px. */
+function token(app: App, name: string): Promise<number> {
+  return app.page.evaluate(
+    (property) => Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue(property)),
+    name,
+  )
+}
