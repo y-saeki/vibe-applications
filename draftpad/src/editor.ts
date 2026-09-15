@@ -28,7 +28,6 @@ const phrases = EditorState.phrases.of({
   next: '次へ',
   previous: '前へ',
   'match case': '大文字小文字を区別',
-  'by word': '単語単位',
   regexp: '正規表現',
   replace: '置換',
   'replace all': 'すべて置換',

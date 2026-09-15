@@ -454,6 +454,16 @@ option {
   order: 1;
 }
 
+/* CodeMirror's "by word" toggle, the third of the panel's three labels (match
+   case, regexp, by word). It only matches where the characters around the match
+   are not word characters, and kana and kanji count as word characters, so it
+   finds nothing in Japanese prose. The panel is CodeMirror's to build, so the
+   label is taken out by its position; the search panel spec pins which of the
+   three that is. */
+#editor .cm-panel.cm-search label:nth-of-type(3) {
+  display: none;
+}
+
 #editor .cm-panel.cm-search label {
   order: 3;
 }

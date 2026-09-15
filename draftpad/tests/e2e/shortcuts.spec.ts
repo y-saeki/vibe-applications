@@ -12,12 +12,20 @@ test('Ctrl+F opens search and replace', async ({ launch }) => {
   await expect(app.searchPanel.getByPlaceholder('検索')).toBeVisible()
 })
 
-test('the search panel has no select-all button', async ({ launch }) => {
+// Two of the controls CodeMirror puts in the panel are taken out in
+// src/style.css: "select all matches", whose command needs the multiple
+// selections draftpad does not enable, and the whole-word toggle, which never
+// matches Japanese prose. The toggle is hidden by its position among the
+// labels, so the two that stay are checked here as well.
+test('the search panel leaves out the select-all button and the whole-word toggle', async ({ launch }) => {
   const app = await launch({ platform: 'windows' })
 
   await app.press('KeyF')
   await expect(app.searchPanel.getByRole('button', { name: '次へ' })).toBeVisible()
   await expect(app.searchPanel.locator('button[name="select"]')).toBeHidden()
+  await expect(app.searchPanel.locator('label:has(input[name="case"])')).toBeVisible()
+  await expect(app.searchPanel.locator('label:has(input[name="re"])')).toBeVisible()
+  await expect(app.searchPanel.locator('label:has(input[name="word"])')).toBeHidden()
 })
 
 test('Ctrl+, opens the preferences panel', async ({ launch }) => {
