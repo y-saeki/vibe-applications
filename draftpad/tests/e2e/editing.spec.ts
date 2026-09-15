@@ -1,3 +1,5 @@
+import type { Locator } from '@playwright/test'
+
 import { expect, test } from './fixtures'
 
 test('counts what is typed', async ({ launch }) => {
@@ -142,4 +144,77 @@ test('remembers the always-on-top toggle and passes it to the window', async ({ 
   await app.expectSaved((state) => state.alwaysOnTop)
   const call = (await app.calls()).find((entry) => entry.cmd === 'plugin:window|set_always_on_top')
   expect(call?.args).toMatchObject({ value: true })
+})
+
+test('counts the matches and numbers the one the search is standing on', async ({ launch }) => {
+  const app = await launch()
+
+  await app.typeInEditor('alpha beta alpha gamma alpha')
+  await app.press('KeyF')
+  await expect(app.searchPanel).toBeVisible()
+  await app.typeInSearch('alpha')
+
+  // Nothing has been stepped to yet, so there is a total but no number to give
+  // the current match.
+  await expect(app.searchCount).toHaveText('3 件')
+  await app.page.keyboard.press('Enter')
+  await expect(app.searchCount).toHaveText('1 / 3')
+  await app.page.keyboard.press('Enter')
+  await expect(app.searchCount).toHaveText('2 / 3')
+})
+
+test('turns the four buttons off while the search has nothing to act on', async ({ launch }) => {
+  const app = await launch()
+  const buttons = ['prev', 'next', 'replace', 'replaceAll'] as const
+
+  await app.typeInEditor('alpha beta')
+  await app.press('KeyF')
+  await expect(app.searchPanel).toBeVisible()
+
+  // An empty field says nothing at all rather than reporting a miss.
+  await expect(app.searchCount).toHaveText('')
+  for (const name of buttons) await expect(app.searchButton(name)).toBeDisabled()
+
+  await app.typeInSearch('alpha')
+  await expect(app.searchCount).toHaveText('1 件')
+  for (const name of buttons) await expect(app.searchButton(name)).toBeEnabled()
+
+  await app.page.keyboard.type('zzz')
+  await expect(app.searchCount).toHaveText('一致なし')
+  for (const name of buttons) await expect(app.searchButton(name)).toBeDisabled()
+})
+
+test('reads a half-written regular expression as a miss, not as an error', async ({ launch }) => {
+  const app = await launch({ state: { searchRegexp: true } })
+
+  await app.typeInEditor('alpha (beta)')
+  await app.press('KeyF')
+  await expect(app.searchPanel).toBeVisible()
+  await app.typeInSearch('(')
+
+  // Half of "(beta)" is a perfectly ordinary thing to have typed so far, so the
+  // count says what it found and keeps the panel's own colors.
+  await expect(app.searchCount).toHaveText('一致なし')
+  const muted = await app.page.evaluate(() => getComputedStyle(document.querySelector('#statusbar')!).color)
+  await expect(app.searchCount).toHaveCSS('color', muted)
+})
+
+test('lines the search panel up on two columns', async ({ launch }) => {
+  const app = await launch({ innerSize: { width: 880, height: 400 } })
+  await app.page.setViewportSize({ width: 880, height: 400 })
+
+  await app.press('KeyF')
+  await expect(app.searchPanel).toBeVisible()
+  const edges = async (locator: Locator) => {
+    const box = (await locator.boundingBox())!
+    return { left: Math.round(box.x), right: Math.round(box.x + box.width) }
+  }
+
+  // The two fields are one column and the four buttons the other; within a row
+  // the pair of buttons touches. Nothing here is a wrapper CodeMirror gives us,
+  // so the edges are what says the grid held.
+  expect(await edges(app.searchField)).toEqual(await edges(app.searchPanel.getByPlaceholder('置換')))
+  expect(await edges(app.searchButton('prev'))).toEqual(await edges(app.searchButton('replace')))
+  expect(await edges(app.searchButton('next'))).toEqual(await edges(app.searchButton('replaceAll')))
+  expect((await edges(app.searchButton('prev'))).right).toBe((await edges(app.searchButton('next'))).left)
 })

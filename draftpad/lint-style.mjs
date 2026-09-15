@@ -43,9 +43,9 @@ const FAMILIES = [
 const LIMITS = {
   families: FAMILIES,
   /** Everything else measured in pixels: control metrics and layout. */
-  otherLengths: { budget: 12, accepts: (px) => px % 4 === 0, wants: 'a multiple of 4px' },
-  /** The palette, including the two shadows and the tick and chevron images. */
-  palette: 24,
+  otherLengths: { budget: 14, accepts: (px) => px % 4 === 0, wants: 'a multiple of 4px' },
+  /** The palette, including the two shadows and the tick, chevron and × images. */
+  palette: 25,
   /** Hairlines, focus rings and optical nudges stay where they are used. */
   literalPx: 2,
 }

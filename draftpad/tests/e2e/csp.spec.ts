@@ -44,6 +44,13 @@ test('paints the masked marks without tripping the policy', async ({ launch }) =
     expect(await maskOf('#language-select', '::picker-icon')).toMatch(/url\("data:image\/svg\+xml/)
     await app.languageSelect.click()
   }
+
+  // The search panel's previous and next buttons are the same story: their
+  // words are collapsed and a chevron masked over them.
+  await app.press('KeyF')
+  await expect(app.searchPanel).toBeVisible()
+  expect(await maskOf('.cm-search button[name="prev"]', '::before')).toMatch(/url\("data:image\/svg\+xml/)
+  expect(await maskOf('.cm-search button[name="next"]', '::before')).toMatch(/url\("data:image\/svg\+xml/)
   expect(app.cspViolations).toEqual([])
 })
 

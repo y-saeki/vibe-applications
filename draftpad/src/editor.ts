@@ -10,6 +10,7 @@ import { drawSelection, dropCursor, EditorView, keymap, type KeyBinding } from '
 
 import { darkTheme } from './dark-theme'
 import { languageExtension } from './languages'
+import { searchPanelExtras } from './search-panel'
 import type { State } from './state'
 import { vimExtension } from './vim'
 
@@ -37,7 +38,9 @@ const phrases = EditorState.phrases.of({
   'match case': '大文字小文字を区別',
   regexp: '正規表現',
   replace: '置換',
-  'replace all': 'すべて置換',
+  // Pairs with 置換 beside it, in a button the panel gives the same width as
+  // every other; すべて置換 does not fit there.
+  'replace all': 'すべて',
   close: '閉じる',
   'current match': '現在の一致',
   'replaced $ matches': '$ 件を置換しました',
@@ -127,6 +130,7 @@ export class Editor {
         closeBrackets(),
         highlightSelectionMatches(),
         searchExtension(initial),
+        searchPanelExtras(),
         EditorView.lineWrapping,
         EditorView.contentAttributes.of({ spellcheck: 'false', autocorrect: 'off', autocapitalize: 'off' }),
         phrases,
