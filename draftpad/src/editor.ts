@@ -61,10 +61,13 @@ const searchBindings = searchKeymap.filter((binding) => binding.key !== 'Mod-Shi
 // historyKeymap already has.
 const redoKeymap: KeyBinding[] = [{ key: 'Mod-Shift-z', run: redoCommand, preventDefault: true }]
 
-function fontTheme(size: number, family: string): Extension {
+// The weight goes on the scroller with the family: CodeMirror's own theme
+// leaves font-weight alone, so the content inherits it, while the bold the
+// highlight styles put on headings and strong text still wins where it applies.
+function fontTheme(size: number, family: string, weight: number): Extension {
   return EditorView.theme({
     '&': { fontSize: `${size}px` },
-    '.cm-scroller': { fontFamily: family },
+    '.cm-scroller': { fontFamily: family, fontWeight: String(weight) },
   })
 }
 
@@ -113,7 +116,7 @@ export class Editor {
         this.vim.of(vim),
         this.language.of(language),
         this.colors.of(colorExtension(options.dark)),
-        this.font.of(fontTheme(initial.fontSize, this.fontFamily(initial.fontFamily))),
+        this.font.of(fontTheme(initial.fontSize, this.fontFamily(initial.fontFamily), initial.fontWeight)),
         this.tab.of(tabExtension(initial.tabSize)),
         this.completion.of(completionExtension(initial.quickSuggestions)),
         history(),
@@ -190,8 +193,8 @@ export class Editor {
     this.view.dispatch({ effects: this.colors.reconfigure(colorExtension(dark)) })
   }
 
-  setFont(size: number, family: string): void {
-    this.view.dispatch({ effects: this.font.reconfigure(fontTheme(size, this.fontFamily(family))) })
+  setFont(size: number, family: string, weight: number): void {
+    this.view.dispatch({ effects: this.font.reconfigure(fontTheme(size, this.fontFamily(family), weight)) })
   }
 
   setTabSize(size: number): void {

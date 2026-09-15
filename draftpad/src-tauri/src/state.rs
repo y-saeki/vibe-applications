@@ -21,6 +21,7 @@ pub struct State {
     pub theme: String,
     pub font_size: u32,
     pub font_family: String,
+    pub font_weight: u32,
     pub tab_size: u32,
     pub quick_suggestions: bool,
     pub always_on_top: bool,
@@ -39,6 +40,7 @@ impl Default for State {
             theme: "system".into(),
             font_size: 13,
             font_family: String::new(),
+            font_weight: 400,
             tab_size: 4,
             quick_suggestions: true,
             always_on_top: false,
@@ -142,6 +144,7 @@ mod tests {
         assert!(state.text.is_empty());
         assert_eq!(state.language, "markdown");
         assert_eq!(state.font_size, 13);
+        assert_eq!(state.font_weight, 400);
         assert_eq!(state.tab_size, 4);
         assert!(state.quick_suggestions);
         assert!(!state.always_on_top);
@@ -160,6 +163,7 @@ mod tests {
             theme: "dark".into(),
             font_size: 24,
             font_family: "BIZ UDGothic".into(),
+            font_weight: 300,
             tab_size: 2,
             quick_suggestions: false,
             always_on_top: true,
@@ -178,6 +182,7 @@ mod tests {
         assert_eq!(read.theme, "dark");
         assert_eq!(read.font_size, 24);
         assert_eq!(read.font_family, "BIZ UDGothic");
+        assert_eq!(read.font_weight, 300);
         assert_eq!(read.tab_size, 2);
         assert!(!read.quick_suggestions);
         assert!(read.always_on_top);
@@ -197,6 +202,7 @@ mod tests {
         assert_eq!(state.text, "昔のファイル");
         assert_eq!(state.language, "markdown");
         assert_eq!(state.font_size, 13);
+        assert_eq!(state.font_weight, 400);
     }
 
     #[test]

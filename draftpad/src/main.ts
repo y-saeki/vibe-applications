@@ -8,7 +8,7 @@ import { comboFromEvent, createCommands, indexByKeys } from './commands'
 import { Editor } from './editor'
 import { defaultFontFamily } from './fonts'
 import { Preferences } from './preferences'
-import { clamp, FONT_SIZE_MAX, FONT_SIZE_MIN, loadState, Store, type StateKey } from './state'
+import { clamp, FONT_SIZE_MAX, FONT_SIZE_MIN, loadState, nearestFontWeight, Store, type StateKey } from './state'
 import { StatusBar } from './statusbar'
 import { ThemeController } from './theme'
 
@@ -40,6 +40,10 @@ function byId<T extends HTMLElement>(id: string): T {
 
 async function main(): Promise<void> {
   const { state, platform, version, openPreferences: startWithPreferences } = await loadState()
+  // The panel offers the weight as a fixed scale, while a file written by hand
+  // can hold any number. Snapping it once here keeps every later reader — the
+  // editor and the panel alike — on the same value.
+  state.fontWeight = nearestFontWeight(state.fontWeight)
   const isMac = platform === 'macos'
   document.documentElement.dataset.platform = platform
 
@@ -131,6 +135,7 @@ async function main(): Promise<void> {
   const commandById = new Map(commands.map((command) => [command.id, command]))
 
   // ---- reacting to settings ----------------------------------------------
+  const applyFont = (): void => ed.setFont(store.state.fontSize, store.state.fontFamily, store.state.fontWeight)
   const apply: Partial<Record<StateKey, () => void>> = {
     language: () => {
       statusBar.setLanguage(store.state.language)
@@ -138,8 +143,9 @@ async function main(): Promise<void> {
     },
     editorMode: () => void ed.setVim(store.state.editorMode === 'vim'),
     theme: () => theme.set(store.state.theme),
-    fontSize: () => ed.setFont(store.state.fontSize, store.state.fontFamily),
-    fontFamily: () => ed.setFont(store.state.fontSize, store.state.fontFamily),
+    fontSize: () => applyFont(),
+    fontFamily: () => applyFont(),
+    fontWeight: () => applyFont(),
     tabSize: () => ed.setTabSize(store.state.tabSize),
     quickSuggestions: () => ed.setQuickSuggestions(store.state.quickSuggestions),
     alwaysOnTop: () => {

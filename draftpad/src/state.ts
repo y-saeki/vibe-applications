@@ -14,6 +14,7 @@ export interface State {
   theme: Theme
   fontSize: number
   fontFamily: string
+  fontWeight: number
   tabSize: number
   quickSuggestions: boolean
   alwaysOnTop: boolean
@@ -34,6 +35,10 @@ export interface Loaded {
 
 export const FONT_SIZE_MIN = 10
 export const FONT_SIZE_MAX = 100
+/** The nine weights CSS names, which is the scale the panel offers. */
+export const FONT_WEIGHT_MIN = 100
+export const FONT_WEIGHT_MAX = 900
+export const FONT_WEIGHT_STEP = 100
 export const TAB_SIZE_MIN = 1
 export const TAB_SIZE_MAX = 10
 
@@ -135,4 +140,13 @@ export class Store {
 export function clamp(value: number, min: number, max: number): number {
   if (!Number.isFinite(value)) return min
   return Math.min(max, Math.max(min, Math.round(value)))
+}
+
+/**
+ * Snaps a weight onto one of the steps the panel offers, so that a value a
+ * hand-edited file holds still lines up with an entry in its list.
+ */
+export function nearestFontWeight(value: number): number {
+  const weight = clamp(value, FONT_WEIGHT_MIN, FONT_WEIGHT_MAX)
+  return Math.round(weight / FONT_WEIGHT_STEP) * FONT_WEIGHT_STEP
 }

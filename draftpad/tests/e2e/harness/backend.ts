@@ -15,6 +15,7 @@ export interface State {
   theme: string
   fontSize: number
   fontFamily: string
+  fontWeight: number
   tabSize: number
   quickSuggestions: boolean
   alwaysOnTop: boolean
@@ -61,6 +62,7 @@ const DEFAULT_STATE: State = {
   theme: 'system',
   fontSize: 13,
   fontFamily: '',
+  fontWeight: 400,
   tabSize: 4,
   quickSuggestions: true,
   alwaysOnTop: false,

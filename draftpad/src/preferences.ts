@@ -26,6 +26,7 @@ export class Preferences {
   private readonly fontSize: HTMLInputElement
   private readonly fontFamily: HTMLInputElement
   private readonly fontList: HTMLDataListElement
+  private readonly fontWeight: HTMLSelectElement
   private readonly tabSize: HTMLInputElement
   private readonly quickSuggestions: HTMLInputElement
   private fontsLoaded = false
@@ -41,6 +42,7 @@ export class Preferences {
     this.fontSize = q('#pref-font-size')
     this.fontFamily = q('#pref-font-family')
     this.fontList = q('#font-list')
+    this.fontWeight = q('#pref-font-weight')
     this.tabSize = q('#pref-tab-size')
     this.quickSuggestions = q('#pref-quick-suggestions')
     q<HTMLElement>('#pref-version').textContent = `draftpad ${options.version}`
@@ -54,6 +56,7 @@ export class Preferences {
       store.set({ fontSize })
     })
     this.fontFamily.addEventListener('change', () => store.set({ fontFamily: this.fontFamily.value.trim() }))
+    this.fontWeight.addEventListener('change', () => store.set({ fontWeight: Number(this.fontWeight.value) }))
     this.tabSize.addEventListener('change', () => {
       const tabSize = clamp(Number(this.tabSize.value), TAB_SIZE_MIN, TAB_SIZE_MAX)
       this.tabSize.value = String(tabSize)
@@ -103,6 +106,7 @@ export class Preferences {
     this.theme.value = state.theme
     this.fontSize.value = String(state.fontSize)
     if (document.activeElement !== this.fontFamily) this.fontFamily.value = state.fontFamily
+    this.fontWeight.value = String(state.fontWeight)
     this.tabSize.value = String(state.tabSize)
     this.quickSuggestions.checked = state.quickSuggestions
   }
