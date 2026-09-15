@@ -54,6 +54,8 @@ export class App {
   readonly gear: Locator
   readonly preferences: Locator
   readonly searchPanel: Locator
+  readonly searchField: Locator
+  readonly searchCount: Locator
   readonly searchMatchCase: Locator
   readonly searchRegexp: Locator
 
@@ -71,10 +73,30 @@ export class App {
     this.gear = page.locator('#open-preferences')
     this.preferences = page.locator('#preferences')
     this.searchPanel = page.locator('.cm-search')
+    this.searchField = this.searchPanel.getByPlaceholder('検索')
+    this.searchCount = this.searchPanel.locator('.cm-search-count')
     // CodeMirror builds the panel itself; the labels are the phrases in
     // src/editor.ts, which is the only handle the page gives these two.
     this.searchMatchCase = this.searchPanel.getByLabel('大文字小文字を区別')
     this.searchRegexp = this.searchPanel.getByLabel('正規表現')
+  }
+
+  /** One of the search panel's four buttons, by the name CodeMirror gives it. */
+  searchButton(name: 'prev' | 'next' | 'replace' | 'replaceAll'): Locator {
+    return this.searchPanel.locator(`button[name="${name}"]`)
+  }
+
+  /**
+   * Puts `text` into the search panel's find field.
+   *
+   * One key at a time on purpose: CodeMirror commits the query on keyup, so a
+   * value set any other way leaves the panel showing a search it never ran.
+   *
+   * @param text what to search for
+   */
+  async typeInSearch(text: string): Promise<void> {
+    await this.searchField.click()
+    await this.page.keyboard.type(text)
   }
 
   /** "Mod" from src/commands.ts: Cmd on macOS, Ctrl elsewhere. */
