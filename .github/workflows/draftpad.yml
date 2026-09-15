@@ -197,9 +197,9 @@ jobs:
           git fetch --depth=1 origin "${BASE_REF}"
           base="$(git show FETCH_HEAD:draftpad/src-tauri/tauri.conf.json | jq -re .version)"
           if [ "${version}" = "${base}" ]; then
-            note="⚠️ バージョンは ${version} のまま(${BASE_REF} と同じ)です。このままマージしても Release は作られません。"
+            note="⚠️ バージョンは \`${version}\` のまま(${BASE_REF} と同じ)です。このままマージしても Release は作られません。"
           else
-            note="バージョンは ${base} から ${version} に上がります。"
+            note="バージョンは \`${base}\` から \`${version}\` に上がります。"
           fi
           {
             echo "VERSION_NOTE<<NOTE_EOF"
@@ -239,22 +239,34 @@ jobs:
           fi
           jq -r --arg run_url "${RUN_URL}" --arg sha "${HEAD_SHA}" --arg version_note "${VERSION_NOTE}" '
             def platform: {
-              "draftpad-macos-latest": "macOS (.dmg)",
-              "draftpad-windows-latest": "Windows (.exe)"
+              "draftpad-windows-latest": "Windows (.exe)",
+              "draftpad-macos-latest": "macOS (.dmg)"
             }[.] // .;
+            # The install order the comment asks for: Windows needs nothing
+            # beyond the installer, macOS needs the quarantine attribute gone.
+            def platform_rank: {
+              "draftpad-windows-latest": 0,
+              "draftpad-macos-latest": 1
+            }[.] // 2;
             def megabytes: . / 1048576 * 10 | round / 10;
             "<!-- draftpad-build-artifacts -->",
             "## ビルド成果物",
             "",
-            (.artifacts | sort_by(.name)[]
-              | "- [\(.name | platform)](\($run_url)/artifacts/\(.id)) — \(.size_in_bytes | megabytes) MB"),
+            (.artifacts | sort_by([(.name | platform_rank), .name])[]
+              | "- [ ] [\(.name | platform)](\($run_url)/artifacts/\(.id)) — \(.size_in_bytes | megabytes) MB"),
             "",
-            $version_note,
+            "> [!TIP]",
+            "> - ダウンロードには GitHub へのログインが必要です(保持期限: \(.artifacts[0].expires_at | fromdateiso8601 | strftime("%Y-%m-%d")))",
+            "> - macOS では、アプリケーション実行前に隔離属性の削除を行ってください。",
+            "> ```",
+            "> xattr -dr com.apple.quarantine /Applications/draftpad.app",
+            "> ```",
             "",
-            "\($sha[0:7]) を base ブランチにマージした状態のビルドです。ダウンロードには GitHub へのログインが必要です。",
+            "## ビルド情報",
             "",
-            "- [run のサマリ](\($run_url))",
-            "- 保持期限: \(.artifacts[0].expires_at | fromdateiso8601 | strftime("%Y-%m-%d"))"
+            "- \($version_note)",
+            "- \($sha[0:7]) を base ブランチにマージした状態のビルドです。",
+            "- [run のサマリ](\($run_url))"
           ' <<<"${artifacts}" \
             | gh pr comment "${PR_NUMBER}" --body-file -
       # Collapsed as outdated rather than deleted: the older builds stay
