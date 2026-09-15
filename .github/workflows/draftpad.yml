@@ -197,7 +197,7 @@ jobs:
           git fetch --depth=1 origin "${BASE_REF}"
           base="$(git show FETCH_HEAD:draftpad/src-tauri/tauri.conf.json | jq -re .version)"
           if [ "${version}" = "${base}" ]; then
-            note="⚠️ バージョンは ${version} のまま(${BASE_REF} と同じ)です。**このままマージしても Release は作られません。**"
+            note="⚠️ バージョンは \`${version}\` のままです。**このままマージしても Release は作られません。**"
           else
             note="✅ バージョンは \`${base}\` から \`${version}\` に上がります。"
           fi
