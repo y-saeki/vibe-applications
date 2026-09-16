@@ -8,7 +8,7 @@ macOS / Windows 対応。
 - 20 言語のシンタックスハイライト、正規表現対応の検索・置換、単語補完、Vim モード
 - ライト / ダークテーマ対応
 
-<img width="2384" height="1914" alt="CleanShot 2026-09-15 at 05 26 00@2x" src="https://github.com/user-attachments/assets/d61f09c3-f448-499a-914c-c7bf0acfc89f" />
+<img width="1798" height="1418" alt="CleanShot 2026-09-16 at 11 32 48@2x" src="https://github.com/user-attachments/assets/bb67394d-ff1f-4fba-90e6-700d53d1a3c5" />
 
 ## 動作環境
 
