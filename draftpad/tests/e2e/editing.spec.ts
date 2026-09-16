@@ -158,9 +158,9 @@ test('counts the matches and numbers the one the search is standing on', async (
   // the current match.
   await expect(app.searchCount).toHaveText('3 件')
   await app.page.keyboard.press('Enter')
-  await expect(app.searchCount).toHaveText('1 / 3')
+  await expect(app.searchCount).toHaveText('1 / 3 件')
   await app.page.keyboard.press('Enter')
-  await expect(app.searchCount).toHaveText('2 / 3')
+  await expect(app.searchCount).toHaveText('2 / 3 件')
 })
 
 test('turns the four buttons off while the search has nothing to act on', async ({ launch }) => {

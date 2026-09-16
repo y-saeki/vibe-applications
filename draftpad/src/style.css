@@ -57,6 +57,7 @@
   --checkbox-size: 16px;
   --icon-size: 16px;
   --icon-button-size: 24px;
+  --toggle-size: 20px; /* the Aa / .* toggles inside the find field */
   --statusbar-height: 32px;
   --titlebar-height: 0px;
 
@@ -488,7 +489,7 @@ option {
    stops short of them. */
 #editor .cm-panel.cm-search input[name="search"] {
   grid-area: find;
-  padding-right: calc(var(--field-width-narrow) + var(--icon-button-size) * 2 + var(--space-2) + var(--space-1));
+  padding-right: calc(var(--field-width-narrow) + var(--space-2) + var(--toggle-size) * 2 + var(--space-1) * 2);
 }
 
 #editor .cm-panel.cm-search input[name="replace"] {
@@ -554,12 +555,15 @@ option {
   mask: var(--chevron-down) center / contain no-repeat;
 }
 
-/* The two toggles sit over the right end of the find field: boxes the size of
-   an icon button, laid into the field's own grid area and pushed to its edge so
-   that they hold still as the field grows and shrinks. Their words are
-   collapsed like the buttons' and Aa / .* drawn in their place, while the
-   checkbox stays where CodeMirror put it — invisible, filling the box, and
-   still the thing that is clicked and focused. */
+/* The two toggles sit over the right end of the find field: small square boxes
+   laid into the field's own grid area and pushed to its edge, so that they hold
+   still as the field grows and shrinks. Their words are collapsed like the
+   buttons' and Aa / .* drawn in their place, while the checkbox stays where
+   CodeMirror put it — invisible, filling the box, and still the thing that is
+   clicked and focused.
+
+   The gap between them is what keeps two switched-on toggles from reading as
+   one wide button. */
 #editor .cm-panel.cm-search label:nth-of-type(1),
 #editor .cm-panel.cm-search label:nth-of-type(2) {
   position: relative;
@@ -567,8 +571,8 @@ option {
   justify-self: end;
   align-self: center;
   justify-content: center;
-  width: var(--icon-button-size);
-  height: var(--icon-button-size);
+  width: var(--toggle-size);
+  height: var(--toggle-size);
   gap: 0;
   border-radius: var(--radius-sm);
   color: var(--muted);
@@ -576,7 +580,7 @@ option {
 }
 
 #editor .cm-panel.cm-search label:nth-of-type(1) {
-  margin-right: calc(var(--icon-button-size) + var(--space-1));
+  margin-right: calc(var(--toggle-size) + var(--space-1) * 2);
 }
 
 #editor .cm-panel.cm-search label:nth-of-type(2) {
@@ -630,7 +634,7 @@ option {
   justify-self: end;
   align-self: center;
   width: var(--field-width-narrow);
-  margin-right: calc(var(--icon-button-size) * 2 + var(--space-2) + var(--space-1));
+  margin-right: calc(var(--space-2) + var(--toggle-size) * 2 + var(--space-1) * 2);
   overflow: hidden;
   color: var(--muted);
   font-size: var(--font-size-caption);

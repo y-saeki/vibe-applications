@@ -136,11 +136,12 @@ class SearchPanelExtras {
   /** What the count says about the query as it stands. */
   private reading(query: SearchQuery): string {
     if (query.search === '') return ''
-    if (this.matches.length === 0) return NO_MATCH
+    const total = this.matches.length
+    if (total === 0) return NO_MATCH
     const { from, to } = this.view.state.selection.main
     const at = this.matches.findIndex((match) => match.from === from && match.to === to)
     // Until one of them is stepped to, there is no current match to number.
-    return at === -1 ? `${this.matches.length} 件` : `${at + 1} / ${this.matches.length}`
+    return at === -1 ? `${total} 件` : `${at + 1} / ${total} 件`
   }
 }
 

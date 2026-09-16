@@ -242,7 +242,7 @@ Tauri の NSIS スクリプトはビルド時のテンプレートなので、`t
 | 文字サイズ | `--font-size-title` / `-body` / `-caption` | 環境設定の見出し / パネル本文 / ステータスバーとバージョン表示 |
 | 余白 | `--space-1` 〜 `--space-5` | 4px 刻みの 5 段。コントロール同士、バーとパネルの内側、グループ同士 |
 | 角丸 | `--radius-sm` / `-md` / `-lg` | 部品の大きさに対応した 3 段(チェックボックスとアイコンボタン / 高さ `--control-height` のコントロール / パネル) |
-| 寸法 | `--control-height`、`--checkbox-size`、`--icon-size`、`--icon-button-size`、`--statusbar-height`、`--titlebar-height` | コントロールとバーの大きさ |
+| 寸法 | `--control-height`、`--checkbox-size`、`--icon-size`、`--icon-button-size`、`--toggle-size`、`--statusbar-height`、`--titlebar-height` | コントロールとバーの大きさ |
 | レイアウト | `--field-width`、`--field-width-narrow`、`--field-width-search`、`--button-width-search`、`--label-width`、`--panel-width`、`--panel-inset`、`--language-width` | 入力欄・ラベル列・検索パネルと環境設定パネルの配置 |
 | パレット | `--bg`、`--fg`、`--muted`、`--placeholder`、`--border` など | 色、影 2 段(`--shadow-panel` / `--shadow-popup`)、マスク用の画像 4 枚(✓ / シェブロン上下 / ×) |
 
@@ -277,7 +277,7 @@ Tauri の NSIS スクリプトはビルド時のテンプレートなので、`t
   CodeMirror が書いたまま、つまり Tab の順序もそのままです。ボタンは 4 つとも同じ幅で、対の右側を
   ちょうど 1 個ぶん右へ寄せてあるので、上下の 2 対は左端も右端も揃います。
 - **件数**。CodeMirror は持っていないので、`SearchQuery` のカーソルで文書を走査して数えます。数え直すのは
-  検索語かオプションが変わったときと、入力が 100ms 止まったときだけです。「2 / 3」の左の数字は、選択範囲が
+  検索語かオプションが変わったときと、入力が 100ms 止まったときだけです。「2 / 3 件」の左の数字は、選択範囲が
   一致のどれかとぴったり重なっているときだけ出ます(まだどれにも移動していない状態では総数だけ)。
 - **一致なし**。正規表現として書きかけの文字列も、単に見つからない場合と同じ扱いです。下書きの途中で
   赤くしても手が止まるだけなので、色も変えません。
