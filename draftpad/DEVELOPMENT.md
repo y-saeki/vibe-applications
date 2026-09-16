@@ -202,6 +202,12 @@ Windows は IME の未確定文字列と変換候補をキャレットの位置�
 10 秒後に表示するフォールバックだけ残してあります)。ウィンドウが操作対象に戻ったときに中身の
 どこにもフォーカスがなければ、エディタへ戻すようにもしています。
 
+macOS のタイトルバーは OS 標準のものです。以前は `titleBarStyle: "Overlay"` で透明なタイトルバーを敷き、
+ウィンドウ上端に高さ 28px の空の帯を確保して、その下に本文を置いていました。信号機ボタン(閉じる・しまう・
+拡大)は OS がその帯の上に描きますが、下にタイトルバーがないと、ウィンドウが操作対象でないときのボタンが
+背後の色に溶けてしまい、ダークテーマでは黒い丸に見えます。標準のタイトルバーに戻すと、どの状態のボタンも
+他のアプリと同じ灰色で描かれます。`hiddenTitle: true` は残してあるので、タイトル文字のない帯になります。
+
 Windows の WebView2 はテキスト入力をフォームの一部とみなすため、検索・置換や環境設定の入力欄に
 フォーカスすると「保存された情報」の候補が出ます。draftpad にフォームはないので、起動時に
 `ICoreWebView2Settings4` の `IsGeneralAutofillEnabled` と `IsPasswordAutosaveEnabled` を false にして
@@ -243,13 +249,13 @@ Tauri の NSIS スクリプトはビルド時のテンプレートなので、`t
 | 書体 | `--ui-font`、`--font-mono` | UI 全体 / バージョン表示。数の段階ではないので、予算の数え方も他と別です |
 | 余白 | `--space-1` 〜 `--space-5` | 4px 刻みの 5 段。コントロール同士、バーとパネルの内側、グループ同士 |
 | 角丸 | `--radius-sm` / `-md` / `-lg` | 部品の大きさに対応した 3 段(チェックボックスとアイコンボタン / 高さ `--control-height` のコントロール / パネル) |
-| 寸法 | `--control-height`、`--checkbox-size`、`--toggle-width`、`--toggle-size-search`、`--glyph-size`、`--icon-size`、`--icon-button-size`、`--statusbar-height`、`--titlebar-height` | コントロールとバーの大きさ |
+| 寸法 | `--control-height`、`--checkbox-size`、`--toggle-width`、`--toggle-size-search`、`--glyph-size`、`--icon-size`、`--icon-button-size`、`--statusbar-height` | コントロールとバーの大きさ |
 | レイアウト | `--field-width`、`--field-width-narrow`、`--field-width-search`、`--button-width-search`、`--label-width`、`--panel-width`、`--panel-inset`、`--language-width`、`--count-width`、`--count-width-narrow` | 入力欄・ラベル列・検索パネルと環境設定パネルの配置と、ステータスバーの文字数・行数セルの幅 |
 | パレット | `--bg`、`--fg`、`--muted`、`--muted-strong`、`--placeholder`、`--border` など | 色、影 2 段(`--shadow-panel` / `--shadow-popup`)、描き込む印 7 枚(✓ / シェブロン上下 / × / 横棒 / Aa / .*) |
 
 基準にしたのは Windows 11 のメモ帳のステータスバーです。macOS では `-apple-system`、Windows では Segoe UI が
 当たるだけで、寸法は共通です。OS ごとに変えたくなったら `:root[data-platform="macos"]` でトークンを上書き
-してください(`--titlebar-height` がすでにそうなっています)。
+してください。
 
 エディタ本文のフォントサイズは設定項目なので、このトークンには含めません。CodeMirror が自分で描く部分の色は
 `src/dark-theme.ts` にあり、構文ハイライトの色だけは直値です(パレットとは別の体系なので意図的にそうしています)。

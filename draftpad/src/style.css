@@ -84,7 +84,6 @@
   --icon-button-size: 24px;
   --toggle-size-search: 20px; /* the Aa / .* toggles inside the find field */
   --statusbar-height: 32px;
-  --titlebar-height: 0px;
 
   /* ---- Layout ---- */
   --field-width: 240px; /* a text field's preferred width */
@@ -135,11 +134,6 @@
   color-scheme: dark;
 }
 
-/* macOS uses a transparent overlay title bar; keep the top strip draggable. */
-:root[data-platform="macos"] {
-  --titlebar-height: 28px;
-}
-
 html,
 body {
   height: 100%;
@@ -153,11 +147,6 @@ body {
   background: var(--bg);
   color: var(--fg);
   font: var(--font-size-body) var(--ui-font);
-}
-
-#titlebar {
-  flex: none;
-  height: var(--titlebar-height);
 }
 
 /* ---- Controls shared by every panel ------------------------------------ */
@@ -854,7 +843,7 @@ option {
   height: 100%;
   max-height: none;
   margin: 0;
-  padding: calc(var(--titlebar-height) + var(--panel-inset)) 0 0;
+  padding: var(--panel-inset) 0 0;
   border: none;
   background: var(--overlay);
   color: inherit;
@@ -882,7 +871,7 @@ option {
    window is too narrow for --panel-width. */
 .panel {
   width: min(var(--panel-width), calc(100vw - var(--space-4) * 2));
-  max-height: calc(100vh - var(--titlebar-height) - var(--panel-inset) * 2);
+  max-height: calc(100vh - var(--panel-inset) * 2);
   overflow: auto;
   box-sizing: border-box;
   padding: var(--space-5);
