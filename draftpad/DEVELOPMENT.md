@@ -244,7 +244,7 @@ Tauri の NSIS スクリプトはビルド時のテンプレートなので、`t
 | 余白 | `--space-1` 〜 `--space-5` | 4px 刻みの 5 段。コントロール同士、バーとパネルの内側、グループ同士 |
 | 角丸 | `--radius-sm` / `-md` / `-lg` | 部品の大きさに対応した 3 段(チェックボックスとアイコンボタン / 高さ `--control-height` のコントロール / パネル) |
 | 寸法 | `--control-height`、`--checkbox-size`、`--toggle-width`、`--glyph-size`、`--icon-size`、`--icon-button-size`、`--statusbar-height`、`--titlebar-height` | コントロールとバーの大きさ |
-| レイアウト | `--field-width`、`--field-width-narrow`、`--label-width`、`--panel-width`、`--panel-inset`、`--language-width` | 入力欄・ラベル列・環境設定パネルの配置 |
+| レイアウト | `--field-width`、`--field-width-narrow`、`--label-width`、`--panel-width`、`--panel-inset`、`--language-width`、`--count-width`、`--count-width-narrow` | 入力欄・ラベル列・環境設定パネルの配置と、ステータスバーの文字数・行数セルの幅 |
 | パレット | `--bg`、`--fg`、`--muted`、`--muted-strong`、`--placeholder`、`--border` など | 色、影 2 段(`--shadow-panel` / `--shadow-popup`)、描き込む印 4 枚(✓ / シェブロン / × / 横棒) |
 
 基準にしたのは Windows 11 のメモ帳のステータスバーです。macOS では `-apple-system`、Windows では Segoe UI が
@@ -256,11 +256,11 @@ Tauri の NSIS スクリプトはビルド時のテンプレートなので、`t
 
 ### アイコンと淡い文字
 
-歯車は HTML に直接書いた SVG です。閉じるボタンの × は `--close-icon` をマスクして描きます。文字として
+歯車とピン(常に手前に表示)は HTML に直接書いた SVG です。閉じるボタンの × は `--close-icon` をマスクして描きます。文字として
 置くと、字形の中心と文字の送り幅の中心がずれる分だけボタンの中央から外れ、その量がフォントによって
 変わります。CodeMirror は自前の閉じるボタンに × の文字を書き込むので、そちらは文字を `font-size: 0` で
 畳んで同じマスクを被せています。擬似要素にしか届かないもの(✓・シェブロン・×・横棒)が CSS の画像で、
-HTML から触れるもの(歯車)が SVG です。
+HTML から触れるもの(歯車・ピン)が SVG です。
 
 `--chevron` と `--close-icon` はマスクなので `currentColor` で塗れますが、`--check-mark` と `--minus-mark`
 は `input` の擬似要素の背景として敷くため色を焼き込んであり、テーマごとに 2 つずつ持っています。

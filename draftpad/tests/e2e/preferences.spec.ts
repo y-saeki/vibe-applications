@@ -157,10 +157,10 @@ test('switches to the dark look and remembers it', async ({ launch }) => {
   await expect(app.page.locator('#statusbar')).toHaveCSS('background-color', 'rgb(17, 17, 17)')
 
   // The controls the platform would otherwise draw in its own greys: the
-  // language selector stays flat against the bar, the checkbox takes the
-  // palette rather than the system one.
+  // language selector stays flat against the bar, and the pin reads as the
+  // secondary text beside it rather than in a fixed grey of its own.
   await expect(app.languageSelect).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
-  await expect(app.alwaysOnTop).toHaveCSS('background-color', 'rgb(28, 28, 28)')
+  await expect(app.alwaysOnTop).toHaveCSS('color', 'rgb(170, 170, 170)')
 })
 
 test('applies the font size and pulls out-of-range values back in', async ({ launch }) => {
@@ -219,7 +219,7 @@ test('turns Vim mode on, and the editor stops taking plain typing', async ({ lau
 
   // Normal mode: a letter is a command, so nothing reaches the draft.
   await app.page.keyboard.press('j')
-  await expect(app.chars).toHaveText('文字数: 0')
+  await expect(app.chars).toHaveText('0 文字')
 
   // "i" switches to insert mode, and it is text again.
   await app.page.keyboard.press('i')
