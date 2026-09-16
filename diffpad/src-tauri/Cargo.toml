@@ -1,0 +1,38 @@
+[package]
+name = "diffpad"
+version = "0.1.0"
+description = "A two-pane text pad that shows the difference between its panes"
+edition = "2021"
+publish = false
+
+[lib]
+# The `_lib` suffix keeps the library name distinct from the binary name on Windows.
+name = "diffpad_lib"
+crate-type = ["rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# System font enumeration for the Preferences panel. Only the platforms we
+# ship on; on other targets `list_fonts` returns an empty list.
+[target.'cfg(any(target_os = "macos", target_os = "windows"))'.dependencies]
+font-kit = "0.14"
+
+# `src/autofill.rs` reaches the WebView2 settings through the same handle Tauri
+# hands out, so the binding crate has to be the one Tauri itself uses, and the
+# COM traits have to come from the windows-core that crate is built on.
+[target.'cfg(target_os = "windows")'.dependencies]
+webview2-com = "0.38"
+windows-core = "0.61"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+panic = "abort"
+strip = true

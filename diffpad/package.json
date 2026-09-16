@@ -1,0 +1,29 @@
+{
+  "name": "diffpad",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node build.mjs --serve",
+    "build": "node build.mjs",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
+    "lint:style": "node lint-style.mjs",
+    "test:e2e": "playwright test --fail-on-flaky-tests",
+    "tauri": "tauri"
+  },
+  "dependencies": {
+    "@codemirror/commands": "^6.8.0",
+    "@codemirror/language": "^6.11.0",
+    "@codemirror/merge": "^6.12.2",
+    "@codemirror/state": "^6.5.0",
+    "@codemirror/view": "^6.36.0",
+    "@tauri-apps/api": "^2.5.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.56.0",
+    "@tauri-apps/cli": "^2.5.0",
+    "@types/node": "^26.4.1",
+    "esbuild": "^0.28.1",
+    "typescript": "^7.0.0"
+  }
+}
