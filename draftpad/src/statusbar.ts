@@ -13,7 +13,7 @@ export class StatusBar {
   private readonly chars: HTMLElement
   private readonly lines: HTMLElement
   private readonly language: HTMLSelectElement
-  private readonly alwaysOnTop: HTMLInputElement
+  private readonly alwaysOnTop: HTMLButtonElement
 
   constructor(root: HTMLElement, handlers: StatusBarHandlers) {
     const q = <T extends Element>(selector: string) => root.querySelector(selector) as T
@@ -29,13 +29,16 @@ export class StatusBar {
       this.language.append(option)
     }
     this.language.addEventListener('change', () => handlers.onLanguageChange(this.language.value))
-    this.alwaysOnTop.addEventListener('change', () => handlers.onAlwaysOnTopChange(this.alwaysOnTop.checked))
+    // A button does not flip itself the way a checkbox does: it reports the
+    // state it is asking for, and setAlwaysOnTop() writes back what the store
+    // settled on.
+    this.alwaysOnTop.addEventListener('click', () => handlers.onAlwaysOnTopChange(!this.pressed))
     q<HTMLButtonElement>('#open-preferences').addEventListener('click', () => handlers.onOpenPreferences())
   }
 
   setCounts(chars: number, lines: number): void {
-    this.chars.textContent = `文字数: ${chars}`
-    this.lines.textContent = `行数: ${lines}`
+    this.chars.textContent = `${chars} 文字`
+    this.lines.textContent = `${lines} 行`
   }
 
   setLanguage(id: string): void {
@@ -43,6 +46,10 @@ export class StatusBar {
   }
 
   setAlwaysOnTop(enabled: boolean): void {
-    this.alwaysOnTop.checked = enabled
+    this.alwaysOnTop.setAttribute('aria-pressed', String(enabled))
+  }
+
+  private get pressed(): boolean {
+    return this.alwaysOnTop.getAttribute('aria-pressed') === 'true'
   }
 }

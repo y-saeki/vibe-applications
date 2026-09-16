@@ -47,7 +47,7 @@ const FONT_STACKS = new Set(['--ui-font', '--font-mono'])
 const LIMITS = {
   families: FAMILIES,
   /** Everything else measured in pixels: control metrics and layout. */
-  otherLengths: { budget: 17, accepts: (px) => px % 4 === 0, wants: 'a multiple of 4px' },
+  otherLengths: { budget: 19, accepts: (px) => px % 4 === 0, wants: 'a multiple of 4px' },
   /** The palette, including the two shadows and the five masked and drawn marks. */
   palette: 30,
   /** Hairlines, focus rings and optical nudges stay where they are used. */

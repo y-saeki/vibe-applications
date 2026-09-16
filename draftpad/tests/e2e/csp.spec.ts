@@ -6,16 +6,13 @@
 
 import { expect, test } from './fixtures'
 
-test('paints the checked boxes without tripping the policy', async ({ launch }) => {
+test('paints the toggle in both states without tripping the policy', async ({ launch }) => {
   const app = await launch({ csp: true, state: { theme: 'dark' } })
 
-  // The tick is a background image, so a policy that blocks it leaves the box
-  // filled and empty rather than failing outright.
-  await app.alwaysOnTop.check()
-  await expect(app.alwaysOnTop).toHaveCSS('background-image', /url\("data:image\/svg\+xml/)
-
   // The toggle in the preferences panel carries a mark in both states, and it
-  // sits on the knob rather than on the control itself.
+  // sits on the knob rather than on the control itself. Each mark is a
+  // background image, so a policy that blocks it leaves the knob bare rather
+  // than failing outright.
   await app.gear.click()
   await expect(app.preferences).toBeVisible()
   const knob = () =>
@@ -68,6 +65,6 @@ test('starts up without tripping the policy', async ({ launch }) => {
   const app = await launch({ csp: true })
 
   await app.typeInEditor('csp')
-  await expect(app.chars).toHaveText('文字数: 3')
+  await expect(app.chars).toHaveText('3 文字')
   expect(app.cspViolations).toEqual([])
 })
