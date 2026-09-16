@@ -588,12 +588,6 @@ option {
   color: var(--accent);
 }
 
-#statusbar select,
-#statusbar input {
-  font: inherit;
-  color: inherit;
-}
-
 /* The language selector otherwise arrives in the platform's own control grey,
    which reads as a hole in the bar. Keep it flat until it is pointed at. */
 #statusbar select {
@@ -601,6 +595,8 @@ option {
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
   background: transparent;
+  color: inherit;
+  font: inherit;
   cursor: pointer;
 }
 
