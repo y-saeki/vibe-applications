@@ -26,10 +26,13 @@
   --focus-ring: rgba(43, 108, 176, 0.25);
   --shadow-panel: 0 8px 32px rgba(0, 0, 0, 0.25); /* the preferences panel */
   --shadow-popup: 0 4px 16px rgba(0, 0, 0, 0.18); /* a dropped-open list */
-  /* The chevron on a select. Painted with currentColor through a mask, so one
-     asset serves both themes; the tick below cannot do that because a
-     background color cannot reach a pseudo-element of an input. */
-  --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%23000000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' d='M4.5 6.5 8 10 11.5 6.5'/%3E%3C/svg%3E");
+  /* The chevron on a select, and on the search panel's next button. Painted
+     with currentColor through a mask, so one asset serves both themes; the tick
+     below cannot do that because a background color cannot reach a
+     pseudo-element of an input. */
+  --chevron-down: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%23000000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' d='M4.5 6.5 8 10 11.5 6.5'/%3E%3C/svg%3E");
+  /* The same chevron turned over, for the search panel's previous button. */
+  --chevron-up: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%23000000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' d='M4.5 9.5 8 6 11.5 9.5'/%3E%3C/svg%3E");
   /* Masked the same way, for the buttons that close a panel. */
   --close-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%23000000' stroke-width='1.5' stroke-linecap='round' d='M4 4 12 12M12 4 4 12'/%3E%3C/svg%3E");
   /* The tick inside a checked box, in whichever color reads on --accent. It is
@@ -73,12 +76,15 @@
   --glyph-size: 12px; /* the mark inside the toggle's knob */
   --icon-size: 16px;
   --icon-button-size: 24px;
+  --toggle-size-search: 20px; /* the Aa / .* toggles inside the find field */
   --statusbar-height: 32px;
   --titlebar-height: 0px;
 
   /* ---- Layout ---- */
   --field-width: 240px; /* a text field's preferred width */
-  --field-width-narrow: 80px; /* a number field's */
+  --field-width-narrow: 80px; /* a number field's, and the match count's */
+  --field-width-search: 360px; /* the find and replace fields, which carry more */
+  --button-width-search: 72px; /* each of the search panel's four buttons */
   --label-width: 128px; /* the preferences label column */
   --panel-width: 440px;
   --panel-inset: 40px; /* the preferences panel's distance from the window */
@@ -333,7 +339,7 @@ option {
   /* Drops the disclosure triangle the base appearance comes with. */
   content: "";
   background: currentColor;
-  mask: var(--chevron) center / contain no-repeat;
+  mask: var(--chevron-down) center / contain no-repeat;
 }
 
 :root[data-platform="windows"] select:open::picker-icon {
@@ -433,35 +439,50 @@ option {
    room for the close button. */
 #editor .cm-panel.cm-search,
 #editor .cm-panel.cm-dialog {
-  display: flex;
-  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-2) calc(var(--space-2) * 2 + var(--icon-button-size)) var(--space-2) var(--space-3);
   font: var(--font-size-body) var(--ui-font);
 }
 
-/* Lay the search panel out as three aligned rows — find, options, replace —
-   instead of letting one long line wrap wherever it runs out of room. The two
-   breaks are the panel's own ::before and ::after: zero-height flex items that
-   take a whole line each. (The <br> the panel itself puts before the replace
-   row cannot do this: WebKit and Blink give a <br> no box inside a flex
-   container.) The order values only place those two breaks — every control
-   keeps its position in the document, so the visual order still matches the
-   tab order. */
-#editor .cm-panel.cm-search::before,
-#editor .cm-panel.cm-search::after {
-  content: "";
-  flex-basis: 100%;
-  height: 0;
+/* One short line: the field and the button that acts on it. */
+#editor .cm-panel.cm-dialog {
+  display: flex;
+  flex-wrap: wrap;
 }
 
-#editor .cm-panel.cm-search::before {
-  order: 2;
+/* The search panel is two rows of two cells: a field on the left, the pair of
+   buttons that acts on it on the right. CodeMirror builds the panel as one long
+   line and offers no say over the markup, so the whole arrangement is
+   grid-area — every control keeps its place in the document, and with it its
+   place in the tab order.
+
+   The right-hand column is exactly two buttons wide and both of its buttons
+   start from the column's left edge, the second one pushed over by a button's
+   width. That is what makes the two pairs share a left and a right edge at
+   every panel width, without a wrapper to put them in. */
+#editor .cm-panel.cm-search {
+  display: grid;
+  grid-template-columns:
+    minmax(var(--field-width), var(--field-width-search))
+    calc(var(--button-width-search) * 2);
+  grid-template-areas:
+    "find    findnav"
+    "replace replacenav";
 }
 
-#editor .cm-panel.cm-search::after {
-  order: 4;
+/* Narrower than the two columns need, and each pair drops under its own field
+   rather than overlapping it. The breakpoint is a window width, not a step in
+   the scale, so it is written here the way a viewport length is. */
+@media (max-width: 460px) {
+  #editor .cm-panel.cm-search {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "find"
+      "findnav"
+      "replace"
+      "replacenav";
+  }
 }
 
 #editor .cm-panel.cm-search br {
@@ -477,12 +498,6 @@ option {
   display: none;
 }
 
-#editor .cm-panel.cm-search input[name="search"],
-#editor .cm-panel.cm-search button[name="next"],
-#editor .cm-panel.cm-search button[name="prev"] {
-  order: 1;
-}
-
 /* CodeMirror's "by word" toggle, the third of the panel's three labels (match
    case, regexp, by word). It only matches where the characters around the match
    are not word characters, and kana and kanji count as word characters, so it
@@ -493,18 +508,173 @@ option {
   display: none;
 }
 
-#editor .cm-panel.cm-search label {
-  order: 3;
+/* A grid item is as wide as its cell, and no narrower than its own content
+   unless it is told otherwise. */
+#editor .cm-panel.cm-search .cm-textfield {
+  min-width: 0;
 }
 
-#editor .cm-panel.cm-search input[name="replace"],
+/* The count and the two toggles ride on the tail of the find field, so the text
+   stops short of them. */
+#editor .cm-panel.cm-search input[name="search"] {
+  grid-area: find;
+  padding-right: calc(var(--field-width-narrow) + var(--space-2) + var(--toggle-size-search) * 2 + var(--space-1) * 2);
+}
+
+#editor .cm-panel.cm-search input[name="replace"] {
+  grid-area: replace;
+}
+
+#editor .cm-panel.cm-search button[name="prev"],
+#editor .cm-panel.cm-search button[name="next"] {
+  grid-area: findnav;
+}
+
 #editor .cm-panel.cm-search button[name="replace"],
 #editor .cm-panel.cm-search button[name="replaceAll"] {
-  order: 5;
+  grid-area: replacenav;
+}
+
+/* All four are one width. The second of each pair is pushed over by exactly
+   that width, drops its left border and rounds only its outer corners, so the
+   two read as one segmented control. */
+#editor .cm-panel.cm-search .cm-button {
+  width: var(--button-width-search);
+  justify-self: start;
+  padding: 0;
+}
+
+#editor .cm-panel.cm-search button[name="prev"],
+#editor .cm-panel.cm-search button[name="replace"] {
+  border-radius: var(--radius-md) 0 0 var(--radius-md);
+}
+
+#editor .cm-panel.cm-search button[name="next"],
+#editor .cm-panel.cm-search button[name="replaceAll"] {
+  margin-left: var(--button-width-search);
+  border-left: none;
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+}
+
+/* CodeMirror writes 前へ / 次へ into these two, which a button this narrow has
+   no room for. The words are collapsed and a chevron masked in their
+   place, the way the close button draws its ×; src/search-panel.ts moves the
+   words to aria-label so the buttons keep their names. */
+#editor .cm-panel.cm-search button[name="prev"],
+#editor .cm-panel.cm-search button[name="next"] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0;
+}
+
+#editor .cm-panel.cm-search button[name="prev"]::before,
+#editor .cm-panel.cm-search button[name="next"]::before {
+  content: "";
+  width: var(--icon-size);
+  height: var(--icon-size);
+  background: currentColor;
+}
+
+#editor .cm-panel.cm-search button[name="prev"]::before {
+  mask: var(--chevron-up) center / contain no-repeat;
+}
+
+#editor .cm-panel.cm-search button[name="next"]::before {
+  mask: var(--chevron-down) center / contain no-repeat;
+}
+
+/* The two toggles sit over the right end of the find field: small square boxes
+   laid into the field's own grid area and pushed to its edge, so that they hold
+   still as the field grows and shrinks. Their words are collapsed like the
+   buttons' and Aa / .* drawn in their place, while the checkbox stays where
+   CodeMirror put it — invisible, filling the box, and still the thing that is
+   clicked and focused.
+
+   The gap between them is what keeps two switched-on toggles from reading as
+   one wide button. */
+#editor .cm-panel.cm-search label:nth-of-type(1),
+#editor .cm-panel.cm-search label:nth-of-type(2) {
+  position: relative;
+  grid-area: find;
+  justify-self: end;
+  align-self: center;
+  justify-content: center;
+  width: var(--toggle-size-search);
+  height: var(--toggle-size-search);
+  gap: 0;
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  font-size: 0;
+}
+
+#editor .cm-panel.cm-search label:nth-of-type(1) {
+  margin-right: calc(var(--toggle-size-search) + var(--space-1) * 2);
+}
+
+#editor .cm-panel.cm-search label:nth-of-type(2) {
+  margin-right: var(--space-1);
+}
+
+#editor .cm-panel.cm-search label:nth-of-type(1)::before,
+#editor .cm-panel.cm-search label:nth-of-type(2)::before {
+  font-size: var(--font-size-caption);
+  font-weight: 700;
+}
+
+#editor .cm-panel.cm-search label:nth-of-type(1)::before {
+  content: "Aa";
+}
+
+#editor .cm-panel.cm-search label:nth-of-type(2)::before {
+  content: ".*";
+}
+
+#editor .cm-panel.cm-search label input[type="checkbox"] {
+  position: absolute;
+  inset: 0;
+  width: auto;
+  height: auto;
+  border: none;
+  background: none;
+  opacity: 0;
+}
+
+#editor .cm-panel.cm-search label:hover {
+  background: var(--control-hover);
+  color: var(--fg);
+}
+
+#editor .cm-panel.cm-search label:has(input:checked) {
+  background: var(--accent);
+  color: var(--bg);
+}
+
+#editor .cm-panel.cm-search label:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* The match count, which src/search-panel.ts puts into the panel. It shares the
+   find field's cell with the toggles and is right-aligned in a box of its own
+   width, so neither it nor they move when the number of digits changes. */
+#editor .cm-panel.cm-search .cm-search-count {
+  grid-area: find;
+  justify-self: end;
+  align-self: center;
+  width: var(--field-width-narrow);
+  margin-right: calc(var(--space-2) + var(--toggle-size-search) * 2 + var(--space-1) * 2);
+  overflow: hidden;
+  color: var(--muted);
+  font-size: var(--font-size-caption);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+  pointer-events: none;
 }
 
 /* Down to half its width before the row wraps instead. */
-#editor .cm-panel .cm-textfield {
+#editor .cm-panel.cm-dialog .cm-textfield {
   flex: 0 1 var(--field-width);
   min-width: calc(var(--field-width) / 2);
 }
@@ -533,6 +703,17 @@ option {
 #editor .cm-panel .cm-button:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
+}
+
+/* Nothing to step to or replace: src/search-panel.ts turns these off while the
+   search comes up empty. */
+#editor .cm-panel .cm-button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+#editor .cm-panel .cm-button:disabled:hover {
+  background: var(--control-bg);
 }
 
 #editor .cm-panel label {

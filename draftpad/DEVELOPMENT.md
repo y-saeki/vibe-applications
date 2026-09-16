@@ -243,9 +243,9 @@ Tauri の NSIS スクリプトはビルド時のテンプレートなので、`t
 | 書体 | `--ui-font`、`--font-mono` | UI 全体 / バージョン表示。数の段階ではないので、予算の数え方も他と別です |
 | 余白 | `--space-1` 〜 `--space-5` | 4px 刻みの 5 段。コントロール同士、バーとパネルの内側、グループ同士 |
 | 角丸 | `--radius-sm` / `-md` / `-lg` | 部品の大きさに対応した 3 段(チェックボックスとアイコンボタン / 高さ `--control-height` のコントロール / パネル) |
-| 寸法 | `--control-height`、`--checkbox-size`、`--toggle-width`、`--glyph-size`、`--icon-size`、`--icon-button-size`、`--statusbar-height`、`--titlebar-height` | コントロールとバーの大きさ |
-| レイアウト | `--field-width`、`--field-width-narrow`、`--label-width`、`--panel-width`、`--panel-inset`、`--language-width`、`--count-width`、`--count-width-narrow` | 入力欄・ラベル列・環境設定パネルの配置と、ステータスバーの文字数・行数セルの幅 |
-| パレット | `--bg`、`--fg`、`--muted`、`--muted-strong`、`--placeholder`、`--border` など | 色、影 2 段(`--shadow-panel` / `--shadow-popup`)、描き込む印 4 枚(✓ / シェブロン / × / 横棒) |
+| 寸法 | `--control-height`、`--checkbox-size`、`--toggle-width`、`--toggle-size-search`、`--glyph-size`、`--icon-size`、`--icon-button-size`、`--statusbar-height`、`--titlebar-height` | コントロールとバーの大きさ |
+| レイアウト | `--field-width`、`--field-width-narrow`、`--field-width-search`、`--button-width-search`、`--label-width`、`--panel-width`、`--panel-inset`、`--language-width`、`--count-width`、`--count-width-narrow` | 入力欄・ラベル列・検索パネルと環境設定パネルの配置と、ステータスバーの文字数・行数セルの幅 |
+| パレット | `--bg`、`--fg`、`--muted`、`--muted-strong`、`--placeholder`、`--border` など | 色、影 2 段(`--shadow-panel` / `--shadow-popup`)、描き込む印 5 枚(✓ / シェブロン上下 / × / 横棒) |
 
 基準にしたのは Windows 11 のメモ帳のステータスバーです。macOS では `-apple-system`、Windows では Segoe UI が
 当たるだけで、寸法は共通です。OS ごとに変えたくなったら `:root[data-platform="macos"]` でトークンを上書き
@@ -259,10 +259,12 @@ Tauri の NSIS スクリプトはビルド時のテンプレートなので、`t
 歯車とピン(常に手前に表示)は HTML に直接書いた SVG です。閉じるボタンの × は `--close-icon` をマスクして描きます。文字として
 置くと、字形の中心と文字の送り幅の中心がずれる分だけボタンの中央から外れ、その量がフォントによって
 変わります。CodeMirror は自前の閉じるボタンに × の文字を書き込むので、そちらは文字を `font-size: 0` で
-畳んで同じマスクを被せています。擬似要素にしか届かないもの(✓・シェブロン・×・横棒)が CSS の画像で、
-HTML から触れるもの(歯車・ピン)が SVG です。
+畳んで同じマスクを被せています。検索パネルの「前へ」「次へ」も同じで、文字を畳んで `--chevron-up` /
+`--chevron-down` を被せます(`--chevron-down` はセレクトの矢印と同じ画像です)。読み上げ用の名前は文字と
+一緒に消えるので、`src/search-panel.ts` が `aria-label` に移し替えます。擬似要素にしか届かないもの
+(✓・シェブロン・×・横棒)が CSS の画像で、HTML から触れるもの(歯車・ピン)が SVG です。
 
-`--chevron` と `--close-icon` はマスクなので `currentColor` で塗れますが、`--check-mark` と `--minus-mark`
+2 つのシェブロンと `--close-icon` はマスクなので `currentColor` で塗れますが、`--check-mark` と `--minus-mark`
 は `input` の擬似要素の背景として敷くため色を焼き込んであり、テーマごとに 2 つずつ持っています。
 `--check-mark` はチェックボックスの ✓ とトグルのオンの印を兼ねます。どちらも下地は `--accent` で、
 必要な色が同じだからです。
@@ -274,6 +276,22 @@ HTML から触れるもの(歯車・ピン)が SVG です。
 プレースホルダは `--muted` ではなく `--placeholder` です。`--muted` はステータスバーやバージョン表示に
 使う「読ませる二次テキスト」で、プレースホルダは「まだ何も入っていない」ことを示すものなので、同じ色だと
 入力済みに見えます。ライト・ダークとも背景に対して約 3.3:1 に揃えてあります。
+
+### 検索パネル
+
+パネルを組み立てるのは CodeMirror で、中身の markup に口は出せません。丸ごと差し替える口だけはありますが
+それは重すぎるので、`src/search-panel.ts` が出来上がったパネルに後から手を入れる形にしています。足すのは
+件数を書き込む `span` 1 つだけで、あとは属性と `disabled` の付け外しです。
+
+- **2 行 2 列のグリッド**。どこに何が来るかは `style.css` の `grid-area` だけで決めます。DOM の順序は
+  CodeMirror が書いたまま、つまり Tab の順序もそのままです。ボタンは 4 つとも同じ幅で、対の右側を
+  ちょうど 1 個ぶん右へ寄せてあるので、上下の 2 対は左端も右端も揃います。
+- **件数**。CodeMirror は持っていないので、`SearchQuery` のカーソルで文書を走査して数えます。数え直すのは
+  検索語かオプションが変わったときと、入力が 100ms 止まったときだけです。「2 / 3 件」の左の数字は、選択範囲が
+  一致のどれかとぴったり重なっているときだけ出ます(まだどれにも移動していない状態では総数だけ)。
+- **一致なし**。正規表現として書きかけの文字列も、単に見つからない場合と同じ扱いです。下書きの途中で
+  赤くしても手が止まるだけなので、色も変えません。
+- **無効化**。一致が 0 件のあいだは「前へ / 次へ / 置換 / すべて」を `disabled` にします。
 
 ### ドロップダウン
 
@@ -307,7 +325,7 @@ macOS でも true になってしまいます。
 
 Windows 側では、指定しないと元の見た目が変わるところが 2 点あります。
 
-- **矢印**。プラットフォームが描いていたものが `::picker-icon` に移ります。`--chevron` を
+- **矢印**。プラットフォームが描いていたものが `::picker-icon` に移ります。`--chevron-down` を
   `currentColor` でマスクして塗るので、テーマごとに画像を用意する必要はありません(チェックボックスの
   ✓ だけは `input` の擬似要素に背景色が届かないため、いまも色別に 2 つ持っています)
 - **ステータスバーのセレクトの幅**。ネイティブの `<select>` は一番長い選択肢に合わせた幅を持つため、

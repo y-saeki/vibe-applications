@@ -235,24 +235,23 @@ test('starts in Vim mode when that is what was saved', async ({ launch }) => {
 
 test('covers the search bar, which closes it like the rest of the backdrop', async ({ launch }) => {
   const app = await launch()
-  const searchField = app.searchPanel.getByPlaceholder('検索')
 
   await app.press('f')
-  await expect(searchField).toBeVisible()
+  await expect(app.searchField).toBeVisible()
   await app.gear.click()
   await expect(app.preferences).toBeVisible()
 
   // CodeMirror stacks its own panels above the page; the panel is a modal
   // dialog, so the top layer puts it over them and the search bar greys out
   // and stops taking the pointer like the rest of the window.
-  const box = (await searchField.boundingBox())!
+  const box = (await app.searchField.boundingBox())!
   const point = { x: box.x + box.width / 2, y: box.y + box.height / 2 }
   const topmost = await app.page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.id, point)
   expect(topmost).toBe('preferences')
 
   await app.page.mouse.click(point.x, point.y)
   await expect(app.preferences).toBeHidden()
-  await expect(searchField).not.toBeFocused()
+  await expect(app.searchField).not.toBeFocused()
 })
 
 test('dims the window with the palette alone, not the browser\'s own backdrop', async ({ launch }) => {
