@@ -245,7 +245,7 @@ Tauri の NSIS スクリプトはビルド時のテンプレートなので、`t
 | 角丸 | `--radius-sm` / `-md` / `-lg` | 部品の大きさに対応した 3 段(チェックボックスとアイコンボタン / 高さ `--control-height` のコントロール / パネル) |
 | 寸法 | `--control-height`、`--checkbox-size`、`--toggle-width`、`--toggle-size-search`、`--glyph-size`、`--icon-size`、`--icon-button-size`、`--statusbar-height`、`--titlebar-height` | コントロールとバーの大きさ |
 | レイアウト | `--field-width`、`--field-width-narrow`、`--field-width-search`、`--button-width-search`、`--label-width`、`--panel-width`、`--panel-inset`、`--language-width`、`--count-width`、`--count-width-narrow` | 入力欄・ラベル列・検索パネルと環境設定パネルの配置と、ステータスバーの文字数・行数セルの幅 |
-| パレット | `--bg`、`--fg`、`--muted`、`--muted-strong`、`--placeholder`、`--border` など | 色、影 2 段(`--shadow-panel` / `--shadow-popup`)、描き込む印 5 枚(✓ / シェブロン上下 / × / 横棒) |
+| パレット | `--bg`、`--fg`、`--muted`、`--muted-strong`、`--placeholder`、`--border` など | 色、影 2 段(`--shadow-panel` / `--shadow-popup`)、描き込む印 7 枚(✓ / シェブロン上下 / × / 横棒 / Aa / .*) |
 
 基準にしたのは Windows 11 のメモ帳のステータスバーです。macOS では `-apple-system`、Windows では Segoe UI が
 当たるだけで、寸法は共通です。OS ごとに変えたくなったら `:root[data-platform="macos"]` でトークンを上書き
@@ -262,7 +262,11 @@ Tauri の NSIS スクリプトはビルド時のテンプレートなので、`t
 畳んで同じマスクを被せています。検索パネルの「前へ」「次へ」も同じで、文字を畳んで `--chevron-up` /
 `--chevron-down` を被せます(`--chevron-down` はセレクトの矢印と同じ画像です)。読み上げ用の名前は文字と
 一緒に消えるので、`src/search-panel.ts` が `aria-label` に移し替えます。擬似要素にしか届かないもの
-(✓・シェブロン・×・横棒)が CSS の画像で、HTML から触れるもの(歯車・ピン)が SVG です。
+(✓・シェブロン・×・横棒・Aa・.*)が CSS の画像で、HTML から触れるもの(歯車・ピン)が SVG です。
+
+検索パネルの「Aa」「.\*」トグルも同じ理由で画像です(`--case-mark` / `--regexp-mark`)。文字として置くと、
+当たるフォントが macOS と Windows で違うぶんだけ字形も送り幅も変わり、20px の枠の中での位置が揃いません。
+線は × やシェブロンと同じモノラインで引いてあるので、4 つが 1 組に見えます。
 
 2 つのシェブロンと `--close-icon` はマスクなので `currentColor` で塗れますが、`--check-mark` と `--minus-mark`
 は `input` の擬似要素の背景として敷くため色を焼き込んであり、テーマごとに 2 つずつ持っています。
@@ -292,6 +296,8 @@ Tauri の NSIS スクリプトはビルド時のテンプレートなので、`t
 - **一致なし**。正規表現として書きかけの文字列も、単に見つからない場合と同じ扱いです。下書きの途中で
   赤くしても手が止まるだけなので、色も変えません。
 - **無効化**。一致が 0 件のあいだは「前へ / 次へ / 置換 / すべて」を `disabled` にします。
+- **トグルの中身**。「Aa」「.\*」は文字ではなくマスクした画像です。読み上げ用の名前は CodeMirror が
+  `label` に書いた文字がそのまま担うので(`font-size: 0` で畳んでも消えません)、ここは属性を足しません。
 
 ### ドロップダウン
 
