@@ -9,6 +9,10 @@
   --bg: #ffffff;
   --fg: #1f2328;
   --muted: #6e7781;
+  /* One step short of --fg, for the group headings in the preferences panel:
+     they sit above the labels they gather, and --muted would read as the same
+     kind of secondary text as the status bar. */
+  --muted-strong: #57606a;
   /* Weaker than --muted: a placeholder has to read as an empty field rather
      than as something already typed. */
   --placeholder: #848d97;
@@ -31,11 +35,24 @@
   --chevron-up: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%23000000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' d='M4.5 9.5 8 6 11.5 9.5'/%3E%3C/svg%3E");
   /* Masked the same way, for the buttons that close a panel. */
   --close-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%23000000' stroke-width='1.5' stroke-linecap='round' d='M4 4 12 12M12 4 4 12'/%3E%3C/svg%3E");
-  /* The tick inside a checked box, in whichever color reads on --accent. */
+  /* The tick inside a checked box, in whichever color reads on --accent. It is
+     also the toggle's on glyph, whose knob is that same --accent. */
   --check-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%23ffffff' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round' d='M3.5 8.5 6.5 11.5 12.5 4.5'/%3E%3C/svg%3E");
+  /* The toggle's off glyph, drawn in --muted. A bar rather than a cross: off is
+     a resting state, and a cross reads as a refusal. */
+  --minus-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%236e7781' stroke-width='2.4' stroke-linecap='round' d='M4.5 8h7'/%3E%3C/svg%3E");
+
+  /* The toggle. The track keeps the surface every other control has, one step
+     sunken so the knob's own face separates from it; only the knob carries the
+     accent. */
+  --toggle-track: var(--control-hover);
+  --toggle-knob: var(--control-bg);
+  --toggle-knob-border: var(--border);
 
   /* ---- Type ---- */
   --ui-font: -apple-system, "Segoe UI", system-ui, sans-serif;
+  /* The version line only; figures that do not shift as the number changes. */
+  --font-mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
   --font-size-title: 16px; /* the preferences heading */
   --font-size-body: 13px; /* panels and their controls */
   --font-size-caption: 12px; /* the status bar, the version line */
@@ -55,9 +72,11 @@
   /* ---- Control and chrome metrics ---- */
   --control-height: 28px; /* text fields, selects, buttons */
   --checkbox-size: 16px;
+  --toggle-width: 48px; /* the toggle's track; it is --control-height tall */
+  --glyph-size: 12px; /* the mark inside the toggle's knob */
   --icon-size: 16px;
   --icon-button-size: 24px;
-  --toggle-size: 20px; /* the Aa / .* toggles inside the find field */
+  --toggle-size-search: 20px; /* the Aa / .* toggles inside the find field */
   --statusbar-height: 32px;
   --titlebar-height: 0px;
 
@@ -80,6 +99,7 @@
   --bg: #151515;
   --fg: #d8d8d8;
   --muted: #aaaaaa;
+  --muted-strong: #c4c4c4;
   --placeholder: #6f6f6f;
   --border: #2c2c2c;
   --panel: #111111;
@@ -90,6 +110,13 @@
   --control-active: #333333;
   --focus-ring: rgba(108, 182, 255, 0.32);
   --check-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%230b0b0b' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round' d='M3.5 8.5 6.5 11.5 12.5 4.5'/%3E%3C/svg%3E");
+  --minus-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%23aaaaaa' stroke-width='2.4' stroke-linecap='round' d='M4.5 8h7'/%3E%3C/svg%3E");
+  /* Dark has no light face to put the knob against, so the two are told apart
+     by lightness instead of by an outline; the border goes away rather than
+     drawing a darker edge around an already dark knob. */
+  --toggle-track: var(--control-bg);
+  --toggle-knob: var(--control-active);
+  --toggle-knob-border: transparent;
   --editor-caret: #6cb6ff;
   --editor-selection: #2c4a6e;
   --editor-selection-match: rgba(255, 255, 255, 0.1);
@@ -489,7 +516,7 @@ option {
    stops short of them. */
 #editor .cm-panel.cm-search input[name="search"] {
   grid-area: find;
-  padding-right: calc(var(--field-width-narrow) + var(--space-2) + var(--toggle-size) * 2 + var(--space-1) * 2);
+  padding-right: calc(var(--field-width-narrow) + var(--space-2) + var(--toggle-size-search) * 2 + var(--space-1) * 2);
 }
 
 #editor .cm-panel.cm-search input[name="replace"] {
@@ -571,8 +598,8 @@ option {
   justify-self: end;
   align-self: center;
   justify-content: center;
-  width: var(--toggle-size);
-  height: var(--toggle-size);
+  width: var(--toggle-size-search);
+  height: var(--toggle-size-search);
   gap: 0;
   border-radius: var(--radius-sm);
   color: var(--muted);
@@ -580,7 +607,7 @@ option {
 }
 
 #editor .cm-panel.cm-search label:nth-of-type(1) {
-  margin-right: calc(var(--toggle-size) + var(--space-1) * 2);
+  margin-right: calc(var(--toggle-size-search) + var(--space-1) * 2);
 }
 
 #editor .cm-panel.cm-search label:nth-of-type(2) {
@@ -634,7 +661,7 @@ option {
   justify-self: end;
   align-self: center;
   width: var(--field-width-narrow);
-  margin-right: calc(var(--space-2) + var(--toggle-size) * 2 + var(--space-1) * 2);
+  margin-right: calc(var(--space-2) + var(--toggle-size-search) * 2 + var(--space-1) * 2);
   overflow: hidden;
   color: var(--muted);
   font-size: var(--font-size-caption);
@@ -851,6 +878,40 @@ option {
   font-weight: 600;
 }
 
+/* Seven rows in one column left the reader counting them. The two groups say
+   which half of the panel a setting lives in; the rule between them is the only
+   thing drawn for it, and the heading stays below the size of a label so that it
+   reads as a tier above them rather than as another one of them. */
+.pref-group {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+/* The rule hangs off the group above rather than the one below. A fieldset's
+   block-start border is the one its legend cuts a notch in and sits on, so a
+   border-top here would run straight through the heading; the block-end border
+   is drawn whole. */
+.pref-group:not(:last-of-type) {
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--border);
+}
+
+.pref-group + .pref-group {
+  margin-top: var(--space-4);
+}
+
+.pref-group legend {
+  padding: 0;
+  margin-bottom: var(--space-2);
+  color: var(--muted-strong);
+  font-size: var(--font-size-caption);
+  font-weight: 600;
+  /* A hair of tracking, which is what carries the heading at this size. */
+  letter-spacing: 0.5px;
+}
+
 /* Label, then control, on one line the height of a control. */
 .form-row {
   display: grid;
@@ -877,15 +938,82 @@ option {
   justify-self: start;
 }
 
+/* A switch rather than a box. The panel's booleans are settings that take
+   effect the moment they are flipped, and a box that has to be ticked reads as
+   something waiting to be submitted.
+
+   The track is the same face, border and corner as the select and the number
+   field above it, so the column of controls keeps one silhouette; the accent
+   rides on the knob alone, which is what moves. State is carried three ways at
+   once — where the knob sits, what colour it is, and which mark it holds — so
+   none of them has to carry it alone, and nothing here says "on" in words: the
+   labels are not all phrased that way.
+
+   It stays an <input type="checkbox">, so the label, the change event and what
+   a screen reader announces are all unchanged; only the painting is ours. */
+#preferences input[type="checkbox"] {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  width: var(--toggle-width);
+  height: var(--control-height);
+  /* 3px, which with the border leaves --space-2 around the knob's height. */
+  padding: calc(var(--space-1) - 1px);
+  /* Restated because the shared checkbox rule puts the accent on a ticked
+     box's border, and here the track is the part that does not change. */
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--toggle-track);
+}
+
+/* The knob: square, as tall as what the padding and the border leave. */
+#preferences input[type="checkbox"]::before {
+  content: "";
+  box-sizing: border-box;
+  flex: none;
+  width: calc(var(--control-height) - var(--space-2));
+  height: calc(var(--control-height) - var(--space-2));
+  border: 1px solid var(--toggle-knob-border);
+  border-radius: var(--radius-sm);
+  background: var(--toggle-knob) var(--minus-mark) center / var(--glyph-size) var(--glyph-size) no-repeat;
+  transition:
+    translate 120ms ease,
+    background-color 120ms ease;
+}
+
+/* The track is left alone: only the knob crosses it. The distance is the track
+   minus one knob, and the knob is one track-height square. */
+#preferences input[type="checkbox"]:checked::before {
+  translate: calc(var(--toggle-width) - var(--control-height));
+  border-color: transparent;
+  background: var(--accent) var(--check-mark) center / var(--glyph-size) var(--glyph-size) no-repeat;
+}
+
+/* The same ring the fields above it get, on the track rather than the knob. */
+#preferences input[type="checkbox"]:focus-visible {
+  border-color: var(--accent);
+  outline: none;
+  box-shadow: 0 0 0 2px var(--focus-ring);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #preferences input[type="checkbox"]::before {
+    transition: none;
+  }
+}
+
 .form-control-with-unit {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
 }
 
+/* Not a setting, so it is deliberately outside the label column the rows keep
+   to: bottom right, in figures that hold their width as the version changes. */
 .panel-footer {
-  margin-top: var(--space-4);
+  margin-top: var(--space-5);
   color: var(--muted);
+  font-family: var(--font-mono);
   font-size: var(--font-size-caption);
   text-align: right;
 }

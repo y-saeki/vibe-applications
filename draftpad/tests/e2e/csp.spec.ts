@@ -9,15 +9,25 @@ import { expect, test } from './fixtures'
 test('paints the checked boxes without tripping the policy', async ({ launch }) => {
   const app = await launch({ csp: true, state: { theme: 'dark' } })
 
-  await app.gear.click()
-  await expect(app.preferences).toBeVisible()
-  const suggestions = app.page.locator('#pref-quick-suggestions')
-  await suggestions.uncheck()
-  await suggestions.check()
-
   // The tick is a background image, so a policy that blocks it leaves the box
   // filled and empty rather than failing outright.
-  await expect(suggestions).toHaveCSS('background-image', /url\("data:image\/svg\+xml/)
+  await app.alwaysOnTop.check()
+  await expect(app.alwaysOnTop).toHaveCSS('background-image', /url\("data:image\/svg\+xml/)
+
+  // The toggle in the preferences panel carries a mark in both states, and it
+  // sits on the knob rather than on the control itself.
+  await app.gear.click()
+  await expect(app.preferences).toBeVisible()
+  const knob = () =>
+    app.page.evaluate(
+      () => getComputedStyle(document.querySelector('#pref-quick-suggestions')!, '::before').backgroundImage,
+    )
+  const suggestions = app.page.locator('#pref-quick-suggestions')
+  await suggestions.uncheck()
+  expect(await knob()).toMatch(/url\("data:image\/svg\+xml/)
+  await suggestions.check()
+  expect(await knob()).toMatch(/url\("data:image\/svg\+xml/)
+
   expect(app.cspViolations).toEqual([])
 })
 
