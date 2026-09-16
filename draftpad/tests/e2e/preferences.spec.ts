@@ -22,11 +22,125 @@ test('closes when the backdrop is clicked', async ({ launch }) => {
   await expect(app.preferences).toBeHidden()
 })
 
-test('shows the version', async ({ launch }) => {
+test('shows the version, set apart from the settings above it', async ({ launch }) => {
   const app = await launch({ version: '9.8.7' })
 
   await app.gear.click()
-  await expect(app.page.locator('#pref-version')).toHaveText('draftpad 9.8.7')
+  const version = app.page.locator('#pref-version')
+  await expect(version).toHaveText('draftpad 9.8.7')
+  // Not a setting, so it is deliberately outside the label column: bottom
+  // right, in figures whose width does not move as the number changes.
+  await expect(version).toHaveCSS('text-align', 'right')
+  await expect(version).toHaveCSS('font-family', /ui-monospace|SFMono-Regular|Menlo|Consolas|monospace/)
+})
+
+test('gathers the settings into the two groups, in that order', async ({ launch }) => {
+  const app = await launch()
+
+  await app.gear.click()
+  await expect(app.page.locator('#preferences legend')).toHaveText(['編集', '表示'])
+
+  // The order in the panel is the order the keyboard walks them in, so one
+  // check covers both.
+  const ids = [
+    '#pref-mode',
+    '#pref-tab-size',
+    '#pref-quick-suggestions',
+    '#pref-theme',
+    '#pref-font-family',
+    '#pref-font-weight',
+    '#pref-font-size',
+  ]
+  await app.page.locator('#pref-mode').focus()
+  for (const id of ids) {
+    await expect(app.page.locator(id)).toBeFocused()
+    await app.page.keyboard.press('Tab')
+  }
+
+  // Which group a row belongs to is the point of the split.
+  const groupOf = (id: string) =>
+    app.page.evaluate(
+      (selector) => document.querySelector(selector)!.closest('.pref-group')!.querySelector('legend')!.textContent,
+      id,
+    )
+  expect(await groupOf('#pref-quick-suggestions')).toBe('編集')
+  expect(await groupOf('#pref-theme')).toBe('表示')
+
+  // One rule between the two, and it hangs off the group above: a fieldset's
+  // block-start border is the one its legend notches and sits on, so a
+  // border-top would be drawn straight through the heading.
+  const groups = app.page.locator('#preferences .pref-group')
+  await expect(groups).toHaveCount(2)
+  await expect(groups.first()).toHaveCSS('border-bottom-width', '1px')
+  await expect(groups.first()).toHaveCSS('border-top-width', '0px')
+  await expect(groups.last()).toHaveCSS('border-bottom-width', '0px')
+  await expect(groups.last()).toHaveCSS('border-top-width', '0px')
+})
+
+test('flips the suggestions toggle from the keyboard, and remembers it', async ({ launch }) => {
+  const app = await launch({ state: { quickSuggestions: true } })
+  const suggestions = app.page.locator('#pref-quick-suggestions')
+
+  await app.gear.click()
+  await expect(suggestions).toBeChecked()
+
+  // It is still a checkbox, whatever it is painted as: Tab reaches it and
+  // Space is what works it.
+  await suggestions.focus()
+  await app.page.keyboard.press('Space')
+  await expect(suggestions).not.toBeChecked()
+  await app.expectSaved((state) => state.quickSuggestions === false)
+
+  await app.page.keyboard.press('Space')
+  await expect(suggestions).toBeChecked()
+  await app.expectSaved((state) => state.quickSuggestions === true)
+})
+
+test('draws that toggle as a switch the width of two controls', async ({ launch }) => {
+  const app = await launch({ colorScheme: 'light', state: { quickSuggestions: false } })
+  const suggestions = app.page.locator('#pref-quick-suggestions')
+
+  await app.gear.click()
+  // The track is the silhouette of the select and the number field beside it,
+  // widened: same height, same corner, same border.
+  const box = (await suggestions.boundingBox())!
+  expect(box.width).toBe(48)
+  expect(box.height).toBe(28)
+  await expect(suggestions).toHaveCSS('border-radius', '6px')
+
+  // Pressing anywhere on the track works it, not just the knob.
+  await suggestions.click({ position: { x: 44, y: 24 } })
+  await expect(suggestions).toBeChecked()
+
+  // The knob is what moves and what the accent rides on; the track does not
+  // change under it. The knob slides rather than jumping, so these are polled:
+  // read straight after the click they catch it part of the way across.
+  const knob = (property: string) =>
+    expect
+      .poll(() =>
+        app.page.evaluate(
+          (name) =>
+            getComputedStyle(document.querySelector('#pref-quick-suggestions')!, '::before').getPropertyValue(name),
+          property,
+        ),
+      )
+  await knob('translate').toBe('20px')
+  await knob('background-color').toBe('rgb(43, 108, 176)')
+  await expect(suggestions).toHaveCSS('background-color', 'rgb(238, 241, 244)')
+
+  await suggestions.uncheck()
+  await knob('translate').toBe('none')
+  // Off, the knob is a white face the border keeps apart from the track.
+  await knob('background-color').toBe('rgb(255, 255, 255)')
+  await knob('border-top-color').toBe('rgb(208, 215, 222)')
+  await expect(suggestions).toHaveCSS('background-color', 'rgb(238, 241, 244)')
+
+  // Dark has no white face to set the knob apart, so lightness does it instead
+  // and the outline goes away rather than darkening an already dark knob.
+  await app.page.locator('#pref-theme').selectOption('dark')
+  await knob('background-color').toBe('rgb(51, 51, 51)')
+  await knob('border-top-color').toBe('rgba(0, 0, 0, 0)')
+  await expect(suggestions).toHaveCSS('background-color', 'rgb(28, 28, 28)')
 })
 
 test('switches to the dark look and remembers it', async ({ launch }) => {

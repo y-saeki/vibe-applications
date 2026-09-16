@@ -40,12 +40,16 @@ const FAMILIES = [
   },
 ]
 
+/** Font stacks: type rather than palette, and not a scale either, so neither
+    the families above nor the palette budget below has anything to say here. */
+const FONT_STACKS = new Set(['--ui-font', '--font-mono'])
+
 const LIMITS = {
   families: FAMILIES,
   /** Everything else measured in pixels: control metrics and layout. */
-  otherLengths: { budget: 14, accepts: (px) => px % 4 === 0, wants: 'a multiple of 4px' },
-  /** The palette, including the two shadows and the tick and chevron images. */
-  palette: 24,
+  otherLengths: { budget: 16, accepts: (px) => px % 4 === 0, wants: 'a multiple of 4px' },
+  /** The palette, including the two shadows and the four masked and drawn marks. */
+  palette: 29,
   /** Hairlines, focus rings and optical nudges stay where they are used. */
   literalPx: 2,
 }
@@ -177,7 +181,7 @@ export function findProblems({ css, usedIn = [], label = 'style.css', limits = L
     report(label, `${lengths.length} control and layout lengths are declared, over the budget of ${limits.otherLengths.budget}. Reuse one, or raise the budget in lint-style.mjs on purpose`)
   }
 
-  const palette = [...declared].filter(([name, { value }]) => !inAFamily.has(name) && asPx(value) === null && name !== '--ui-font')
+  const palette = [...declared].filter(([name, { value }]) => !inAFamily.has(name) && asPx(value) === null && !FONT_STACKS.has(name))
   if (palette.length > limits.palette) {
     report(label, `the palette holds ${palette.length} tokens, over its budget of ${limits.palette}. Reuse one, or raise the budget in lint-style.mjs on purpose`)
   }

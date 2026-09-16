@@ -35,55 +35,64 @@
           <h1 id="preferences-title">環境設定</h1>
           <button type="button" id="preferences-close" class="icon-button" aria-label="閉じる"></button>
         </div>
-        <div class="form-row">
-          <label for="pref-mode">モード</label>
-          <select id="pref-mode">
-            <option value="normal">Normal</option>
-            <option value="vim">Vim</option>
-          </select>
-        </div>
-        <div class="form-row">
-          <label for="pref-theme">テーマ</label>
-          <select id="pref-theme">
-            <option value="system">システムに合わせる</option>
-            <option value="light">ライト</option>
-            <option value="dark">ダーク</option>
-          </select>
-        </div>
-        <div class="form-row">
-          <label for="pref-font-family">フォント</label>
-          <input id="pref-font-family" type="text" list="font-list" autocomplete="off" spellcheck="false" />
-          <datalist id="font-list"></datalist>
-        </div>
-        <div class="form-row">
-          <label for="pref-font-weight">フォントの太さ</label>
-          <select id="pref-font-weight">
-            <option value="100">100</option>
-            <option value="200">200</option>
-            <option value="300">300</option>
-            <option value="400">400</option>
-            <option value="500">500</option>
-            <option value="600">600</option>
-            <option value="700">700</option>
-            <option value="800">800</option>
-            <option value="900">900</option>
-          </select>
-        </div>
-        <div class="form-row">
-          <label for="pref-font-size">フォントサイズ</label>
-          <span class="form-control-with-unit">
-            <input id="pref-font-size" type="number" min="10" max="100" step="1" />
-            <span>px</span>
-          </span>
-        </div>
-        <div class="form-row">
-          <label for="pref-tab-size">タブ幅</label>
-          <input id="pref-tab-size" type="number" min="1" max="10" step="1" />
-        </div>
-        <div class="form-row">
-          <label for="pref-quick-suggestions">入力候補を表示</label>
-          <input id="pref-quick-suggestions" type="checkbox" />
-        </div>
+        <!-- Two groups, not seven rows in a column: which of them a control
+             belongs to is what tells the reader where to look. The order here
+             is the tab order. -->
+        <fieldset class="pref-group">
+          <legend>編集</legend>
+          <div class="form-row">
+            <label for="pref-mode">モード</label>
+            <select id="pref-mode">
+              <option value="normal">Normal</option>
+              <option value="vim">Vim</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <label for="pref-tab-size">タブ幅</label>
+            <input id="pref-tab-size" type="number" min="1" max="10" step="1" />
+          </div>
+          <div class="form-row">
+            <label for="pref-quick-suggestions">入力候補を表示</label>
+            <input id="pref-quick-suggestions" type="checkbox" />
+          </div>
+        </fieldset>
+        <fieldset class="pref-group">
+          <legend>表示</legend>
+          <div class="form-row">
+            <label for="pref-theme">テーマ</label>
+            <select id="pref-theme">
+              <option value="system">システムに合わせる</option>
+              <option value="light">ライト</option>
+              <option value="dark">ダーク</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <label for="pref-font-family">フォント</label>
+            <input id="pref-font-family" type="text" list="font-list" autocomplete="off" spellcheck="false" />
+            <datalist id="font-list"></datalist>
+          </div>
+          <div class="form-row">
+            <label for="pref-font-weight">フォントの太さ</label>
+            <select id="pref-font-weight">
+              <option value="100">100</option>
+              <option value="200">200</option>
+              <option value="300">300</option>
+              <option value="400">400</option>
+              <option value="500">500</option>
+              <option value="600">600</option>
+              <option value="700">700</option>
+              <option value="800">800</option>
+              <option value="900">900</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <label for="pref-font-size">フォントサイズ</label>
+            <span class="form-control-with-unit">
+              <input id="pref-font-size" type="number" min="10" max="100" step="1" />
+              <span>px</span>
+            </span>
+          </div>
+        </fieldset>
         <div class="panel-footer" id="pref-version"></div>
       </div>
     </dialog>
