@@ -101,6 +101,8 @@ Windows 側の経路(アプリ内のキー処理)を、どちらも Linux のラ
 - IME の未確定文字列と変換候補の位置
 - 常に手前に表示・フルスクリーン・ウィンドウサイズが実際にどうなるか
   (`invoke` が正しく呼ばれたところまでは確認します)
+- 信号機ボタンが実際に何色で描かれるか(`tests/e2e/window.spec.ts` は、操作対象でないときに下へ灰色を
+  敷いているところまでを見ます)
 - 展開したドロップダウンの macOS での見た目。Playwright が同梱する WebKit は 26.0 で、
   `appearance: base-select` は WebKit 27 からなので、プラットフォームのメニューが開く側の経路しか
   通りません。該当のテストは `CSS.supports()` を見て自分をスキップするため、Playwright が 27 以降を
@@ -202,11 +204,18 @@ Windows は IME の未確定文字列と変換候補をキャレットの位置�
 10 秒後に表示するフォールバックだけ残してあります)。ウィンドウが操作対象に戻ったときに中身の
 どこにもフォーカスがなければ、エディタへ戻すようにもしています。
 
-macOS のタイトルバーは OS 標準のものです。以前は `titleBarStyle: "Overlay"` で透明なタイトルバーを敷き、
-ウィンドウ上端に高さ 28px の空の帯を確保して、その下に本文を置いていました。信号機ボタン(閉じる・しまう・
-拡大)は OS がその帯の上に描きますが、下にタイトルバーがないと、ウィンドウが操作対象でないときのボタンが
-背後の色に溶けてしまい、ダークテーマでは黒い丸に見えます。標準のタイトルバーに戻すと、どの状態のボタンも
-他のアプリと同じ灰色で描かれます。`hiddenTitle: true` は残してあるので、タイトル文字のない帯になります。
+macOS では `titleBarStyle: "Overlay"` でタイトルバーを透明にし、ウィンドウ上端に高さ `--titlebar-height`
+(28px)の帯だけを空けています。信号機ボタン(閉じる・しまう・拡大)は OS がこの帯の上に描きますが、
+ウィンドウが操作対象でないときのボタンは、背後にあるものの色で描かれます。draftpad はそこに本文の背景しか
+置いていないので、ダークテーマでは黒い丸になっていました。そのため、操作対象でない間だけ帯の左側に灰色
+(`--titlebar-lights`)を敷いて、その色で描かれるようにしています。操作対象かどうかは `src/main.ts` が
+`window` の focus / blur で `data-window` に書き出し、色は `src/style.css` が持ちます。
+
+ボタンの大きさと間隔も OS のもので、macOS 15 までは 12pt を 20pt 間隔、macOS 26 からは 14pt を 23pt 間隔と
+変わってきています。位置を当てにいくと OS の更新で外れるので、敷く幅(`--titlebar-lights-width`)は
+ボタンより広く取り、端はフェードさせています。ライトテーマでは `transparent` のままです。白い背景では
+ボタンが淡く出るだけで、他のアプリと変わらないためです。灰色の濃さは実機を見て決める値なので、
+変えるときは `--titlebar-lights` の 1 箇所です。
 
 Windows の WebView2 はテキスト入力をフォームの一部とみなすため、検索・置換や環境設定の入力欄に
 フォーカスすると「保存された情報」の候補が出ます。draftpad にフォームはないので、起動時に
@@ -249,13 +258,13 @@ Tauri の NSIS スクリプトはビルド時のテンプレートなので、`t
 | 書体 | `--ui-font`、`--font-mono` | UI 全体 / バージョン表示。数の段階ではないので、予算の数え方も他と別です |
 | 余白 | `--space-1` 〜 `--space-5` | 4px 刻みの 5 段。コントロール同士、バーとパネルの内側、グループ同士 |
 | 角丸 | `--radius-sm` / `-md` / `-lg` | 部品の大きさに対応した 3 段(チェックボックスとアイコンボタン / 高さ `--control-height` のコントロール / パネル) |
-| 寸法 | `--control-height`、`--checkbox-size`、`--toggle-width`、`--toggle-size-search`、`--glyph-size`、`--icon-size`、`--icon-button-size`、`--statusbar-height` | コントロールとバーの大きさ |
-| レイアウト | `--field-width`、`--field-width-narrow`、`--field-width-search`、`--button-width-search`、`--label-width`、`--panel-width`、`--panel-inset`、`--language-width`、`--count-width`、`--count-width-narrow` | 入力欄・ラベル列・検索パネルと環境設定パネルの配置と、ステータスバーの文字数・行数セルの幅 |
+| 寸法 | `--control-height`、`--checkbox-size`、`--toggle-width`、`--toggle-size-search`、`--glyph-size`、`--icon-size`、`--icon-button-size`、`--statusbar-height`、`--titlebar-height` | コントロールとバーの大きさ |
+| レイアウト | `--field-width`、`--field-width-narrow`、`--field-width-search`、`--button-width-search`、`--label-width`、`--panel-width`、`--panel-inset`、`--language-width`、`--count-width`、`--count-width-narrow`、`--titlebar-lights-width` | 入力欄・ラベル列・検索パネルと環境設定パネルの配置と、ステータスバーの文字数・行数セルの幅、信号機ボタンの下に敷く灰色の幅 |
 | パレット | `--bg`、`--fg`、`--muted`、`--muted-strong`、`--placeholder`、`--border` など | 色、影 2 段(`--shadow-panel` / `--shadow-popup`)、描き込む印 7 枚(✓ / シェブロン上下 / × / 横棒 / Aa / .*) |
 
 基準にしたのは Windows 11 のメモ帳のステータスバーです。macOS では `-apple-system`、Windows では Segoe UI が
 当たるだけで、寸法は共通です。OS ごとに変えたくなったら `:root[data-platform="macos"]` でトークンを上書き
-してください。
+してください(`--titlebar-height` がすでにそうなっています)。
 
 エディタ本文のフォントサイズは設定項目なので、このトークンには含めません。CodeMirror が自分で描く部分の色は
 `src/dark-theme.ts` にあり、構文ハイライトの色だけは直値です(パレットとは別の体系なので意図的にそうしています)。

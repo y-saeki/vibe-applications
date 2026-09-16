@@ -23,6 +23,7 @@
   --control-bg: #ffffff;
   --control-hover: #eef1f4;
   --control-active: #e2e6ea;
+  --titlebar-lights: transparent;
   --focus-ring: rgba(43, 108, 176, 0.25);
   --shadow-panel: 0 8px 32px rgba(0, 0, 0, 0.25); /* the preferences panel */
   --shadow-popup: 0 4px 16px rgba(0, 0, 0, 0.18); /* a dropped-open list */
@@ -84,6 +85,10 @@
   --icon-button-size: 24px;
   --toggle-size-search: 20px; /* the Aa / .* toggles inside the find field */
   --statusbar-height: 32px;
+  --titlebar-height: 0px;
+  /* How far the patch under the traffic lights reaches before it fades out.
+     Wider than the buttons themselves; the rule below says why. */
+  --titlebar-lights-width: 96px;
 
   /* ---- Layout ---- */
   --field-width: 240px; /* a text field's preferred width */
@@ -115,6 +120,7 @@
   --control-bg: #1c1c1c;
   --control-hover: #262626;
   --control-active: #333333;
+  --titlebar-lights: #545454;
   --focus-ring: rgba(108, 182, 255, 0.32);
   --check-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%230b0b0b' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round' d='M3.5 8.5 6.5 11.5 12.5 4.5'/%3E%3C/svg%3E");
   --minus-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%23aaaaaa' stroke-width='2.4' stroke-linecap='round' d='M4.5 8h7'/%3E%3C/svg%3E");
@@ -134,6 +140,11 @@
   color-scheme: dark;
 }
 
+/* macOS uses a transparent overlay title bar; keep the top strip draggable. */
+:root[data-platform="macos"] {
+  --titlebar-height: 28px;
+}
+
 html,
 body {
   height: 100%;
@@ -147,6 +158,28 @@ body {
   background: var(--bg);
   color: var(--fg);
   font: var(--font-size-body) var(--ui-font);
+}
+
+#titlebar {
+  flex: none;
+  height: var(--titlebar-height);
+}
+
+/* The traffic lights are the OS's, drawn over this strip, and an inactive
+   window's are drawn in whatever sits behind them: on the dark theme they come
+   out black, where every other app shows grey. This lays a grey patch under
+   them for as long as the window stays inactive, so they are drawn in that
+   instead; an active window's buttons carry their own colors, and the strip
+   goes back to being nothing. The patch reaches further than the buttons do
+   and ends in a fade because their size and spacing are the OS's too, and have
+   moved with its releases (12pt at a 20pt pitch through macOS 15, 14pt at 23pt
+   from macOS 26). */
+:root[data-window="inactive"] #titlebar {
+  background: linear-gradient(
+    to right,
+    var(--titlebar-lights) var(--titlebar-lights-width),
+    transparent calc(var(--titlebar-lights-width) + var(--space-5) * 2)
+  );
 }
 
 /* ---- Controls shared by every panel ------------------------------------ */
@@ -843,7 +876,7 @@ option {
   height: 100%;
   max-height: none;
   margin: 0;
-  padding: var(--panel-inset) 0 0;
+  padding: calc(var(--titlebar-height) + var(--panel-inset)) 0 0;
   border: none;
   background: var(--overlay);
   color: inherit;
@@ -871,7 +904,7 @@ option {
    window is too narrow for --panel-width. */
 .panel {
   width: min(var(--panel-width), calc(100vw - var(--space-4) * 2));
-  max-height: calc(100vh - var(--panel-inset) * 2);
+  max-height: calc(100vh - var(--titlebar-height) - var(--panel-inset) * 2);
   overflow: auto;
   box-sizing: border-box;
   padding: var(--space-5);

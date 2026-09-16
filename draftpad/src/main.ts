@@ -46,6 +46,14 @@ async function main(): Promise<void> {
   state.fontWeight = nearestFontWeight(state.fontWeight)
   const isMac = platform === 'macos'
   document.documentElement.dataset.platform = platform
+  // macOS draws the traffic lights over the title bar strip, and an inactive
+  // window's in whatever is behind them. style.css puts something there to be
+  // drawn in while this says the window is inactive; the window is about to be
+  // shown and taken to the front, so it starts out active.
+  const setWindowActive = (active: boolean): void => {
+    document.documentElement.dataset.window = active ? 'active' : 'inactive'
+  }
+  setWindowActive(true)
 
   const store = new Store(state)
   const appWindow = getCurrentWindow()
@@ -106,7 +114,10 @@ async function main(): Promise<void> {
     event.preventDefault()
     await quit()
   })
-  window.addEventListener('blur', () => void store.flush())
+  window.addEventListener('blur', () => {
+    setWindowActive(false)
+    void store.flush()
+  })
 
   // ---- preferences --------------------------------------------------------
   const focusEditor = (): void => ed.focus()
@@ -200,6 +211,7 @@ async function main(): Promise<void> {
   // over the editor. Keeping something focused whenever the window is active
   // is what stops that.
   window.addEventListener('focus', () => {
+    setWindowActive(true)
     const focused = document.activeElement
     if (focused && focused !== document.body) return
     if (preferences.isOpen) preferences.focus()

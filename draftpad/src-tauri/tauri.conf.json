@@ -20,6 +20,7 @@
         "minHeight": 200,
         "center": true,
         "visible": false,
+        "titleBarStyle": "Overlay",
         "hiddenTitle": true
       }
     ],

@@ -41,6 +41,7 @@ covers it changes in the same commit:
 | A preferences control | `tests/e2e/preferences.spec.ts` |
 | What is restored at startup | `tests/e2e/startup.spec.ts` |
 | Editing behaviour, or the status bar | `tests/e2e/editing.spec.ts` |
+| What the window itself carries — the title bar strip, and what changes when the window goes inactive | `tests/e2e/window.spec.ts` |
 | A field on `State` | `DEFAULT_STATE` in `tests/e2e/harness/backend.ts`, which mirrors `impl Default for State`, and `mod tests` in `src-tauri/src/state.rs` |
 | A command the frontend invokes | `handle` in `tests/e2e/harness/backend.ts`. It throws on a command it does not know, so the tests fail until the command is added |
 | An asset the page loads from anywhere but its own files (a `data:` URI, say), or the `csp` in `src-tauri/tauri.conf.json` | `tests/e2e/csp.spec.ts`, which is the only spec served under that policy |
