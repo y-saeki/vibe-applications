@@ -30,9 +30,15 @@
      with currentColor through a mask, so one asset serves both themes; the tick
      below cannot do that because a background color cannot reach a
      pseudo-element of an input. */
-  --chevron-down: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%23000000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' d='M4.5 6.5 8 10 11.5 6.5'/%3E%3C/svg%3E");
+  --chevron-down: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%23000000' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round' d='M4.5 6.5 8 10 11.5 6.5'/%3E%3C/svg%3E");
+  /* The search panel's two option toggles, drawn rather than typed for the same
+     reason the × is: Aa and .* set as text sit wherever the platform's UI font
+     puts them inside their box. Monoline like the marks above, so the four read
+     as one set. */
+  --case-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%23000000' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round' d='M1.5 12.6 4.3 3.4 7.1 12.6M2.45 9.8H6.15'/%3E%3Cpath fill='none' stroke='%23000000' stroke-width='1.5' stroke-linecap='round' d='M14.5 8.3v4.3'/%3E%3Ccircle cx='12.35' cy='10.45' r='2.15' fill='none' stroke='%23000000' stroke-width='1.5'/%3E%3C/svg%3E");
+  --regexp-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%23000000' stroke-width='1.4' stroke-linecap='round' d='M9.91 4.2v6.2M7.225 5.75 12.595 8.85M7.225 8.85 12.595 5.75'/%3E%3Ccircle cx='4.01' cy='11.2' r='1.25' fill='%23000000'/%3E%3C/svg%3E");
   /* The same chevron turned over, for the search panel's previous button. */
-  --chevron-up: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%23000000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' d='M4.5 9.5 8 6 11.5 9.5'/%3E%3C/svg%3E");
+  --chevron-up: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%23000000' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round' d='M4.5 9.5 8 6 11.5 9.5'/%3E%3C/svg%3E");
   /* Masked the same way, for the buttons that close a panel. */
   --close-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%23000000' stroke-width='1.5' stroke-linecap='round' d='M4 4 12 12M12 4 4 12'/%3E%3C/svg%3E");
   /* The tick inside a checked box, in whichever color reads on --accent. It is
@@ -73,7 +79,7 @@
   --control-height: 28px; /* text fields, selects, buttons */
   --checkbox-size: 16px;
   --toggle-width: 48px; /* the toggle's track; it is --control-height tall */
-  --glyph-size: 12px; /* the mark inside the toggle's knob */
+  --glyph-size: 12px; /* the mark inside a toggle: the switch's knob, Aa and .* */
   --icon-size: 16px;
   --icon-button-size: 24px;
   --toggle-size-search: 20px; /* the Aa / .* toggles inside the find field */
@@ -618,16 +624,18 @@ option {
 
 #editor .cm-panel.cm-search label:nth-of-type(1)::before,
 #editor .cm-panel.cm-search label:nth-of-type(2)::before {
-  font-size: var(--font-size-caption);
-  font-weight: 700;
+  content: "";
+  width: var(--glyph-size);
+  height: var(--glyph-size);
+  background: currentColor;
 }
 
 #editor .cm-panel.cm-search label:nth-of-type(1)::before {
-  content: "Aa";
+  mask: var(--case-mark) center / contain no-repeat;
 }
 
 #editor .cm-panel.cm-search label:nth-of-type(2)::before {
-  content: ".*";
+  mask: var(--regexp-mark) center / contain no-repeat;
 }
 
 #editor .cm-panel.cm-search label input[type="checkbox"] {

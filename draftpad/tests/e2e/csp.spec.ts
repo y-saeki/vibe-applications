@@ -52,12 +52,19 @@ test('paints the masked marks without tripping the policy', async ({ launch }) =
     await app.languageSelect.click()
   }
 
-  // The search panel's previous and next buttons are the same story: their
-  // words are collapsed and a chevron masked over them.
+  // The search panel is the same story four times over: the previous and next
+  // buttons and the two option toggles all collapse their words and wear a
+  // masked mark instead.
   await app.press('KeyF')
   await expect(app.searchPanel).toBeVisible()
-  expect(await maskOf('.cm-search button[name="prev"]', '::before')).toMatch(/url\("data:image\/svg\+xml/)
-  expect(await maskOf('.cm-search button[name="next"]', '::before')).toMatch(/url\("data:image\/svg\+xml/)
+  for (const selector of [
+    '.cm-search button[name="prev"]',
+    '.cm-search button[name="next"]',
+    '.cm-search label:nth-of-type(1)',
+    '.cm-search label:nth-of-type(2)',
+  ]) {
+    expect(await maskOf(selector, '::before')).toMatch(/url\("data:image\/svg\+xml/)
+  }
   expect(app.cspViolations).toEqual([])
 })
 
