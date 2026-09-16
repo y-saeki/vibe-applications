@@ -168,9 +168,14 @@ export class Editor {
     this.view.focus()
   }
 
+  // The view is deliberately not focused afterwards. CodeMirror mounts the
+  // panel within the same update cycle and selects its find field there, so a
+  // focus() here would take the keyboard straight back off it and the search
+  // term would be typed into the draft. Nothing else depends on this call:
+  // the caret Windows needs for the IME is the panel's own field, and the
+  // window that comes back with nothing focused is handled in src/main.ts.
   openSearch(): void {
     openSearchPanel(this.view)
-    this.view.focus()
   }
 
   undo(): void {

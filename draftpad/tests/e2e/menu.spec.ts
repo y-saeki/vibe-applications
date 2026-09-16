@@ -12,11 +12,18 @@ test('the menu opens the preferences panel', async ({ launch }) => {
   await expect(app.preferences).toBeVisible()
 })
 
-test('the menu opens search and replace', async ({ launch }) => {
+test('the menu opens search and replace, with the keyboard on the find field', async ({ launch }) => {
   const app = await launch(MAC)
 
   await app.runMenuCommand('find')
   await expect(app.searchPanel).toBeVisible()
+  await expect(app.searchField).toBeFocused()
+
+  // The menu path has to land on the field just as the key press does, or the
+  // search term is typed into the draft.
+  await app.page.keyboard.type('alpha')
+  await expect(app.searchField).toHaveValue('alpha')
+  await expect(app.editor).not.toContainText('alpha')
 })
 
 test('the menu steps the font size', async ({ launch }) => {

@@ -3,13 +3,32 @@
 
 import { expect, test } from './fixtures'
 
-test('Ctrl+F opens search and replace', async ({ launch }) => {
+test('Ctrl+F opens search and replace, with the keyboard on the find field', async ({ launch }) => {
   const app = await launch({ platform: 'windows' })
 
   await expect(app.searchPanel).toBeHidden()
   await app.press('KeyF')
   await expect(app.searchPanel).toBeVisible()
-  await expect(app.searchPanel.getByPlaceholder('検索')).toBeVisible()
+  await expect(app.searchField).toBeFocused()
+
+  // What the panel is for: the next thing typed is the search term, not text
+  // appended to the draft.
+  await app.page.keyboard.type('alpha')
+  await expect(app.searchField).toHaveValue('alpha')
+  await expect(app.editor).not.toContainText('alpha')
+})
+
+test('Ctrl+F puts the keyboard back on the find field once the panel is open', async ({ launch }) => {
+  const app = await launch({ platform: 'windows' })
+
+  await app.press('KeyF')
+  await expect(app.searchField).toBeFocused()
+  await app.editor.click()
+  await expect(app.editor).toBeFocused()
+
+  await app.press('KeyF')
+  await expect(app.searchPanel).toBeVisible()
+  await expect(app.searchField).toBeFocused()
 })
 
 // Two of the controls CodeMirror puts in the panel are taken out in

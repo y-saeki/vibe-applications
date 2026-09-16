@@ -8,7 +8,7 @@ macOS / Windows 対応。
 - 20 言語のシンタックスハイライト、正規表現対応の検索・置換、単語補完、Vim モード
 - ライト / ダークテーマ対応
 
-<img width="2384" height="1914" alt="CleanShot 2026-09-15 at 05 26 00@2x" src="https://github.com/user-attachments/assets/d61f09c3-f448-499a-914c-c7bf0acfc89f" />
+<img width="1798" height="1418" alt="CleanShot 2026-09-16 at 11 32 48@2x" src="https://github.com/user-attachments/assets/bb67394d-ff1f-4fba-90e6-700d53d1a3c5" />
 
 ## 動作環境
 
@@ -84,6 +84,7 @@ xattr -dr com.apple.quarantine /Applications/draftpad.app
 
 ### 検索・置換
 
+パネルを開くとカーソルは検索欄に入るので、そのまま検索語を打てます。  
 検索欄には「Aa」(大文字小文字を区別)と「.\*」(正規表現)のトグルがあります。  
 これらの状態は引き継がれるので、次に起動したときも同じ設定のまま検索できます。  
 正規表現モードでは置換文字列に `$1` `$2` … と `$&` が使えます(例: `(\d+)` → `$1円`)。
