@@ -3,6 +3,7 @@ import './style.css'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { getCurrentWindow } from '@tauri-apps/api/window'
+import { readText } from '@tauri-apps/plugin-clipboard-manager'
 
 import { comboFromEvent, createCommands, indexByKeys } from './commands'
 import { Editor } from './editor'
@@ -129,6 +130,23 @@ async function main(): Promise<void> {
       toggleFullscreen: async () => appWindow.setFullscreen(!(await appWindow.isFullscreen())),
       changeFontSize: (delta) => store.set({ fontSize: clamp(store.state.fontSize + delta, FONT_SIZE_MIN, FONT_SIZE_MAX) }),
       openSearch: () => ed.openSearch(),
+      // The editor is the only place this writes into: while the search panel
+      // or the preferences panel holds the keyboard, dropping the clipboard
+      // into the draft behind them is not what the key press asked for.
+      pastePlain: async () => {
+        if (!ed.hasFocus) return
+        let text: string
+        try {
+          text = await readText()
+        } catch (err) {
+          // A clipboard that is empty, or that holds something other than
+          // text, comes back as an error on every platform. There is nothing
+          // to paste either way, so this only leaves a trace behind.
+          console.error('draftpad: reading the clipboard failed', err)
+          return
+        }
+        if (text) ed.insertText(text)
+      },
     },
     platform,
   )

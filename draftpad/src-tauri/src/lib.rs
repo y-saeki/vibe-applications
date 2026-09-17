@@ -39,6 +39,9 @@ pub fn run() {
         }
     }));
     builder
+        // "Paste as plain text" reads the clipboard through this plugin; the
+        // webview may only call `read_text` (`capabilities/default.json`).
+        .plugin(tauri_plugin_clipboard_manager::init())
         .invoke_handler(tauri::generate_handler![
             commands::load_state,
             commands::save_state,

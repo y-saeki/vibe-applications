@@ -168,6 +168,24 @@ export class Editor {
     this.view.focus()
   }
 
+  /** False while the search panel or the preferences panel holds the keyboard. */
+  get hasFocus(): boolean {
+    return this.view.hasFocus
+  }
+
+  /**
+   * Replaces the selection with `text`, the way a paste does.
+   *
+   * `input.paste` is the user event CodeMirror marks its own paste with, so the
+   * history keeps the whole insertion as one step instead of joining it to the
+   * typing around it.
+   *
+   * @param text what to put in
+   */
+  insertText(text: string): void {
+    this.view.dispatch(this.view.state.replaceSelection(text), { scrollIntoView: true, userEvent: 'input.paste' })
+  }
+
   // The view is deliberately not focused afterwards. CodeMirror mounts the
   // panel within the same update cycle and selects its find field there, so a
   // focus() here would take the keyboard straight back off it and the search

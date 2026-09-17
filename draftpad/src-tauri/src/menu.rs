@@ -7,17 +7,19 @@
 //! paste and select all because WKWebView only routes Cmd+C/V/X/A to the page
 //! when such items exist. Undo and redo are forwarded items instead: the
 //! predefined ones drive WKWebView's own undo manager, which knows nothing
-//! about the editor's history.
+//! about the editor's history. "Paste as Plain Text" is forwarded too: the
+//! predefined paste item carries Cmd+V and takes no accelerator of its own.
 
 use tauri::menu::{AboutMetadata, MenuBuilder, MenuItemBuilder, SubmenuBuilder};
 use tauri::{AppHandle, Emitter, Manager};
 
-const FORWARDED_IDS: [&str; 7] = [
+const FORWARDED_IDS: [&str; 8] = [
     "preferences",
     "quit",
     "close",
     "undo",
     "redo",
+    "paste_plain",
     "increase_font_size",
     "decrease_font_size",
 ];
@@ -55,6 +57,11 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
         .cut()
         .copy()
         .paste()
+        .item(&item(
+            "paste_plain",
+            "Paste as Plain Text",
+            "CmdOrCtrl+Shift+V",
+        )?)
         .select_all()
         .build()?;
 
