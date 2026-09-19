@@ -35,14 +35,6 @@ test('the menu pastes the clipboard as plain text', async ({ launch }) => {
   await app.expectSaved((state) => state.text === '前貼り付けた文字後')
 })
 
-test('the menu steps the font size', async ({ launch }) => {
-  const app = await launch({ ...MAC, state: { fontSize: 13 } })
-
-  await app.runMenuCommand('increase_font_size')
-  await expect(app.page.locator('.cm-editor')).toHaveCSS('font-size', '14px')
-  await app.expectSaved((state) => state.fontSize === 14)
-})
-
 test('the menu undoes and redoes the draft, not the webview', async ({ launch }) => {
   const app = await launch(MAC)
 

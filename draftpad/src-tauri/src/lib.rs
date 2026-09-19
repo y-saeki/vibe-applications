@@ -3,6 +3,8 @@ mod autofill;
 mod commands;
 #[cfg(target_os = "windows")]
 mod context_menu;
+#[cfg(target_os = "macos")]
+mod edit_menu;
 mod fonts;
 #[cfg(target_os = "windows")]
 mod jumplist;
@@ -67,7 +69,12 @@ pub fn run() {
             // Both the menu bar and the right-click menu report through this.
             menu::forward_events(app.handle());
             #[cfg(target_os = "macos")]
-            menu::install(app.handle())?;
+            {
+                // Before the menu is built: AppKit reads the defaults while
+                // the app starts.
+                edit_menu::disable_input_items();
+                menu::install(app.handle())?;
+            }
             #[cfg(target_os = "windows")]
             {
                 autofill::disable(&window);
@@ -76,8 +83,16 @@ pub fn run() {
             }
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        // The Edit menu is AppKit's to add to until the app has finished
+        // launching, which is what `RunEvent::Ready` says has happened.
+        .run(|_app, _event| {
+            #[cfg(target_os = "macos")]
+            if matches!(_event, tauri::RunEvent::Ready) {
+                edit_menu::trim(menu::EDIT_TITLE, menu::FIND);
+            }
+        });
 }
 
 fn restore_window_size(app: &AppHandle, window: &WebviewWindow) {

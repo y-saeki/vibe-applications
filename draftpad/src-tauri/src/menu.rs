@@ -33,10 +33,16 @@ const CUT: &str = "切り取り";
 const COPY: &str = "コピー";
 const PASTE: &str = "貼り付け";
 const SELECT_ALL: &str = "すべてを選択";
-/// Shared with `context_menu.rs`, whose menu offers the same command.
+/// Shared with `context_menu.rs`, whose menu offers the same command, and the
+/// last item draftpad puts in the menu bar's Edit menu — `edit_menu::trim`
+/// takes off whatever AppKit adds after it.
 pub(crate) const FIND: &str = "検索・置換";
 
-const FORWARDED_IDS: [&str; 9] = [
+/// The Edit menu's title, which is how `edit_menu::trim` finds it again.
+#[cfg(target_os = "macos")]
+pub(crate) const EDIT_TITLE: &str = "編集";
+
+const FORWARDED_IDS: [&str; 7] = [
     "preferences",
     "quit",
     "close",
@@ -44,8 +50,6 @@ const FORWARDED_IDS: [&str; 9] = [
     "redo",
     "paste_plain",
     "find",
-    "increase_font_size",
-    "decrease_font_size",
 ];
 
 /// Carries every menu item [`FORWARDED_IDS`] names to the webview. Both menus
@@ -141,7 +145,7 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
         .item(&item("quit", "draftpad を終了", "CmdOrCtrl+Q")?)
         .build()?;
 
-    let edit = SubmenuBuilder::new(app, "編集")
+    let edit = SubmenuBuilder::new(app, EDIT_TITLE)
         .item(&item("undo", UNDO, "CmdOrCtrl+Z")?)
         .item(&item("redo", REDO, "CmdOrCtrl+Shift+Z")?)
         .separator()
@@ -154,6 +158,8 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
             "CmdOrCtrl+Shift+V",
         )?)
         .select_all_with_text(SELECT_ALL)
+        .separator()
+        .item(&item("find", FIND, "CmdOrCtrl+F")?)
         .build()?;
 
     let view = SubmenuBuilder::new(app, "表示")
@@ -167,21 +173,8 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
     )?);
     let view = view.build()?;
 
-    let text = SubmenuBuilder::new(app, "テキスト")
-        .item(&item(
-            "increase_font_size",
-            "フォントを大きく",
-            "CmdOrCtrl+=",
-        )?)
-        .item(&item(
-            "decrease_font_size",
-            "フォントを小さく",
-            "CmdOrCtrl+-",
-        )?)
-        .build()?;
-
     let menu = MenuBuilder::new(app)
-        .items(&[&app_menu, &edit, &view, &text])
+        .items(&[&app_menu, &edit, &view])
         .build()?;
     app.set_menu(menu)?;
     Ok(())

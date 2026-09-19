@@ -21,6 +21,23 @@ tauri-plugin-clipboard-manager = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
+# Reaching into the Edit menu after AppKit has added its own items to it
+# (`src/edit_menu.rs`). The versions are the ones Tauri already pulls in.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", features = [
+    "NSApplication",
+    "NSMenu",
+    "NSMenuItem",
+    "NSResponder",
+] }
+objc2-foundation = { version = "0.3", features = [
+    "NSDictionary",
+    "NSString",
+    "NSUserDefaults",
+    "NSValue",
+] }
+
 # System font enumeration for the Preferences panel. Only the platforms we
 # ship on; on other targets `list_fonts` returns an empty list.
 [target.'cfg(any(target_os = "macos", target_os = "windows"))'.dependencies]

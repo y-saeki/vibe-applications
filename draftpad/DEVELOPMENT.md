@@ -226,6 +226,15 @@ Windows の WebView2 はテキスト入力をフォームの一部とみなす�
 `ICoreWebView2Settings4` の `IsGeneralAutofillEnabled` と `IsPasswordAutosaveEnabled` を false にして
 止めています(`src-tauri/src/autofill.rs`)。macOS の WKWebView にこの挙動はありません。
 
+macOS では、AppKit が「編集」メニューに勝手に 4 つの項目を足します。Writing Tools、AutoFill、
+「音声入力を開始…」「絵文字と記号」です。どう組み立てたメニューでも足されるので、こちらで外しています
+(`src-tauri/src/edit_menu.rs`)。後ろ 2 つには `NSDisabledDictationMenuItem` と
+`NSDisabledCharacterPaletteMenuItem` というデフォルト値のスイッチがあるので、アプリの起動中に
+`registerDefaults` で登録します(書き込みではないので、draftpad の設定ファイルには何も残りません)。
+前の 2 つにスイッチはないため、起動が終わってから——AppKit が足し終わるのがそこなので——メニューから
+直接取り除きます。draftpad 自身の最後の項目(「検索・置換」)より後ろを全部外す、という形にしてあるので、
+取り除く側が項目の名前を知っている必要はありません。`RunEvent::Ready` がそのタイミングです。
+
 右クリックメニューが出るのは、テキストを編集できる場所——下書きと、検索・置換パネル / 環境設定パネルの
 テキスト入力欄——だけです。ステータスバーやボタン、チェックボックスの上では、切り取りもコピーも貼り付けも
 対象を持たないため、メニューごと出しません。Windows は `ICoreWebView2ContextMenuTarget` の `IsEditable`、

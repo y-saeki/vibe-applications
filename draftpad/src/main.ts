@@ -10,7 +10,7 @@ import { installContextMenu } from './context-menu'
 import { Editor } from './editor'
 import { defaultFontFamily } from './fonts'
 import { Preferences } from './preferences'
-import { clamp, FONT_SIZE_MAX, FONT_SIZE_MIN, loadState, nearestFontWeight, Store, type StateKey } from './state'
+import { loadState, nearestFontWeight, Store, type StateKey } from './state'
 import { StatusBar } from './statusbar'
 import { ThemeController } from './theme'
 
@@ -129,7 +129,6 @@ async function main(): Promise<void> {
       },
       quit,
       toggleFullscreen: async () => appWindow.setFullscreen(!(await appWindow.isFullscreen())),
-      changeFontSize: (delta) => store.set({ fontSize: clamp(store.state.fontSize + delta, FONT_SIZE_MIN, FONT_SIZE_MAX) }),
       // Guarded like undo and redo: the panel would open behind the
       // preferences panel, which is taking the keyboard.
       openSearch: () => {

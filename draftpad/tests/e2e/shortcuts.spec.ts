@@ -113,24 +113,6 @@ test('Ctrl+, opens the preferences panel', async ({ launch }) => {
   await expect(app.preferences).toBeVisible()
 })
 
-test('Ctrl+= and Ctrl+- step the font size, within the limits', async ({ launch }) => {
-  const app = await launch({ platform: 'windows', state: { fontSize: 13 } })
-
-  await app.press('Equal')
-  await expect(app.page.locator('.cm-editor')).toHaveCSS('font-size', '14px')
-  await app.press('Minus')
-  await app.press('Minus')
-  await expect(app.page.locator('.cm-editor')).toHaveCSS('font-size', '12px')
-  await app.expectSaved((state) => state.fontSize === 12)
-})
-
-test('the font size stops at the smallest allowed value', async ({ launch }) => {
-  const app = await launch({ platform: 'windows', state: { fontSize: 10 } })
-
-  await app.press('Minus')
-  await expect(app.page.locator('.cm-editor')).toHaveCSS('font-size', '10px')
-})
-
 test('F11 asks the window for fullscreen', async ({ launch }) => {
   const app = await launch({ platform: 'windows' })
 

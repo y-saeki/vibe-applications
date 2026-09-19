@@ -16,7 +16,6 @@ export interface CommandActions {
   redo: () => void
   quit: () => Promise<void>
   toggleFullscreen: () => Promise<void>
-  changeFontSize: (delta: number) => void
   openSearch: () => void
   pastePlain: () => Promise<void>
 }
@@ -35,8 +34,6 @@ export function createCommands(actions: CommandActions, platform: string): Comma
     // habit pastes here too instead of doing nothing.
     { id: 'paste_plain', title: 'プレーンテキストとして貼り付け', keys: 'Mod+Shift+V', run: actions.pastePlain },
     { id: 'find', title: '検索・置換', keys: 'Mod+F', run: actions.openSearch },
-    { id: 'increase_font_size', title: 'フォントを大きく', keys: 'Mod+=', run: () => actions.changeFontSize(1) },
-    { id: 'decrease_font_size', title: 'フォントを小さく', keys: 'Mod+-', run: () => actions.changeFontSize(-1) },
     { id: 'toggle_fullscreen', title: 'フルスクリーンを切り替え', keys: isMac ? 'Ctrl+Mod+F' : 'F11', run: actions.toggleFullscreen },
     { id: 'close', title: '閉じる', keys: 'Mod+W', run: actions.quit },
     { id: 'quit', title: '終了', keys: 'Mod+Q', run: actions.quit },
@@ -56,21 +53,17 @@ export function comboFromEvent(event: KeyboardEvent, platform: string): string |
   if (!key) return null
   const isFunctionKey = /^F\d{1,2}$/.test(key)
   if (!mod && !isFunctionKey) return null
-  // '=' and '-' need Shift on some layouts (JIS: Shift+'-' types '='), so ignore it there.
-  const shift = event.shiftKey && key !== '=' && key !== '-'
   const parts: string[] = []
   if (ctrl) parts.push('Ctrl')
   if (event.altKey) parts.push('Alt')
-  if (shift) parts.push('Shift')
+  if (event.shiftKey) parts.push('Shift')
   if (mod) parts.push('Mod')
   parts.push(key)
   return parts.join('+')
 }
 
 function normalizeKey(event: KeyboardEvent): string | null {
-  const { key, code } = event
-  if (key === '+' || code === 'NumpadAdd') return '='
-  if (code === 'NumpadSubtract') return '-'
+  const { key } = event
   if (key.length === 1) return key.toUpperCase()
   if (/^F\d{1,2}$/.test(key)) return key
   return null
