@@ -1,0 +1,91 @@
+#[cfg(target_os = "windows")]
+mod autofill;
+mod commands;
+mod fonts;
+#[cfg(target_os = "macos")]
+mod menu;
+mod state;
+
+use std::time::Duration;
+
+use tauri::{AppHandle, Manager, WebviewWindow};
+
+/// Smallest window size we will restore, matching `minWidth`/`minHeight` in
+/// `tauri.conf.json`.
+const MIN_WIDTH: f64 = 480.0;
+const MIN_HEIGHT: f64 = 240.0;
+
+/// How long the main window may stay hidden waiting for the frontend to show
+/// it. Only a frontend that fails to start ever gets this far.
+const SHOW_FALLBACK: Duration = Duration::from_secs(10);
+
+pub fn run() {
+    tauri::Builder::default()
+        .invoke_handler(tauri::generate_handler![
+            commands::load_state,
+            commands::save_state,
+            commands::list_fonts,
+            commands::quit_app,
+        ])
+        .setup(|app| {
+            let window = app
+                .get_webview_window("main")
+                .expect("the main window is declared in tauri.conf.json");
+            // The window starts hidden (`visible: false`) so the saved size can
+            // be applied before anything is drawn. The position is deliberately
+            // not restored: the window is always centered.
+            restore_window_size(app.handle(), &window);
+            // Showing it is the frontend's job: Windows anchors the IME's
+            // composition string and candidate list to the caret, and a window
+            // that is activated before anything inside it holds the caret
+            // leaves both at the top-left of the screen. `src/main.ts` shows
+            // the window once a pane has the focus.
+            show_after_fallback(window.clone());
+            #[cfg(target_os = "macos")]
+            menu::install(app.handle())?;
+            #[cfg(target_os = "windows")]
+            autofill::disable(&window);
+            Ok(())
+        })
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
+}
+
+fn restore_window_size(app: &AppHandle, window: &WebviewWindow) {
+    let Ok(path) = state::path(app) else {
+        return;
+    };
+    let Ok(saved) = state::load(&path) else {
+        return;
+    };
+    let (Some(width), Some(height)) = (saved.window_width, saved.window_height) else {
+        return;
+    };
+    if width < MIN_WIDTH || height < MIN_HEIGHT || !width.is_finite() || !height.is_finite() {
+        return;
+    }
+    if let Err(err) = window.set_size(tauri::LogicalSize::new(width, height)) {
+        eprintln!("diffpad: failed to restore window size: {err}");
+        return;
+    }
+    if let Err(err) = window.center() {
+        eprintln!("diffpad: failed to center window: {err}");
+    }
+}
+
+/// Shows `window` if the frontend has not shown it within [`SHOW_FALLBACK`], so
+/// that a frontend which fails to start leaves a visible window rather than an
+/// invisible process.
+fn show_after_fallback(window: WebviewWindow) {
+    std::thread::spawn(move || {
+        std::thread::sleep(SHOW_FALLBACK);
+        // Showing a window the frontend already showed would pull it back in
+        // front of whatever the user moved on to.
+        if window.is_visible().unwrap_or(false) {
+            return;
+        }
+        if let Err(err) = window.show() {
+            eprintln!("diffpad: failed to show the window: {err}");
+        }
+    });
+}
