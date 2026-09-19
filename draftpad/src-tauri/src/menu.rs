@@ -13,7 +13,7 @@
 //! paste and select all; the menu bar has to, because WKWebView only routes
 //! Cmd+C/V/X/A to the page when such items exist. Undo and redo are forwarded
 //! items instead: the predefined ones drive WKWebView's own undo manager,
-//! which knows nothing about the editor's history. "Paste as Plain Text" is
+//! which knows nothing about the editor's history. "Paste as plain text" is
 //! forwarded too: the predefined paste item carries Cmd+V and takes no
 //! accelerator of its own.
 
@@ -23,6 +23,18 @@ use tauri::{AppHandle, Emitter, Manager, Window};
 
 #[cfg(target_os = "macos")]
 use tauri::menu::{AboutMetadata, SubmenuBuilder};
+
+// Wording the menu bar and the right-click menu share, in one place so that
+// they cannot drift apart. The predefined items need it spelled out too: muda
+// gives them a hardcoded English string rather than the platform's own.
+const UNDO: &str = "元に戻す";
+const REDO: &str = "やり直す";
+const CUT: &str = "切り取り";
+const COPY: &str = "コピー";
+const PASTE: &str = "貼り付け";
+const SELECT_ALL: &str = "すべてを選択";
+/// Shared with `context_menu.rs`, whose menu offers the same command.
+pub(crate) const FIND: &str = "検索・置換";
 
 const FORWARDED_IDS: [&str; 9] = [
     "preferences",
@@ -74,11 +86,9 @@ pub struct ContextState {
 ///
 /// The four editing items are predefined, so they reach whatever holds the
 /// caret — the draft, the search panel's fields, the preferences panel's —
-/// without this side having to know which. They still need their wording
-/// spelled out: a predefined item carries muda's own English text, not the
-/// platform's. They also stay enabled throughout, which is all a predefined
-/// item allows; each one simply does nothing when there is no selection to
-/// act on.
+/// without this side having to know which. They also stay enabled throughout,
+/// which is all a predefined item allows; each one simply does nothing when
+/// there is no selection to act on.
 ///
 /// The call only returns once the menu is dismissed: a native menu runs a modal
 /// loop of its own.
@@ -90,16 +100,16 @@ pub fn show_context(window: &Window, state: &ContextState) -> tauri::Result<()> 
             .build(app)
     };
     let menu = MenuBuilder::new(app)
-        .item(&item("undo", "元に戻す", state.can_undo)?)
-        .item(&item("redo", "やり直す", state.can_redo)?)
+        .item(&item("undo", UNDO, state.can_undo)?)
+        .item(&item("redo", REDO, state.can_redo)?)
         .separator()
-        .cut_with_text("切り取り")
-        .copy_with_text("コピー")
-        .paste_with_text("貼り付け")
+        .cut_with_text(CUT)
+        .copy_with_text(COPY)
+        .paste_with_text(PASTE)
         .separator()
-        .select_all_with_text("すべてを選択")
+        .select_all_with_text(SELECT_ALL)
         .separator()
-        .item(&item("find", "検索・置換", state.can_search)?)
+        .item(&item("find", FIND, state.can_search)?)
         .build()?;
     menu.popup(window.clone())
 }
@@ -118,54 +128,54 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
         ..Default::default()
     };
     let app_menu = SubmenuBuilder::new(app, "draftpad")
-        .about(Some(about))
+        .about_with_text("draftpad について", Some(about))
         .separator()
-        .item(&item("preferences", "Preferences…", "CmdOrCtrl+,")?)
+        .item(&item("preferences", "環境設定…", "CmdOrCtrl+,")?)
         .separator()
-        .services()
+        .services_with_text("サービス")
         .separator()
-        .hide()
-        .hide_others()
-        .show_all()
+        .hide_with_text("draftpad を隠す")
+        .hide_others_with_text("ほかを隠す")
+        .show_all_with_text("すべてを表示")
         .separator()
-        .item(&item("quit", "Quit draftpad", "CmdOrCtrl+Q")?)
+        .item(&item("quit", "draftpad を終了", "CmdOrCtrl+Q")?)
         .build()?;
 
-    let edit = SubmenuBuilder::new(app, "Edit")
-        .item(&item("undo", "Undo", "CmdOrCtrl+Z")?)
-        .item(&item("redo", "Redo", "CmdOrCtrl+Shift+Z")?)
+    let edit = SubmenuBuilder::new(app, "編集")
+        .item(&item("undo", UNDO, "CmdOrCtrl+Z")?)
+        .item(&item("redo", REDO, "CmdOrCtrl+Shift+Z")?)
         .separator()
-        .cut()
-        .copy()
-        .paste()
+        .cut_with_text(CUT)
+        .copy_with_text(COPY)
+        .paste_with_text(PASTE)
         .item(&item(
             "paste_plain",
-            "Paste as Plain Text",
+            "プレーンテキストとして貼り付け",
             "CmdOrCtrl+Shift+V",
         )?)
-        .select_all()
+        .select_all_with_text(SELECT_ALL)
         .build()?;
 
-    let view = SubmenuBuilder::new(app, "View")
-        .item(&item("close", "Close", "CmdOrCtrl+W")?)
-        .fullscreen();
+    let view = SubmenuBuilder::new(app, "表示")
+        .item(&item("close", "閉じる", "CmdOrCtrl+W")?)
+        .fullscreen_with_text("フルスクリーンを切り替え");
     #[cfg(debug_assertions)]
     let view = view.item(&item(
         "devtools",
-        "Toggle Developer Tools",
+        "開発者ツールを切り替え",
         "Alt+CmdOrCtrl+I",
     )?);
     let view = view.build()?;
 
-    let text = SubmenuBuilder::new(app, "Text")
+    let text = SubmenuBuilder::new(app, "テキスト")
         .item(&item(
             "increase_font_size",
-            "Increase Font Size",
+            "フォントを大きく",
             "CmdOrCtrl+=",
         )?)
         .item(&item(
             "decrease_font_size",
-            "Decrease Font Size",
+            "フォントを小さく",
             "CmdOrCtrl+-",
         )?)
         .build()?;

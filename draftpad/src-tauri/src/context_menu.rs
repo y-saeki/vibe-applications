@@ -21,9 +21,9 @@ use windows::core::{Interface, Result, BOOL, HSTRING, PWSTR};
 use windows::Win32::System::Com::IStream;
 
 /// The command with no WebView2 item of its own. The id is the one
-/// `src/commands.ts` knows, and `menu::forward_events` carries it to the page.
+/// `src/commands.ts` knows, and `menu::forward_events` carries it to the page;
+/// the label comes from `menu.rs`, so that both menus say the same thing.
 const FIND_ID: &str = "find";
-const FIND_LABEL: &str = "検索・置換";
 
 /// Decides whether WebView2 may keep one of its own items, by the name it
 /// gives it.
@@ -124,7 +124,7 @@ fn build(
         items.InsertValueAtIndex(count, &separator)?;
 
         let find = environment.CreateContextMenuItem(
-            &HSTRING::from(FIND_LABEL),
+            &HSTRING::from(crate::menu::FIND),
             None::<&IStream>,
             COREWEBVIEW2_CONTEXT_MENU_ITEM_KIND_COMMAND,
         )?;

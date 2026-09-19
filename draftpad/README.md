@@ -68,7 +68,7 @@ xattr -dr com.apple.quarantine /Applications/draftpad.app
 | 方法 | macOS | Windows |
 |---|---|---|
 | ステータスバー右下の歯車 | ○ | ○ |
-| メニューバー `draftpad` → `Preferences…` | ○ | — |
+| メニューバー `draftpad` → `環境設定…` | ○ | — |
 | タスクバーアイコンの右クリックメニュー → `設定` | — | ○ |
 | キーボードショートカット | ⌘ , | Ctrl + , |
 
