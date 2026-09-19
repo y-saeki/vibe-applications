@@ -50,6 +50,7 @@ test('gathers the settings into the two groups, in that order', async ({ launch 
     '#pref-font-family',
     '#pref-font-weight',
     '#pref-font-size',
+    '#pref-show-whitespace',
   ]
   await app.page.locator('#pref-mode').focus()
   for (const id of ids) {
@@ -65,6 +66,7 @@ test('gathers the settings into the two groups, in that order', async ({ launch 
     )
   expect(await groupOf('#pref-quick-suggestions')).toBe('編集')
   expect(await groupOf('#pref-theme')).toBe('表示')
+  expect(await groupOf('#pref-show-whitespace')).toBe('表示')
 
   // One rule between the two, and it hangs off the group above: a fieldset's
   // block-start border is the one its legend notches and sits on, so a
@@ -265,4 +267,53 @@ test('dims the window with the palette alone, not the browser\'s own backdrop', 
     () => getComputedStyle(document.getElementById('preferences')!, '::backdrop').backgroundColor,
   )
   expect(backdrop).toBe('rgba(0, 0, 0, 0)')
+})
+
+test('marks the spaces and tabs in the draft, and nothing else', async ({ launch }) => {
+  const app = await launch({ state: { text: 'a b\tc\u3000d\ne' } })
+  const showWhitespace = app.page.locator('#pref-show-whitespace')
+
+  await expect(app.whitespaceMarks).toHaveCount(0)
+
+  await app.gear.click()
+  await expect(showWhitespace).not.toBeChecked()
+  await showWhitespace.check()
+  await app.expectSaved((state) => state.showWhitespace)
+  await app.page.keyboard.press('Escape')
+
+  await expect(app.page.locator('.cm-highlightSpace')).toHaveCount(1)
+  await expect(app.page.locator('.cm-highlightTab')).toHaveCount(1)
+  await expect(app.page.locator('.cm-ideographicSpace')).toHaveCount(1)
+  // The line break and the end of the draft carry no mark: those three are all
+  // there is on the first line, and the second holds nothing to mark.
+  await expect(app.whitespaceMarks).toHaveCount(3)
+
+  // The tab's arrow is painted by clipping its span to that shape, so anything
+  // drawn inside the span would be clipped away with it. Nothing ever is: a
+  // search match or a selection match wraps the whitespace mark rather than
+  // sitting inside it, and this is what says so.
+  const nested = await app.page.locator('.cm-highlightTab').evaluate((span) => span.childElementCount)
+  expect(nested).toBe(0)
+
+  await app.gear.click()
+  await showWhitespace.uncheck()
+  await expect(app.whitespaceMarks).toHaveCount(0)
+  await app.expectSaved((state) => !state.showWhitespace)
+})
+
+test('paints the whitespace marks from the palette, in both themes', async ({ launch }) => {
+  const app = await launch({ colorScheme: 'light', state: { showWhitespace: true, text: 'a b\tc' } })
+  const space = app.page.locator('.cm-highlightSpace')
+  const tab = app.page.locator('.cm-highlightTab')
+
+  // The dot is a gradient and the arrow a mask over a fill, so the colour shows
+  // up in a different property for each; both come from --whitespace.
+  await expect(space).toHaveCSS('background-image', /rgba\(31, 35, 40, 0\.26\)/)
+  await expect(tab).toHaveCSS('background-color', 'rgba(31, 35, 40, 0.26)')
+  await expect(tab).toHaveCSS('mask-image', /url\("data:image\/svg\+xml/)
+
+  await app.gear.click()
+  await app.page.locator('#pref-theme').selectOption('dark')
+  await expect(space).toHaveCSS('background-image', /rgba\(216, 216, 216, 0\.26\)/)
+  await expect(tab).toHaveCSS('background-color', 'rgba(216, 216, 216, 0.26)')
 })

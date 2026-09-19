@@ -11,13 +11,14 @@ test('carries the previous text over and counts it', async ({ launch }) => {
 
 test('restores the saved settings', async ({ launch }) => {
   const app = await launch({
-    state: { language: 'rust', fontSize: 24, alwaysOnTop: true, theme: 'dark' },
+    state: { text: 'a b', language: 'rust', fontSize: 24, alwaysOnTop: true, theme: 'dark', showWhitespace: true },
   })
 
   await expect(app.languageSelect).toHaveValue('rust')
   await expect(app.alwaysOnTop).toHaveAttribute('aria-pressed', 'true')
   await expect(app.page.locator('html')).toHaveAttribute('data-theme', 'dark')
   await expect(app.editor).toHaveAttribute('data-language', 'rust')
+  await expect(app.whitespaceMarks).toHaveCount(1)
   // The window setting is the backend's to apply.
   expect(await app.commands()).toContain('plugin:window|set_always_on_top')
 })
