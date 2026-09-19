@@ -26,6 +26,15 @@ test('the menu opens search and replace, with the keyboard on the find field', a
   await expect(app.editor).not.toContainText('alpha')
 })
 
+test('the menu pastes the clipboard as plain text', async ({ launch }) => {
+  const app = await launch({ ...MAC, clipboard: '貼り付けた文字' })
+
+  await app.typeInEditor('前後')
+  await app.page.keyboard.press('ArrowLeft')
+  await app.runMenuCommand('paste_plain')
+  await app.expectSaved((state) => state.text === '前貼り付けた文字後')
+})
+
 test('the menu steps the font size', async ({ launch }) => {
   const app = await launch({ ...MAC, state: { fontSize: 13 } })
 

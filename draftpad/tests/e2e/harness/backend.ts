@@ -37,6 +37,8 @@ export interface BackendConfig {
   failLoad?: string
   /** Makes `save_state` reject. */
   failSave?: string
+  /** What the clipboard holds; left out, reading it fails as an empty one does. */
+  clipboard?: string
   innerSize: { width: number; height: number }
   scaleFactor: number
 }
@@ -95,6 +97,11 @@ function handle(cmd: string, args: unknown): unknown {
     }
     case 'list_fonts':
       return config.fonts
+    // The real plugin rejects when the clipboard holds no text at all, which
+    // is what an unset `clipboard` stands for here.
+    case 'plugin:clipboard-manager|read_text':
+      if (config.clipboard === undefined) throw new Error('clipboard is empty')
+      return config.clipboard
     case 'quit_app':
       return null
     // The window API the app reaches for, all of it plain IPC.

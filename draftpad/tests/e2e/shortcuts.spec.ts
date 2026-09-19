@@ -47,6 +47,53 @@ test('the search panel leaves out the select-all button and the whole-word toggl
   await expect(app.searchPanel.locator('label:has(input[name="word"])')).toBeHidden()
 })
 
+// draftpad holds nothing but plain text, so this is the same paste Ctrl+V
+// already does. It is bound because the habit comes from editors where the two
+// differ, and pressing it here used to do nothing at all.
+test('Ctrl+Shift+V pastes the clipboard at the cursor', async ({ launch }) => {
+  const app = await launch({ platform: 'windows', clipboard: '貼り付けた文字' })
+
+  await app.typeInEditor('前後')
+  await app.page.keyboard.press('ArrowLeft')
+  await app.page.keyboard.press(`${app.mod}+Shift+KeyV`)
+  await app.expectSaved((state) => state.text === '前貼り付けた文字後')
+})
+
+test('Ctrl+Shift+V replaces the selection, and undoes in one step', async ({ launch }) => {
+  const app = await launch({ platform: 'windows', clipboard: '新しい下書き' })
+
+  await app.typeInEditor('古い下書き')
+  await app.press('KeyA')
+  await app.page.keyboard.press(`${app.mod}+Shift+KeyV`)
+  await app.expectSaved((state) => state.text === '新しい下書き')
+
+  await app.press('KeyZ')
+  await app.expectSaved((state) => state.text === '古い下書き')
+})
+
+test('Ctrl+Shift+V leaves the draft alone when the clipboard holds no text', async ({ launch }) => {
+  const app = await launch({ platform: 'windows' })
+
+  await app.typeInEditor('そのまま')
+  await app.page.keyboard.press(`${app.mod}+Shift+KeyV`)
+  await expect.poll(() => app.commands()).toContain('plugin:clipboard-manager|read_text')
+  await expect(app.editor).toHaveText('そのまま')
+})
+
+// The search panel and the preferences panel both take the keyboard off the
+// editor, and the clipboard belongs wherever the caret is. Dropping it into the
+// draft behind them is not what the key press asked for.
+test('Ctrl+Shift+V leaves the draft alone while the search panel has the keyboard', async ({ launch }) => {
+  const app = await launch({ platform: 'windows', clipboard: '割り込み' })
+
+  await app.typeInEditor('そのまま')
+  await app.press('KeyF')
+  await expect(app.searchField).toBeFocused()
+  await app.page.keyboard.press(`${app.mod}+Shift+KeyV`)
+  expect(await app.commands()).not.toContain('plugin:clipboard-manager|read_text')
+  await expect(app.editor).toHaveText('そのまま')
+})
+
 test('Ctrl+, opens the preferences panel', async ({ launch }) => {
   const app = await launch({ platform: 'windows' })
 

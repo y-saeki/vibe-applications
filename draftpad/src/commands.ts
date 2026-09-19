@@ -18,6 +18,7 @@ export interface CommandActions {
   toggleFullscreen: () => Promise<void>
   changeFontSize: (delta: number) => void
   openSearch: () => void
+  pastePlain: () => Promise<void>
 }
 
 export function createCommands(actions: CommandActions, platform: string): Command[] {
@@ -29,6 +30,10 @@ export function createCommands(actions: CommandActions, platform: string): Comma
     // the text fields in the preferences panel.
     { id: 'undo', title: '元に戻す', run: actions.undo },
     { id: 'redo', title: 'やり直す', run: actions.redo },
+    // draftpad only ever holds plain text, so Cmd/Ctrl+V already pastes without
+    // formatting. This is the shortcut other editors give that, bound so the
+    // habit pastes here too instead of doing nothing.
+    { id: 'paste_plain', title: 'プレーンテキストとして貼り付け', keys: 'Mod+Shift+V', run: actions.pastePlain },
     { id: 'find', title: '検索・置換', keys: 'Mod+F', run: actions.openSearch },
     { id: 'increase_font_size', title: 'フォントを大きく', keys: 'Mod+=', run: () => actions.changeFontSize(1) },
     { id: 'decrease_font_size', title: 'フォントを小さく', keys: 'Mod+-', run: () => actions.changeFontSize(-1) },

@@ -1,6 +1,6 @@
 [package]
 name = "draftpad"
-version = "0.12.1"
+version = "0.13.0"
 description = "A draft-only text editor for chat messages"
 edition = "2021"
 publish = false
@@ -15,6 +15,9 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = [] }
+# Reading the clipboard for "paste as plain text"; `src/commands.ts` binds it to
+# Cmd/Ctrl+Shift+V. Only `read_text` is granted in `capabilities/default.json`.
+tauri-plugin-clipboard-manager = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 

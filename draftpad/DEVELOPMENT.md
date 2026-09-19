@@ -108,6 +108,8 @@ Windows 側の経路(アプリ内のキー処理)を、どちらも Linux のラ
   確認しています)
 - コード署名していない配布物を各 OS が警告する挙動
 - Windows インストーラの画面と挙動(`src-tauri/installer.nsi`)
+- OS のクリップボードの中身。`plugin:clipboard-manager|read_text` はハーネスが返すので、
+  読んだテキストがエディタのどこへ入るかまでを確認します
 
 これらは実機で確認するしかありません。裏を返せば、実機で見るべきものはこの一覧に絞られます。
 
@@ -186,6 +188,20 @@ macOS Sequoia (15.0) 以降では、以前あった Control クリック →「�
 `historyKeymap` は「やり直す」の `Ctrl+Shift+Z` を Linux 向けにしか割り当てていないため、`src/editor.ts` で明示的に
 割り当てています。macOS の Edit メニューでは、この 2 つだけ定義済み項目を使わずコマンド表へ転送しています。定義済み
 項目は WKWebView 自身の undo マネージャを動かすもので、エディタの履歴には触れないためです。
+
+`⌘ ⇧ V` / `Ctrl + Shift + V`(プレーンテキストとして貼り付け)は、クリップボードのテキストを読んで
+カーソル位置へ挿入します。draftpad はプレーンテキストしか扱わないので、`⌘ V` / `Ctrl + V` と結果は
+同じです。macOS のメニューでは Edit に `Paste as Plain Text` を足しています。定義済みの貼り付け項目は
+`⌘ V` に固定されていて、アクセラレータを差し替えられないためです。
+
+読み取りは Tauri 公式の `tauri-plugin-clipboard-manager` 経由で、`capabilities/default.json` が許可するのは
+`clipboard-manager:allow-read-text` の 1 つだけです。webview の `navigator.clipboard.readText()` は使いません。
+WKWebView は別のオリジンが書いた内容を読むときに確認用の「ペースト」ボタンを出し、WebView2 は権限の確認を
+挟みます。キーを押しただけで貼り付いてほしいこの操作には、どちらも合いません。
+
+挿入先はエディタだけです。検索・置換や環境設定の入力欄がキーボードを持っている間は何もしません
+(`src/main.ts` が `Editor.hasFocus` を見ています)。クリップボードにテキストが入っていない場合、
+プラグインはエラーを返すので、何も起きません。
 
 Windows のタスクバーメニュー(ジャンプリスト)の項目はショートカットなので、押すと draftpad が
 もう一度起動されます。すでに起動していれば、その 2 つ目のプロセスは引数を既存のウィンドウへ渡して
@@ -457,6 +473,12 @@ Tauri 公式・CodeMirror 公式・Microsoft 公式以外の依存は次の 2 �
 
 `tests/e2e/harness/backend.ts` のバンドルは、バンドルに使っている `esbuild` をそのまま使います。
 Rust 側のテストは追加の crate を使いません(一時ディレクトリは `mod tests` の中で自作しています)。
+
+両方のプラットフォームで使う Tauri 公式のプラグインが 1 つあります。
+
+- `tauri-plugin-clipboard-manager` と `@tauri-apps/plugin-clipboard-manager`。「プレーンテキストとして
+  貼り付け」がクリップボードを読むのに使います。外す場合は `src/commands.ts` の `paste_plain` と、
+  `src-tauri/src/menu.rs` の同じ id の項目をまとめて削除してください
 
 Windows 向けのビルドだけが使う依存が 3 つあります。
 
