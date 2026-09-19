@@ -226,7 +226,12 @@ Windows の WebView2 はテキスト入力をフォームの一部とみなす�
 `ICoreWebView2Settings4` の `IsGeneralAutofillEnabled` と `IsPasswordAutosaveEnabled` を false にして
 止めています(`src-tauri/src/autofill.rs`)。macOS の WKWebView にこの挙動はありません。
 
-右クリックメニューは、消したい項目を消せる手段がプラットフォームごとに違うため、経路が 2 つあります。
+右クリックメニューが出るのは、テキストを編集できる場所——下書きと、検索・置換パネル / 環境設定パネルの
+テキスト入力欄——だけです。ステータスバーやボタン、チェックボックスの上では、切り取りもコピーも貼り付けも
+対象を持たないため、メニューごと出しません。Windows は `ICoreWebView2ContextMenuTarget` の `IsEditable`、
+macOS はページ側で `contextmenu` の `target` を見て判定します。
+
+消したい項目を消せる手段はプラットフォームごとに違うため、経路は 2 つあります。
 
 Windows は WebView2 が `ContextMenuRequested` を上げてくれるので、WebView2 自身にメニューを描かせたまま、出る
 項目だけを差し替えています(`src-tauri/src/context_menu.rs`)。見た目も文言も WebView2 のもの、つまり OS の

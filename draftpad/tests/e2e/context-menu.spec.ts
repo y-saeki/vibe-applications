@@ -46,12 +46,35 @@ test("Windows lets the webview open its own menu", async ({ launch }) => {
   expect(await app.commands()).not.toContain('show_context_menu')
 })
 
-test('a right click anywhere in the window asks for the menu', async ({ launch }) => {
+test('the status bar opens no menu at all', async ({ launch }) => {
   const app = await launch(MAC)
 
-  // The status bar is no part of the draft, but a right click there is still a
-  // right click on draftpad.
+  const prevented = preventedNextContextMenu(app)
   await app.chars.click({ button: 'right' })
+
+  // The webview's menu is stopped here as everywhere, but draftpad puts none
+  // of its own in its place: there is nothing here to cut, copy or paste.
+  expect(await prevented).toBe(true)
+  expect(await app.commands()).not.toContain('show_context_menu')
+})
+
+test('a right click below the last line still asks for the menu', async ({ launch }) => {
+  const app = await launch(MAC)
+
+  await app.typeInEditor('一行だけ')
+  // The blank space under a short draft is still the draft, and the menu has
+  // to reach it the same way.
+  const box = (await app.page.locator('#editor').boundingBox())!
+  await app.page.mouse.click(box.x + 20, box.y + box.height - 20, { button: 'right' })
+
+  await expect.poll(() => app.contextMenuState()).not.toBeNull()
+})
+
+test('the search panel offers the menu in its find field', async ({ launch }) => {
+  const app = await launch(MAC)
+
+  await app.runMenuCommand('find')
+  await app.searchField.click({ button: 'right' })
   await expect.poll(() => app.contextMenuState()).not.toBeNull()
 })
 
@@ -84,6 +107,6 @@ test('the menu leaves the draft alone while preferences has the keyboard', async
   // The same guards the command table carries: while the panel is open the
   // history and the search panel are not the draft's to touch, so the menu
   // must not offer them either.
-  await app.preferences.click({ button: 'right' })
+  await app.page.locator('#pref-font-family').click({ button: 'right' })
   await expect.poll(() => app.contextMenuState()).toEqual({ canUndo: false, canRedo: false, canSearch: false })
 })

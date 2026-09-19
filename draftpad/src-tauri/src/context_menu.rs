@@ -17,7 +17,7 @@ use webview2_com::Microsoft::Web::WebView2::Win32::{
 use webview2_com::{
     CoTaskMemPWSTR, ContextMenuRequestedEventHandler, CustomItemSelectedEventHandler,
 };
-use windows::core::{Interface, Result, HSTRING, PWSTR};
+use windows::core::{Interface, Result, BOOL, HSTRING, PWSTR};
 use windows::Win32::System::Com::IStream;
 
 /// The command with no WebView2 item of its own. The id is the one
@@ -82,14 +82,26 @@ fn install_on(controller: &ICoreWebView2Controller, app: AppHandle) -> Result<()
 }
 
 /// Drops what [`is_kept`] does not name and puts draftpad's own item at the
-/// end. `Handled` is left alone throughout, so WebView2 goes on to draw the
-/// menu it would have drawn, holding what is left of it.
+/// end, leaving `Handled` alone so that WebView2 goes on to draw the menu it
+/// would have drawn, holding what is left of it.
+///
+/// Where there is nothing to edit there is no menu at all: `Handled` with no
+/// command selected is how a host says it is showing none of its own.
 fn build(
     args: &ICoreWebView2ContextMenuRequestedEventArgs,
     environment: &ICoreWebView2Environment9,
     app: &AppHandle,
 ) -> Result<()> {
     unsafe {
+        // The draft and the panels' text fields are the whole of what this
+        // menu acts on. Over the status bar, a button or a dropdown it would
+        // have nothing to offer.
+        let mut editable = BOOL::default();
+        args.ContextMenuTarget()?.IsEditable(&mut editable)?;
+        if !editable.as_bool() {
+            return args.SetHandled(true);
+        }
+
         let items = args.MenuItems()?;
         let mut count = 0u32;
         items.Count(&mut count)?;
