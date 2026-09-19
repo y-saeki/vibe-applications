@@ -104,6 +104,10 @@ function handle(cmd: string, args: unknown): unknown {
       return config.clipboard
     case 'quit_app':
       return null
+    // The native menu itself is outside the webview; what the page decides
+    // before asking for it is not.
+    case 'show_context_menu':
+      return null
     // The window API the app reaches for, all of it plain IPC.
     case 'plugin:window|show':
     case 'plugin:window|destroy':

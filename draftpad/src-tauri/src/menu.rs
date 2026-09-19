@@ -1,29 +1,103 @@
-//! Native application menu (macOS only). Windows has no menu bar; the same
-//! shortcuts are handled in the webview there.
+//! Native menus: the menu bar, which is macOS only because Windows has no menu
+//! bar and handles the same shortcuts in the webview, and the right-click menu,
+//! which both platforms show.
 //!
 //! Menu items with an application-level meaning are forwarded to the webview
 //! as a `menu` event carrying the item id, and `src/commands.ts` maps the id
-//! onto its command table. The Edit menu uses predefined items for cut, copy,
-//! paste and select all because WKWebView only routes Cmd+C/V/X/A to the page
-//! when such items exist. Undo and redo are forwarded items instead: the
-//! predefined ones drive WKWebView's own undo manager, which knows nothing
-//! about the editor's history. "Paste as Plain Text" is forwarded too: the
-//! predefined paste item carries Cmd+V and takes no accelerator of its own.
+//! onto its command table. Both menus use predefined items for cut, copy,
+//! paste and select all; the menu bar has to, because WKWebView only routes
+//! Cmd+C/V/X/A to the page when such items exist. Undo and redo are forwarded
+//! items instead: the predefined ones drive WKWebView's own undo manager,
+//! which knows nothing about the editor's history. "Paste as Plain Text" is
+//! forwarded too: the predefined paste item carries Cmd+V and takes no
+//! accelerator of its own.
 
-use tauri::menu::{AboutMetadata, MenuBuilder, MenuItemBuilder, SubmenuBuilder};
-use tauri::{AppHandle, Emitter, Manager};
+use serde::Deserialize;
+use tauri::menu::{ContextMenu, MenuBuilder, MenuItemBuilder};
+use tauri::{AppHandle, Emitter, Manager, Window};
 
-const FORWARDED_IDS: [&str; 8] = [
+#[cfg(target_os = "macos")]
+use tauri::menu::{AboutMetadata, SubmenuBuilder};
+
+const FORWARDED_IDS: [&str; 9] = [
     "preferences",
     "quit",
     "close",
     "undo",
     "redo",
     "paste_plain",
+    "find",
     "increase_font_size",
     "decrease_font_size",
 ];
 
+/// Carries every menu item [`FORWARDED_IDS`] names to the webview. Both menus
+/// go through it, so it is installed on every platform and only once.
+pub fn forward_events(app: &AppHandle) {
+    app.on_menu_event(|app, event| {
+        let id = event.id().0.as_str();
+        if FORWARDED_IDS.contains(&id) {
+            if let Err(err) = app.emit("menu", id) {
+                eprintln!("draftpad: failed to forward menu event {id}: {err}");
+            }
+        }
+        #[cfg(debug_assertions)]
+        if id == "devtools" {
+            if let Some(window) = app.get_webview_window("main") {
+                if window.is_devtools_open() {
+                    window.close_devtools();
+                } else {
+                    window.open_devtools();
+                }
+            }
+        }
+    });
+}
+
+/// What the page knows and the menu cannot work out for itself, as
+/// `src/context-menu.ts` sends it.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContextState {
+    can_undo: bool,
+    can_redo: bool,
+    can_search: bool,
+}
+
+/// Puts draftpad's right-click menu up at the pointer, in place of the one the
+/// webview would have opened.
+///
+/// The four editing items are predefined, so they carry the platform's own
+/// wording and reach whatever holds the caret — the draft, the search panel's
+/// fields, the preferences panel's — without this side having to know which.
+/// They also stay enabled throughout, which is all a predefined item allows;
+/// each one simply does nothing when there is no selection to act on.
+///
+/// The call only returns once the menu is dismissed: a native menu runs a modal
+/// loop of its own.
+pub fn show_context(window: &Window, state: &ContextState) -> tauri::Result<()> {
+    let app = window.app_handle();
+    let item = |id: &str, text: &str, enabled: bool| {
+        MenuItemBuilder::with_id(id, text)
+            .enabled(enabled)
+            .build(app)
+    };
+    let menu = MenuBuilder::new(app)
+        .item(&item("undo", "元に戻す", state.can_undo)?)
+        .item(&item("redo", "やり直す", state.can_redo)?)
+        .separator()
+        .cut()
+        .copy()
+        .paste()
+        .separator()
+        .select_all()
+        .separator()
+        .item(&item("find", "検索・置換", state.can_search)?)
+        .build()?;
+    menu.popup(window.clone())
+}
+
+#[cfg(target_os = "macos")]
 pub fn install(app: &AppHandle) -> tauri::Result<()> {
     let item = |id: &str, text: &str, accelerator: &str| {
         MenuItemBuilder::with_id(id, text)
@@ -93,24 +167,5 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
         .items(&[&app_menu, &edit, &view, &text])
         .build()?;
     app.set_menu(menu)?;
-
-    app.on_menu_event(|app, event| {
-        let id = event.id().0.as_str();
-        if FORWARDED_IDS.contains(&id) {
-            if let Err(err) = app.emit("menu", id) {
-                eprintln!("draftpad: failed to forward menu event {id}: {err}");
-            }
-        }
-        #[cfg(debug_assertions)]
-        if id == "devtools" {
-            if let Some(window) = app.get_webview_window("main") {
-                if window.is_devtools_open() {
-                    window.close_devtools();
-                } else {
-                    window.open_devtools();
-                }
-            }
-        }
-    });
     Ok(())
 }

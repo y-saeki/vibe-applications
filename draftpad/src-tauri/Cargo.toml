@@ -1,6 +1,6 @@
 [package]
 name = "draftpad"
-version = "0.13.0"
+version = "0.14.0"
 description = "A draft-only text editor for chat messages"
 edition = "2021"
 publish = false

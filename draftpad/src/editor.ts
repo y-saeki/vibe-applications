@@ -2,7 +2,7 @@
 // it can be swapped at runtime without rebuilding the editor.
 
 import { autocompletion, closeBrackets, closeBracketsKeymap, completeAnyWord, completionKeymap } from '@codemirror/autocomplete'
-import { defaultKeymap, history, historyKeymap, indentWithTab, redo as redoCommand, undo as undoCommand } from '@codemirror/commands'
+import { defaultKeymap, history, historyKeymap, indentWithTab, redo as redoCommand, redoDepth, undo as undoCommand, undoDepth } from '@codemirror/commands'
 import { bracketMatching, defaultHighlightStyle, indentOnInput, indentUnit, syntaxHighlighting } from '@codemirror/language'
 import { getSearchQuery, highlightSelectionMatches, openSearchPanel, search, searchKeymap } from '@codemirror/search'
 import { Compartment, EditorState, type Extension } from '@codemirror/state'
@@ -204,6 +204,16 @@ export class Editor {
   redo(): void {
     redoCommand(this.view)
     this.view.focus()
+  }
+
+  /** True while the history holds a step to undo. */
+  get canUndo(): boolean {
+    return undoDepth(this.view.state) > 0
+  }
+
+  /** True while the history holds an undone step to put back. */
+  get canRedo(): boolean {
+    return redoDepth(this.view.state) > 0
   }
 
   async setLanguage(id: string): Promise<void> {

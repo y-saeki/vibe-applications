@@ -4,7 +4,6 @@ mod commands;
 mod fonts;
 #[cfg(target_os = "windows")]
 mod jumplist;
-#[cfg(target_os = "macos")]
 mod menu;
 mod state;
 
@@ -47,6 +46,7 @@ pub fn run() {
             commands::save_state,
             commands::list_fonts,
             commands::quit_app,
+            commands::show_context_menu,
         ])
         .setup(|app| {
             let window = app
@@ -62,6 +62,8 @@ pub fn run() {
             // leaves both at the top-left of the screen. `src/main.ts` shows
             // the window once the editor has the focus.
             show_after_fallback(window.clone());
+            // Both the menu bar and the right-click menu report through this.
+            menu::forward_events(app.handle());
             #[cfg(target_os = "macos")]
             menu::install(app.handle())?;
             #[cfg(target_os = "windows")]

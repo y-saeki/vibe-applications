@@ -22,6 +22,13 @@ export type LaunchOptions = Partial<BackendConfig> & {
   csp?: boolean
 }
 
+/** Mirrors `ContextMenuState` in src/context-menu.ts. */
+export interface ContextMenuState {
+  canUndo: boolean
+  canRedo: boolean
+  canSearch: boolean
+}
+
 /** The policy in src-tauri/tauri.conf.json, as a header value. */
 function productionCsp(): string {
   const path = new URL('../../src-tauri/tauri.conf.json', import.meta.url)
@@ -115,6 +122,16 @@ export class App {
 
   commands(): Promise<string[]> {
     return this.page.evaluate(() => window.__draftpad.calls.map((call) => call.cmd))
+  }
+
+  /**
+   * What the page told the Rust side to enable in the context menu the last
+   * time it asked for one, or null before the first right click.
+   */
+  async contextMenuState(): Promise<ContextMenuState | null> {
+    const calls = await this.calls()
+    const asked = calls.filter((call) => call.cmd === 'show_context_menu').at(-1)
+    return asked ? (asked.args as { state: ContextMenuState }).state : null
   }
 
   /** The state handed to the most recent `save_state`, or null before the first. */
