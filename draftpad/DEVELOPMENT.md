@@ -98,6 +98,9 @@ Windows 側の経路(アプリ内のキー処理)を、どちらも Linux のラ
 届かない範囲もあります。webview の中に無いものは一切見えません。
 
 - macOS のメニューバーそのもの、Windows のタスクバーメニュー(ジャンプリスト)
+- 右クリックで開くコンテキストメニューそのもの。どちらのプラットフォームでもネイティブのメニューです。
+  webview の既定のメニューを止めたのがどちらのプラットフォームか、`show_context_menu` に何を渡したかまでを
+  確認します。Windows 側の項目の絞り込みは webview の外なので届きません
 - IME の未確定文字列と変換候補の位置
 - 常に手前に表示・フルスクリーン・ウィンドウサイズが実際にどうなるか
   (`invoke` が正しく呼ばれたところまでは確認します)
@@ -186,12 +189,12 @@ macOS Sequoia (15.0) 以降では、以前あった Control クリック →「�
 
 元に戻す / やり直すは例外で、どちらのプラットフォームでも CodeMirror のキーマップが処理します。CodeMirror の
 `historyKeymap` は「やり直す」の `Ctrl+Shift+Z` を Linux 向けにしか割り当てていないため、`src/editor.ts` で明示的に
-割り当てています。macOS の Edit メニューでは、この 2 つだけ定義済み項目を使わずコマンド表へ転送しています。定義済み
+割り当てています。macOS の「編集」メニューでは、この 2 つだけ定義済み項目を使わずコマンド表へ転送しています。定義済み
 項目は WKWebView 自身の undo マネージャを動かすもので、エディタの履歴には触れないためです。
 
 `⌘ ⇧ V` / `Ctrl + Shift + V`(プレーンテキストとして貼り付け)は、クリップボードのテキストを読んで
 カーソル位置へ挿入します。draftpad はプレーンテキストしか扱わないので、`⌘ V` / `Ctrl + V` と結果は
-同じです。macOS のメニューでは Edit に `Paste as Plain Text` を足しています。定義済みの貼り付け項目は
+同じです。macOS のメニューでは「編集」に「プレーンテキストとして貼り付け」を足しています。定義済みの貼り付け項目は
 `⌘ V` に固定されていて、アクセラレータを差し替えられないためです。
 
 読み取りは Tauri 公式の `tauri-plugin-clipboard-manager` 経由で、`capabilities/default.json` が許可するのは
@@ -222,6 +225,53 @@ Windows の WebView2 はテキスト入力をフォームの一部とみなす�
 フォーカスすると「保存された情報」の候補が出ます。draftpad にフォームはないので、起動時に
 `ICoreWebView2Settings4` の `IsGeneralAutofillEnabled` と `IsPasswordAutosaveEnabled` を false にして
 止めています(`src-tauri/src/autofill.rs`)。macOS の WKWebView にこの挙動はありません。
+
+macOS では、AppKit が「編集」メニューに勝手に 4 つの項目を足します。Writing Tools、AutoFill、
+「音声入力を開始…」「絵文字と記号」です。どう組み立てたメニューでも足されるので、こちらで外しています
+(`src-tauri/src/edit_menu.rs`)。後ろ 2 つには `NSDisabledDictationMenuItem` と
+`NSDisabledCharacterPaletteMenuItem` というデフォルト値のスイッチがあるので、アプリの起動中に
+`registerDefaults` で登録します(書き込みではないので、draftpad の設定ファイルには何も残りません)。
+前の 2 つにスイッチはないため、起動が終わってから——AppKit が足し終わるのがそこなので——メニューから
+直接取り除きます。draftpad 自身の最後の項目(「検索・置換」)より後ろを全部外す、という形にしてあるので、
+取り除く側が項目の名前を知っている必要はありません。`RunEvent::Ready` がそのタイミングです。
+
+右クリックメニューが出るのは、テキストを編集できる場所——下書きと、検索・置換パネル / 環境設定パネルの
+テキスト入力欄——だけです。ステータスバーやボタン、チェックボックスの上では、切り取りもコピーも貼り付けも
+対象を持たないため、メニューごと出しません。Windows は `ICoreWebView2ContextMenuTarget` の `IsEditable`、
+macOS はページ側で `contextmenu` の `target` を見て判定します。
+
+消したい項目を消せる手段はプラットフォームごとに違うため、経路は 2 つあります。
+
+Windows は WebView2 が `ContextMenuRequested` を上げてくれるので、WebView2 自身にメニューを描かせたまま、出る
+項目だけを差し替えています(`src-tauri/src/context_menu.rs`)。見た目も文言も WebView2 のもの、つまり OS の
+言語設定どおりのままで、編集項目の配線もそのままです。残すのは `undo` `redo` `cut` `copy` `paste` `selectAll`
+の 6 つで、それ以外は落とします。消す物ではなく残す物を並べているのは、後の Edge が項目を足しても——絵文字や
+Writing Tools がそうだったように——勝手には出てこないようにするためです。デバッグビルドでだけ `inspectElement`
+も残します。Windows にはメニューバーがなく、ここが開発者ツールへの唯一の入り口だからです。「検索・置換」は
+対応する既定の項目がないので、`CreateContextMenuItem` で足して `CustomItemSelected` をコマンド表へ転送します。
+
+macOS には同じ仕組みがありません。WKWebView のメニューは「調べる」「翻訳」「共有」「音声」「フォント」「変換」
+「変形」「段落の方向」「サービス」「Writing Tools」まで並びますが、項目単位では削れません。WebKit が
+`NSMenuItem` に付ける `WKMenuItemIdentifier` は「コピー」「ペースト」「調べる」などにはあるものの、「切り取り」
+「すべてを選択」「フォント」「サービス」には付かないためです。識別子で残す物を選ぶと切り取りが消え、識別子で
+消す物を選ぶとフォントやサービスが残ります。
+
+そこで macOS ではページ側でメニューごと止め(`src/context-menu.ts` が `contextmenu` を `preventDefault` します)、
+代わりに Tauri のネイティブメニューを `popup` で出しています(`src-tauri/src/menu.rs` の `show_context`)。位置は
+渡していません。省くと muda がポインタの位置に出し、画面の端に収まるよう寄せます。
+
+こちらの切り取り・コピー・貼り付け・すべてを選択は定義済み項目です。responder chain を通じて、キャレットを
+持っている要素——下書き・検索欄・環境設定の入力欄——にそのまま届きます。ただしラベルは自分で書きます。muda の
+定義済み項目が持っているのは `Cu&t` のような英語の文字列で、OS のローカライズ済みの表記ではありません。
+Windows 側は WebView2 の表記なので日本語で出ますが、macOS 側は指定しないと英語のままです。
+
+定義済み項目は有効・無効を切り替えられないので、選択範囲がなくても灰色にはならず、押しても何も起きないだけ
+です。元に戻す・やり直す・検索・置換はコマンド表へ転送する項目なので、`show_context_menu` が受け取る 3 つの
+真偽値で灰色にできます。Windows 側にこの区別はなく、「検索・置換」は常に押せます。環境設定を開いている間に
+押されても困らないよう、コマンド表の `openSearch` 自体がパネルの開閉を見ています。
+
+macOS では、選択範囲の外を右クリックするとカーソル下の単語が選択されます。WebKit が `contextmenu` イベントを
+投げる前に行う macOS の編集挙動で、Windows (Chromium) にはありません。どちらもエンジンの標準どおりにしてあります。
 
 ### Windows インストーラ(NSIS)
 

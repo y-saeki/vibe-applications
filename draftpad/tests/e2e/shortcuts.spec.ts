@@ -94,29 +94,23 @@ test('Ctrl+Shift+V leaves the draft alone while the search panel has the keyboar
   await expect(app.editor).toHaveText('そのまま')
 })
 
+test('Ctrl+F leaves the search panel closed while preferences has the keyboard', async ({ launch }) => {
+  const app = await launch({ platform: 'windows' })
+
+  await app.press('Comma')
+  await expect(app.preferences).toBeVisible()
+
+  // The panel would open behind the preferences panel, where the keyboard
+  // cannot reach it.
+  await app.press('KeyF')
+  await expect(app.searchPanel).toBeHidden()
+})
+
 test('Ctrl+, opens the preferences panel', async ({ launch }) => {
   const app = await launch({ platform: 'windows' })
 
   await app.press('Comma')
   await expect(app.preferences).toBeVisible()
-})
-
-test('Ctrl+= and Ctrl+- step the font size, within the limits', async ({ launch }) => {
-  const app = await launch({ platform: 'windows', state: { fontSize: 13 } })
-
-  await app.press('Equal')
-  await expect(app.page.locator('.cm-editor')).toHaveCSS('font-size', '14px')
-  await app.press('Minus')
-  await app.press('Minus')
-  await expect(app.page.locator('.cm-editor')).toHaveCSS('font-size', '12px')
-  await app.expectSaved((state) => state.fontSize === 12)
-})
-
-test('the font size stops at the smallest allowed value', async ({ launch }) => {
-  const app = await launch({ platform: 'windows', state: { fontSize: 10 } })
-
-  await app.press('Minus')
-  await expect(app.page.locator('.cm-editor')).toHaveCSS('font-size', '10px')
 })
 
 test('F11 asks the window for fullscreen', async ({ launch }) => {

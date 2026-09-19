@@ -35,14 +35,6 @@ test('the menu pastes the clipboard as plain text', async ({ launch }) => {
   await app.expectSaved((state) => state.text === '前貼り付けた文字後')
 })
 
-test('the menu steps the font size', async ({ launch }) => {
-  const app = await launch({ ...MAC, state: { fontSize: 13 } })
-
-  await app.runMenuCommand('increase_font_size')
-  await expect(app.page.locator('.cm-editor')).toHaveCSS('font-size', '14px')
-  await app.expectSaved((state) => state.fontSize === 14)
-})
-
 test('the menu undoes and redoes the draft, not the webview', async ({ launch }) => {
   const app = await launch(MAC)
 
@@ -60,6 +52,16 @@ test('the menu leaves the draft alone while preferences has the keyboard', async
   await app.runMenuCommand('preferences')
   await app.runMenuCommand('undo')
   await expect(app.editor).toContainText('残るはず')
+})
+
+test('the menu leaves the search panel closed while preferences has the keyboard', async ({ launch }) => {
+  const app = await launch(MAC)
+
+  await app.runMenuCommand('preferences')
+  await expect(app.preferences).toBeVisible()
+
+  await app.runMenuCommand('find')
+  await expect(app.searchPanel).toBeHidden()
 })
 
 test('the menu writes the draft out before quitting', async ({ launch }) => {

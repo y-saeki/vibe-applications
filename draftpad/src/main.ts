@@ -6,10 +6,11 @@ import { getCurrentWindow } from '@tauri-apps/api/window'
 import { readText } from '@tauri-apps/plugin-clipboard-manager'
 
 import { comboFromEvent, createCommands, indexByKeys } from './commands'
+import { installContextMenu } from './context-menu'
 import { Editor } from './editor'
 import { defaultFontFamily } from './fonts'
 import { Preferences } from './preferences'
-import { clamp, FONT_SIZE_MAX, FONT_SIZE_MIN, loadState, nearestFontWeight, Store, type StateKey } from './state'
+import { loadState, nearestFontWeight, Store, type StateKey } from './state'
 import { StatusBar } from './statusbar'
 import { ThemeController } from './theme'
 
@@ -128,8 +129,11 @@ async function main(): Promise<void> {
       },
       quit,
       toggleFullscreen: async () => appWindow.setFullscreen(!(await appWindow.isFullscreen())),
-      changeFontSize: (delta) => store.set({ fontSize: clamp(store.state.fontSize + delta, FONT_SIZE_MIN, FONT_SIZE_MAX) }),
-      openSearch: () => ed.openSearch(),
+      // Guarded like undo and redo: the panel would open behind the
+      // preferences panel, which is taking the keyboard.
+      openSearch: () => {
+        if (!preferences.isOpen) ed.openSearch()
+      },
       // The editor is the only place this writes into: while the search panel
       // or the preferences panel holds the keyboard, dropping the clipboard
       // into the draft behind them is not what the key press asked for.
@@ -175,6 +179,21 @@ async function main(): Promise<void> {
     for (const key of changed) apply[key]?.()
   })
   if (state.alwaysOnTop) void appWindow.setAlwaysOnTop(true)
+
+  // ---- the right-click menu ----------------------------------------------
+  // macOS only: Windows keeps the webview's own menu, which
+  // `src-tauri/src/context_menu.rs` trims in place, so that it goes on looking
+  // and reading the way the rest of Windows does.
+  if (isMac) {
+    // The same guards the command table carries: while the preferences panel
+    // holds the keyboard, neither the history nor the search panel is the
+    // draft's to touch.
+    installContextMenu(() => ({
+      canUndo: !preferences.isOpen && ed.canUndo,
+      canRedo: !preferences.isOpen && ed.canRedo,
+      canSearch: !preferences.isOpen,
+    }))
+  }
 
   // ---- menu (macOS) and keyboard shortcuts (elsewhere) -------------------
   await listen<string>('menu', (event) => {
