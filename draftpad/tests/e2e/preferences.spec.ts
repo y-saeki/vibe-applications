@@ -309,6 +309,11 @@ test('paints the whitespace marks from the palette, in both themes', async ({ la
   // The dot is a gradient and the arrow a mask over a fill, so the colour shows
   // up in a different property for each; both come from --whitespace.
   await expect(space).toHaveCSS('background-image', /rgba\(31, 35, 40, 0\.26\)/)
+  // The two stops sit apart, which is what gives the dot a soft edge. A hard
+  // one rasterises differently in each space of a run, because their boxes land
+  // on different halves of a pixel; style.css says more. This pins the
+  // declaration, not the pixels — those are for the manual pass.
+  await expect(space).toHaveCSS('background-image', /0\.26\) 8%, rgba\(0, 0, 0, 0\) 20%/)
   await expect(tab).toHaveCSS('background-color', 'rgba(31, 35, 40, 0.26)')
   await expect(tab).toHaveCSS('mask-image', /url\("data:image\/svg\+xml/)
 

@@ -432,11 +432,18 @@ option {
    the character's width, which keeps a half-width and a full-width space
    wearing the same dot, and the arrow is a mask scaled to the same height.
 
+   The dot's edge is a short ramp rather than a hard stop. Each space is a box
+   of its own and their widths are fractional, so consecutive ones land on
+   different halves of a pixel; a hard-edged circle this small then rasterises
+   differently in each of them, and a run of four spaces shows one dot as a thin
+   sliver beside three square ones. A soft edge has no hard boundary to land
+   either side of, and the run comes out even.
+
    Line breaks and the end of the draft carry no mark at all: with every space
    dotted, where a line ends is already plain. */
 #editor .cm-highlightSpace,
 #editor .cm-ideographicSpace {
-  background: radial-gradient(circle farthest-side at 50% 55%, var(--whitespace) 12%, transparent 0) no-repeat;
+  background: radial-gradient(circle farthest-side at 50% 55%, var(--whitespace) 8%, transparent 20%) no-repeat;
 }
 
 #editor .cm-highlightTab {
