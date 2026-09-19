@@ -1,7 +1,8 @@
 // The two panes and the diff between them, through CodeMirror's MergeView.
 // Everything a setting can change lives in a Compartment so it can be swapped
 // at runtime without rebuilding the editors. The merge view itself recomputes
-// the chunks on every edit, on either side, and keeps the two panes aligned.
+// the chunks on every edit, on either side (line by line, see linediff.ts),
+// and keeps the two panes aligned.
 
 import { defaultKeymap, history, historyKeymap, indentWithTab, redo as redoCommand, undo as undoCommand } from '@codemirror/commands'
 import { indentUnit } from '@codemirror/language'
@@ -10,6 +11,7 @@ import { Compartment, EditorState, type Extension, type StateEffect } from '@cod
 import { drawSelection, dropCursor, EditorView, keymap, lineNumbers, placeholder, type KeyBinding } from '@codemirror/view'
 
 import { darkTheme } from './dark-theme'
+import { installLineDiff } from './linediff'
 import type { DiffMode, State, Texts } from './state'
 
 /** The left pane is `a`, the right one `b`, as MergeView names them. */
@@ -33,7 +35,9 @@ export interface EditorOptions {
  * (`scanLimit: 500`), which gives up on two versions of a document that differ
  * in a few hundred places and paints them as one chunk. A time budget keeps
  * the precise diff wherever it is affordable, which is every realistic pair of
- * similar texts, and only two unrelated texts of some size run into it.
+ * similar texts, and only two unrelated texts of some size run into it. The
+ * budget covers the line-level pass and the character-level passes within
+ * the chunks together.
  */
 const DIFF_TIMEOUT_MS = 500
 
@@ -77,6 +81,7 @@ export class Editor {
   constructor(options: EditorOptions) {
     const { initial } = options
     this.defaultFontFamily = options.defaultFontFamily
+    installLineDiff()
     // One compartment serves both panes: each state keeps its own content for
     // it, and a change is dispatched to the two of them in turn.
     const shared: Extension = [

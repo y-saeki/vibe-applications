@@ -93,9 +93,10 @@ pnpm exec playwright install chromium webkit
 Windows 側の経路(アプリ内のキー処理)を、どちらも Linux のランナー 1 台で確認できます。
 `tests/e2e/menu.spec.ts` と `tests/e2e/shortcuts.spec.ts` がその 2 つです。
 
-差分そのもの(どの行・どの文字に印が付くか、件数、移動)は `tests/e2e/diff.spec.ts` にあります。印は
-`MergeView` が付ける `.cm-changedLine` / `.cm-changedText` / `.cm-changedLineGutter` を数えて確認し、
-移動はキャレットのある行番号で確認します(`fixtures.ts` の `caretLine`)。
+差分そのもの(どの行・どの文字に印が付くか、行アキ、件数、移動)は `tests/e2e/diff.spec.ts` にあります。印は
+`MergeView` が付ける `.cm-changedLine` / `.cm-changedText` / `.cm-changedLineGutter` を数えて確認し、行アキは
+`.cm-mergeSpacer` の数と両ペインの同じ行の縦位置で、移動はキャレットのある行番号で確認します(`fixtures.ts` の
+`gaps` / `caretLine`)。
 
 開発サーバは Content-Security-Policy を送りません。配布物はこれを持つため(`src-tauri/tauri.conf.json` の
 `csp`)、ポリシーが禁じている読み込みはテストでは通り、インストールしたアプリでだけ失敗します。
@@ -188,7 +189,33 @@ macOS Sequoia (15.0) 以降では、以前あった Control クリック →「�
 
 2 ペインは `@codemirror/merge` の `MergeView` 1 つです(`src/editor.ts`)。左が `a`、右が `b` で、`MergeView` が
 2 つの `EditorView` を作り、どちらかの文書が変わるたびに差分(chunk の列)を計算し直して両方に配ります。差分は
-編集のたびに同期的に計算されますが、変更箇所の前後だけを計算し直すので、キー入力ごとに全文を比べてはいません。
+編集のたびに同期的に、全文を対象に計算します(下記「行の対応付け」)。
+
+### 行の対応付け
+
+`@codemirror/merge` の差分は文字単位で、変更された文字の並びを行の境界で区切って chunk にします。これを
+そのまま使うと、左右で行を対応付ける表示としては困ることが 2 つありました。
+
+- 末尾に行を足すと、文字としては直前の行の末尾に改行を足したことになるので、直前の行が両側で変更扱いになり、
+  足した行の向かいに空きが出ない
+- 削除と挿入の間にある共通行が 3 文字未満だと 1 つの変更に併合され、共通行ごと塗られる
+
+VS Code や difff は先に行同士を対応付け、その中で初めて文字を比べます。diffpad も同じ順にしています
+(`src/linediff.ts`)。まず両方の文書の行を「同じ内容の行は同じ 1 文字」に置き換えた文字列を作り、それを
+パッケージの `diff` にかけると、行単位の差分がそのまま得られます(文字は UTF-16 の 1 単位で、diff が途中で
+割ってしまうサロゲート領域は避けているので、区別できる行の種類は 63,488 までです。超えたときだけパッケージ
+本来の文字単位の計算に戻します)。得られた各ブロックを `Chunk` にし、ブロックの中で改めて `presentableDiff` を
+かけて文字単位の印にします。
+
+`MergeView` に chunk を差し込む口はありませんが、chunk は `Chunk.build` / `Chunk.updateA` / `Chunk.updateB`
+という exported なクラスの静的メソッドから、必要になった時点で取り出されます。`installLineDiff` はこの 3 つを
+差し替えます。パッケージの更新でこの呼び方が変わると黙って元の挙動に戻るので、`tests/e2e/diff.spec.ts` の
+行アキのケースが番人です。
+
+パッケージ本来の `updateA` / `updateB` は編集箇所の前後 1000 文字だけを計算し直しますが、差し替え後は
+編集のたびに全文を計算します。行単位の pass は行数ぶんの文字列を比べるだけで、文字単位の pass は変更ブロックの
+中だけなので、似た 2 つのテキストなら大きくても数 ms から数十 ms です。重くなるのは、大きな変更ブロックの中を
+編集し続けるときで、そのブロックの文字単位の pass が毎回走ります。増分更新は、必要になったら足します。
 
 ### 行単位と文字単位
 
@@ -209,7 +236,8 @@ macOS Sequoia (15.0) 以降では、以前あった Control クリック →「�
 (手元の計測。2000 行に 400 箇所の小さな編集がある散文でも同じです)。文書の 2 つの版を比べるのが diffpad の
 用途なので、これでは役に立ちません。
 
-そこで `scanLimit` は外し、時間で打ち切ります(`src/editor.ts` の `DIFF_TIMEOUT_MS`、500ms)。似た 2 つのテキスト
+そこで `scanLimit` は外し、時間で打ち切ります(`src/editor.ts` の `DIFF_TIMEOUT_MS`、500ms)。この 1 つの予算を
+行単位の pass と各ブロックの文字単位の pass で分け合います(`linediff.ts` の `budget`)。似た 2 つのテキスト
 なら精密な計算は数十 ms で終わるので、普通の使い方でこの上限に当たることはありません。当たるのは、内容が
 まるで違う大きなテキスト同士を比べたときで、そのときは残りを粗い計算で埋めます(README の制限事項に書いて
 ある「大まかな色付け」がこれです)。
@@ -227,9 +255,10 @@ macOS Sequoia (15.0) 以降では、以前あった Control クリック →「�
 ### レイアウト
 
 `MergeView` は 2 つのエディタのスクロールを自前では同期しません。代わりに各エディタの高さを内容に合わせて
-伸ばし(`.cm-scroller` の高さを `auto` に固定)、chunk の高さの差を空白のウィジェット(spacer)で埋めて行を揃え、
-外側の `.cm-mergeView` 1 つをスクロールさせます。`style.css` はこれに従い、`.cm-mergeView` にウィンドウの
-高さを与えています。
+伸ばし(`.cm-scroller` の高さを `auto` に固定)、chunk の高さの差を空白のウィジェット(spacer、`.cm-mergeSpacer`)で
+埋めて行を揃え、外側の `.cm-mergeView` 1 つをスクロールさせます。`style.css` はこれに従い、`.cm-mergeView` に
+ウィンドウの高さを与えています。spacer は片方のペインにしかない行の向かいに入る空きなので、VS Code と同じく
+`--border` の斜線で塗り、空行と見分けが付くようにしています。
 
 そのままだと短いテキストのペインは内容の高さしか無く、その下の余白をクリックしてもキャレットが入りません。
 `.cm-mergeViewEditor` を縦の flex にしてエディタと `.cm-scroller` を下端まで伸ばし、`.cm-content` は自身の

@@ -417,6 +417,13 @@ option {
   background: var(--diff-b-mark);
 }
 
+/* The space the merge view leaves opposite lines the other pane has and this
+   one has not, so the lines both panes share stay level. Hatched, as VS Code
+   draws it, so it reads as "nothing here" rather than as blank lines. */
+#editor .cm-mergeSpacer {
+  background: repeating-linear-gradient(-45deg, var(--border) 0 1px, transparent 1px var(--space-2));
+}
+
 /* ---- Status bar -------------------------------------------------------- */
 
 #statusbar {

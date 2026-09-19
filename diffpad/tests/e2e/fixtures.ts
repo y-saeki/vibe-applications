@@ -95,6 +95,11 @@ export class App {
     return this.pane(side).locator('.cm-changedText')
   }
 
+  /** The gaps the merge view has opened in one pane, opposite lines only the other pane has. */
+  gaps(side: Side): Locator {
+    return this.pane(side).locator('.cm-mergeSpacer')
+  }
+
   /** "Mod" from src/commands.ts: Cmd on macOS, Ctrl elsewhere. */
   get mod(): 'Meta' | 'Control' {
     return this.platform === 'macos' ? 'Meta' : 'Control'

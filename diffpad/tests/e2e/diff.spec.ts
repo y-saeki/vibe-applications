@@ -1,6 +1,6 @@
 // Editing the two panes and what the diff between them shows.
 
-import { type App, expect, test } from './fixtures'
+import { type App, expect, type Side, test } from './fixtures'
 
 test('says the panes agree until one of them is edited', async ({ launch }) => {
   const app = await launch()
@@ -41,6 +41,40 @@ test('marks the lines of a chunk on both sides, and the characters only in char 
   await app.diffModeSelect.selectOption('line')
   await expect(app.changedText('a')).toHaveCount(0)
   await app.expectSaved((state) => state.diffMode === 'line')
+})
+
+test('pairs the lines up first, and opens a gap opposite a line only one side has', async ({ launch }) => {
+  // "b" is only on the left and "e" only on the right. A character diff would
+  // take "e" as a line break added to "d" and paint "d" on both sides; pairing
+  // the lines up leaves "c" and "d" alone and level, with a gap opposite each
+  // of the two lines that have no counterpart.
+  const app = await launch({ state: { textA: 'a\nb\nc\nd', textB: 'a\nc\nd\ne', diffMode: 'line' } })
+
+  await expect(app.diffCount).toHaveText('差異 2 箇所')
+  await expect(app.changedLines('a')).toHaveText(['b'])
+  await expect(app.changedLines('b')).toHaveText(['e'])
+  await expect(app.gaps('b')).toHaveCount(1)
+  await expect(app.gaps('a')).toHaveCount(1)
+  await expect(app.gaps('a').first()).toHaveCSS('background-image', /repeating-linear-gradient/)
+  expect(await lineTop(app, 'a', 'c')).toBe(await lineTop(app, 'b', 'c'))
+  expect(await lineTop(app, 'a', 'd')).toBe(await lineTop(app, 'b', 'd'))
+
+  // The added line is a chunk of its own even though the left pane has no line
+  // for it: stepping there lands on the last line the left pane does have.
+  await app.nextDiff.click()
+  expect(await app.caretLine('a')).toBe(2)
+  await app.nextDiff.click()
+  expect(await app.caretLine('a')).toBe(4)
+})
+
+test('keeps an unchanged line between a removal and an addition out of both', async ({ launch }) => {
+  // The character diff merges changes with fewer than three characters
+  // between them, which would swallow the "c" here.
+  const app = await launch({ state: { textA: 'a\nb\nc\nd\ne', textB: 'a\nc\nx\nd\ne', diffMode: 'line' } })
+
+  await expect(app.diffCount).toHaveText('差異 2 箇所')
+  await expect(app.changedLines('a')).toHaveText(['b'])
+  await expect(app.changedLines('b')).toHaveText(['x'])
 })
 
 test('paints the two sides in their own colors', async ({ launch }) => {
@@ -198,6 +232,12 @@ test('keeps the bar still however many digits the count runs to', async ({ launc
   await expect(app.diffCount).toHaveText('差異 1 箇所')
   expect((await app.nextDiff.boundingBox())?.x).toBe(wide?.x)
 })
+
+/** Where the line reading `text` starts on the page, in px from the top. */
+async function lineTop(app: App, side: Side, text: string): Promise<number> {
+  const box = await app.pane(side).locator('.cm-line', { hasText: text }).boundingBox()
+  return box!.y
+}
 
 /** A length token as the sheet declares it, in px. */
 function token(app: App, name: string): Promise<number> {
