@@ -1,0 +1,641 @@
+/* diffpad's chrome — the two panes' gutters and marks, the status bar, the
+   preferences panel. Every size, spacing and color it uses is a custom property
+   declared below, and nothing outside these blocks writes a number or a color
+   of its own. `pnpm lint:style` enforces that, and also caps how many of these
+   there may be; DEVELOPMENT.md says what each family is for. */
+
+:root {
+  /* ---- Palette ---- */
+  --bg: #ffffff;
+  --fg: #1f2328;
+  --muted: #6e7781;
+  /* One step short of --fg, for the group headings in the preferences panel:
+     they sit above the labels they gather, and --muted would read as the same
+     kind of secondary text as the status bar. */
+  --muted-strong: #57606a;
+  /* Weaker than --muted: a placeholder has to read as an empty pane rather
+     than as something already typed. */
+  --placeholder: #848d97;
+  --border: #d0d7de;
+  --panel: #f6f8fa;
+  --accent: #2b6cb0;
+  --overlay: rgba(0, 0, 0, 0.35);
+  --control-bg: #ffffff;
+  --control-hover: #eef1f4;
+  --control-active: #e2e6ea;
+  --focus-ring: rgba(43, 108, 176, 0.25);
+  --shadow-panel: 0 8px 32px rgba(0, 0, 0, 0.25); /* the preferences panel */
+  --shadow-popup: 0 4px 16px rgba(0, 0, 0, 0.18); /* a dropped-open list */
+  /* The chevron on a select. Painted with currentColor through a mask, so one
+     asset serves both themes. */
+  --chevron-down: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%23000000' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round' d='M4.5 6.5 8 10 11.5 6.5'/%3E%3C/svg%3E");
+  /* Masked the same way, for the button that closes the preferences panel. */
+  --close-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%23000000' stroke-width='1.5' stroke-linecap='round' d='M4 4 12 12M12 4 4 12'/%3E%3C/svg%3E");
+
+  /* The diff. The left pane is what the right one is compared against, so a
+     chunk reads as taken out on the left and put in on the right: the usual
+     red and green, in a wash for the whole line and a stronger one for the
+     characters that actually differ. The mark is the gutter's stripe. */
+  --diff-a-line: #ffebe9;
+  --diff-a-text: rgba(255, 129, 130, 0.4);
+  --diff-a-mark: #cf222e;
+  --diff-b-line: #dafbe1;
+  --diff-b-text: rgba(74, 194, 107, 0.4);
+  --diff-b-mark: #1a7f37;
+
+  /* ---- Type ---- */
+  --ui-font: -apple-system, "Segoe UI", system-ui, sans-serif;
+  /* The version line only; figures that do not shift as the number changes. */
+  --font-mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --font-size-title: 16px; /* the preferences heading */
+  --font-size-body: 13px; /* panels and their controls */
+  --font-size-caption: 12px; /* the status bar, the version line */
+
+  /* ---- Spacing ---- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+
+  /* ---- Corners ---- */
+  --radius-sm: 4px; /* icon buttons */
+  --radius-md: 6px; /* controls one --control-height tall */
+  --radius-lg: 8px; /* the preferences panel */
+
+  /* ---- Control and chrome metrics ---- */
+  --control-height: 28px; /* text fields, selects, buttons */
+  --icon-size: 16px;
+  --icon-button-size: 24px;
+  --statusbar-height: 32px;
+  --titlebar-height: 0px;
+
+  /* ---- Layout ---- */
+  --field-width-narrow: 80px; /* a number field's */
+  --label-width: 128px; /* the preferences label column */
+  --panel-width: 440px;
+  --panel-inset: 40px; /* the preferences panel's distance from the window */
+  --mode-width: 96px; /* the floor under the status bar's diff mode selector */
+  --count-width: 104px; /* the status bar's chunk count, separator included */
+
+  color-scheme: light;
+}
+
+/* The editor-only properties are read by src/dark-theme.ts, which dresses the
+   parts CodeMirror paints itself. */
+:root[data-theme="dark"] {
+  --bg: #151515;
+  --fg: #d8d8d8;
+  --muted: #aaaaaa;
+  --muted-strong: #c4c4c4;
+  --placeholder: #6f6f6f;
+  --border: #2c2c2c;
+  --panel: #111111;
+  --accent: #6cb6ff;
+  --overlay: rgba(0, 0, 0, 0.6);
+  --control-bg: #1c1c1c;
+  --control-hover: #262626;
+  --control-active: #333333;
+  --focus-ring: rgba(108, 182, 255, 0.32);
+  --diff-a-line: rgba(248, 81, 73, 0.15);
+  --diff-a-text: rgba(248, 81, 73, 0.4);
+  --diff-a-mark: #f85149;
+  --diff-b-line: rgba(46, 160, 67, 0.15);
+  --diff-b-text: rgba(63, 185, 80, 0.4);
+  --diff-b-mark: #3fb950;
+  --editor-caret: #6cb6ff;
+  --editor-selection: #2c4a6e;
+  color-scheme: dark;
+}
+
+/* macOS uses a transparent overlay title bar; keep the top strip draggable. */
+:root[data-platform="macos"] {
+  --titlebar-height: 28px;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--fg);
+  font: var(--font-size-body) var(--ui-font);
+}
+
+#titlebar {
+  flex: none;
+  height: var(--titlebar-height);
+}
+
+/* ---- Controls shared by every panel ------------------------------------ */
+
+/* A dropped-open list is drawn outside the page: Chromium (so WebView2) takes
+   these colors, while the native menu WKWebView opens follows color-scheme
+   alone. */
+option {
+  background: var(--control-bg);
+  color: var(--fg);
+}
+
+/* Text fields and selects in the preferences panel. */
+.form-row input[type="text"],
+.form-row input[type="number"],
+.form-row select {
+  height: var(--control-height);
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--control-bg);
+  color: var(--fg);
+  font: inherit;
+}
+
+.form-row input[type="text"]::placeholder {
+  color: var(--placeholder);
+}
+
+.form-row input[type="text"]:focus,
+.form-row input[type="number"]:focus,
+.form-row select:focus {
+  border-color: var(--accent);
+  outline: none;
+  box-shadow: 0 0 0 2px var(--focus-ring);
+}
+
+/* A button that is only an icon: the gear and the step buttons in the status
+   bar, the × that closes the preferences panel. */
+.icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: var(--icon-button-size);
+  height: var(--icon-button-size);
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.icon-button svg {
+  width: var(--icon-size);
+  height: var(--icon-size);
+}
+
+/* The × is drawn rather than typed. A glyph sits where the font's metrics put
+   it, which is not the middle of the button and moves from one platform to the
+   next; a mask box the size of an icon is centred by the flex rule above. */
+#preferences-close {
+  font-size: 0;
+}
+
+#preferences-close::before {
+  content: "";
+  width: var(--icon-size);
+  height: var(--icon-size);
+  background: currentColor;
+  mask: var(--close-icon) center / contain no-repeat;
+}
+
+.icon-button:hover {
+  background: var(--control-hover);
+  color: var(--fg);
+}
+
+.icon-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* Nothing to step to: src/statusbar.ts turns the two step buttons off while
+   the panes agree. */
+.icon-button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.icon-button:disabled:hover {
+  background: none;
+  color: var(--muted);
+}
+
+/* ---- Dropdowns --------------------------------------------------------- */
+
+/* A select's dropped-open list is the platform's own window unless the page
+   asks for the base appearance, which turns it into an ordinary element this
+   sheet can dress (Chromium 135, WebKit 27).
+
+   Only Windows asks. macOS opens its own menu, which already looks like the
+   rest of the system there and is what diffpad wants on that platform; the
+   scope says so rather than leaving it to whether the installed Safari happens
+   to be old enough, which would have switched the look out from under anyone
+   who updated. Where the engine cannot do it either, the declarations are
+   dropped and the platform's popup opens as before. */
+:root[data-platform="windows"] select {
+  appearance: base-select;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-1);
+}
+
+/* Half the window at most, whatever its size. A viewport-relative bound is
+   layout rather than part of the scale, so there is no token for it.
+
+   The rows are spaced by their own margins rather than by a gap, and the
+   padding here is horizontal only so the ends match: the browser hides a
+   closed picker with `display: none`, which any `display` written here would
+   beat, and the list would sit open on the page from the moment it loads.
+   (`dialog:not([open])` is hidden the same way; the preferences panel spells
+   its own display out for the opposite reason.) */
+:root[data-platform="windows"] select::picker(select) {
+  appearance: base-select;
+  box-sizing: border-box;
+  max-height: 50vh;
+  overflow-y: auto;
+  padding: 0 var(--space-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--control-bg);
+  box-shadow: var(--shadow-popup);
+  color: var(--fg);
+  font: inherit;
+}
+
+/* Each select keeps the size, border and background it has above; the arrow is
+   all that moves from the platform to here. */
+:root[data-platform="windows"] select::picker-icon {
+  flex: none;
+  width: var(--icon-size);
+  height: var(--icon-size);
+  /* Drops the disclosure triangle the base appearance comes with. */
+  content: "";
+  background: currentColor;
+  mask: var(--chevron-down) center / contain no-repeat;
+}
+
+:root[data-platform="windows"] select:open::picker-icon {
+  transform: rotate(180deg);
+}
+
+/* Rows the height of a control, inset far enough from the picker's border that
+   the rounded corners read as corners, and set apart from each other: opening
+   the picker leaves the focus on the current row, so hovering the row beside it
+   puts the same highlight on both, and touching they read as one tall block
+   rather than as two items. Adjacent margins collapse, so the space between two
+   rows is one --space-1 rather than two. */
+:root[data-platform="windows"] select option {
+  min-height: var(--control-height);
+  margin-block: var(--space-1);
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--fg);
+}
+
+/* The platform's own highlight is a mid grey with nothing to do with this
+   palette. Keyboard navigation moves the focus between the rows, so the two
+   selectors are the same state seen from the pointer and from the keyboard. */
+:root[data-platform="windows"] select option:hover,
+:root[data-platform="windows"] select option:focus {
+  background: var(--control-active);
+  outline: none;
+}
+
+/* The tick says which row is the current one, and it is the only thing that
+   does: a row can be current and pointed at once, and a highlight that has to
+   mean both ends up meaning neither. The base appearance keeps this column in
+   every row, so the labels line up whether or not a row carries one. */
+:root[data-platform="windows"] select option::checkmark {
+  color: var(--accent);
+}
+
+/* ---- Editor ------------------------------------------------------------ */
+
+#editor {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* The merge view is the one thing that scrolls: its two panes grow with their
+   text and are held level by the spacers CodeMirror puts between chunks, so
+   scrolling the outer element moves both together. It is given the window's
+   height so that it has something to scroll inside. */
+#editor .cm-mergeView {
+  height: 100%;
+}
+
+/* The panes reach the status bar even when the text is short, so a click in
+   the empty space below the last line still lands on a pane. CodeMirror pins
+   the scroller to its content's height; the column flex below stretches the
+   editor around it and the scroller with it, and the content follows the
+   scroller through its own min-height. */
+#editor .cm-mergeViewEditors {
+  min-height: 100%;
+}
+
+#editor .cm-mergeViewEditor {
+  display: flex;
+  flex-direction: column;
+}
+
+#editor .cm-mergeViewEditor + .cm-mergeViewEditor {
+  border-left: 1px solid var(--border);
+}
+
+#editor .cm-editor {
+  flex: 1 1 auto;
+}
+
+#editor .cm-editor.cm-focused {
+  outline: none;
+}
+
+#editor .cm-scroller {
+  flex: 1 1 auto;
+}
+
+#editor .cm-content {
+  padding: var(--space-2) 0;
+}
+
+#editor .cm-line {
+  padding: 0 var(--space-3);
+}
+
+#editor .cm-placeholder {
+  color: var(--placeholder);
+}
+
+/* The line numbers and the change stripe beside them, in the bar's colors
+   rather than the greys CodeMirror ships. */
+#editor .cm-gutters {
+  border-right: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--muted);
+}
+
+#editor .cm-lineNumbers .cm-gutterElement {
+  padding: 0 var(--space-1) 0 var(--space-2);
+}
+
+/* A chunk paints its lines on both sides. In char mode the merge view also
+   marks the characters within them that differ; in line mode it does not, and
+   the lines are all there is. */
+#editor .cm-merge-a .cm-changedLine {
+  background: var(--diff-a-line);
+}
+
+#editor .cm-merge-b .cm-changedLine {
+  background: var(--diff-b-line);
+}
+
+#editor .cm-merge-a .cm-changedText {
+  background: var(--diff-a-text);
+}
+
+#editor .cm-merge-b .cm-changedText {
+  background: var(--diff-b-text);
+}
+
+#editor .cm-merge-a .cm-changedLineGutter {
+  background: var(--diff-a-mark);
+}
+
+#editor .cm-merge-b .cm-changedLineGutter {
+  background: var(--diff-b-mark);
+}
+
+/* ---- Status bar -------------------------------------------------------- */
+
+#statusbar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  height: var(--statusbar-height);
+  /* Thinner on the right: an icon button is --icon-button-size around an
+     --icon-size glyph, so it already brings a gutter of its own and an equal
+     padding at both ends would read as a wider gap on that side. */
+  padding: 0 var(--space-2) 0 var(--space-3);
+  border-top: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--muted);
+  font-size: var(--font-size-caption);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.statusbar-group {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  white-space: nowrap;
+}
+
+/* The count is a read-only cell; a hairline closes it off the way the
+   platform's own status bars do, and the step buttons follow it.
+
+   The cell is as wide as its longest reading rather than as wide as what it
+   currently says, so the separator and the buttons stay put as the digits come
+   and go. The width counts the padding and the hairline. */
+.statusbar-cell {
+  box-sizing: border-box;
+  min-width: var(--count-width);
+  margin-right: var(--space-1);
+  padding-right: var(--space-4);
+  border-right: 1px solid var(--border);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Always-on-top is a state of the window rather than a field to fill in, so
+   the button carries it: pressed, it takes the accent instead of a tick. */
+#always-on-top[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  color: var(--accent);
+}
+
+/* The mode selector otherwise arrives in the platform's own control grey,
+   which reads as a hole in the bar. Keep it flat until it is pointed at. */
+#statusbar select {
+  padding: 2px var(--space-1);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+#statusbar select:hover {
+  border-color: var(--border);
+  background: var(--control-bg);
+  color: var(--fg);
+}
+
+#statusbar select:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* A native select is as wide as its widest option, so the bar never moved as
+   the mode changed. Where the list is ours (see the dropdown section) the
+   button fits the selected label instead, so the floor that used to come for
+   free has to be said out loud. */
+:root[data-platform="windows"] #statusbar select {
+  min-width: var(--mode-width);
+}
+
+/* ---- Preferences ------------------------------------------------------- */
+
+/* The panel is opened with showModal(), which puts it in the top layer: it
+   covers the whole window without entering the z-index race CodeMirror runs
+   inside the editor, and everything behind it stops taking the pointer and
+   the keyboard.
+
+   The author sheet beats the "dialog:not([open]) { display: none }" the
+   browser ships, so the display switch is spelled out here. */
+#preferences {
+  display: none;
+  position: fixed;
+  inset: 0;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  max-height: none;
+  margin: 0;
+  padding: calc(var(--titlebar-height) + var(--panel-inset)) 0 0;
+  border: none;
+  background: var(--overlay);
+  color: inherit;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+#preferences[open] {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+}
+
+/* The dim is the dialog's own background rather than ::backdrop's, because
+   ::backdrop only started inheriting custom properties in Safari 17.4 and
+   --overlay has to reach it. Browsers dim ::backdrop themselves anyway
+   (Chromium at 10% black), which would sit under --overlay and deepen it by a
+   different amount on each engine, so that default is cleared here. */
+#preferences::backdrop {
+  background: transparent;
+}
+
+/* Inset from the window on every side: --panel-inset above, the same below
+   once the panel is as tall as it may get, and a --space-4 gutter when the
+   window is too narrow for --panel-width. */
+.panel {
+  width: min(var(--panel-width), calc(100vw - var(--space-4) * 2));
+  max-height: calc(100vh - var(--titlebar-height) - var(--panel-inset) * 2);
+  overflow: auto;
+  box-sizing: border-box;
+  padding: var(--space-5);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg);
+  box-shadow: var(--shadow-panel);
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-4);
+}
+
+.panel-header h1 {
+  margin: 0;
+  font-size: var(--font-size-title);
+  font-weight: 600;
+}
+
+/* The two groups say which half of the panel a setting lives in; the rule
+   between them is the only thing drawn for it, and the heading stays below the
+   size of a label so that it reads as a tier above them rather than as another
+   one of them. */
+.pref-group {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+/* The rule hangs off the group above rather than the one below. A fieldset's
+   block-start border is the one its legend cuts a notch in and sits on, so a
+   border-top here would run straight through the heading; the block-end border
+   is drawn whole. */
+.pref-group:not(:last-of-type) {
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--border);
+}
+
+.pref-group + .pref-group {
+  margin-top: var(--space-4);
+}
+
+.pref-group legend {
+  padding: 0;
+  margin-bottom: var(--space-2);
+  color: var(--muted-strong);
+  font-size: var(--font-size-caption);
+  font-weight: 600;
+  /* A hair of tracking, which is what carries the heading at this size. */
+  letter-spacing: 0.5px;
+}
+
+/* Label, then control, on one line the height of a control. */
+.form-row {
+  display: grid;
+  grid-template-columns: var(--label-width) 1fr;
+  align-items: center;
+  gap: var(--space-4);
+  min-height: var(--control-height);
+}
+
+.form-row + .form-row {
+  margin-top: var(--space-3);
+}
+
+.form-row input[type="text"],
+.form-row select {
+  width: 100%;
+}
+
+.form-row input[type="number"] {
+  width: var(--field-width-narrow);
+}
+
+.form-control-with-unit {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* Not a setting, so it is deliberately outside the label column the rows keep
+   to: bottom right, in figures that hold their width as the version changes. */
+.panel-footer {
+  margin-top: var(--space-5);
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-caption);
+  text-align: right;
+}
