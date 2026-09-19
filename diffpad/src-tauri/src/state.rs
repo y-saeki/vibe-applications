@@ -22,6 +22,8 @@ pub struct State {
     /// "line" or "char": whether the characters within a changed line are
     /// marked as well as the line.
     pub diff_mode: String,
+    /// Whether the spaces and tabs in the two panes carry a mark.
+    pub show_whitespace: bool,
     pub theme: String,
     pub font_size: u32,
     pub font_family: String,
@@ -38,6 +40,7 @@ impl Default for State {
             text_a: String::new(),
             text_b: String::new(),
             diff_mode: "char".into(),
+            show_whitespace: false,
             theme: "system".into(),
             font_size: 13,
             font_family: String::new(),
@@ -142,6 +145,7 @@ mod tests {
         assert!(state.text_a.is_empty());
         assert!(state.text_b.is_empty());
         assert_eq!(state.diff_mode, "char");
+        assert!(!state.show_whitespace);
         assert_eq!(state.theme, "system");
         assert_eq!(state.font_size, 13);
         assert_eq!(state.font_weight, 400);
@@ -157,6 +161,7 @@ mod tests {
             text_a: "比較元\n🌏".into(),
             text_b: "比較先\n🌍".into(),
             diff_mode: "line".into(),
+            show_whitespace: true,
             theme: "dark".into(),
             font_size: 24,
             font_family: "BIZ UDGothic".into(),
@@ -173,6 +178,7 @@ mod tests {
         assert_eq!(read.text_a, written.text_a);
         assert_eq!(read.text_b, written.text_b);
         assert_eq!(read.diff_mode, "line");
+        assert!(read.show_whitespace);
         assert_eq!(read.theme, "dark");
         assert_eq!(read.font_size, 24);
         assert_eq!(read.font_family, "BIZ UDGothic");
@@ -200,6 +206,7 @@ mod tests {
         assert!(raw.contains("\"textA\": \"左\""));
         assert!(raw.contains("\"textB\": \"右\""));
         assert!(raw.contains("\"diffMode\""));
+        assert!(raw.contains("\"showWhitespace\""));
     }
 
     #[test]
@@ -212,6 +219,7 @@ mod tests {
         assert_eq!(state.text_a, "昔のファイル");
         assert!(state.text_b.is_empty());
         assert_eq!(state.diff_mode, "char");
+        assert!(!state.show_whitespace);
         assert_eq!(state.font_size, 13);
         assert_eq!(state.font_weight, 400);
     }

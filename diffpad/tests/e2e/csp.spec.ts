@@ -7,17 +7,19 @@
 import { expect, test } from './fixtures'
 
 test('paints the masked marks without tripping the policy', async ({ launch }) => {
-  const app = await launch({ csp: true })
+  const app = await launch({ csp: true, state: { showWhitespace: true, textA: 'a\tb' } })
   const maskOf = (selector: string, pseudo: string) =>
     app.page.evaluate(
       (target) => getComputedStyle(document.querySelector(target.selector)!, target.pseudo).maskImage,
       { selector, pseudo },
     )
 
-  // The × that closes the panel and the arrow on the select are data: URIs
-  // painted through a mask, which the policy covers under img-src. A policy
-  // that blocked one would leave the button or the select simply blank rather
-  // than failing outright.
+  // The × that closes the panel, the arrow on the select and the one that
+  // stands in for a tab are data: URIs painted through a mask, which the policy
+  // covers under img-src. A policy that blocked one would leave the button, the
+  // select or the tab simply blank rather than failing outright.
+  expect(await maskOf('.cm-merge-a .cm-highlightTab', '')).toMatch(/url\("data:image\/svg\+xml/)
+
   await app.gear.click()
   await expect(app.preferences).toBeVisible()
   expect(await maskOf('#preferences-close', '::before')).toMatch(/url\("data:image\/svg\+xml/)

@@ -1,6 +1,6 @@
 [package]
 name = "diffpad"
-version = "0.1.0"
+version = "0.2.0"
 description = "A two-pane text pad that shows the difference between its panes"
 edition = "2021"
 publish = false

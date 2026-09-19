@@ -31,6 +31,16 @@
   --chevron-down: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%23000000' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round' d='M4.5 6.5 8 10 11.5 6.5'/%3E%3C/svg%3E");
   /* Masked the same way, for the button that closes the preferences panel. */
   --close-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%23000000' stroke-width='1.5' stroke-linecap='round' d='M4 4 12 12M12 4 4 12'/%3E%3C/svg%3E");
+  /* And once more, for the arrow that stands in for a tab when the whitespace
+     setting is on. The arrow sits inside the viewBox rather than filling it, so
+     that scaling the square to the line's height leaves it about a character
+     wide however large the text is. */
+  --whitespace-tab: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%23000000' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round' d='M4 8H11.5M9 5.5 11.5 8 9 10.5'/%3E%3C/svg%3E");
+  /* The marks on the spaces and tabs themselves. Translucent rather than a grey
+     of its own, so that a mark takes a tint from whatever it lands on — the
+     page, or a chunk's red or green wash — and stays a step quieter than the
+     text in both. */
+  --whitespace: rgba(31, 35, 40, 0.26);
 
   /* The diff. The left pane is what the right one is compared against, so a
      chunk reads as taken out on the left and put in on the right: the usual
@@ -103,6 +113,7 @@
   --diff-b-line: rgba(46, 160, 67, 0.15);
   --diff-b-text: rgba(63, 185, 80, 0.4);
   --diff-b-mark: #3fb950;
+  --whitespace: rgba(216, 216, 216, 0.26);
   --editor-caret: #6cb6ff;
   --editor-selection: #2c4a6e;
   color-scheme: dark;
@@ -378,6 +389,25 @@ option {
   color: var(--placeholder);
 }
 
+/* The spaces and tabs, while the setting is on (src/whitespace.ts marks them).
+   Both marks are drawn from the box the character already occupies and are
+   sized as a fraction of it, so they follow the font size without a length of
+   their own: the dot's radius comes off the line's height rather than the
+   character's width, which keeps a half-width and a full-width space wearing
+   the same dot, and the arrow is a mask scaled to the same height.
+
+   Line breaks and the end of the text carry no mark at all: with every space
+   dotted, where a line ends is already plain. */
+#editor .cm-highlightSpace,
+#editor .cm-ideographicSpace {
+  background: radial-gradient(circle farthest-side at 50% 55%, var(--whitespace) 12%, transparent 0) no-repeat;
+}
+
+#editor .cm-highlightTab {
+  background: var(--whitespace);
+  mask: var(--whitespace-tab) left center / contain no-repeat;
+}
+
 /* The line numbers and the change stripe beside them, in the bar's colors
    rather than the greys CodeMirror ships. */
 #editor .cm-gutters {
@@ -629,6 +659,21 @@ option {
 
 .form-row input[type="number"] {
   width: var(--field-width-narrow);
+}
+
+/* The panel's one switch. Left at the browser's own size it reads as small
+   beside a field a --control-height tall, and the tick arrives in the
+   platform's blue rather than this palette's. */
+.form-row input[type="checkbox"] {
+  width: var(--icon-size);
+  height: var(--icon-size);
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.form-row input[type="checkbox"]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 .form-control-with-unit {

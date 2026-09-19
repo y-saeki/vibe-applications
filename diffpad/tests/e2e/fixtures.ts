@@ -95,6 +95,11 @@ export class App {
     return this.pane(side).locator('.cm-changedText')
   }
 
+  /** Every mark a pane draws on its spaces and tabs, while that setting is on. */
+  whitespaceMarks(side: Side): Locator {
+    return this.pane(side).locator('.cm-highlightSpace, .cm-ideographicSpace, .cm-highlightTab')
+  }
+
   /** The gaps the merge view has opened in one pane, opposite lines only the other pane has. */
   gaps(side: Side): Locator {
     return this.pane(side).locator('.cm-mergeSpacer')

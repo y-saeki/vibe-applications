@@ -13,6 +13,7 @@ import { drawSelection, dropCursor, EditorView, keymap, lineNumbers, placeholder
 import { darkTheme } from './dark-theme'
 import { installLineDiff } from './linediff'
 import type { DiffMode, State, Texts } from './state'
+import { whitespaceMarks } from './whitespace'
 
 /** The left pane is `a`, the right one `b`, as MergeView names them. */
 export type Side = 'a' | 'b'
@@ -69,6 +70,10 @@ function colorExtension(dark: boolean): Extension {
   return dark ? darkTheme : []
 }
 
+function whitespaceExtension(show: boolean): Extension {
+  return show ? whitespaceMarks : []
+}
+
 export class Editor {
   readonly merge: MergeView
   /** The pane that last had the keyboard, which is where a command acts. */
@@ -76,6 +81,7 @@ export class Editor {
   private readonly colors = new Compartment()
   private readonly font = new Compartment()
   private readonly tab = new Compartment()
+  private readonly whitespace = new Compartment()
   private readonly defaultFontFamily: string
 
   constructor(options: EditorOptions) {
@@ -88,6 +94,7 @@ export class Editor {
       this.colors.of(colorExtension(options.dark)),
       this.font.of(fontTheme(initial.fontSize, this.fontFamily(initial.fontFamily), initial.fontWeight)),
       this.tab.of(tabExtension(initial.tabSize)),
+      this.whitespace.of(whitespaceExtension(initial.showWhitespace)),
       history(),
       drawSelection(),
       dropCursor(),
@@ -172,6 +179,11 @@ export class Editor {
 
   setTabSize(size: number): void {
     this.reconfigureBoth(this.tab.reconfigure(tabExtension(size)))
+  }
+
+  /** Whether the spaces and tabs in both panes carry a mark. */
+  setShowWhitespace(show: boolean): void {
+    this.reconfigureBoth(this.whitespace.reconfigure(whitespaceExtension(show)))
   }
 
   private reconfigureBoth(effect: StateEffect<unknown>): void {

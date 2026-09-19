@@ -264,6 +264,37 @@ VS Code や difff は先に行同士を対応付け、その中で初めて文�
 `.cm-mergeViewEditor` を縦の flex にしてエディタと `.cm-scroller` を下端まで伸ばし、`.cm-content` は自身の
 `min-height: 100%` でそれに追随します(`tests/e2e/diff.spec.ts` の「下の余白をクリック」のケースが見ています)。
 
+## 空白文字の表示
+
+環境設定の「空白文字を表示」を入れると、両方のペインの空白文字に印が付きます(`src/whitespace.ts`)。設定は
+`state.json` の `showWhitespace` に残り、エディタ側では `src/editor.ts` の Compartment 1 つで、他の設定と同じく
+エディタを作り直さずに差し替えます。
+
+印を付けるのは 3 種類です。
+
+| 文字 | 付くクラス | 出どころ |
+|---|---|---|
+| タブ | `.cm-highlightTab` | `@codemirror/view` の `highlightWhitespace` |
+| スペース (U+0020) | `.cm-highlightSpace` | 同上 |
+| 全角スペース (U+3000) | `.cm-ideographicSpace` | `src/whitespace.ts` の `MatchDecorator` |
+
+`highlightWhitespace` が見ているのは `/\t| /` だけで、全角スペースは通りません。日本語のテキストを比べる道具で
+これを落とすと、「印が付いていない = 空白がない」と読めてしまい、まさに探しに来た差異を隠します。そのため
+同じ形の印を付ける規則を 1 つ足しています。
+
+改行と文末には印を付けません。空白文字に印が付けば行の終わりは自明で、全行に印が並ぶ分だけうるさくなります
+([#79](https://github.com/y-saeki/vibe-applications/issues/79))。
+
+印の描き方は `src/style.css` です。スペースの点は放射グラデーション、タブの矢印は `--whitespace-tab` を
+マスクして `--whitespace` で塗ります。どちらも長さを 1 つも持ちません。文字が占める箱そのものを基準に、
+点の半径は行の高さに対する割合、矢印はその高さに合わせた `contain` で決めています。フォントサイズを変えても
+印だけ取り残されないのがこのためで、半角と全角のスペースが同じ大きさの点になるのも、幅ではなく高さから
+取っているためです。`--whitespace` は半透明で、下にあるもの(地の色、chunk の赤や緑)の色をわずかに受けます。
+
+タブの矢印はスパンをその形に切り抜いて描くので、スパンの中に何かが描かれていれば一緒に切り抜かれます。
+`.cm-changedText` と入れ子になるときは必ず空白文字の側が内側なので実際には起きませんが、それが前提だと
+コードからは読めないため、`tests/e2e/preferences.spec.ts` が子要素を持たないことを見ています。
+
 ## プラットフォーム固有の実装
 
 キーボードショートカットは、macOS ではメニューバーのアクセラレータとして、Windows ではアプリ内のキー処理として
@@ -309,7 +340,7 @@ Windows のインストーラは Tauri の NSIS スクリプトをそのまま�
 | 角丸 | `--radius-sm` / `-md` / `-lg` | 部品の大きさに対応した 3 段(アイコンボタン / 高さ `--control-height` のコントロール / パネル) |
 | 寸法 | `--control-height`、`--icon-size`、`--icon-button-size`、`--statusbar-height`、`--titlebar-height` | コントロールとバーの大きさ |
 | レイアウト | `--field-width-narrow`、`--label-width`、`--panel-width`、`--panel-inset`、`--mode-width`、`--count-width` | 環境設定パネルの配置と、ステータスバーの件数セル・表示単位セレクタの幅 |
-| パレット | `--bg`、`--fg`、`--muted`、`--muted-strong`、`--placeholder`、`--border` など | 色、影 2 段(`--shadow-panel` / `--shadow-popup`)、描き込む印 2 枚(シェブロン / ×)、差分の色 6 つ(`--diff-a-line` / `-text` / `-mark` と `b` 側) |
+| パレット | `--bg`、`--fg`、`--muted`、`--muted-strong`、`--placeholder`、`--border` など | 色、影 2 段(`--shadow-panel` / `--shadow-popup`)、描き込む印 3 枚(シェブロン / × / タブの矢印)、差分の色 6 つ(`--diff-a-line` / `-text` / `-mark` と `b` 側)、空白文字の印(`--whitespace`) |
 
 基準にしたのは Windows 11 のメモ帳のステータスバーで、draftpad と同じ寸法・同じパレットです。macOS では
 `-apple-system`、Windows では Segoe UI が当たるだけで、寸法は共通です。OS ごとに変えたくなったら

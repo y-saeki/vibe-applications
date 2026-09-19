@@ -48,8 +48,8 @@ const LIMITS = {
   families: FAMILIES,
   /** Everything else measured in pixels: control metrics and layout. */
   otherLengths: { budget: 11, accepts: (px) => px % 4 === 0, wants: 'a multiple of 4px' },
-  /** The palette, including the two shadows, the two masked marks and the six diff colors. */
-  palette: 25,
+  /** The palette, including the two shadows, the three masked marks and the six diff colors. */
+  palette: 27,
   /** Hairlines, focus rings and optical nudges stay where they are used. */
   literalPx: 2,
 }

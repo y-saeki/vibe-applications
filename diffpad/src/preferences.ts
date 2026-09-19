@@ -18,6 +18,7 @@ export class Preferences {
   private readonly fontList: HTMLDataListElement
   private readonly fontWeight: HTMLSelectElement
   private readonly tabSize: HTMLInputElement
+  private readonly showWhitespace: HTMLInputElement
   private fontsLoaded = false
 
   constructor(
@@ -32,6 +33,7 @@ export class Preferences {
     this.fontList = q('#font-list')
     this.fontWeight = q('#pref-font-weight')
     this.tabSize = q('#pref-tab-size')
+    this.showWhitespace = q('#pref-show-whitespace')
     q<HTMLElement>('#pref-version').textContent = `diffpad ${options.version}`
     this.fontFamily.placeholder = options.defaultFontFamily
 
@@ -48,6 +50,7 @@ export class Preferences {
       this.tabSize.value = String(tabSize)
       store.set({ tabSize })
     })
+    this.showWhitespace.addEventListener('change', () => store.set({ showWhitespace: this.showWhitespace.checked }))
 
     q<HTMLButtonElement>('#preferences-close').addEventListener('click', () => this.close())
     // The dialog fills the window and draws the dim itself, so anything outside
@@ -92,6 +95,7 @@ export class Preferences {
     if (document.activeElement !== this.fontFamily) this.fontFamily.value = state.fontFamily
     this.fontWeight.value = String(state.fontWeight)
     this.tabSize.value = String(state.tabSize)
+    this.showWhitespace.checked = state.showWhitespace
   }
 
   private async loadFonts(): Promise<void> {

@@ -52,7 +52,14 @@ test('gathers the settings into the two groups, in that order', async ({ launch 
 
   // The order in the panel is the order the keyboard walks them in, so one
   // check covers both.
-  const ids = ['#pref-tab-size', '#pref-theme', '#pref-font-family', '#pref-font-weight', '#pref-font-size']
+  const ids = [
+    '#pref-tab-size',
+    '#pref-theme',
+    '#pref-font-family',
+    '#pref-font-weight',
+    '#pref-font-size',
+    '#pref-show-whitespace',
+  ]
   await app.page.locator('#pref-tab-size').focus()
   for (const id of ids) {
     await expect(app.page.locator(id)).toBeFocused()
@@ -67,6 +74,7 @@ test('gathers the settings into the two groups, in that order', async ({ launch 
     )
   expect(await groupOf('#pref-tab-size')).toBe('編集')
   expect(await groupOf('#pref-theme')).toBe('表示')
+  expect(await groupOf('#pref-show-whitespace')).toBe('表示')
 
   // One rule between the two, and it hangs off the group above: a fieldset's
   // block-start border is the one its legend notches and sits on, so a
@@ -178,4 +186,61 @@ test("dims the window with the palette alone, not the browser's own backdrop", a
     () => getComputedStyle(document.getElementById('preferences')!, '::backdrop').backgroundColor,
   )
   expect(backdrop).toBe('rgba(0, 0, 0, 0)')
+})
+
+test('marks the spaces and tabs in both panes, and nothing else', async ({ launch }) => {
+  // One of each on the left, two of each on the right, so the whole chunk is a
+  // difference in whitespace alone — the case the marks exist for.
+  const app = await launch({ state: { textA: 'a b\tc\u3000d', textB: 'a  b\t\tc\u3000\u3000d' } })
+  const showWhitespace = app.page.locator('#pref-show-whitespace')
+
+  await expect(app.whitespaceMarks('a')).toHaveCount(0)
+
+  await app.gear.click()
+  await expect(showWhitespace).not.toBeChecked()
+  await showWhitespace.check()
+  await app.expectSaved((state) => state.showWhitespace)
+  await app.page.keyboard.press('Escape')
+
+  for (const [side, each] of [
+    ['a', 1],
+    ['b', 2],
+  ] as const) {
+    await expect(app.pane(side).locator('.cm-highlightSpace')).toHaveCount(each)
+    await expect(app.pane(side).locator('.cm-highlightTab')).toHaveCount(each)
+    await expect(app.pane(side).locator('.cm-ideographicSpace')).toHaveCount(each)
+    // The line break and the end of the text carry no mark: those three are all
+    // there is on the line, and the pane holds nothing else.
+    await expect(app.whitespaceMarks(side)).toHaveCount(each * 3)
+  }
+
+  // The tab's arrow is painted by clipping its span to that shape, so anything
+  // the merge view drew inside the span would be clipped away with it. The two
+  // never nest that way round — the changed-character mark is the outer one —
+  // and this is what says so.
+  const nested = await app.pane('b').locator('.cm-highlightTab').first().evaluate((span) => span.childElementCount)
+  expect(nested).toBe(0)
+
+  await app.gear.click()
+  await showWhitespace.uncheck()
+  await expect(app.whitespaceMarks('a')).toHaveCount(0)
+  await expect(app.whitespaceMarks('b')).toHaveCount(0)
+  await app.expectSaved((state) => !state.showWhitespace)
+})
+
+test('paints the whitespace marks from the palette, in both themes', async ({ launch }) => {
+  const app = await launch({ colorScheme: 'light', state: { showWhitespace: true, textA: 'a b\tc' } })
+  const space = app.pane('a').locator('.cm-highlightSpace')
+  const tab = app.pane('a').locator('.cm-highlightTab')
+
+  // The dot is a gradient and the arrow a mask over a fill, so the colour shows
+  // up in a different property for each; both come from --whitespace.
+  await expect(space).toHaveCSS('background-image', /rgba\(31, 35, 40, 0\.26\)/)
+  await expect(tab).toHaveCSS('background-color', 'rgba(31, 35, 40, 0.26)')
+  await expect(tab).toHaveCSS('mask-image', /url\("data:image\/svg\+xml/)
+
+  await app.gear.click()
+  await app.page.locator('#pref-theme').selectOption('dark')
+  await expect(space).toHaveCSS('background-image', /rgba\(216, 216, 216, 0\.26\)/)
+  await expect(tab).toHaveCSS('background-color', 'rgba(216, 216, 216, 0.26)')
 })

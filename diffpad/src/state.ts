@@ -14,6 +14,8 @@ export interface State {
   /** The right pane. */
   textB: string
   diffMode: DiffMode
+  /** Whether the spaces and tabs in the two panes carry a mark. */
+  showWhitespace: boolean
   theme: Theme
   fontSize: number
   fontFamily: string

@@ -12,6 +12,7 @@ export interface State {
   textA: string
   textB: string
   diffMode: string
+  showWhitespace: boolean
   theme: string
   fontSize: number
   fontFamily: string
@@ -55,6 +56,7 @@ const DEFAULT_STATE: State = {
   textA: '',
   textB: '',
   diffMode: 'char',
+  showWhitespace: false,
   theme: 'system',
   fontSize: 13,
   fontFamily: '',
