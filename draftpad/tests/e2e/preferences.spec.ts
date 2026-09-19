@@ -51,6 +51,7 @@ test('gathers the settings into the two groups, in that order', async ({ launch 
     '#pref-font-weight',
     '#pref-font-size',
     '#pref-show-whitespace',
+    '#pref-show-indent-guides',
   ]
   await app.page.locator('#pref-mode').focus()
   for (const id of ids) {
@@ -67,6 +68,7 @@ test('gathers the settings into the two groups, in that order', async ({ launch 
   expect(await groupOf('#pref-quick-suggestions')).toBe('編集')
   expect(await groupOf('#pref-theme')).toBe('表示')
   expect(await groupOf('#pref-show-whitespace')).toBe('表示')
+  expect(await groupOf('#pref-show-indent-guides')).toBe('表示')
 
   // One rule between the two, and it hangs off the group above: a fieldset's
   // block-start border is the one its legend notches and sits on, so a
@@ -321,4 +323,60 @@ test('paints the whitespace marks from the palette, in both themes', async ({ la
   await app.page.locator('#pref-theme').selectOption('dark')
   await expect(space).toHaveCSS('background-image', /rgba\(216, 216, 216, 0\.26\)/)
   await expect(tab).toHaveCSS('background-color', 'rgba(216, 216, 216, 0.26)')
+})
+
+test('rules every line that is inside an indented block, and no other', async ({ launch }) => {
+  // A block two levels deep, with a blank line inside it and another line at
+  // the margin under it, so that both of the cases a blank line can be in are
+  // in the same draft.
+  const app = await launch({ state: { text: 'a\n    b\n        c\n\n    d\ne\n' } })
+  const showIndentGuides = app.page.locator('#pref-show-indent-guides')
+
+  await expect(app.indentGuides).toHaveCount(0)
+
+  await app.gear.click()
+  await expect(showIndentGuides).not.toBeChecked()
+  await showIndentGuides.check()
+  await app.expectSaved((state) => state.showIndentGuides)
+  await app.page.keyboard.press('Escape')
+
+  // A line that starts at the margin is in no block and takes nothing, and the
+  // blank line between the two indented ones takes the shallower of them so
+  // that the block's own rule runs on through it. The one under the block,
+  // with nothing indented below it, takes none.
+  expect(await app.indentGuideLevels()).toEqual(['1', '2', '1', '1'])
+
+  await app.gear.click()
+  await showIndentGuides.uncheck()
+  await expect(app.indentGuides).toHaveCount(0)
+  await app.expectSaved((state) => !state.showIndentGuides)
+})
+
+test('counts a level as the tab width, and recounts when that changes', async ({ launch }) => {
+  const app = await launch({ state: { showIndentGuides: true, text: 'a\n    b\n        c\n\n    d\ne\n' } })
+  const stepOf = () =>
+    app.editor.evaluate((content) => getComputedStyle(content).getPropertyValue('--indent-guide-step').trim())
+
+  expect(await stepOf()).toBe('4')
+  expect(await app.indentGuideLevels()).toEqual(['1', '2', '1', '1'])
+
+  // The same four and eight columns of indentation are twice as many levels at
+  // a tab width of 2, and the blank line inside the block follows them.
+  await app.gear.click()
+  await app.page.locator('#pref-tab-size').fill('2')
+  await app.page.keyboard.press('Escape')
+
+  expect(await stepOf()).toBe('2')
+  expect(await app.indentGuideLevels()).toEqual(['2', '4', '2', '2'])
+})
+
+test('paints the indentation rules from the palette, in both themes', async ({ launch }) => {
+  const app = await launch({ colorScheme: 'light', state: { showIndentGuides: true, text: 'a\n    b' } })
+  const guides = app.indentGuides
+
+  await expect(guides).toHaveCSS('background-image', /rgba\(31, 35, 40, 0\.14\)/)
+
+  await app.gear.click()
+  await app.page.locator('#pref-theme').selectOption('dark')
+  await expect(guides).toHaveCSS('background-image', /rgba\(216, 216, 216, 0\.14\)/)
 })

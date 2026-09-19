@@ -171,6 +171,7 @@ async function main(): Promise<void> {
     tabSize: () => ed.setTabSize(store.state.tabSize),
     quickSuggestions: () => ed.setQuickSuggestions(store.state.quickSuggestions),
     showWhitespace: () => ed.setShowWhitespace(store.state.showWhitespace),
+    showIndentGuides: () => ed.setShowIndentGuides(store.state.showIndentGuides),
     alwaysOnTop: () => {
       statusBar.setAlwaysOnTop(store.state.alwaysOnTop)
       void appWindow.setAlwaysOnTop(store.state.alwaysOnTop)

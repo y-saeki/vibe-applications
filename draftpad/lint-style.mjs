@@ -48,8 +48,9 @@ const LIMITS = {
   families: FAMILIES,
   /** Everything else measured in pixels: control metrics and layout. */
   otherLengths: { budget: 19, accepts: (px) => px % 4 === 0, wants: 'a multiple of 4px' },
-  /** The palette, including the two shadows and the eight masked and drawn marks. */
-  palette: 34,
+  /** The palette, including the two shadows, the eight masked and drawn marks,
+      and the two counts src/indent-guides.ts fills in while it draws. */
+  palette: 37,
   /** Hairlines, focus rings and optical nudges stay where they are used. */
   literalPx: 2,
 }
