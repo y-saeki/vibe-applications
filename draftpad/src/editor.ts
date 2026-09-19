@@ -13,6 +13,7 @@ import { languageExtension } from './languages'
 import { searchPanelExtras } from './search-panel'
 import type { State } from './state'
 import { vimExtension } from './vim'
+import { whitespaceMarks } from './whitespace'
 
 /** The two toggles in the search panel, as they are persisted. */
 export interface SearchOptions {
@@ -86,6 +87,10 @@ function colorExtension(dark: boolean): Extension {
   return dark ? darkTheme : syntaxHighlighting(defaultHighlightStyle)
 }
 
+function whitespaceExtension(show: boolean): Extension {
+  return show ? whitespaceMarks : []
+}
+
 // The search extension reads these when it builds the initial query, which is
 // the one the panel shows the first time it opens. Every later query inherits
 // the flags from the one before it, so setting them here is enough to carry the
@@ -107,6 +112,7 @@ export class Editor {
   private readonly font = new Compartment()
   private readonly tab = new Compartment()
   private readonly completion = new Compartment()
+  private readonly whitespace = new Compartment()
   private readonly defaultFontFamily: string
 
   private constructor(options: EditorOptions, language: Extension, vim: Extension) {
@@ -122,6 +128,7 @@ export class Editor {
         this.font.of(fontTheme(initial.fontSize, this.fontFamily(initial.fontFamily), initial.fontWeight)),
         this.tab.of(tabExtension(initial.tabSize)),
         this.completion.of(completionExtension(initial.quickSuggestions)),
+        this.whitespace.of(whitespaceExtension(initial.showWhitespace)),
         history(),
         drawSelection(),
         dropCursor(),
@@ -240,6 +247,11 @@ export class Editor {
 
   setQuickSuggestions(enabled: boolean): void {
     this.view.dispatch({ effects: this.completion.reconfigure(completionExtension(enabled)) })
+  }
+
+  /** Whether the spaces and tabs in the draft carry a mark. */
+  setShowWhitespace(show: boolean): void {
+    this.view.dispatch({ effects: this.whitespace.reconfigure(whitespaceExtension(show)) })
   }
 
   private fontFamily(family: string): string {

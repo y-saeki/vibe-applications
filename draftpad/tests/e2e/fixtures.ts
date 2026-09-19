@@ -88,6 +88,11 @@ export class App {
     this.searchRegexp = this.searchPanel.getByLabel('正規表現')
   }
 
+  /** Every mark the editor draws on its spaces and tabs, while that setting is on. */
+  get whitespaceMarks(): Locator {
+    return this.page.locator('.cm-highlightSpace, .cm-ideographicSpace, .cm-highlightTab')
+  }
+
   /** One of the search panel's four buttons, by the name CodeMirror gives it. */
   searchButton(name: 'prev' | 'next' | 'replace' | 'replaceAll'): Locator {
     return this.searchPanel.locator(`button[name="${name}"]`)

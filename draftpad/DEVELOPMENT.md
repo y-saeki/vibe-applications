@@ -182,6 +182,38 @@ Release が作られないことをそこで警告します。動作確認の前
 書いてあります。自分でビルドした `.app` には quarantine 属性が付かないため、開発中にこの操作は要りません。
 macOS Sequoia (15.0) 以降では、以前あった Control クリック →「開く」による回避はできません。
 
+## 空白文字の表示
+
+環境設定の「空白文字を表示」を入れると、本文の空白文字に印が付きます(`src/whitespace.ts`)。設定は
+`state.json` の `showWhitespace` に残り、エディタ側では `src/editor.ts` の Compartment 1 つで、他の設定と同じく
+エディタを作り直さずに差し替えます。
+
+印を付けるのは 3 種類です。
+
+| 文字 | 付くクラス | 出どころ |
+|---|---|---|
+| タブ | `.cm-highlightTab` | `@codemirror/view` の `highlightWhitespace` |
+| スペース (U+0020) | `.cm-highlightSpace` | 同上 |
+| 全角スペース (U+3000) | `.cm-ideographicSpace` | `src/whitespace.ts` の `MatchDecorator` |
+
+`highlightWhitespace` が見ているのは `/\t| /` だけで、全角スペースは通りません。日本語を書く道具でこれを
+落とすと、「印が付いていない = 空白がない」と読めてしまい、この設定を入れた当人がいちばん見つけたい文字が
+見えないままになります。そのため同じ形の印を付ける規則を 1 つ足しています。
+
+改行と文末には印を付けません。空白文字に印が付けば行の終わりは自明で、全行に印が並ぶ分だけうるさくなります
+([#79](https://github.com/y-saeki/vibe-applications/issues/79))。
+
+印の描き方は `src/style.css` です。スペースの点は放射グラデーション、タブの矢印は `--whitespace-tab` を
+マスクして `--whitespace` で塗ります。どちらも長さを 1 つも持ちません。文字が占める箱そのものを基準に、
+点の半径は行の高さに対する割合、矢印はその高さに合わせた `contain` で決めています。本文のフォントサイズは
+設定項目なので、印だけ取り残されないのがこのためで、半角と全角のスペースが同じ大きさの点になるのも、幅では
+なく高さから取っているためです。`--whitespace` は半透明で、下にあるもの(地の色、検索の一致、選択範囲)の
+色をわずかに受けます。
+
+タブの矢印はスパンをその形に切り抜いて描くので、スパンの中に何かが描かれていれば一緒に切り抜かれます。
+検索の一致や選択の一致と入れ子になるときは必ず空白文字の側が内側なので実際には起きませんが、それが前提だと
+コードからは読めないため、`tests/e2e/preferences.spec.ts` が子要素を持たないことを見ています。
+
 ## プラットフォーム固有の実装
 
 キーボードショートカットは、macOS ではメニューバーのアクセラレータとして、Windows ではアプリ内のキー処理として
@@ -311,7 +343,7 @@ Tauri の NSIS スクリプトはビルド時のテンプレートなので、`t
 | 角丸 | `--radius-sm` / `-md` / `-lg` | 部品の大きさに対応した 3 段(チェックボックスとアイコンボタン / 高さ `--control-height` のコントロール / パネル) |
 | 寸法 | `--control-height`、`--checkbox-size`、`--toggle-width`、`--toggle-size-search`、`--glyph-size`、`--icon-size`、`--icon-button-size`、`--statusbar-height`、`--titlebar-height` | コントロールとバーの大きさ |
 | レイアウト | `--field-width`、`--field-width-narrow`、`--field-width-search`、`--button-width-search`、`--label-width`、`--panel-width`、`--panel-inset`、`--language-width`、`--count-width`、`--count-width-narrow` | 入力欄・ラベル列・検索パネルと環境設定パネルの配置と、ステータスバーの文字数・行数セルの幅 |
-| パレット | `--bg`、`--fg`、`--muted`、`--muted-strong`、`--placeholder`、`--border` など | 色、影 2 段(`--shadow-panel` / `--shadow-popup`)、描き込む印 7 枚(✓ / シェブロン上下 / × / 横棒 / Aa / .*) |
+| パレット | `--bg`、`--fg`、`--muted`、`--muted-strong`、`--placeholder`、`--border` など | 色、影 2 段(`--shadow-panel` / `--shadow-popup`)、描き込む印 8 枚(✓ / シェブロン上下 / × / 横棒 / Aa / .* / タブの矢印)、空白文字の印(`--whitespace`) |
 
 基準にしたのは Windows 11 のメモ帳のステータスバーです。macOS では `-apple-system`、Windows では Segoe UI が
 当たるだけで、寸法は共通です。OS ごとに変えたくなったら `:root[data-platform="macos"]` でトークンを上書き
@@ -333,9 +365,10 @@ Tauri の NSIS スクリプトはビルド時のテンプレートなので、`t
 検索パネルの「Aa」「.\*」トグルも同じ理由で画像です(`--case-mark` / `--regexp-mark`)。文字として置くと、
 当たるフォントが macOS と Windows で違うぶんだけ字形も送り幅も変わり、20px の枠の中での位置が揃いません。
 
-線の太さは 5 枚とも 1.4〜1.5 に揃えてあります。16×16 の viewBox に対しての値なので、`--glyph-size` で
-描く印も `--icon-size` で描く印も、画面上ではほぼ同じ太さになります。ここを 1 枚だけ太くすると、その印だけ
-別の出どころから持ってきたように見えます。
+線の太さは 6 枚とも 1.4〜1.5 に揃えてあります。16×16 の viewBox に対しての値なので、`--glyph-size` で
+描く印も `--icon-size` で描く印も、画面上ではほぼ同じ太さになります。タブの矢印は行の高さに合わせて
+拡大しますが、これもその範囲に収まります。ここを 1 枚だけ太くすると、その印だけ別の出どころから
+持ってきたように見えます。
 
 2 つのシェブロンと `--close-icon` はマスクなので `currentColor` で塗れますが、`--check-mark` と `--minus-mark`
 は `input` の擬似要素の背景として敷くため色を焼き込んであり、テーマごとに 2 つずつ持っています。

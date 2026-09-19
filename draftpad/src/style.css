@@ -39,6 +39,16 @@
   --regexp-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%23000000' stroke-width='1.4' stroke-linecap='round' d='M9.91 4.2v6.2M7.225 5.75 12.595 8.85M7.225 8.85 12.595 5.75'/%3E%3Ccircle cx='4.01' cy='11.2' r='1.25' fill='%23000000'/%3E%3C/svg%3E");
   /* The same chevron turned over, for the search panel's previous button. */
   --chevron-up: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%23000000' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round' d='M4.5 9.5 8 6 11.5 9.5'/%3E%3C/svg%3E");
+  /* Masked the same way, for the arrow that stands in for a tab when the
+     whitespace setting is on. The arrow sits inside the viewBox rather than
+     filling it, so that scaling the square to the line's height leaves it about
+     a character wide however large the text is. */
+  --whitespace-tab: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%23000000' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round' d='M4 8H11.5M9 5.5 11.5 8 9 10.5'/%3E%3C/svg%3E");
+  /* The marks on the spaces and tabs themselves. Translucent rather than a grey
+     of its own, so that a mark takes a tint from whatever it lands on — the
+     page, a search match, a selection — and stays a step quieter than the text
+     in both themes. */
+  --whitespace: rgba(31, 35, 40, 0.26);
   /* Masked the same way, for the buttons that close a panel. */
   --close-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%23000000' stroke-width='1.5' stroke-linecap='round' d='M4 4 12 12M12 4 4 12'/%3E%3C/svg%3E");
   /* The tick inside a checked box, in whichever color reads on --accent. It is
@@ -125,6 +135,7 @@
   --toggle-track: var(--control-bg);
   --toggle-knob: var(--control-active);
   --toggle-knob-border: transparent;
+  --whitespace: rgba(216, 216, 216, 0.26);
   --editor-caret: #6cb6ff;
   --editor-selection: #2c4a6e;
   --editor-selection-match: rgba(255, 255, 255, 0.1);
@@ -412,6 +423,32 @@ option {
 
 #editor .cm-line {
   padding: 0 var(--space-3);
+}
+
+/* The spaces and tabs, while the setting is on (src/whitespace.ts marks them).
+   Both marks are drawn from the box the character already occupies and are
+   sized as a fraction of it, so they follow the editor's font size without a
+   length of their own: the dot's radius comes off the line's height rather than
+   the character's width, which keeps a half-width and a full-width space
+   wearing the same dot, and the arrow is a mask scaled to the same height.
+
+   The dot's edge is a short ramp rather than a hard stop. Each space is a box
+   of its own and their widths are fractional, so consecutive ones land on
+   different halves of a pixel; a hard-edged circle this small then rasterises
+   differently in each of them, and a run of four spaces shows one dot as a thin
+   sliver beside three square ones. A soft edge has no hard boundary to land
+   either side of, and the run comes out even.
+
+   Line breaks and the end of the draft carry no mark at all: with every space
+   dotted, where a line ends is already plain. */
+#editor .cm-highlightSpace,
+#editor .cm-ideographicSpace {
+  background: radial-gradient(circle farthest-side at 50% 55%, var(--whitespace) 8%, transparent 20%) no-repeat;
+}
+
+#editor .cm-highlightTab {
+  background: var(--whitespace);
+  mask: var(--whitespace-tab) left center / contain no-repeat;
 }
 
 /* The Vim status line keeps the editor font, at the status bar's size. */

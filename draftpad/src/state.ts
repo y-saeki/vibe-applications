@@ -17,6 +17,8 @@ export interface State {
   fontWeight: number
   tabSize: number
   quickSuggestions: boolean
+  /** Whether the spaces and tabs in the draft carry a mark. */
+  showWhitespace: boolean
   alwaysOnTop: boolean
   searchCaseSensitive: boolean
   searchRegexp: boolean

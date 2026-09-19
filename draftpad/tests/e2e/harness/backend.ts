@@ -18,6 +18,7 @@ export interface State {
   fontWeight: number
   tabSize: number
   quickSuggestions: boolean
+  showWhitespace: boolean
   alwaysOnTop: boolean
   searchCaseSensitive: boolean
   searchRegexp: boolean
@@ -67,6 +68,7 @@ const DEFAULT_STATE: State = {
   fontWeight: 400,
   tabSize: 4,
   quickSuggestions: true,
+  showWhitespace: false,
   alwaysOnTop: false,
   searchCaseSensitive: false,
   searchRegexp: false,
