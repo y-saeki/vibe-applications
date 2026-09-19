@@ -1,10 +1,11 @@
-//! Commands invoked from the webview (`invoke(...)` in `src/state.ts` and
-//! `src/preferences.ts`).
+//! Commands invoked from the webview (`invoke(...)` in `src/state.ts`,
+//! `src/preferences.ts` and `src/context-menu.ts`).
 
 use serde::Serialize;
-use tauri::AppHandle;
+use tauri::{AppHandle, Window};
 
 use crate::fonts;
+use crate::menu::{self, ContextState};
 use crate::state::{self, State};
 
 /// Everything the frontend needs at startup in a single round trip.
@@ -59,4 +60,15 @@ pub async fn list_fonts() -> Vec<String> {
 #[tauri::command]
 pub fn quit_app(app: AppHandle) {
     app.exit(0);
+}
+
+/// Opens the right-click menu the page asked for instead of the webview's own.
+///
+/// Synchronous on purpose: a command without `async` runs on the main thread,
+/// which is where a native menu has to be put up.
+#[tauri::command]
+pub fn show_context_menu(window: Window, state: ContextState) {
+    if let Err(err) = menu::show_context(&window, &state) {
+        eprintln!("draftpad: failed to open the context menu: {err}");
+    }
 }

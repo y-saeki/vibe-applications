@@ -6,6 +6,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window'
 import { readText } from '@tauri-apps/plugin-clipboard-manager'
 
 import { comboFromEvent, createCommands, indexByKeys } from './commands'
+import { installContextMenu } from './context-menu'
 import { Editor } from './editor'
 import { defaultFontFamily } from './fonts'
 import { Preferences } from './preferences'
@@ -175,6 +176,16 @@ async function main(): Promise<void> {
     for (const key of changed) apply[key]?.()
   })
   if (state.alwaysOnTop) void appWindow.setAlwaysOnTop(true)
+
+  // ---- the right-click menu ----------------------------------------------
+  // The same guards the command table carries: while the preferences panel
+  // holds the keyboard, neither the history nor the search panel is the
+  // draft's to touch.
+  installContextMenu(() => ({
+    canUndo: !preferences.isOpen && ed.canUndo,
+    canRedo: !preferences.isOpen && ed.canRedo,
+    canSearch: !preferences.isOpen,
+  }))
 
   // ---- menu (macOS) and keyboard shortcuts (elsewhere) -------------------
   await listen<string>('menu', (event) => {
