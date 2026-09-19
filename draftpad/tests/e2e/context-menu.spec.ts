@@ -1,9 +1,16 @@
-// A right click opens draftpad's own menu (src-tauri/src/menu.rs) rather than
-// the webview's. The menu itself is native, so what can be checked here is the
-// half that lives in the page: that the webview's menu is stopped, and what the
-// page tells the Rust side to enable in its place.
+// A right click opens draftpad's own menu. The two platforms get there
+// differently: macOS cancels the webview's menu and asks the Rust side for a
+// native one (src-tauri/src/menu.rs), while Windows keeps the webview's and
+// trims it in place (src-tauri/src/context_menu.rs), which the page takes no
+// part in.
+//
+// Either menu is native, so what can be checked here is the half that lives in
+// the page: which platform cancels the click, and what the macOS path tells the
+// Rust side to enable.
 
 import { type App, expect, test } from './fixtures'
+
+const MAC = { platform: 'macos' } as const
 
 /** Resolves with whether the page had already cancelled the next right click. */
 function preventedNextContextMenu(app: App): Promise<boolean> {
@@ -17,20 +24,30 @@ function preventedNextContextMenu(app: App): Promise<boolean> {
   )
 }
 
-for (const platform of ['macos', 'windows']) {
-  test(`the webview's own menu never opens on ${platform}`, async ({ launch }) => {
-    const app = await launch({ platform })
+test("macOS cancels the webview's menu and asks for draftpad's", async ({ launch }) => {
+  const app = await launch(MAC)
 
-    const prevented = preventedNextContextMenu(app)
-    await app.editor.click({ button: 'right' })
+  const prevented = preventedNextContextMenu(app)
+  await app.editor.click({ button: 'right' })
 
-    expect(await prevented).toBe(true)
-    await expect.poll(() => app.commands()).toContain('show_context_menu')
-  })
-}
+  expect(await prevented).toBe(true)
+  await expect.poll(() => app.commands()).toContain('show_context_menu')
+})
+
+test("Windows lets the webview open its own menu", async ({ launch }) => {
+  const app = await launch({ platform: 'windows' })
+
+  const prevented = preventedNextContextMenu(app)
+  await app.editor.click({ button: 'right' })
+
+  // WebView2 trims that menu on the Rust side, so the page neither cancels the
+  // click nor asks for a menu of its own.
+  expect(await prevented).toBe(false)
+  expect(await app.commands()).not.toContain('show_context_menu')
+})
 
 test('a right click anywhere in the window asks for the menu', async ({ launch }) => {
-  const app = await launch()
+  const app = await launch(MAC)
 
   // The status bar is no part of the draft, but a right click there is still a
   // right click on draftpad.
@@ -39,14 +56,14 @@ test('a right click anywhere in the window asks for the menu', async ({ launch }
 })
 
 test('a fresh draft offers neither undo nor redo', async ({ launch }) => {
-  const app = await launch()
+  const app = await launch(MAC)
 
   await app.editor.click({ button: 'right' })
   await expect.poll(() => app.contextMenuState()).toEqual({ canUndo: false, canRedo: false, canSearch: true })
 })
 
 test('the menu follows what the history holds', async ({ launch }) => {
-  const app = await launch()
+  const app = await launch(MAC)
 
   await app.typeInEditor('書いた文字')
   await app.editor.click({ button: 'right' })
@@ -58,7 +75,7 @@ test('the menu follows what the history holds', async ({ launch }) => {
 })
 
 test('the menu leaves the draft alone while preferences has the keyboard', async ({ launch }) => {
-  const app = await launch()
+  const app = await launch(MAC)
 
   await app.typeInEditor('残るはず')
   await app.gear.click()

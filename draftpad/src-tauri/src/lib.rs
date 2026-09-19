@@ -1,6 +1,8 @@
 #[cfg(target_os = "windows")]
 mod autofill;
 mod commands;
+#[cfg(target_os = "windows")]
+mod context_menu;
 mod fonts;
 #[cfg(target_os = "windows")]
 mod jumplist;
@@ -69,6 +71,7 @@ pub fn run() {
             #[cfg(target_os = "windows")]
             {
                 autofill::disable(&window);
+                context_menu::install(&window);
                 jumplist::install();
             }
             Ok(())

@@ -38,7 +38,7 @@ covers it changes in the same commit:
 | Changed | Follow it in |
 |---|---|
 | An entry or shortcut in the command table (`src/commands.ts`) | `tests/e2e/shortcuts.spec.ts` (the Windows path) **and** `tests/e2e/menu.spec.ts` (the macOS path) |
-| What the right-click menu offers (`src/context-menu.ts`, `src-tauri/src/menu.rs`) | `tests/e2e/context-menu.spec.ts` |
+| What the right-click menu offers (`src/context-menu.ts`, `src-tauri/src/menu.rs`, `src-tauri/src/context_menu.rs`) | `tests/e2e/context-menu.spec.ts` |
 | A preferences control | `tests/e2e/preferences.spec.ts` |
 | What is restored at startup | `tests/e2e/startup.spec.ts` |
 | Editing behaviour, or the status bar | `tests/e2e/editing.spec.ts` |

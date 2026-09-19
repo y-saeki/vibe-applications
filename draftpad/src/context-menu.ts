@@ -1,8 +1,11 @@
-// The right-click menu. The page draws none of it: it only stops the webview
-// from opening its own — WKWebView's is a page of speech, font, substitution
-// and writing-tools entries that have nothing to do with a draft — and asks
-// the Rust side to put up a native one holding the few commands that do
+// The right-click menu on macOS. The page draws none of it: it only stops
+// WKWebView from opening its own — a page of speech, font, substitution and
+// writing-tools entries that have nothing to do with a draft — and asks the
+// Rust side to put up a native one holding the few commands that do
 // (src-tauri/src/menu.rs).
+//
+// Windows keeps the webview's own menu, which WebView2 lets `context_menu.rs`
+// trim in place, so nothing here runs there.
 
 import { invoke } from '@tauri-apps/api/core'
 
@@ -14,8 +17,7 @@ export interface ContextMenuState {
 }
 
 /**
- * Replaces the webview's context menu with draftpad's, everywhere in the
- * window.
+ * Replaces WKWebView's context menu with draftpad's, everywhere in the window.
  *
  * @param state what to leave enabled in the menu
  */

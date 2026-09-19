@@ -1,10 +1,15 @@
-//! Native menus: the menu bar, which is macOS only because Windows has no menu
-//! bar and handles the same shortcuts in the webview, and the right-click menu,
-//! which both platforms show.
+//! Native menus: the menu bar and the right-click menu.
+//!
+//! The menu bar is macOS only; Windows has no menu bar, and handles the same
+//! shortcuts in the webview. The right-click menu built here is macOS's too.
+//! WKWebView will not let its own menu be trimmed, so on macOS the page
+//! suppresses it (`src/context-menu.ts`) and asks for this one instead, while
+//! Windows keeps the webview's menu and trims it in place (`context_menu.rs`).
+//! Nothing stops this menu from being put up anywhere; only macOS asks.
 //!
 //! Menu items with an application-level meaning are forwarded to the webview
 //! as a `menu` event carrying the item id, and `src/commands.ts` maps the id
-//! onto its command table. Both menus use predefined items for cut, copy,
+//! onto its command table. Both menus here use predefined items for cut, copy,
 //! paste and select all; the menu bar has to, because WKWebView only routes
 //! Cmd+C/V/X/A to the page when such items exist. Undo and redo are forwarded
 //! items instead: the predefined ones drive WKWebView's own undo manager,

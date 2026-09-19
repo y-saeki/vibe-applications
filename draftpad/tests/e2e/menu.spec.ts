@@ -62,6 +62,16 @@ test('the menu leaves the draft alone while preferences has the keyboard', async
   await expect(app.editor).toContainText('残るはず')
 })
 
+test('the menu leaves the search panel closed while preferences has the keyboard', async ({ launch }) => {
+  const app = await launch(MAC)
+
+  await app.runMenuCommand('preferences')
+  await expect(app.preferences).toBeVisible()
+
+  await app.runMenuCommand('find')
+  await expect(app.searchPanel).toBeHidden()
+})
+
 test('the menu writes the draft out before quitting', async ({ launch }) => {
   const app = await launch(MAC)
 

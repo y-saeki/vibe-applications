@@ -94,6 +94,18 @@ test('Ctrl+Shift+V leaves the draft alone while the search panel has the keyboar
   await expect(app.editor).toHaveText('そのまま')
 })
 
+test('Ctrl+F leaves the search panel closed while preferences has the keyboard', async ({ launch }) => {
+  const app = await launch({ platform: 'windows' })
+
+  await app.press('Comma')
+  await expect(app.preferences).toBeVisible()
+
+  // The panel would open behind the preferences panel, where the keyboard
+  // cannot reach it.
+  await app.press('KeyF')
+  await expect(app.searchPanel).toBeHidden()
+})
+
 test('Ctrl+, opens the preferences panel', async ({ launch }) => {
   const app = await launch({ platform: 'windows' })
 
