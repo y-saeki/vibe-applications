@@ -72,11 +72,13 @@ pub struct ContextState {
 /// Puts draftpad's right-click menu up at the pointer, in place of the one the
 /// webview would have opened.
 ///
-/// The four editing items are predefined, so they carry the platform's own
-/// wording and reach whatever holds the caret — the draft, the search panel's
-/// fields, the preferences panel's — without this side having to know which.
-/// They also stay enabled throughout, which is all a predefined item allows;
-/// each one simply does nothing when there is no selection to act on.
+/// The four editing items are predefined, so they reach whatever holds the
+/// caret — the draft, the search panel's fields, the preferences panel's —
+/// without this side having to know which. They still need their wording
+/// spelled out: a predefined item carries muda's own English text, not the
+/// platform's. They also stay enabled throughout, which is all a predefined
+/// item allows; each one simply does nothing when there is no selection to
+/// act on.
 ///
 /// The call only returns once the menu is dismissed: a native menu runs a modal
 /// loop of its own.
@@ -91,11 +93,11 @@ pub fn show_context(window: &Window, state: &ContextState) -> tauri::Result<()> 
         .item(&item("undo", "元に戻す", state.can_undo)?)
         .item(&item("redo", "やり直す", state.can_redo)?)
         .separator()
-        .cut()
-        .copy()
-        .paste()
+        .cut_with_text("切り取り")
+        .copy_with_text("コピー")
+        .paste_with_text("貼り付け")
         .separator()
-        .select_all()
+        .select_all_with_text("すべてを選択")
         .separator()
         .item(&item("find", "検索・置換", state.can_search)?)
         .build()?;
