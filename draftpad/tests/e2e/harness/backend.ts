@@ -19,6 +19,7 @@ export interface State {
   tabSize: number
   quickSuggestions: boolean
   showWhitespace: boolean
+  showIndentGuides: boolean
   alwaysOnTop: boolean
   searchCaseSensitive: boolean
   searchRegexp: boolean
@@ -69,6 +70,7 @@ const DEFAULT_STATE: State = {
   tabSize: 4,
   quickSuggestions: true,
   showWhitespace: false,
+  showIndentGuides: false,
   alwaysOnTop: false,
   searchCaseSensitive: false,
   searchRegexp: false,

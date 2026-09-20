@@ -26,6 +26,8 @@ pub struct State {
     pub quick_suggestions: bool,
     /// Whether the spaces and tabs in the draft carry a mark.
     pub show_whitespace: bool,
+    /// Whether each level of indentation carries a rule.
+    pub show_indent_guides: bool,
     pub always_on_top: bool,
     pub search_case_sensitive: bool,
     pub search_regexp: bool,
@@ -46,6 +48,7 @@ impl Default for State {
             tab_size: 4,
             quick_suggestions: true,
             show_whitespace: false,
+            show_indent_guides: false,
             always_on_top: false,
             search_case_sensitive: false,
             search_regexp: false,
@@ -151,6 +154,7 @@ mod tests {
         assert_eq!(state.tab_size, 4);
         assert!(state.quick_suggestions);
         assert!(!state.show_whitespace);
+        assert!(!state.show_indent_guides);
         assert!(!state.always_on_top);
         assert!(!state.search_case_sensitive);
         assert!(!state.search_regexp);
@@ -171,6 +175,7 @@ mod tests {
             tab_size: 2,
             quick_suggestions: false,
             show_whitespace: true,
+            show_indent_guides: true,
             always_on_top: true,
             search_case_sensitive: true,
             search_regexp: true,
@@ -191,6 +196,7 @@ mod tests {
         assert_eq!(read.tab_size, 2);
         assert!(!read.quick_suggestions);
         assert!(read.show_whitespace);
+        assert!(read.show_indent_guides);
         assert!(read.always_on_top);
         assert!(read.search_case_sensitive);
         assert!(read.search_regexp);
@@ -210,6 +216,7 @@ mod tests {
         assert_eq!(state.font_size, 13);
         assert_eq!(state.font_weight, 400);
         assert!(!state.show_whitespace);
+        assert!(!state.show_indent_guides);
     }
 
     #[test]

@@ -93,6 +93,18 @@ export class App {
     return this.page.locator('.cm-highlightSpace, .cm-ideographicSpace, .cm-highlightTab')
   }
 
+  /** Every line the editor rules for indentation, while that setting is on. */
+  get indentGuides(): Locator {
+    return this.page.locator('.cm-indentGuides')
+  }
+
+  /** How many levels each ruled line is in, from top to bottom. */
+  async indentGuideLevels(): Promise<string[]> {
+    return this.indentGuides.evaluateAll((lines) =>
+      lines.map((line) => (line as HTMLElement).style.getPropertyValue('--indent-guide-levels')),
+    )
+  }
+
   /** One of the search panel's four buttons, by the name CodeMirror gives it. */
   searchButton(name: 'prev' | 'next' | 'replace' | 'replaceAll'): Locator {
     return this.searchPanel.locator(`button[name="${name}"]`)

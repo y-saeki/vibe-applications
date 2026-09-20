@@ -30,6 +30,7 @@ export class Preferences {
   private readonly tabSize: HTMLInputElement
   private readonly quickSuggestions: HTMLInputElement
   private readonly showWhitespace: HTMLInputElement
+  private readonly showIndentGuides: HTMLInputElement
   private fontsLoaded = false
 
   constructor(
@@ -47,6 +48,7 @@ export class Preferences {
     this.tabSize = q('#pref-tab-size')
     this.quickSuggestions = q('#pref-quick-suggestions')
     this.showWhitespace = q('#pref-show-whitespace')
+    this.showIndentGuides = q('#pref-show-indent-guides')
     q<HTMLElement>('#pref-version').textContent = `draftpad ${options.version}`
     this.fontFamily.placeholder = options.defaultFontFamily
 
@@ -66,6 +68,7 @@ export class Preferences {
     })
     this.quickSuggestions.addEventListener('change', () => store.set({ quickSuggestions: this.quickSuggestions.checked }))
     this.showWhitespace.addEventListener('change', () => store.set({ showWhitespace: this.showWhitespace.checked }))
+    this.showIndentGuides.addEventListener('change', () => store.set({ showIndentGuides: this.showIndentGuides.checked }))
 
     q<HTMLButtonElement>('#preferences-close').addEventListener('click', () => this.close())
     // The dialog fills the window and draws the dim itself, so anything outside
@@ -113,6 +116,7 @@ export class Preferences {
     this.tabSize.value = String(state.tabSize)
     this.quickSuggestions.checked = state.quickSuggestions
     this.showWhitespace.checked = state.showWhitespace
+    this.showIndentGuides.checked = state.showIndentGuides
   }
 
   private async loadFonts(): Promise<void> {

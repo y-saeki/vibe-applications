@@ -9,6 +9,7 @@ import { Compartment, EditorState, type Extension } from '@codemirror/state'
 import { drawSelection, dropCursor, EditorView, keymap, type KeyBinding } from '@codemirror/view'
 
 import { darkTheme } from './dark-theme'
+import { indentGuides } from './indent-guides'
 import { languageExtension } from './languages'
 import { searchPanelExtras } from './search-panel'
 import type { State } from './state'
@@ -91,6 +92,10 @@ function whitespaceExtension(show: boolean): Extension {
   return show ? whitespaceMarks : []
 }
 
+function indentGuideExtension(show: boolean): Extension {
+  return show ? indentGuides : []
+}
+
 // The search extension reads these when it builds the initial query, which is
 // the one the panel shows the first time it opens. Every later query inherits
 // the flags from the one before it, so setting them here is enough to carry the
@@ -113,6 +118,7 @@ export class Editor {
   private readonly tab = new Compartment()
   private readonly completion = new Compartment()
   private readonly whitespace = new Compartment()
+  private readonly indentGuides = new Compartment()
   private readonly defaultFontFamily: string
 
   private constructor(options: EditorOptions, language: Extension, vim: Extension) {
@@ -129,6 +135,7 @@ export class Editor {
         this.tab.of(tabExtension(initial.tabSize)),
         this.completion.of(completionExtension(initial.quickSuggestions)),
         this.whitespace.of(whitespaceExtension(initial.showWhitespace)),
+        this.indentGuides.of(indentGuideExtension(initial.showIndentGuides)),
         history(),
         drawSelection(),
         dropCursor(),
@@ -252,6 +259,11 @@ export class Editor {
   /** Whether the spaces and tabs in the draft carry a mark. */
   setShowWhitespace(show: boolean): void {
     this.view.dispatch({ effects: this.whitespace.reconfigure(whitespaceExtension(show)) })
+  }
+
+  /** Whether each level of indentation carries a rule. */
+  setShowIndentGuides(show: boolean): void {
+    this.view.dispatch({ effects: this.indentGuides.reconfigure(indentGuideExtension(show)) })
   }
 
   private fontFamily(family: string): string {

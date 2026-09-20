@@ -49,6 +49,19 @@
      page, a search match, a selection — and stays a step quieter than the text
      in both themes. */
   --whitespace: rgba(31, 35, 40, 0.26);
+  /* The rules that stand at each level of indentation. Fainter than the marks
+     above, which is not the same decision made twice: a mark is a point inside
+     one character, while a rule runs the whole height of a line and every line
+     of a block carries one, so the same value would add up to a grid the draft
+     has to be read through. */
+  --indent-guide: rgba(31, 35, 40, 0.14);
+  /* How deep the line being drawn is, and how wide one level is, both counted
+     in levels and columns rather than written as a length: src/indent-guides.ts
+     sets the first on each line it rules and the second from the tab width
+     setting. The zeros are what the stylesheet draws with neither of them —
+     nothing — so a line the extension has not marked stays clean. */
+  --indent-guide-levels: 0;
+  --indent-guide-step: 0;
   /* Masked the same way, for the buttons that close a panel. */
   --close-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%23000000' stroke-width='1.5' stroke-linecap='round' d='M4 4 12 12M12 4 4 12'/%3E%3C/svg%3E");
   /* The tick inside a checked box, in whichever color reads on --accent. It is
@@ -136,6 +149,7 @@
   --toggle-knob: var(--control-active);
   --toggle-knob-border: transparent;
   --whitespace: rgba(216, 216, 216, 0.26);
+  --indent-guide: rgba(216, 216, 216, 0.14);
   --editor-caret: #6cb6ff;
   --editor-selection: #2c4a6e;
   --editor-selection-match: rgba(255, 255, 255, 0.1);
@@ -449,6 +463,24 @@ option {
 #editor .cm-highlightTab {
   background: var(--whitespace);
   mask: var(--whitespace-tab) left center / contain no-repeat;
+}
+
+/* The rules on an indented line, while that setting is on (src/indent-guides.ts
+   counts the levels). The gradient draws one rule every level, and the count of
+   levels ends it at the last one, so nothing is drawn beside the text itself. A
+   level is as wide as the tab width setting in ch, which is what CodeMirror
+   lays a tab out from as well, so a rule stands where the indentation steps and
+   follows the editor's font size without a length of its own here.
+
+   The line's own box is what they are drawn across, from its content edge, and
+   a line box has no gap above or below it: the rules meet from line to line and
+   read as one column. Where a block holds a blank line, the extension gives it
+   the same count, so the column carries on through it. */
+#editor .cm-indentGuides {
+  background-image: repeating-linear-gradient(to right, var(--indent-guide) 0 1px, transparent 1px calc(var(--indent-guide-step) * 1ch));
+  background-size: calc(var(--indent-guide-levels) * var(--indent-guide-step) * 1ch) 100%;
+  background-origin: content-box;
+  background-repeat: no-repeat;
 }
 
 /* The Vim status line keeps the editor font, at the status bar's size. */

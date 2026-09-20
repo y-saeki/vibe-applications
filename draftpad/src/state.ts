@@ -19,6 +19,8 @@ export interface State {
   quickSuggestions: boolean
   /** Whether the spaces and tabs in the draft carry a mark. */
   showWhitespace: boolean
+  /** Whether each level of indentation carries a rule. */
+  showIndentGuides: boolean
   alwaysOnTop: boolean
   searchCaseSensitive: boolean
   searchRegexp: boolean
