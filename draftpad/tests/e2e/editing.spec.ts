@@ -318,22 +318,32 @@ test('gives the thumb the share of the draft in view, and moves it to the end', 
   const bar = app.scrollbar('editor')
   const thumb = bar.locator('.scrollbar-thumb')
 
-  await scrollDraft(app, 0)
+  // The pointer arriving over the draft is what brings the bar up here: the
+  // draft already sits at the top, and a scroll that does not move it is not
+  // a scroll at all.
+  const draft = (await app.page.locator('.cm-scroller').boundingBox())!
+  await app.page.mouse.move(draft.x + draft.width / 2, draft.y + draft.height / 2)
   await expect(bar).toHaveAttribute('data-shown', '')
+
   const strip = (await bar.boundingBox())!
   const atTop = (await thumb.boundingBox())!
   // Only part of the draft is in view, so the thumb covers part of the strip —
   // and never less than the minimum, whatever the draft grows to.
   expect(atTop.height).toBeLessThan(strip.height)
   expect(atTop.height).toBeGreaterThanOrEqual(await token(app, '--scrollbar-thumb-min'))
-  expect(Math.round(atTop.y)).toBe(Math.round(strip.y))
+  expect(Math.abs(atTop.y - strip.y)).toBeLessThanOrEqual(1)
 
   const { range } = await scroller(app)
   await scrollDraft(app, range)
-  // The far end of the draft puts the thumb at the far end of the strip.
+  // The far end of the draft puts the thumb at the far end of the strip. The
+  // two edges are rounded for painting on their own, so they may land a pixel
+  // apart.
   await expect
-    .poll(async () => Math.round((await thumb.boundingBox())!.y + (await thumb.boundingBox())!.height))
-    .toBe(Math.round(strip.y + strip.height))
+    .poll(async () => {
+      const atEnd = (await thumb.boundingBox())!
+      return Math.abs(atEnd.y + atEnd.height - (strip.y + strip.height))
+    })
+    .toBeLessThanOrEqual(1)
 })
 
 test('scrolls the draft when the thumb is dragged', async ({ launch }) => {
