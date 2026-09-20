@@ -973,7 +973,14 @@ option {
 .panel {
   width: min(var(--panel-width), calc(100vw - var(--space-4) * 2));
   max-height: calc(100vh - var(--titlebar-height) - var(--panel-inset) * 2);
-  overflow: auto;
+  /* Sideways not at all. Nothing is ever laid out past the panel's content
+     edge — tests/e2e/preferences.spec.ts holds every control to that, which is
+     what lets draftpad draw no horizontal scrollbar — but WebKit still measures
+     the box a little wider than itself over the theme row's native select, and
+     without this the panel would shift under a sideways scroll to show empty
+     space. Clipping there hides nothing. */
+  overflow-x: hidden;
+  overflow-y: auto;
   box-sizing: border-box;
   padding: var(--space-5);
   border: 1px solid var(--border);

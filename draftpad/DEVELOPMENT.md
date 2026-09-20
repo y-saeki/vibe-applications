@@ -279,9 +279,17 @@ Windows で `<select>` を展開したリストは中に要素を足せないの
 `minmax(0, 1fr)` で下限を持ちません。`1fr` だけだと下限が入力欄自身の min-content 幅になり、最小の
 ウィンドウ幅では行がパネルの外へ出ます。
 
-これは「いまのところそうなっている」ことなので、E2E テストで固定してあります。`tests/e2e/editing.spec.ts` が下書きに、`tests/e2e/preferences.spec.ts` が
-パネルに、それぞれ `scrollWidth === clientWidth` を求めます。後者が使うウィンドウ幅は
-`src-tauri/tauri.conf.json` の `minWidth` を読むので、そこを下げればテストも新しい幅で走ります。
+これは「いまのところそうなっている」ことなので、E2E テストで固定してあります。下書き側
+(`tests/e2e/editing.spec.ts`)は `scrollWidth === clientWidth` を、パネル側
+(`tests/e2e/preferences.spec.ts`)は「どのコントロールもパネルの content edge を越えないこと」を
+求めます。パネル側が使うウィンドウ幅は `src-tauri/tauri.conf.json` の `minWidth` を読むので、
+そこを下げればテストも新しい幅で走ります。
+
+パネルだけ求めるものが違うのは、WebKit がテーマ行のネイティブな `<select>` のところで、パネルを
+実際より 11px ほど広く測るためです。そこには要素の箱が 1 つもなく、隠れている中身もありません。
+`scrollWidth` で見るとこれに引っかかるので、横のバーが要るかどうかを決めている条件——
+content edge を越える中身があるか——をそのまま見ます。`.panel` は `overflow-x: hidden` なので、
+この 11px を横スクロールで覗くこともできません。
 
 どちらかが横に溢れるようになったら CI が落ちます。そのときは、溢れないように直すか、横のバーを
 足すかのどちらかです。
