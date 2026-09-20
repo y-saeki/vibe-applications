@@ -1033,11 +1033,11 @@ option {
 
    The control column takes what the label column leaves, down to nothing.
    `1fr` on its own is `minmax(auto, 1fr)`, and that floor is the control's own
-   min-content width — a select as wide as its longest option, say. At the
-   narrowest window draftpad opens at that is wider than the column, and the
-   row runs off the side of the panel, where nothing can reach it: the
-   platform's horizontal scrollbar is hidden along with its vertical one and
-   draftpad draws no replacement (see "スクロールバー" in DEVELOPMENT.md). */
+   min-content width. At the narrowest window draftpad opens at that is wider
+   than the column, and the row runs off the side of the panel, where nothing
+   can reach it: the platform's horizontal scrollbar is hidden along with its
+   vertical one and draftpad draws no replacement (see "スクロールバー" in
+   DEVELOPMENT.md). */
 .form-row {
   display: grid;
   grid-template-columns: var(--label-width) minmax(0, 1fr);
@@ -1048,7 +1048,7 @@ option {
 
 /* The same floor one level down: a grid or flex item carries its min-content
    width as an automatic minimum too, so the column shrinking is not enough on
-   its own. Widths written above still hold; this only lets them give. */
+   its own. The widths written above still hold; this only lets them give. */
 .form-row input,
 .form-row select,
 .form-control-with-unit {
@@ -1172,9 +1172,13 @@ option {
   scrollbar-width: none;
 }
 
+/* Sized to nothing rather than taken out of the flow. `display: none` on this
+   pseudo-element leaves WebKit still counting a gutter it no longer draws, and
+   the box comes out scrollable sideways by that much with nothing in it. */
 #editor .cm-scroller::-webkit-scrollbar,
 .panel::-webkit-scrollbar {
-  display: none;
+  width: 0;
+  height: 0;
 }
 
 /* The strip the thumb runs in. src/overlay-scrollbar.ts lays it along the

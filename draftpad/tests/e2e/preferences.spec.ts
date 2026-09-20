@@ -391,21 +391,30 @@ test('keeps the panel inside its width at the narrowest the window goes', async 
   await app.page.setViewportSize({ width: windowMinimum().width, height: windowMinimum().height })
 
   await app.gear.click()
-  const panel = app.preferences.locator('.panel')
-  // Named rather than counted: "11px over" leaves the next reader measuring
-  // the panel by hand to find out which control did it.
-  const spilling = await panel.evaluate((element: HTMLElement) => {
-    const edge = element.getBoundingClientRect().left + element.clientLeft + element.clientWidth
-    const inside = edge - Number.parseFloat(getComputedStyle(element).paddingRight)
-    return [...element.querySelectorAll('*')]
-      .filter((child) => child.getBoundingClientRect().right > inside + 0.5)
-      .map((child) => {
-        const over = Math.round(child.getBoundingClientRect().right - inside)
-        return `${child.tagName.toLowerCase()}${child.id ? `#${child.id}` : ''} by ${over}px`
-      })
+  // The measurements come back together, so that a failure says what stuck out
+  // and by how much rather than leaving the next reader to measure the panel by
+  // hand. `past` is how far a control reaches beyond the panel's content edge,
+  // `own` whether the control scrolls sideways within itself; either one is
+  // content a horizontal bar would have been needed for.
+  const { box, ...overflow } = await app.preferences.locator('.panel').evaluate((element: HTMLElement) => {
+    const inside =
+      element.getBoundingClientRect().left +
+      element.clientLeft +
+      element.clientWidth -
+      Number.parseFloat(getComputedStyle(element).paddingRight)
+    return {
+      spread: element.scrollWidth - element.clientWidth,
+      spilling: [...element.querySelectorAll('*')]
+        .map((child) => ({
+          what: `${child.tagName.toLowerCase()}${child.id ? `#${child.id}` : ''}`,
+          past: Math.round(child.getBoundingClientRect().right - inside),
+          own: child.scrollWidth - child.clientWidth,
+        }))
+        .filter((child) => child.past > 0 || child.own > 0),
+      box: { scroll: element.scrollWidth, client: element.clientWidth, offset: element.offsetWidth },
+    }
   })
-  expect(spilling).toEqual([])
-  expect(await panel.evaluate((element: HTMLElement) => element.scrollWidth - element.clientWidth)).toBe(0)
+  expect(overflow, `panel ${JSON.stringify(box)}`).toEqual({ spread: 0, spilling: [] })
 })
 
 test('lays a bar over the panel when the window is too short to hold it', async ({ launch }) => {
