@@ -391,10 +391,21 @@ test('keeps the panel inside its width at the narrowest the window goes', async 
   await app.page.setViewportSize({ width: windowMinimum().width, height: windowMinimum().height })
 
   await app.gear.click()
-  const spread = await app.preferences
-    .locator('.panel')
-    .evaluate((element: HTMLElement) => element.scrollWidth - element.clientWidth)
-  expect(spread).toBe(0)
+  const panel = app.preferences.locator('.panel')
+  // Named rather than counted: "11px over" leaves the next reader measuring
+  // the panel by hand to find out which control did it.
+  const spilling = await panel.evaluate((element: HTMLElement) => {
+    const edge = element.getBoundingClientRect().left + element.clientLeft + element.clientWidth
+    const inside = edge - Number.parseFloat(getComputedStyle(element).paddingRight)
+    return [...element.querySelectorAll('*')]
+      .filter((child) => child.getBoundingClientRect().right > inside + 0.5)
+      .map((child) => {
+        const over = Math.round(child.getBoundingClientRect().right - inside)
+        return `${child.tagName.toLowerCase()}${child.id ? `#${child.id}` : ''} by ${over}px`
+      })
+  })
+  expect(spilling).toEqual([])
+  expect(await panel.evaluate((element: HTMLElement) => element.scrollWidth - element.clientWidth)).toBe(0)
 })
 
 test('lays a bar over the panel when the window is too short to hold it', async ({ launch }) => {
