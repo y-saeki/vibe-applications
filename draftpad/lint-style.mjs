@@ -47,10 +47,11 @@ const FONT_STACKS = new Set(['--ui-font', '--font-mono'])
 const LIMITS = {
   families: FAMILIES,
   /** Everything else measured in pixels: control metrics and layout. */
-  otherLengths: { budget: 19, accepts: (px) => px % 4 === 0, wants: 'a multiple of 4px' },
+  otherLengths: { budget: 22, accepts: (px) => px % 4 === 0, wants: 'a multiple of 4px' },
   /** The palette, including the two shadows, the eight masked and drawn marks,
-      and the two counts src/indent-guides.ts fills in while it draws. */
-  palette: 37,
+      the two counts src/indent-guides.ts fills in while it draws, and the two
+      fractions src/overlay-scrollbar.ts sets on each bar. */
+  palette: 41,
   /** Hairlines, focus rings and optical nudges stay where they are used. */
   literalPx: 2,
 }

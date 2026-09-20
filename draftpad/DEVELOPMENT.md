@@ -252,6 +252,54 @@ macOS Sequoia (15.0) 以降では、以前あった Control クリック →「�
 だけ続きます。折り返した 2 行目以降が字下げされないのは CodeMirror の既定なので、そこでは線が文字の後ろを
 通ります。
 
+## スクロールバー
+
+スクロールバーは draftpad が自分で描きます(`src/overlay-scrollbar.ts`)。本文の脇ではなく上に重ねるので、
+下書きがウィンドウに収まらなくなってもエディタの幅は変わりません。プラットフォームのスクロールバーは
+レイアウトの一部で、出た瞬間にその幅だけ本文が狭くなります。ウィンドウの高さを変えている最中にこれが
+出たり消えたりすると、折り返し位置がそのたびに動いて表示がガタつきます
+([#85](https://github.com/y-saeki/vibe-applications/issues/85))。
+
+重ねる指定はどのエンジンにもありません。`overflow: overlay` は Chromium 114 以降 `auto` の別名で、
+`::-webkit-scrollbar` に幅を与えると重ねる側から場所を取る側に変わります。macOS が重ねて描くかどうかは
+OS の設定次第です。そのため `src/style.css` がプラットフォームのバーを消して、代わりにこちらで描きます。
+消すのに 2 つ書いているのは、標準の `scrollbar-width` が Safari 18.2 以降のもので、そこまで更新していない
+macOS には `::-webkit-scrollbar` しか届かないためです。
+
+対象は draftpad 自身がスクロールさせる 2 箇所、下書き(`.cm-scroller`)と環境設定パネル(`.panel`)です。
+Windows で `<select>` を展開したリストは中に要素を足せないので、そこは webview のバーのままです。
+縦と横の両方に付けます。プラットフォームのバーを片方だけ消すことはできないので、横だけ描かずにおくと、
+横に溢れた中身へ手が届かなくなるためです。いまのところ横に溢れる場所はありません。下書きは折り返して
+いますし(`EditorView.lineWrapping`)、環境設定パネルは入力欄が縮む側なので、最小のウィンドウ幅でも
+はみ出しません。横のバーは E2E テストが触れない唯一の部分で、出しようがないものを出したことにする
+ケースは書いていません。
+
+### 長さを決めるのはスタイルシート
+
+`src/overlay-scrollbar.ts` がバーに渡すのは 2 つの数だけです。`--scrollbar-cover`(内容のうち画面に
+出ている割合)と `--scrollbar-progress`(どこまで送ったか)で、どちらも長さではありません。つまみの
+長さと位置はこの 2 つから `src/style.css` が組み立てます。インデントガイドと同じ形です。
+
+`--scrollbar-thumb-min` より短いつまみにはしません。長い下書きではつまみが点になり、見えなくなるのと
+同時に掴めなくもなります。この長さを `style.css` が 2 回書いているのは、`:root` の 1 つのトークンに
+まとめられないためです。カスタムプロパティの中の `var()` はそれを宣言した要素で解決されるので、
+`:root` に置くと割合が常に初期値の 0 になります。
+
+バーの位置はビューポート基準(`position: fixed`)で、`src/overlay-scrollbar.ts` が毎回置き直します。
+どちらのバーも包含ブロックを用意しなくて済み、検索パネルが開いて下書きが下へずれるような場合にも
+そのまま追随します。環境設定パネルのバーだけはダイアログの中に入れます。ダイアログはトップレイヤーに
+あり、その上に描けるものが他にないためです。
+
+### 出ている条件
+
+バーが出るのは、スクロールしている間・ポインタが対象の上にある間・つまみを掴んでいる間です。どれでも
+なくなってから `IDLE_MS` 後に消えます。ポインタを受け取るのは、出ている間のつまみだけです。消えている
+バーの下——行末の余白——をクリックしたときに、下書きではなくバーに当たってしまうのを避けるためです。
+`prefers-reduced-motion: reduce` では出入りのフェードを切ります。
+
+つまみはドラッグでスクロールできます。溝の余白には何も割り当てていません。ポインタを受け取らないので、
+押すと下書きの側に当たります。重ねて描くバーは普段消えていて、狙って押す場所ではないという判断です。
+
 ## プラットフォーム固有の実装
 
 キーボードショートカットは、macOS ではメニューバーのアクセラレータとして、Windows ではアプリ内のキー処理として
@@ -379,9 +427,9 @@ Tauri の NSIS スクリプトはビルド時のテンプレートなので、`t
 | 書体 | `--ui-font`、`--font-mono` | UI 全体 / バージョン表示。数の段階ではないので、予算の数え方も他と別です |
 | 余白 | `--space-1` 〜 `--space-5` | 4px 刻みの 5 段。コントロール同士、バーとパネルの内側、グループ同士 |
 | 角丸 | `--radius-sm` / `-md` / `-lg` | 部品の大きさに対応した 3 段(チェックボックスとアイコンボタン / 高さ `--control-height` のコントロール / パネル) |
-| 寸法 | `--control-height`、`--checkbox-size`、`--toggle-width`、`--toggle-size-search`、`--glyph-size`、`--icon-size`、`--icon-button-size`、`--statusbar-height`、`--titlebar-height` | コントロールとバーの大きさ |
+| 寸法 | `--control-height`、`--checkbox-size`、`--toggle-width`、`--toggle-size-search`、`--glyph-size`、`--icon-size`、`--icon-button-size`、`--statusbar-height`、`--titlebar-height`、`--scrollbar-size`、`--scrollbar-thumb-size`、`--scrollbar-thumb-min` | コントロールとバーの大きさ、スクロールバーの溝とつまみ |
 | レイアウト | `--field-width`、`--field-width-narrow`、`--field-width-search`、`--button-width-search`、`--label-width`、`--panel-width`、`--panel-inset`、`--language-width`、`--count-width`、`--count-width-narrow` | 入力欄・ラベル列・検索パネルと環境設定パネルの配置と、ステータスバーの文字数・行数セルの幅 |
-| パレット | `--bg`、`--fg`、`--muted`、`--muted-strong`、`--placeholder`、`--border` など | 色、影 2 段(`--shadow-panel` / `--shadow-popup`)、描き込む印 8 枚(✓ / シェブロン上下 / × / 横棒 / Aa / .* / タブの矢印)、空白文字の印(`--whitespace`)、インデントガイドの色(`--indent-guide`)と、`src/indent-guides.ts` が入れる 2 つの数(`--indent-guide-levels` / `--indent-guide-step`。色でも長さでもありませんが、ファミリにも入らないのでここで数えます) |
+| パレット | `--bg`、`--fg`、`--muted`、`--muted-strong`、`--placeholder`、`--border` など | 色、影 2 段(`--shadow-panel` / `--shadow-popup`)、描き込む印 8 枚(✓ / シェブロン上下 / × / 横棒 / Aa / .* / タブの矢印)、空白文字の印(`--whitespace`)、インデントガイドの色(`--indent-guide`)、スクロールバーのつまみの色 2 段(`--scrollbar-thumb` / `--scrollbar-thumb-hover`)と、`src/indent-guides.ts` と `src/overlay-scrollbar.ts` が入れる 2 つずつの数(`--indent-guide-levels` / `--indent-guide-step`、`--scrollbar-cover` / `--scrollbar-progress`。色でも長さでもありませんが、ファミリにも入らないのでここで数えます) |
 
 基準にしたのは Windows 11 のメモ帳のステータスバーです。macOS では `-apple-system`、Windows では Segoe UI が
 当たるだけで、寸法は共通です。OS ごとに変えたくなったら `:root[data-platform="macos"]` でトークンを上書き
@@ -628,35 +676,36 @@ Windows 向けのビルドだけが使う依存が 3 つあります。
 
 ```
 draftpad/
-  build.mjs             esbuild によるバンドル(dist/)。--serve で開発サーバー
-  lint-style.mjs        style.css がトークンだけで組まれているかの検査(pnpm lint:style)
-  playwright.config.ts  E2E テストの設定(chromium / webkit の 2 project)
-  tsconfig.test.json    tests/ 用。Node の型を足すためだけに分けてある
+  build.mjs               esbuild によるバンドル(dist/)。--serve で開発サーバー
+  lint-style.mjs          style.css がトークンだけで組まれているかの検査(pnpm lint:style)
+  playwright.config.ts    E2E テストの設定(chromium / webkit の 2 project)
+  tsconfig.test.json      tests/ 用。Node の型を足すためだけに分けてある
   tests/e2e/
-    fixtures.ts         アプリを起動する launch フィクスチャと共通のロケータ
-    global-setup.ts     harness/backend.ts を harness/dist/ へバンドル
-    harness/backend.ts  偽の Rust 側(mockIPC)。invoke を記録し、状態を返す
-    *.spec.ts           起動 / 編集 / 環境設定 / ショートカット / メニュー
+    fixtures.ts           アプリを起動する launch フィクスチャと共通のロケータ
+    global-setup.ts       harness/backend.ts を harness/dist/ へバンドル
+    harness/backend.ts    偽の Rust 側(mockIPC)。invoke を記録し、状態を返す
+    *.spec.ts             起動 / 編集 / 環境設定 / ショートカット / メニュー
   src/
-    main.ts             起動処理と各部品の配線
-    editor.ts           CodeMirror の構成(Compartment で動的切替)
-    languages.ts        言語一覧と遅延ロード
-    modes/              Batch / Solidity / PHP の自作ハイライト(簡易的なパーサ)
-    state.ts            永続化する状態と保存のデバウンス
-    commands.ts         コマンド表(メニュー・ショートカット共用)
-    preferences.ts      環境設定パネル
-    statusbar.ts        ステータスバー
-    theme.ts            ライト / ダークの解決
-    style.css           ステータスバーとパネルのスタイル。寸法と色のトークンもここ
+    main.ts               起動処理と各部品の配線
+    editor.ts             CodeMirror の構成(Compartment で動的切替)
+    languages.ts          言語一覧と遅延ロード
+    modes/                Batch / Solidity / PHP の自作ハイライト(簡易的なパーサ)
+    state.ts              永続化する状態と保存のデバウンス
+    commands.ts           コマンド表(メニュー・ショートカット共用)
+    preferences.ts        環境設定パネル
+    statusbar.ts          ステータスバー
+    theme.ts              ライト / ダークの解決
+    overlay-scrollbar.ts  本文に重ねて描くスクロールバー
+    style.css             ステータスバーとパネルのスタイル。寸法と色のトークンもここ
   src-tauri/
-    src/lib.rs          Tauri Builder。起動時のウィンドウサイズ復元
-    src/state.rs        state.json の読み書き(原子的書き込み)
-    src/commands.rs     load_state / save_state / list_fonts / quit_app
-    src/menu.rs         macOS のメニュー
-    src/jumplist.rs     Windows のタスクバーメニュー(ジャンプリスト)
-    src/autofill.rs     Windows の WebView2 オートフィル抑止
-    src/fonts.rs        フォント列挙
-    installer.nsi       Windows インストーラ(NSIS)のテンプレート
-    tauri.conf.json     ウィンドウ・バンドル設定
-    capabilities/       webview に許可する API
+    src/lib.rs            Tauri Builder。起動時のウィンドウサイズ復元
+    src/state.rs          state.json の読み書き(原子的書き込み)
+    src/commands.rs       load_state / save_state / list_fonts / quit_app
+    src/menu.rs           macOS のメニュー
+    src/jumplist.rs       Windows のタスクバーメニュー(ジャンプリスト)
+    src/autofill.rs       Windows の WebView2 オートフィル抑止
+    src/fonts.rs          フォント列挙
+    installer.nsi         Windows インストーラ(NSIS)のテンプレート
+    tauri.conf.json       ウィンドウ・バンドル設定
+    capabilities/         webview に許可する API
 ```

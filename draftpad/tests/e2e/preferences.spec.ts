@@ -380,3 +380,33 @@ test('paints the indentation rules from the palette, in both themes', async ({ l
   await app.page.locator('#pref-theme').selectOption('dark')
   await expect(guides).toHaveCSS('background-image', /rgba\(216, 216, 216, 0\.14\)/)
 })
+
+test('lays a bar over the panel when the window is too short to hold it', async ({ launch }) => {
+  const app = await launch()
+  // Short enough that the nine settings no longer fit between the panel's
+  // insets, whatever else is on screen.
+  await app.page.setViewportSize({ width: 600, height: 300 })
+
+  await app.gear.click()
+  const panel = app.preferences.locator('.panel')
+  const bar = app.scrollbar('preferences')
+
+  const box = await panel.evaluate((element: HTMLElement) => ({
+    overflows: element.scrollHeight > element.clientHeight,
+    // Its own border, and no column taken out for a scrollbar beside it.
+    taken: element.offsetWidth - element.clientWidth,
+    right: element.getBoundingClientRect().right,
+  }))
+  expect(box.overflows).toBe(true)
+  expect(box.taken).toBe(2)
+
+  await panel.evaluate((element: HTMLElement) => {
+    element.scrollTop = 40
+  })
+  await expect(bar).toHaveAttribute('data-shown', '')
+  // Inside the panel's own edge rather than beyond it: the bar is drawn within
+  // the dialog, which is the only thing the top layer lets over it.
+  const strip = (await bar.boundingBox())!
+  expect(strip.x + strip.width).toBeLessThanOrEqual(box.right)
+  expect(strip.x + strip.width).toBeGreaterThan(box.right - strip.width - 2)
+})

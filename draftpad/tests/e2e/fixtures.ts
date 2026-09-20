@@ -105,6 +105,16 @@ export class App {
     )
   }
 
+  /**
+   * One of the scrollbars draftpad draws for itself, as the strip it runs in;
+   * `.scrollbar-thumb` inside it is the part that moves.
+   *
+   * @param over which box it stands for, by that box's id
+   */
+  scrollbar(over: 'editor' | 'preferences'): Locator {
+    return this.page.locator(`#${over} .scrollbar-y`)
+  }
+
   /** One of the search panel's four buttons, by the name CodeMirror gives it. */
   searchButton(name: 'prev' | 'next' | 'replace' | 'replaceAll'): Locator {
     return this.searchPanel.locator(`button[name="${name}"]`)
