@@ -322,15 +322,12 @@ test('brings the bar up while the draft scrolls, and takes it down after', async
   const app = await launch({ state: { text: LONG_DRAFT } })
   const bar = app.scrollbar('editor')
 
-  // Off the draft: a pointer resting on it holds the bar up on its own, and
-  // what is being watched here is the scroll.
-  const statusbar = (await app.page.locator('#statusbar').boundingBox())!
-  await app.page.mouse.move(statusbar.x + statusbar.width / 2, statusbar.y + statusbar.height / 2)
   await expect(bar).not.toHaveAttribute('data-shown')
-
   await scrollDraft(app, 200)
   await expect(bar).toHaveAttribute('data-shown', '')
-  // And down again once the scrolling stops, with nothing else holding it.
+  // And fades out again once the scrolling stops. Where the pointer happens to
+  // be rests does not hold it up: it sits over the draft the whole time
+  // someone is writing.
   await expect(bar).not.toHaveAttribute('data-shown')
 })
 
@@ -345,31 +342,25 @@ test('gives the thumb the share of the draft in view, and moves it to the end', 
   const bar = app.scrollbar('editor')
   const thumb = bar.locator('.scrollbar-thumb')
 
-  // The pointer arriving over the draft is what brings the bar up here: the
-  // draft already sits at the top, and a scroll that does not move it is not
-  // a scroll at all.
-  const draft = (await app.page.locator('.cm-scroller').boundingBox())!
-  await app.page.mouse.move(draft.x + draft.width / 2, draft.y + draft.height / 2)
+  // Scrolling is the one thing that brings the bar up, so the far end of the
+  // draft is measured first; the draft opens at the top already.
+  const { range } = await scroller(app)
+  await scrollDraft(app, range)
   await expect(bar).toHaveAttribute('data-shown', '')
 
   const strip = (await bar.boundingBox())!
-  const atTop = (await thumb.boundingBox())!
+  const atEnd = (await thumb.boundingBox())!
   // Only part of the draft is in view, so the thumb covers part of the strip —
-  // and never less than the minimum, whatever the draft grows to.
-  expect(atTop.height).toBeLessThan(strip.height)
-  expect(atTop.height).toBeGreaterThanOrEqual(await token(app, '--scrollbar-thumb-min'))
-  expect(Math.abs(atTop.y - strip.y)).toBeLessThanOrEqual(1)
+  // and never less than the minimum, whatever the draft grows to. The far end
+  // of one puts it at the far end of the other; the two edges are rounded for
+  // painting on their own, so they may land a pixel apart.
+  expect(atEnd.height).toBeLessThan(strip.height)
+  expect(atEnd.height).toBeGreaterThanOrEqual(await token(app, '--scrollbar-thumb-min'))
+  expect(Math.abs(atEnd.y + atEnd.height - (strip.y + strip.height))).toBeLessThanOrEqual(1)
 
-  const { range } = await scroller(app)
-  await scrollDraft(app, range)
-  // The far end of the draft puts the thumb at the far end of the strip. The
-  // two edges are rounded for painting on their own, so they may land a pixel
-  // apart.
+  await scrollDraft(app, 0)
   await expect
-    .poll(async () => {
-      const atEnd = (await thumb.boundingBox())!
-      return Math.abs(atEnd.y + atEnd.height - (strip.y + strip.height))
-    })
+    .poll(async () => Math.abs((await thumb.boundingBox())!.y - strip.y))
     .toBeLessThanOrEqual(1)
 })
 
@@ -378,10 +369,9 @@ test('scrolls the draft when the thumb is dragged', async ({ launch }) => {
   const bar = app.scrollbar('editor')
   const thumb = bar.locator('.scrollbar-thumb')
 
-  // The bar comes up as soon as the pointer is over the draft, which is what
-  // makes it there to take hold of.
-  const draft = (await app.page.locator('.cm-scroller').boundingBox())!
-  await app.page.mouse.move(draft.x + draft.width / 2, draft.y + draft.height / 2)
+  // A scroll puts the bar up; the pointer arriving on the thumb is what keeps
+  // it there while it is taken hold of.
+  await scrollDraft(app, 200)
   await expect(bar).toHaveAttribute('data-shown', '')
 
   const grip = (await thumb.boundingBox())!
@@ -390,7 +380,7 @@ test('scrolls the draft when the thumb is dragged', async ({ launch }) => {
   await app.page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2 + 120)
   await app.page.mouse.up()
 
-  expect((await scroller(app)).top).toBeGreaterThan(0)
+  expect((await scroller(app)).top).toBeGreaterThan(200)
 })
 
 /** A length token as the sheet declares it, in px. */

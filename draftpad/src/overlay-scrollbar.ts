@@ -22,7 +22,7 @@
 // and style.css turns them into a length, the way it does for the numbers
 // src/indent-guides.ts hands over.
 
-/** How long the bar stays up once nothing is holding it any more. */
+/** How long the bar stays up after the scrolling stops. */
 const IDLE_MS = 800
 
 /** Where a drag of the thumb started, and what one pixel of it is worth. */
@@ -74,10 +74,10 @@ class OverlayScrollbar {
     host.append(this.track)
 
     scroller.addEventListener('scroll', () => this.scrolled(), { passive: true })
-    scroller.addEventListener('pointerenter', () => this.setHovered(true))
-    scroller.addEventListener('pointerleave', () => this.setHovered(false))
-    // The thumb sits outside the scroller, so reaching for it leaves the box
-    // underneath; without these two the bar would go down under the hand.
+    // A scroll is the only thing that puts the bar up. A pointer resting over
+    // the box does not: it rests there the whole time someone is writing, and
+    // a bar that never goes away is the chrome this one is drawn to avoid.
+    // Once it is up, the hand reaching for the thumb keeps it up.
     this.thumb.addEventListener('pointerenter', () => this.setHovered(true))
     this.thumb.addEventListener('pointerleave', () => this.setHovered(false))
     this.thumb.addEventListener('pointerdown', (event) => this.startDrag(event))
@@ -142,7 +142,7 @@ class OverlayScrollbar {
     this.wake()
   }
 
-  /** Brings the bar up, and takes it down once nothing is holding it. */
+  /** Brings the bar up, and fades it out once the scrolling has stopped. */
   private wake(): void {
     this.track.toggleAttribute('data-shown', true)
     if (this.idle !== undefined) window.clearTimeout(this.idle)
