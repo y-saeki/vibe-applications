@@ -266,9 +266,6 @@ OS の設定次第です。そのため `src/style.css` がプラットフォー
 消すのに 2 つ書いているのは、標準の `scrollbar-width` が Safari 18.2 以降のもので、そこまで更新していない
 macOS には `::-webkit-scrollbar` しか届かないためです。
 
-後者は `display: none` ではなく `width: 0` です。WebKit は前者だと、描かなくなったあとも溝を数え続け、
-中身が何もないまま横に 11px スクロールできる箱になります。
-
 対象は draftpad 自身がスクロールさせる 2 箇所、下書き(`.cm-scroller`)と環境設定パネル(`.panel`)です。
 Windows で `<select>` を展開したリストは中に要素を足せないので、そこは webview のバーのままです。
 

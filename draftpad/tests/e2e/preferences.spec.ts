@@ -406,9 +406,13 @@ test('keeps the panel inside its width at the narrowest the window goes', async 
       spread: element.scrollWidth - element.clientWidth,
       spilling: [...element.querySelectorAll('*')]
         .map((child) => ({
-          what: `${child.tagName.toLowerCase()}${child.id ? `#${child.id}` : ''}`,
+          what:
+            child.tagName.toLowerCase() +
+            (child.id ? `#${child.id}` : '') +
+            (typeof child.className === 'string' && child.className ? `.${child.className.trim().split(/\s+/).join('.')}` : ''),
           past: Math.round(child.getBoundingClientRect().right - inside),
           own: child.scrollWidth - child.clientWidth,
+          wide: Math.round(child.getBoundingClientRect().width),
         }))
         .filter((child) => child.past > 0 || child.own > 0),
       box: { scroll: element.scrollWidth, client: element.clientWidth, offset: element.offsetWidth },

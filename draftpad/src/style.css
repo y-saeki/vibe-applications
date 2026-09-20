@@ -1172,13 +1172,9 @@ option {
   scrollbar-width: none;
 }
 
-/* Sized to nothing rather than taken out of the flow. `display: none` on this
-   pseudo-element leaves WebKit still counting a gutter it no longer draws, and
-   the box comes out scrollable sideways by that much with nothing in it. */
 #editor .cm-scroller::-webkit-scrollbar,
 .panel::-webkit-scrollbar {
-  width: 0;
-  height: 0;
+  display: none;
 }
 
 /* The strip the thumb runs in. src/overlay-scrollbar.ts lays it along the
