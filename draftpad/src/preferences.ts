@@ -3,7 +3,7 @@
 
 import { invoke } from '@tauri-apps/api/core'
 
-import { overlayScrollbars } from './overlay-scrollbar'
+import { overlayScrollbar } from './overlay-scrollbar'
 
 import {
   clamp,
@@ -52,10 +52,10 @@ export class Preferences {
     this.showWhitespace = q('#pref-show-whitespace')
     this.showIndentGuides = q('#pref-show-indent-guides')
     q<HTMLElement>('#pref-version').textContent = `draftpad ${options.version}`
-    // The panel scrolls once the window is too short to hold it. Its bars go
+    // The panel scrolls once the window is too short to hold it. Its bar goes
     // inside the dialog: it is in the top layer, and nothing outside it is
     // drawn over it.
-    overlayScrollbars(q<HTMLElement>('.panel'), root)
+    overlayScrollbar(q<HTMLElement>('.panel'), root)
     this.fontFamily.placeholder = options.defaultFontFamily
 
     this.mode.addEventListener('change', () => store.set({ editorMode: this.mode.value as EditorMode }))

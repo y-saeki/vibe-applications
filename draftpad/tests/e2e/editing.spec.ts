@@ -260,13 +260,21 @@ test('keeps the bar still however many digits the counts run to', async ({ launc
 const LONG_DRAFT = Array.from({ length: 400 }, (_, line) => `${line + 1} 行目`).join('\n')
 
 /** The scroller's own measurements, which is where a classic bar would show. */
-function scroller(app: App): Promise<{ overflows: boolean; client: number; offset: number; top: number; range: number }> {
+function scroller(app: App): Promise<{
+  overflows: boolean
+  client: number
+  offset: number
+  content: number
+  top: number
+  range: number
+}> {
   return app.page.evaluate(() => {
     const box = document.querySelector('.cm-scroller') as HTMLElement
     return {
       overflows: box.scrollHeight > box.clientHeight,
       client: box.clientWidth,
       offset: box.offsetWidth,
+      content: box.scrollWidth,
       top: box.scrollTop,
       range: box.scrollHeight - box.clientHeight,
     }
@@ -289,6 +297,25 @@ test('leaves the draft its full width when it outgrows the window', async ({ lau
   const box = await scroller(app)
   expect(box.overflows).toBe(true)
   expect(box.client).toBe(box.offset)
+})
+
+test('wraps whatever is in the draft, so it never runs off to the side', async ({ launch }) => {
+  // Hiding the platform's scrollbars cannot be asked for on one axis alone, so
+  // there is no horizontal bar of draftpad's own to put in their place either.
+  // What keeps that from stranding anything is this: with line wrapping on,
+  // nothing reaches past the right edge to begin with. The four lines are the
+  // shapes that would, if any could — a run with no space in it, the same in
+  // full-width characters, a URL, and tabs at the widest tab width the
+  // preferences panel offers.
+  const app = await launch({
+    state: {
+      tabSize: 10,
+      text: ['a'.repeat(2000), 'あ'.repeat(2000), `https://example.com/${'segment/'.repeat(300)}`, `${'\t'.repeat(200)}x`].join('\n'),
+    },
+  })
+
+  const box = await scroller(app)
+  expect(box.content).toBe(box.client)
 })
 
 test('brings the bar up while the draft scrolls, and takes it down after', async ({ launch }) => {

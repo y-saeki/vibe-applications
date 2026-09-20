@@ -11,7 +11,7 @@ import { drawSelection, dropCursor, EditorView, keymap, type KeyBinding } from '
 import { darkTheme } from './dark-theme'
 import { indentGuides } from './indent-guides'
 import { languageExtension } from './languages'
-import { overlayScrollbars } from './overlay-scrollbar'
+import { overlayScrollbar } from './overlay-scrollbar'
 import { searchPanelExtras } from './search-panel'
 import type { State } from './state'
 import { vimExtension } from './vim'
@@ -161,9 +161,9 @@ export class Editor {
       ],
     })
     this.view = new EditorView({ state, parent: options.parent })
-    // The scroller keeps its size as the draft grows, so the bars are given
+    // The scroller keeps its size as the draft grows, so the bar is given
     // the content to watch as well.
-    overlayScrollbars(this.view.scrollDOM, options.parent, this.view.contentDOM)
+    overlayScrollbar(this.view.scrollDOM, options.parent, this.view.contentDOM)
   }
 
   static async create(options: EditorOptions): Promise<Editor> {

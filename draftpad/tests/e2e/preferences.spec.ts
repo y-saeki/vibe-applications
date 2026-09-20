@@ -1,4 +1,4 @@
-import { expect, test } from './fixtures'
+import { expect, test, windowMinimum } from './fixtures'
 
 test('opens from the gear button and closes with Escape', async ({ launch }) => {
   const app = await launch()
@@ -379,6 +379,22 @@ test('paints the indentation rules from the palette, in both themes', async ({ l
   await app.gear.click()
   await app.page.locator('#pref-theme').selectOption('dark')
   await expect(guides).toHaveCSS('background-image', /rgba\(216, 216, 216, 0\.14\)/)
+})
+
+test('keeps the panel inside its width at the narrowest the window goes', async ({ launch }) => {
+  const app = await launch()
+  // Hiding the platform's scrollbars takes the horizontal one with it — that
+  // cannot be asked for on one axis alone — and draftpad draws no horizontal
+  // bar of its own. Nothing here needs one: the label column is fixed and the
+  // field beside it takes what is left, down to the narrowest window the app
+  // opens at.
+  await app.page.setViewportSize({ width: windowMinimum().width, height: windowMinimum().height })
+
+  await app.gear.click()
+  const spread = await app.preferences
+    .locator('.panel')
+    .evaluate((element: HTMLElement) => element.scrollWidth - element.clientWidth)
+  expect(spread).toBe(0)
 })
 
 test('lays a bar over the panel when the window is too short to hold it', async ({ launch }) => {
