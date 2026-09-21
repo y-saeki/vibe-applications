@@ -502,17 +502,23 @@ test('gives a wrapped line one number, at its top', async ({ launch }) => {
 })
 
 test('draws the column as a margin rather than a panel, in both themes', async ({ launch }) => {
-  const app = await launch({ colorScheme: 'light', state: { showLineNumbers: true, text: 'a\nb' } })
+  // The whitespace setting is on so that a mark and a number are on screen
+  // together: the two are meant to carry the same value.
+  const app = await launch({
+    colorScheme: 'light',
+    state: { showLineNumbers: true, showWhitespace: true, text: 'a b\nc' },
+  })
   const gutters = app.page.locator('.cm-gutters')
 
   // CodeMirror's own theme fills the gutter and rules it off from the draft.
   // Neither survives: what stands beside the draft is the figures.
   await expect(gutters).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
   await expect(gutters).toHaveCSS('border-right-width', '0px')
-  await expect(gutters).toHaveCSS('color', 'rgba(31, 35, 40, 0.42)')
-
-  // Weaker than the draft, stronger than the whitespace marks and the
-  // indentation rules: the numbers are read, those two are read past.
+  // The marks' own value, which --line-number points at rather than repeating:
+  // a number is something to find when it is looked for, the same as a mark,
+  // and the draft is the only thing above either of them.
+  await expect(gutters).toHaveCSS('color', 'rgba(31, 35, 40, 0.26)')
+  await expect(app.page.locator('.cm-highlightSpace').first()).toHaveCSS('background-image', /rgba\(31, 35, 40, 0\.26\)/)
   await expect(app.editor).toHaveCSS('color', 'rgb(31, 35, 40)')
 
   // Right-aligned, so the ones column stands where the draft begins, and the
@@ -524,7 +530,9 @@ test('draws the column as a margin rather than a panel, in both themes', async (
   await app.gear.click()
   await app.page.locator('#pref-theme').selectOption('dark')
   await expect(gutters).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
-  await expect(gutters).toHaveCSS('color', 'rgba(216, 216, 216, 0.42)')
+  // The dark block redefines --whitespace and nothing else; the column follows
+  // it there because that is what its own token resolves to.
+  await expect(gutters).toHaveCSS('color', 'rgba(216, 216, 216, 0.26)')
 })
 
 test('sizes the numbers with the draft', async ({ launch }) => {

@@ -55,11 +55,13 @@
      of a block carries one, so the same value would add up to a grid the draft
      has to be read through. */
   --indent-guide: rgba(31, 35, 40, 0.14);
-  /* The figures in the line number column, translucent against the same base
-     as the two above and the strongest of the three: a mark and a rule are
-     read past, while a number is read. Above it there is only the draft
-     itself, and the order of the three alphas is the whole of this decision. */
-  --line-number: rgba(31, 35, 40, 0.42);
+  /* The figures in the line number column, which are the marks' value rather
+     than one of their own — tied to it here so that moving one moves both.
+     They are the same kind of thing: something to find when it is looked for
+     and to be past the rest of the time. A number carries more of that weight
+     than a dot does, because a numeral has to be read as a value rather than
+     noticed, so the column comes out the quieter of the two at one value. */
+  --line-number: var(--whitespace);
   /* How deep the line being drawn is, and how wide one level is, both counted
      in levels and columns rather than written as a length: src/indent-guides.ts
      sets the first on each line it rules and the second from the tab width
@@ -174,7 +176,6 @@
   --toggle-knob-border: transparent;
   --whitespace: rgba(216, 216, 216, 0.26);
   --indent-guide: rgba(216, 216, 216, 0.14);
-  --line-number: rgba(216, 216, 216, 0.42);
   --scrollbar-thumb: rgba(216, 216, 216, 0.26);
   --scrollbar-thumb-hover: rgba(216, 216, 216, 0.48);
   --editor-caret: #6cb6ff;
