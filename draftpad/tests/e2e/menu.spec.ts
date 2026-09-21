@@ -73,10 +73,37 @@ test('the menu writes the draft out before quitting', async ({ launch }) => {
   expect((await app.saved())?.text).toBe('保存されるはず')
 })
 
+test('the menu opens the compare pane', async ({ launch }) => {
+  const app = await launch({ ...MAC, innerSize: { width: 600, height: 400 } })
+
+  await app.typeInEditor('比べる')
+  await app.runMenuCommand('open_compare')
+  await expect(app.page.locator('html')).toHaveAttribute('data-layout', 'compare')
+  await expect(app.editorB).toHaveText('比べる')
+  await expect.poll(() => app.resized()).toEqual({ width: 1200, height: 400 })
+})
+
+test('the menu closes the pane with the caret while there are two, and the window once there is one', async ({ launch }) => {
+  const app = await launch({ ...MAC, state: { compare: true, text: 'left', compareText: 'right' } })
+
+  await app.editorB.click()
+  await expect(app.editorB).toBeFocused()
+  await app.runMenuCommand('close')
+  await expect(app.page.locator('html')).toHaveAttribute('data-layout', 'single')
+  await expect(app.editor).toHaveText('left')
+  expect(await app.commands()).not.toContain('quit_app')
+
+  await app.runMenuCommand('close')
+  await expect.poll(() => app.commands()).toContain('quit_app')
+})
+
 test('no in-app shortcut handler competes with the menu bar', async ({ launch }) => {
   const app = await launch(MAC)
 
-  // Cmd+, is a menu accelerator on macOS; the window must not act on it too.
+  // Cmd+, and Cmd+\ are menu accelerators on macOS; the window must not act
+  // on them too.
   await app.page.keyboard.press('Meta+Comma')
   await expect(app.preferences).toBeHidden()
+  await app.page.keyboard.press('Meta+Backslash')
+  await expect(app.page.locator('html')).toHaveAttribute('data-layout', 'single')
 })

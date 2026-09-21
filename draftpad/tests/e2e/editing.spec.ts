@@ -82,6 +82,25 @@ test('keeps the list shut until it is asked for', async ({ launch }) => {
   if (await app.listIsOurs()) await expect(firstOption).toBeVisible()
 })
 
+test('joins the strip under the macOS title bar to the pane bar, in both themes', async ({ launch }) => {
+  const app = await launch({ platform: 'macos', colorScheme: 'light' })
+  // The window's own buttons sit on a strip of the page, which the spec
+  // paints like the bar under it, with no rule between: one bar to the eye.
+  const surface = (selector: string) =>
+    app.page.evaluate((target) => {
+      const style = getComputedStyle(document.querySelector(target)!)
+      return { color: style.backgroundColor, height: style.height, seam: style.borderBottomWidth }
+    }, selector)
+
+  expect(await surface('#titlebar')).toEqual({ color: 'rgb(246, 248, 250)', height: '28px', seam: '0px' })
+  expect((await surface('#pane-head-a .pane-bar')).color).toBe('rgb(246, 248, 250)')
+
+  await app.gear.click()
+  await app.page.locator('#pref-theme').selectOption('dark')
+  expect((await surface('#titlebar')).color).toBe('rgb(17, 17, 17)')
+  expect((await surface('#pane-head-a .pane-bar')).color).toBe('rgb(17, 17, 17)')
+})
+
 test('leaves the list to macOS', async ({ launch }) => {
   const app = await launch({ platform: 'macos' })
 
@@ -241,19 +260,19 @@ test('keeps the bar still however many digits the counts run to', async ({ launc
 
   await expect(app.chars).toHaveText('111999 文字')
   await expect(app.lines).toHaveText('1000 行')
-  // Each cell is held at the width its token gives it, separator included, so
-  // the longest reading does not push it wider than the shortest one.
-  expect((await app.chars.boundingBox())?.width).toBe(await token(app, '--count-width'))
-  expect((await app.lines.boundingBox())?.width).toBe(await token(app, '--count-width-narrow'))
+  // Each figure is set in a box the width its token gives it, so the longest
+  // reading does not push the word after it, or anything beyond, along.
+  expect((await app.chars.locator('.count-figure').boundingBox())?.width).toBe(await token(app, '--count-width'))
+  expect((await app.lines.locator('.count-figure').boundingBox())?.width).toBe(await token(app, '--count-width-narrow'))
 
   // Which is what the bar is really being asked for: emptying the draft takes
-  // the counts from their widest reading to their shortest, and nothing to the
-  // right of them moves.
-  const wide = await app.languageSelect.boundingBox()
+  // the counts from their widest reading to their shortest, and the button to
+  // the right of them does not move.
+  const wide = await app.compareButton.boundingBox()
   await app.press('KeyA')
   await app.page.keyboard.press('Backspace')
   await expect(app.chars).toHaveText('0 文字')
-  expect((await app.languageSelect.boundingBox())?.x).toBe(wide?.x)
+  expect((await app.compareButton.boundingBox())?.x).toBe(wide?.x)
 })
 
 // A draft long enough that only a fraction of it is ever in view.

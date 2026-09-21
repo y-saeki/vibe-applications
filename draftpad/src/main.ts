@@ -1,14 +1,16 @@
 import './style.css'
 
 import { invoke } from '@tauri-apps/api/core'
+import { LogicalSize } from '@tauri-apps/api/dpi'
 import { listen } from '@tauri-apps/api/event'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { readText } from '@tauri-apps/plugin-clipboard-manager'
 
 import { comboFromEvent, createCommands, indexByKeys } from './commands'
 import { installContextMenu } from './context-menu'
-import { Editor } from './editor'
+import { Editor, type Side } from './editor'
 import { defaultFontFamily } from './fonts'
+import { PaneBars } from './pane-bars'
 import { Preferences } from './preferences'
 import { loadState, nearestFontWeight, Store, type StateKey } from './state'
 import { StatusBar } from './statusbar'
@@ -16,6 +18,7 @@ import { ThemeController } from './theme'
 
 const COUNT_DEBOUNCE_MS = 100
 const RESIZE_DEBOUNCE_MS = 500
+const SIDES: readonly Side[] = ['a', 'b']
 
 function countCodePoints(text: string): number {
   let count = 0
@@ -56,29 +59,50 @@ async function main(): Promise<void> {
   let editor: Editor | undefined
   const theme = new ThemeController(state.theme, (resolved) => editor?.setDark(resolved === 'dark'))
 
-  // The preferences panel only exists further down, so the gear button goes
-  // through a late-bound reference to the same action the command table gets.
+  // The preferences panel and the editor only exist further down, so the
+  // buttons in the bars go through late-bound references to the same actions
+  // the command table gets.
   let openPreferences = (): void => {}
-  const statusBar = new StatusBar(byId('statusbar'), {
+  let openCompare = async (): Promise<void> => {}
+  let closePane = async (_side: Side): Promise<void> => {}
+  const paneBars = new PaneBars(byId('editor'), {
     onLanguageChange: (language) => store.set({ language }),
+    onDiffModeChange: (diffMode) => store.set({ diffMode }),
+    onOpenCompare: () => void openCompare(),
+    onClosePane: (side) => void closePane(side),
+  })
+  paneBars.setLanguage(state.language)
+  paneBars.setDiffMode(state.diffMode)
+  const statusBar = new StatusBar(byId('statusbar'), {
     onAlwaysOnTopChange: (alwaysOnTop) => store.set({ alwaysOnTop }),
     onOpenPreferences: () => openPreferences(),
   })
-  statusBar.setLanguage(state.language)
   statusBar.setAlwaysOnTop(state.alwaysOnTop)
 
-  const updateCounts = debounce(COUNT_DEBOUNCE_MS, () => {
-    if (editor) statusBar.setCounts(countCodePoints(editor.getText()), editor.lineCount)
-  })
+  // Which of the two layouts the page is in, for the bars and for the tests.
+  const setLayout = (compare: boolean): void => {
+    paneBars.setCompare(compare)
+    document.documentElement.dataset.layout = compare ? 'compare' : 'single'
+  }
+  setLayout(state.compare)
+
+  const refreshCounts = (side: Side): void => {
+    if (editor) paneBars.setCounts(side, countCodePoints(editor.text(side)), editor.lineCount(side))
+  }
+  const updateCounts: Record<Side, () => void> = {
+    a: debounce(COUNT_DEBOUNCE_MS, () => refreshCounts('a')),
+    b: debounce(COUNT_DEBOUNCE_MS, () => refreshCounts('b')),
+  }
 
   editor = await Editor.create({
-    parent: byId('editor'),
+    parent: byId('panes'),
+    host: byId('editor'),
     initial: state,
     defaultFontFamily: fontFamily,
     dark: document.documentElement.dataset.theme === 'dark',
-    onDocChanged: () => {
+    onDocChanged: (side) => {
       store.markTextChanged()
-      updateCounts()
+      updateCounts[side]()
     },
     // The panel owns these toggles, so the store only records them; there is no
     // entry for them in `apply` below, and nothing to push back at the editor.
@@ -87,10 +111,11 @@ async function main(): Promise<void> {
         searchCaseSensitive: options.caseSensitive,
         searchRegexp: options.regexp,
       }),
+    onDiffChanged: (stat) => paneBars.setDiffStat(stat),
   })
   const ed = editor
-  store.setTextProvider(() => ed.getText())
-  statusBar.setCounts(countCodePoints(ed.getText()), ed.lineCount)
+  store.setTextProvider(() => ({ text: ed.text('a'), compareText: ed.text('b') }))
+  for (const side of SIDES) refreshCounts(side)
 
   // ---- quitting ----------------------------------------------------------
   let quitting = false
@@ -116,6 +141,39 @@ async function main(): Promise<void> {
 
   openPreferences = () => preferences.open()
 
+  // ---- the compare pane ---------------------------------------------------
+  // The window grows to the right by its own width when the pane opens, and
+  // shrinks back when one closes, so that the pane that stays keeps the width
+  // it had: not a dot of its text moves. Full screen keeps its size and splits
+  // what there is; so does a maximized window, which has nowhere to grow into
+  // either. Whether the screen has room is not looked at: a window that runs
+  // off its right edge can be moved.
+  const scaleWindowWidth = async (factor: number): Promise<void> => {
+    if ((await appWindow.isFullscreen()) || (await appWindow.isMaximized())) return
+    const size = (await appWindow.innerSize()).toLogical(await appWindow.scaleFactor())
+    await appWindow.setSize(new LogicalSize(Math.round(size.width * factor), Math.round(size.height)))
+  }
+  openCompare = async () => {
+    // Guarded like the search panel: the pane would open behind the
+    // preferences panel, which is taking the keyboard.
+    if (ed.compare || preferences.isOpen) return
+    ed.openCompare()
+    setLayout(true)
+    store.set({ compare: true })
+    store.markTextChanged()
+    refreshCounts('b')
+    await scaleWindowWidth(2)
+  }
+  closePane = async (side) => {
+    if (!ed.compare || preferences.isOpen) return
+    ed.closePane(side)
+    setLayout(false)
+    store.set({ compare: false })
+    store.markTextChanged()
+    refreshCounts('a')
+    await scaleWindowWidth(0.5)
+  }
+
   const commands = createCommands(
     {
       openPreferences,
@@ -128,6 +186,10 @@ async function main(): Promise<void> {
         if (!preferences.isOpen) ed.redo()
       },
       quit,
+      // The innermost thing that can be closed: the pane with the caret while
+      // there are two, otherwise the window, which is the app.
+      close: () => (ed.compare ? closePane(ed.activePane) : quit()),
+      openCompare: () => openCompare(),
       toggleFullscreen: async () => appWindow.setFullscreen(!(await appWindow.isFullscreen())),
       // Guarded like undo and redo: the panel would open behind the
       // preferences panel, which is taking the keyboard.
@@ -160,8 +222,12 @@ async function main(): Promise<void> {
   const applyFont = (): void => ed.setFont(store.state.fontSize, store.state.fontFamily, store.state.fontWeight)
   const apply: Partial<Record<StateKey, () => void>> = {
     language: () => {
-      statusBar.setLanguage(store.state.language)
+      paneBars.setLanguage(store.state.language)
       void ed.setLanguage(store.state.language)
+    },
+    diffMode: () => {
+      paneBars.setDiffMode(store.state.diffMode)
+      ed.setDiffMode(store.state.diffMode)
     },
     editorMode: () => void ed.setVim(store.state.editorMode === 'vim'),
     theme: () => theme.set(store.state.theme),

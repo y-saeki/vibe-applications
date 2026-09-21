@@ -15,6 +15,9 @@ export interface CommandActions {
   undo: () => void
   redo: () => void
   quit: () => Promise<void>
+  /** Closes the pane with the caret while there are two, and the window while there is one. */
+  close: () => Promise<void>
+  openCompare: () => Promise<void>
   toggleFullscreen: () => Promise<void>
   openSearch: () => void
   pastePlain: () => Promise<void>
@@ -34,8 +37,13 @@ export function createCommands(actions: CommandActions, platform: string): Comma
     // habit pastes here too instead of doing nothing.
     { id: 'paste_plain', title: 'プレーンテキストとして貼り付け', keys: 'Mod+Shift+V', run: actions.pastePlain },
     { id: 'find', title: '検索・置換', keys: 'Mod+F', run: actions.openSearch },
+    // The key VS Code splits its editor with. It only ever opens the pane;
+    // closing one is what Mod+W means once there are two.
+    { id: 'open_compare', title: 'テキストを比較する', keys: 'Mod+\\', run: actions.openCompare },
     { id: 'toggle_fullscreen', title: 'フルスクリーンを切り替え', keys: isMac ? 'Ctrl+Mod+F' : 'F11', run: actions.toggleFullscreen },
-    { id: 'close', title: '閉じる', keys: 'Mod+W', run: actions.quit },
+    // Closes the innermost thing that can be closed: the pane with the caret
+    // while there are two, otherwise the window, which is the app.
+    { id: 'close', title: '閉じる', keys: 'Mod+W', run: actions.close },
     { id: 'quit', title: '終了', keys: 'Mod+Q', run: actions.quit },
   ]
   return commands

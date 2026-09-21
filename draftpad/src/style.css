@@ -1,4 +1,5 @@
-/* draftpad's chrome — the status bar, the search panel, the preferences panel.
+/* draftpad's chrome — the pane bars, the status bar, the search panel, the
+   preferences panel, and the marks of the compare pane.
    Every size, spacing and color it uses is a custom property declared below,
    and nothing outside these blocks writes a number or a color of its own.
    `pnpm lint:style` enforces that, and also caps how many of these there may
@@ -92,6 +93,18 @@
      a resting state, and a cross reads as a refusal. */
   --minus-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%236e7781' stroke-width='2.4' stroke-linecap='round' d='M4.5 8h7'/%3E%3C/svg%3E");
 
+  /* The compare pane's marks. The left pane is what the right one is compared
+     against, so a chunk reads as taken out on the left and put in on the
+     right: the usual red and green, in a wash for the whole line and a
+     stronger one for the characters that differ. The mark is the stripe at
+     the line's edge, and the color the +N / −N figures in the bar take. */
+  --diff-a-line: #ffebe9;
+  --diff-a-text: rgba(255, 129, 130, 0.4);
+  --diff-a-mark: #cf222e;
+  --diff-b-line: #dafbe1;
+  --diff-b-text: rgba(74, 194, 107, 0.4);
+  --diff-b-mark: #1a7f37;
+
   /* The toggle. The track keeps the surface every other control has, one step
      sunken so the knob's own face separates from it; only the knob carries the
      accent. */
@@ -137,15 +150,16 @@
 
   /* ---- Layout ---- */
   --field-width: 240px; /* a text field's preferred width */
-  --field-width-narrow: 80px; /* a number field's, and the match count's */
+  --field-width-narrow: 80px; /* a number field's, the match count's, and the +N / −N figures' */
   --field-width-search: 360px; /* the find and replace fields, which carry more */
   --button-width-search: 72px; /* each of the search panel's four buttons */
   --label-width: 128px; /* the preferences label column */
   --panel-width: 440px;
   --panel-inset: 40px; /* the preferences panel's distance from the window */
-  --language-width: 128px; /* the floor under the status bar's language selector */
-  --count-width: 104px; /* the status bar's character count, separator included */
-  --count-width-narrow: 96px; /* its line count, which needs fewer digits */
+  --language-width: 128px; /* the floor under the left pane bar's language selector */
+  --mode-width: 96px; /* the floor under the right pane bar's diff unit selector */
+  --count-width: 48px; /* the box a pane bar's character count is set in: six digits */
+  --count-width-narrow: 32px; /* the box its line count is set in: four digits */
 
   color-scheme: light;
 }
@@ -178,6 +192,12 @@
   --indent-guide: rgba(216, 216, 216, 0.14);
   --scrollbar-thumb: rgba(216, 216, 216, 0.26);
   --scrollbar-thumb-hover: rgba(216, 216, 216, 0.48);
+  --diff-a-line: rgba(248, 81, 73, 0.15);
+  --diff-a-text: rgba(248, 81, 73, 0.4);
+  --diff-a-mark: #f85149;
+  --diff-b-line: rgba(46, 160, 67, 0.15);
+  --diff-b-text: rgba(63, 185, 80, 0.4);
+  --diff-b-mark: #3fb950;
   --editor-caret: #6cb6ff;
   --editor-selection: #2c4a6e;
   --editor-selection-match: rgba(255, 255, 255, 0.1);
@@ -188,7 +208,9 @@
   color-scheme: dark;
 }
 
-/* macOS uses a transparent overlay title bar; keep the top strip draggable. */
+/* macOS uses a transparent overlay title bar; keep the top strip draggable.
+   Windows draws a title bar of its own above the page, so there the strip has
+   no height. */
 :root[data-platform="macos"] {
   --titlebar-height: 28px;
 }
@@ -208,9 +230,14 @@ body {
   font: var(--font-size-body) var(--ui-font);
 }
 
+/* The strip the window's own buttons sit on. It is painted like the pane bar
+   under it, with no rule between the two, so that the two read as one bar: the
+   spec draws macOS that way. Left to the page's own background, the strip was
+   one shade and the bar under it another, and the seam between them showed. */
 #titlebar {
   flex: none;
   height: var(--titlebar-height);
+  background: var(--panel);
 }
 
 /* ---- Controls shared by every panel ------------------------------------ */
@@ -439,24 +466,148 @@ option {
 
 /* ---- Editor ------------------------------------------------------------ */
 
+/* The editor is a column: the pane heads (each pane's bar), then the panes,
+   which carry their own panels (the search panel, the Vim status line) at
+   their feet. The heads are a row of one cell per pane. */
 #editor {
   display: flex;
+  flex-direction: column;
   flex: 1 1 auto;
   min-height: 0;
 }
 
-#editor .cm-editor {
-  flex: 1 1 auto;
+.pane-row {
+  position: relative;
+  flex: none;
+  display: flex;
+  align-items: stretch;
+}
+
+/* Half each, by the same arithmetic the merge view lays its two panes out
+   with (a basis of nothing and equal growth), so that the cells stand over
+   the panes. */
+.pane-head {
+  flex: 1 1 0;
   min-width: 0;
+}
+
+/* The author sheet's display beats the `[hidden] { display: none }` the
+   browser ships, so the switch is spelled out. The right pane's head is
+   hidden this way while there is one pane, and so is whichever of the left
+   pane's two buttons is not in use. */
+.pane-head[hidden],
+.icon-button[hidden] {
+  display: none;
+}
+
+#panes {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* The rule between the two panes: one pixel down the middle of the row of
+   heads and of the box the panes are in, drawn last. It is not a border on
+   either pane, because a border is a column of the layout: it would take one
+   pixel out of the right pane and leave the two unequal, or out of the left
+   one and move its text, which keeps the width it had alone. Nor is it a
+   shadow on the right pane, because that is painted before the left pane's
+   own surface — the dark look gives the editor a background of its own, and
+   the rule went under it. As the last thing in each box it is painted over
+   the panes, on the first pixel of the right one, inside its padding. */
+:root[data-layout="compare"] .pane-row::after,
+:root[data-layout="compare"] #panes::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  background: var(--border);
+  pointer-events: none;
+}
+
+/* One pane: the editor fills the box, and its scroller is what scrolls. */
+#panes > .cm-editor {
   height: 100%;
 }
 
-#editor .cm-editor.cm-focused {
+#panes .cm-editor.cm-focused {
   outline: none;
 }
 
-#editor .cm-scroller {
+#panes > .cm-editor > .cm-scroller {
   overflow: auto;
+}
+
+/* Two panes: the merge view is the one thing that scrolls. Its panes grow with
+   their text and are held level by the spacers CodeMirror puts between chunks,
+   so scrolling the outer element moves both together. It is given the box's
+   height so that it has something to scroll inside. */
+#panes > .cm-mergeView {
+  height: 100%;
+}
+
+/* The panes reach the bottom even when the text is short, so a click in the
+   empty space below the last line still lands on a pane. CodeMirror pins the
+   scroller to its content's height; the column flex below stretches the
+   editor around it and the scroller with it, and the content follows the
+   scroller through its own min-height. */
+#panes .cm-mergeViewEditors {
+  min-height: 100%;
+}
+
+/* The merge view clips each pane's box, which would also stop the panels in
+   it from sticking to the merge view as it scrolls: a sticky box holds to the
+   nearest ancestor that clips, and a box that clips does not scroll. Left
+   open, the pane's panels hold to the merge view instead and stay in view.
+   The clipping was what kept the pane from growing past its half; the floor
+   of nothing does the same. */
+#panes .cm-mergeViewEditor {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: visible;
+}
+
+#panes .cm-mergeViewEditor .cm-editor,
+#panes .cm-mergeViewEditor .cm-scroller {
+  flex: 1 1 auto;
+}
+
+/* A chunk paints its lines on both sides, with a stripe at the line's edge in
+   the stronger color. In char mode the merge view also marks the characters
+   within them that differ; in line mode it does not, and the lines are all
+   there is.
+
+   The stripe is an inset shadow on the line rather than the merge view's own
+   gutter: a gutter is a column beside the text, which would leave the pane
+   narrower than it was alone, while the shadow sits in the line's padding.
+   The wash is a color rather than a background, so that it lies under the
+   rules the indent guides draw as an image on the same line. */
+#panes .cm-merge-a .cm-changedLine {
+  background-color: var(--diff-a-line);
+  box-shadow: inset var(--space-1) 0 var(--diff-a-mark);
+}
+
+#panes .cm-merge-b .cm-changedLine {
+  background-color: var(--diff-b-line);
+  box-shadow: inset var(--space-1) 0 var(--diff-b-mark);
+}
+
+#panes .cm-merge-a .cm-changedText {
+  background: var(--diff-a-text);
+}
+
+#panes .cm-merge-b .cm-changedText {
+  background: var(--diff-b-text);
+}
+
+/* The space the merge view leaves opposite lines the other pane has and this
+   one has not, so the lines both panes share stay level. Hatched, as VS Code
+   draws it, so it reads as "nothing here" rather than as blank lines. */
+#panes .cm-mergeSpacer {
+  background: repeating-linear-gradient(-45deg, var(--border) 0 1px, transparent 1px var(--space-2));
 }
 
 #editor .cm-content {
@@ -865,10 +1016,19 @@ option {
   right: var(--space-2);
 }
 
-/* ---- Status bar -------------------------------------------------------- */
+/* ---- Pane bars --------------------------------------------------------- */
 
-#statusbar {
-  flex: none;
+/* The bar above each pane: the language selector at the left end and, at the
+   right end, the counts and the button that opens the compare pane or closes
+   this pane. The right pane's bar has the diff unit selector where the
+   language selector is, and the +N / −N figures before the counts.
+
+   The spacing at the right end, from the spec: a hairline, --space-3, the
+   counts, --space-3, a hairline, and then --space-3 on either side of the
+   button's glyph — which the button's own gutter, --space-1 around the glyph,
+   makes up half of. Nothing here is a gap, so that each distance can be
+   read off the rule that sets it. */
+.pane-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -878,7 +1038,7 @@ option {
      --icon-size glyph, so it already brings a gutter of its own and an equal
      padding at both ends would read as a wider gap on that side. */
   padding: 0 var(--space-2) 0 var(--space-3);
-  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
   background: var(--panel);
   color: var(--muted);
   font-size: var(--font-size-caption);
@@ -886,48 +1046,79 @@ option {
   -webkit-user-select: none;
 }
 
-.statusbar-group {
+.pane-bar-group {
   display: flex;
   align-items: center;
   white-space: nowrap;
 }
 
-/* The controls at the right end sit close together; the counts at the left end
-   are spaced by their own padding instead, so that group takes no gap. */
-.statusbar-actions {
-  gap: var(--space-1);
+/* The counts are read-only cells, closed off by hairlines the way the
+   platform's own status bars do it: one before the pair and one after.
+
+   Each count is a figure set against the right of a box as wide as its
+   longest reading — six digits of characters, four of lines — with its word
+   after it. The words, the hairlines and the button beyond them therefore
+   stay put as the digits come and go, and the word of one count sits close
+   to the box of the next, as the spec draws them. The figures are lined up
+   on the same advance. */
+.pane-cell {
+  padding-left: var(--space-3);
+  border-left: 1px solid var(--border);
 }
 
-/* The counts are read-only cells; a hairline closes each of them off the way
-   the platform's own status bars do.
-
-   Each cell is as wide as its longest reading rather than as wide as what it
-   currently says, so the separators and everything to their right stay put as
-   the digits come and go. The widths count the padding and the hairline, and
-   the figures are lined up on the same advance. */
-.statusbar-cell {
-  box-sizing: border-box;
-  min-width: var(--count-width);
-  padding-right: var(--space-4);
+.pane-cell + .pane-cell {
+  padding-left: var(--space-2);
+  padding-right: var(--space-3);
+  border-left: none;
   border-right: 1px solid var(--border);
+}
+
+.count-figure {
+  display: inline-block;
+  min-width: var(--count-width);
   font-variant-numeric: tabular-nums;
+  text-align: right;
 }
 
-.statusbar-cell + .statusbar-cell {
+.pane-cell + .pane-cell .count-figure {
   min-width: var(--count-width-narrow);
-  padding-left: var(--space-4);
 }
 
-/* Always-on-top is a state of the window rather than a field to fill in, so
-   the button carries it: pressed, it takes the accent instead of a tick. */
-#always-on-top[aria-pressed="true"] {
-  background: color-mix(in srgb, var(--accent) 15%, transparent);
-  color: var(--accent);
+/* The button at the end of the bar stands --space-3 clear of the hairline
+   and of the window's edge alike, glyph to glyph: the button's own gutter
+   plus this margin on the one side, plus the bar's padding on the other. */
+.pane-bar-group .icon-button {
+  margin-left: var(--space-2);
 }
 
-/* The language selector otherwise arrives in the platform's own control grey,
-   which reads as a hole in the bar. Keep it flat until it is pointed at. */
-#statusbar select {
+/* What the right pane adds and takes out, in the colors of the marks, a step
+   quieter: the two at full strength are a shout beside the greys of the bar.
+   Figures that hold their width, in a box of its own width, so that the
+   cells beside them hold still as well, and the same distance from the
+   hairline as the line count keeps on its other side. */
+.diff-stat {
+  display: inline-flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  min-width: var(--field-width-narrow);
+  padding-right: var(--space-3);
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.8;
+}
+
+.diff-added {
+  color: var(--diff-b-mark);
+}
+
+.diff-removed {
+  color: var(--diff-a-mark);
+}
+
+/* A selector otherwise arrives in the platform's own control grey, which
+   reads as a hole in the bar. Keep it flat until it is pointed at. */
+.pane-bar select {
   padding: 2px var(--space-1);
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
@@ -937,23 +1128,54 @@ option {
   cursor: pointer;
 }
 
-#statusbar select:hover {
+.pane-bar select:hover {
   border-color: var(--border);
   background: var(--control-bg);
   color: var(--fg);
 }
 
-#statusbar select:focus-visible {
+.pane-bar select:focus-visible {
   outline: 1px solid var(--accent);
   outline-offset: 1px;
 }
 
 /* A native select is as wide as its widest option, so the bar never moved as
-   the language changed. Where the list is ours (see the dropdown section) the
+   the choice changed. Where the list is ours (see the dropdown section) the
    button fits the selected label instead, so the floor that used to come for
-   free has to be said out loud. */
-:root[data-platform="windows"] #statusbar select {
+   free has to be said out loud, one for each selector. */
+:root[data-platform="windows"] #language-select {
   min-width: var(--language-width);
+}
+
+:root[data-platform="windows"] #diff-mode-select {
+  min-width: var(--mode-width);
+}
+
+/* ---- Status bar -------------------------------------------------------- */
+
+/* What stays at the bottom of the window: the always-on-top toggle and the
+   gear, at the right end. */
+#statusbar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-1);
+  height: var(--statusbar-height);
+  padding: 0 var(--space-2);
+  border-top: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--muted);
+  font-size: var(--font-size-caption);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Always-on-top is a state of the window rather than a field to fill in, so
+   the button carries it: pressed, it takes the accent instead of a tick. */
+#always-on-top[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  color: var(--accent);
 }
 
 /* ---- Preferences ------------------------------------------------------- */
@@ -1192,10 +1414,11 @@ option {
 
 /* ---- Scrollbars -------------------------------------------------------- */
 
-/* Two boxes scroll: the draft and the preferences panel. Both carry a bar of
-   draftpad's own (src/overlay-scrollbar.ts), laid over their content instead
-   of beside it, so that a draft which outgrows its window no longer takes a
-   column out of the editor and reflows every wrapped line on the way.
+/* Two boxes scroll: the draft — the one pane, or the merge view that holds the
+   two — and the preferences panel. Both carry a bar of draftpad's own
+   (src/overlay-scrollbar.ts), laid over their content instead of beside it, so
+   that a draft which outgrows its window no longer takes a column out of the
+   editor and reflows every wrapped line on the way.
 
    The platform's own bars step aside for them, on both axes: that cannot be
    asked for on one alone. Neither box overflows sideways — every line of the
@@ -1206,11 +1429,13 @@ option {
    WebKit a macOS that has never been updated is left on knows only the
    pseudo-element. */
 #editor .cm-scroller,
+#editor .cm-mergeView,
 .panel {
   scrollbar-width: none;
 }
 
 #editor .cm-scroller::-webkit-scrollbar,
+#editor .cm-mergeView::-webkit-scrollbar,
 .panel::-webkit-scrollbar {
   display: none;
 }

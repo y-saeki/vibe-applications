@@ -10,6 +10,9 @@ import { mockIPC, mockWindows } from '@tauri-apps/api/mocks'
 /** Mirrors `State` in src/state.ts. */
 export interface State {
   text: string
+  compareText: string
+  compare: boolean
+  diffMode: string
   language: string
   editorMode: string
   theme: string
@@ -42,6 +45,7 @@ export interface BackendConfig {
   failSave?: string
   /** What the clipboard holds; left out, reading it fails as an empty one does. */
   clipboard?: string
+  /** The window's inner size in physical pixels, which `set_size` moves on. */
   innerSize: { width: number; height: number }
   scaleFactor: number
 }
@@ -52,16 +56,27 @@ export interface Call {
   args: unknown
 }
 
+/** A window size in logical pixels, as the app asks for one. */
+export interface Resize {
+  width: number
+  height: number
+}
+
 export interface Harness {
   config: BackendConfig
   calls: Call[]
   /** The state the last `save_state` was given, or null before the first save. */
   saved: State | null
+  /** The size the last `set_size` asked for, or null before the first. */
+  resized: Resize | null
 }
 
 // Matches `impl Default for State` in src-tauri/src/state.rs.
 const DEFAULT_STATE: State = {
   text: '',
+  compareText: '',
+  compare: false,
+  diffMode: 'char',
   language: 'markdown',
   editorMode: 'normal',
   theme: 'system',
@@ -125,13 +140,28 @@ function handle(cmd: string, args: unknown): unknown {
     case 'plugin:window|is_fullscreen':
       return fullscreen
     // draftpad never maximizes the window itself; it only asks before it
-    // records a new size.
+    // records a new size, and before it changes one.
     case 'plugin:window|is_maximized':
       return false
     case 'plugin:window|inner_size':
       return config.innerSize
     case 'plugin:window|scale_factor':
       return config.scaleFactor
+    case 'plugin:window|set_size': {
+      // The size arrives as the API's own `Size`, which goes on the wire as
+      // `{ Logical: { width, height } }` or `{ Physical: ... }`. draftpad
+      // only ever asks in logical pixels, which is what the real window
+      // scales for the screen.
+      const wire = JSON.parse(JSON.stringify((args as { value: unknown }).value)) as { Logical?: Resize }
+      if (!wire.Logical) throw new Error('draftpad test: set_size was given a size that is not logical')
+      harness.resized = wire.Logical
+      // The window is that size from now on, so the next resize scales this one.
+      config.innerSize = {
+        width: wire.Logical.width * config.scaleFactor,
+        height: wire.Logical.height * config.scaleFactor,
+      }
+      return null
+    }
     default:
       throw new Error(`draftpad test: unexpected command ${cmd}`)
   }

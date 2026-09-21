@@ -1,14 +1,22 @@
 // Persistent state: the draft text plus every setting. Mirrors `State` in
-// src-tauri/src/state.rs. Settings changes go through `Store.set`; the text
-// lives in the editor and is pulled in lazily when a save happens.
+// src-tauri/src/state.rs. Settings changes go through `Store.set`; the texts
+// live in the editor and are pulled in lazily when a save happens.
 
 import { invoke } from '@tauri-apps/api/core'
 
 export type EditorMode = 'normal' | 'vim'
 export type Theme = 'system' | 'light' | 'dark'
+/** How a differing chunk is marked: whole lines only, or the characters within them too. */
+export type DiffMode = 'line' | 'char'
 
 export interface State {
+  /** The draft: the only pane, or the left one while the compare pane is open. */
   text: string
+  /** The right pane, while the compare pane is open; empty otherwise. */
+  compareText: string
+  /** Whether the compare pane is open, so the window holds two panes. */
+  compare: boolean
+  diffMode: DiffMode
   language: string
   editorMode: EditorMode
   theme: Theme
@@ -39,6 +47,12 @@ export interface Loaded {
   openPreferences: boolean
 }
 
+/** The two texts, as the editor hands them back at save time. */
+export interface Texts {
+  text: string
+  compareText: string
+}
+
 export const FONT_SIZE_MIN = 10
 export const FONT_SIZE_MAX = 100
 /** The nine weights CSS names, which is the scale the panel offers. */
@@ -55,13 +69,14 @@ export function loadState(): Promise<Loaded> {
 }
 
 export type StateKey = keyof State
-export type SettingsKey = Exclude<StateKey, 'text'>
+export type TextKey = keyof Texts
+export type SettingsKey = Exclude<StateKey, TextKey>
 export type SettingsPatch = Partial<Pick<State, SettingsKey>>
 export type Listener = (state: Readonly<State>, changed: ReadonlySet<StateKey>) => void
 
 export class Store {
   private current: State
-  private textProvider: () => string
+  private textProvider: () => Texts
   private readonly listeners = new Set<Listener>()
   private timer: number | undefined
   private dirty = false
@@ -69,15 +84,15 @@ export class Store {
 
   constructor(initial: State) {
     this.current = { ...initial }
-    this.textProvider = () => this.current.text
+    this.textProvider = () => ({ text: this.current.text, compareText: this.current.compareText })
   }
 
   get state(): Readonly<State> {
     return this.current
   }
 
-  /** The editor registers itself here so saves read the live document. */
-  setTextProvider(provider: () => string): void {
+  /** The editor registers itself here so saves read the live documents. */
+  setTextProvider(provider: () => Texts): void {
     this.textProvider = provider
   }
 
@@ -101,7 +116,7 @@ export class Store {
     this.scheduleSave()
   }
 
-  /** Called on every document change; the text itself is read at save time. */
+  /** Called on every document change; the texts themselves are read at save time. */
   markTextChanged(): void {
     this.scheduleSave()
   }
@@ -129,7 +144,9 @@ export class Store {
     if (this.inflight) await this.inflight
     if (!this.dirty) return
     this.dirty = false
-    this.current.text = this.textProvider()
+    const { text, compareText } = this.textProvider()
+    this.current.text = text
+    this.current.compareText = compareText
     const snapshot: State = { ...this.current }
     this.inflight = invoke<void>('save_state', { state: snapshot })
       .catch((err: unknown) => {

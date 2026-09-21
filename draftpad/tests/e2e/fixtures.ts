@@ -5,10 +5,13 @@ import { readFileSync } from 'node:fs'
 
 import { test as base, expect, type Locator, type Page } from '@playwright/test'
 
-import type { BackendConfig, Call, State } from './harness/backend'
+import type { BackendConfig, Call, Resize, State } from './harness/backend'
 import { HARNESS_BUNDLE } from './harness/paths'
 
 export type { State }
+
+/** The left pane is `a` and the right one `b`, as src/editor.ts names them; the only pane is `a`. */
+export type Side = 'a' | 'b'
 
 /** Everything a spec may vary about the fake backend; the rest is filled in. */
 export type LaunchOptions = Partial<BackendConfig> & {
@@ -71,10 +74,25 @@ const DEFAULT_CONFIG: BackendConfig = {
 const SAVE_TIMEOUT_MS = 3000
 
 export class App {
+  /** The editable content of the only pane; with two, the left one is `editorA` and the right `editorB`. */
   readonly editor: Locator
+  readonly editorA: Locator
+  readonly editorB: Locator
   readonly chars: Locator
   readonly lines: Locator
+  readonly charsB: Locator
+  readonly linesB: Locator
   readonly languageSelect: Locator
+  readonly diffModeSelect: Locator
+  /** The +N and −N figures in the right pane's bar. */
+  readonly diffAdded: Locator
+  readonly diffRemoved: Locator
+  /** The button in the left pane's bar that opens the compare pane, and the two that close a pane. */
+  readonly compareButton: Locator
+  readonly closeA: Locator
+  readonly closeB: Locator
+  /** The right pane's bar, which is in the page only while that pane is. */
+  readonly paneHeadB: Locator
   readonly alwaysOnTop: Locator
   readonly gear: Locator
   readonly preferences: Locator
@@ -91,9 +109,20 @@ export class App {
     readonly cspViolations: string[],
   ) {
     this.editor = page.locator('.cm-content')
+    this.editorA = page.locator('.cm-merge-a .cm-content')
+    this.editorB = page.locator('.cm-merge-b .cm-content')
     this.chars = page.locator('#status-chars')
     this.lines = page.locator('#status-lines')
+    this.charsB = page.locator('#status-chars-b')
+    this.linesB = page.locator('#status-lines-b')
     this.languageSelect = page.locator('#language-select')
+    this.diffModeSelect = page.locator('#diff-mode-select')
+    this.diffAdded = page.locator('#status-diff .diff-added')
+    this.diffRemoved = page.locator('#status-diff .diff-removed')
+    this.compareButton = page.locator('#open-compare')
+    this.closeA = page.locator('#close-a')
+    this.closeB = page.locator('#close-b')
+    this.paneHeadB = page.locator('#pane-head-b')
     this.alwaysOnTop = page.locator('#always-on-top')
     this.gear = page.locator('#open-preferences')
     this.preferences = page.locator('#preferences')
@@ -104,6 +133,41 @@ export class App {
     // src/editor.ts, which is the only handle the page gives these two.
     this.searchMatchCase = this.searchPanel.getByLabel('大文字小文字を区別')
     this.searchRegexp = this.searchPanel.getByLabel('正規表現')
+  }
+
+  /** The editable content of one of the two panes. */
+  paneEditor(side: Side): Locator {
+    return side === 'a' ? this.editorA : this.editorB
+  }
+
+  /** The pane's whole editor element, which is what carries the merge view's side class. */
+  pane(side: Side): Locator {
+    return this.page.locator(`.cm-merge-${side}`)
+  }
+
+  /** The lines the merge view has marked as part of a chunk, on one side. */
+  changedLines(side: Side): Locator {
+    return this.pane(side).locator('.cm-changedLine')
+  }
+
+  /** The characters the merge view has marked as differing, on one side. */
+  changedText(side: Side): Locator {
+    return this.pane(side).locator('.cm-changedText')
+  }
+
+  /** The gaps the merge view has opened in one pane, opposite lines only the other pane has. */
+  gaps(side: Side): Locator {
+    return this.pane(side).locator('.cm-mergeSpacer')
+  }
+
+  /** The search panel of one of the two panes, at the foot of that pane. */
+  searchPanelOf(side: Side): Locator {
+    return this.pane(side).locator('.cm-search')
+  }
+
+  /** The bar above one of the two panes. */
+  paneBar(side: Side): Locator {
+    return this.page.locator(`#pane-head-${side} .pane-bar`)
   }
 
   /** Every mark the editor draws on its spaces and tabs, while that setting is on. */
@@ -198,6 +262,11 @@ export class App {
     return this.page.evaluate(() => window.__draftpad.saved)
   }
 
+  /** The size the app last asked the window to take, in logical pixels, or null before it asked. */
+  resized(): Promise<Resize | null> {
+    return this.page.evaluate(() => window.__draftpad.resized)
+  }
+
   /** Waits for a `save_state` whose state satisfies `predicate`. */
   async expectSaved(predicate: (state: State) => boolean): Promise<void> {
     await expect
@@ -247,7 +316,21 @@ export class App {
    * rather than assumed.
    */
   async typeInEditor(text: string): Promise<void> {
-    await expect(this.editor).toBeFocused()
+    await this.typeInto(this.editor, text)
+  }
+
+  /**
+   * The same, into one of the two panes. The pane is clicked first unless it
+   * already has the keyboard, so the text lands where it was meant to.
+   */
+  async typeInPane(side: Side, text: string): Promise<void> {
+    const editor = this.paneEditor(side)
+    if (!(await editor.evaluate((element) => element === document.activeElement))) await editor.click()
+    await this.typeInto(editor, text)
+  }
+
+  private async typeInto(editor: Locator, text: string): Promise<void> {
+    await expect(editor).toBeFocused()
     for (const [index, line] of text.split('\n').entries()) {
       if (index > 0) await this.page.keyboard.press('Enter')
       if (line) await this.page.keyboard.insertText(line)
@@ -276,7 +359,7 @@ export const test = base.extend<{ launch: (options?: LaunchOptions) => Promise<A
         if (/content security policy/i.test(message.text())) cspViolations.push(message.text())
       })
       await page.addInitScript((value: BackendConfig) => {
-        window.__draftpad = { config: value, calls: [], saved: null }
+        window.__draftpad = { config: value, calls: [], saved: null, resized: null }
       }, config)
       await page.addInitScript({ path: HARNESS_BUNDLE })
       await page.goto('/')

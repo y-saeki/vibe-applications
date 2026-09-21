@@ -16,6 +16,10 @@
 //! which knows nothing about the editor's history. "Paste as plain text" is
 //! forwarded too: the predefined paste item carries Cmd+V and takes no
 //! accelerator of its own.
+//!
+//! "閉じる" (Cmd+W) is forwarded as well: what it closes is decided in the
+//! page — the pane with the caret while the compare pane is open, otherwise
+//! the window.
 
 use serde::Deserialize;
 use tauri::menu::{ContextMenu, MenuBuilder, MenuItemBuilder};
@@ -42,7 +46,7 @@ pub(crate) const FIND: &str = "検索・置換";
 #[cfg(target_os = "macos")]
 pub(crate) const EDIT_TITLE: &str = "編集";
 
-const FORWARDED_IDS: [&str; 7] = [
+const FORWARDED_IDS: [&str; 8] = [
     "preferences",
     "quit",
     "close",
@@ -50,6 +54,7 @@ const FORWARDED_IDS: [&str; 7] = [
     "redo",
     "paste_plain",
     "find",
+    "open_compare",
 ];
 
 /// Carries every menu item [`FORWARDED_IDS`] names to the webview. Both menus
@@ -162,7 +167,15 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
         .item(&item("find", FIND, "CmdOrCtrl+F")?)
         .build()?;
 
+    // Cmd+\ is the key VS Code splits its editor with. It only opens the
+    // compare pane; Cmd+W is what closes one, so no key is added for that.
     let view = SubmenuBuilder::new(app, "表示")
+        .item(&item(
+            "open_compare",
+            "テキストを比較する",
+            "CmdOrCtrl+Backslash",
+        )?)
+        .separator()
         .item(&item("close", "閉じる", "CmdOrCtrl+W")?)
         .fullscreen_with_text("フルスクリーンを切り替え");
     #[cfg(debug_assertions)]

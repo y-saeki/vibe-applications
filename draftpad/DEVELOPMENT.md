@@ -2,8 +2,9 @@
 
 draftpad をビルド・変更するための情報です。使い方やインストール方法は [README.md](./README.md) を参照してください。
 
-フロントエンドは CodeMirror 6、シェルは Tauri v2(Rust)です。配布対象は macOS(Apple Silicon)と
-Windows(x64)の 2 つで、どちらも GitHub Actions でビルドします。
+フロントエンドは CodeMirror 6 で、比較ペインを開いたときの 2 ペイン表示は
+[`@codemirror/merge`](https://github.com/codemirror/merge) の `MergeView` です。シェルは Tauri v2(Rust)です。
+配布対象は macOS(Apple Silicon)と Windows(x64)の 2 つで、どちらも GitHub Actions でビルドします。
 
 ## 開発に必要なもの
 
@@ -90,6 +91,11 @@ pnpm exec playwright install chromium webkit
 Windows 側の経路(アプリ内のキー処理)を、どちらも Linux のランナー 1 台で確認できます。
 `tests/e2e/menu.spec.ts` と `tests/e2e/shortcuts.spec.ts` がその 2 つです。
 
+比較ペインそのもの(開閉、どの行・どの文字に印が付くか、行アキ、`+N` / `−N`、2 ペインで共有するもの)は
+`tests/e2e/compare.spec.ts` にあります。印は `MergeView` が付ける `.cm-changedLine` / `.cm-changedText` を数えて確認し、
+行アキは `.cm-mergeSpacer` の数と両ペインの同じ行の縦位置で確認します。ウィンドウの幅は、ハーネスが `set_size` に
+渡された値を `resized` として返すので、それを見ます。
+
 開発サーバは Content-Security-Policy を送りません。配布物はこれを持つため(`src-tauri/tauri.conf.json` の
 `csp`)、ポリシーが禁じている読み込みはテストでは通り、インストールしたアプリでだけ失敗します。
 `tests/e2e/csp.spec.ts` だけが同じポリシーの下でページを開くので、`data:` URI のような自分のファイル以外の
@@ -103,7 +109,7 @@ Windows 側の経路(アプリ内のキー処理)を、どちらも Linux のラ
   確認します。Windows 側の項目の絞り込みは webview の外なので届きません
 - IME の未確定文字列と変換候補の位置
 - 常に手前に表示・フルスクリーン・ウィンドウサイズが実際にどうなるか
-  (`invoke` が正しく呼ばれたところまでは確認します)
+  (`invoke` が正しく呼ばれたところまでは確認します。比較ペインの開閉でウィンドウの幅が本当に倍になるかも同じです)
 - 展開したドロップダウンの macOS での見た目。Playwright が同梱する WebKit は 26.0 で、
   `appearance: base-select` は WebKit 27 からなので、プラットフォームのメニューが開く側の経路しか
   通りません。該当のテストは `CSS.supports()` を見て自分をスキップするため、Playwright が 27 以降を
@@ -269,7 +275,7 @@ CodeMirror の既定のガターはパネルです。自分の地色を持ち、
 
 字の色は `--line-number` で、中身は `--whitespace` そのものです。別の値を書くのではなく参照で
 持たせてあるので、印の色を動かせば番号も一緒に動きます。同じ役どころだからです。探しに行けば
-見つかり、それ以外のときは引っ込んでいる——draftpad にはファイルもコンパイラも差分もないので、
+見つかり、それ以外のときは引っ込んでいる——draftpad にはファイルもコンパイラもないので、
 行番号を読み取らなければならない場面がそもそもありません。「行へ移動」と、人に「12 行目の」と
 伝えるときくらいで、どちらも意識して探しに行く場面です。濃さの並びは 本文 > 行番号 = 空白文字の印
 > インデントガイド になります。
@@ -311,7 +317,9 @@ OS の設定次第です。そのため `src/style.css` がプラットフォー
 消すのに 2 つ書いているのは、標準の `scrollbar-width` が Safari 18.2 以降のもので、そこまで更新していない
 macOS には `::-webkit-scrollbar` しか届かないためです。
 
-対象は draftpad 自身がスクロールさせる 2 箇所、下書き(`.cm-scroller`)と環境設定パネル(`.panel`)です。
+対象は draftpad 自身がスクロールさせる 2 箇所、下書き(1 ペインなら `.cm-scroller`、比較ペインを開いている間は
+2 ペインを収める `.cm-mergeView`)と環境設定パネル(`.panel`)です。ペインを作り直すとき(下記「比較ペイン」)は
+古いバーも `destroy()` で外し、新しい箱に新しいバーを付けます。
 Windows で `<select>` を展開したリストは中に要素を足せないので、そこは webview のバーのままです。
 
 ### 横のバーは描きません
@@ -351,7 +359,7 @@ content edge を越える中身があるか——をそのまま見ます。`.pa
 `:root` に置くと割合が常に初期値の 0 になります。
 
 バーの位置はビューポート基準(`position: fixed`)で、`src/overlay-scrollbar.ts` が毎回置き直します。
-どちらのバーも包含ブロックを用意しなくて済み、検索パネルが開いて下書きが下へずれるような場合にも
+どちらのバーも包含ブロックを用意しなくて済み、検索パネルが開いて下書きの箱が縮むような場合にも
 そのまま追随します。環境設定パネルのバーだけはダイアログの中に入れます。ダイアログはトップレイヤーに
 あり、その上に描けるものが他にないためです。
 
@@ -369,6 +377,123 @@ content edge を越える中身があるか——をそのまま見ます。`.pa
 
 つまみはドラッグでスクロールできます。溝の余白には何も割り当てていません。ポインタを受け取らないので、
 押すと下書きの側に当たります。重ねて描くバーは普段消えていて、狙って押す場所ではないという判断です。
+
+## 比較ペイン
+
+ペインのバー右端のボタン(`src/pane-bars.ts`)、メニューの「テキストを比較する」、`Mod+\` のどれかで、右にペインが
+1 つ増えます。1 ペインのときのエディタは素の `EditorView`、2 ペインのときは `@codemirror/merge` の `MergeView` で、
+左が `a`、右が `b` です(`src/editor.ts`)。`MergeView` が 2 つの `EditorView` を作り、どちらかの文書が変わるたびに
+差分(chunk の列)を計算し直して両方に配ります。ペインの幅は必ずウィンドウの半分ずつで、変える操作はありません。
+
+### 作り直しで切り替える
+
+`MergeView` は自分で作った状態しか受け付けないので、開くときは 1 ペインの `EditorView` を破棄して `MergeView` を、
+閉じるときはその逆を作ります。持ち越すのは、残る側の文書と選択範囲、そして設定です。設定はどれも `Compartment` に
+入っていて、`Editor` が今の値を `current` に控えているため、後から作るペインも同じ内容で始まります。`Compartment` は
+両ペインで 1 つを共有し(各状態が自分の中身を持ちます)、変更は全部のペインに順に dispatch します。
+
+履歴だけは持ち越せません。新しい `EditorState` には前の履歴がないので、ペインを開いた・閉じた時点で「元に戻す」は
+そこで止まります(README の制限事項に書いてあります)。
+
+開いた直後の右ペインは左のコピーで、キャレットの位置も同じです。キーボードは新しい右ペインに移します。これから
+比較相手を貼り付ける場所がそこで、そのまま `Mod+W` を押せば開く前に戻る、という対称にもなっています。閉じたあとは
+残ったペインにキーボードを戻します。
+
+### パネルはペインの中に
+
+検索・置換パネルと Vim のステータス行は CodeMirror の bottom パネルで、エディタ要素の中、スクローラの下に付きます。
+2 ペインでもそのままです。`MergeView` の中では各エディタが本文と同じ高さまで伸びますが、CodeMirror のパネルは
+`position: sticky` なので、スクロールする `.cm-mergeView` の下端に張り付いて見え続けます。ただし sticky は
+いちばん近い「クリップする祖先」に対して効くので、`MergeView` が各ペインの箱に付けている `overflow: hidden` を
+`style.css` で `visible` に戻しています(幅の下限は `min-width: 0` で保ちます)。パネルの高さはそのペインの
+末尾、最終行の後ろに足されるだけなので、行の対応はずれません。もう一方のペインは同じ高さに引き伸ばされ、その分は
+末尾まで送ったときにだけ空きとして現れます。パネルをペインの外の行に出す形も試しましたが、開いていない側の
+ペインの下に常に空白が出るので、やめました。
+
+検索パネルはキャレットのあるペインにだけ開きます。「大文字小文字を区別」「正規表現」の 2 つは 1 つの設定で、
+片方のペインで切り替えるともう一方の `SearchQuery` にも `setSearchQuery` で同じフラグを送ります(検索語はペインごと)。
+送るのは CodeMirror の更新が終わってから(microtask)で、送られた側も同じ経路で変更を報告しますが、もう揃っているので
+何もしません。
+
+### ウィンドウの幅
+
+開くとウィンドウの幅を 2 倍に、閉じると半分にします(`src/main.ts` の `scaleWindowWidth`、Tauri の `set_size`)。
+位置は触らないので左上が基準で、右へ広がって右へ縮みます。残るペインは開く前と同じ幅で、折り返し位置は動きません。
+画面の右に収まるかどうかは見ません。はみ出したらユーザーが動かせます。フルスクリーンと最大化中は大きさを変えず、
+その中で左右に分けます。ウィンドウのサイズは `resize` のたびに `state.json` へ残るので、2 ペインで終了すれば
+2 ペイン分の幅で起動します。
+
+「1 ドットも動かない」ために、レイアウトから 2 つ外してあります。ペインの仕切りは `border` ではなく、バーの行と
+ペインの箱それぞれの `::after` で真ん中に描く 1px の縦線です。`border` だと 1px がどちらかのペインから減ります。
+右ペインの `box-shadow` でも描けそうですが、ダークテーマではエディタ自身が背景を持ち、後から描かれる左ペインの面に
+隠れました。各箱の最後の子として描く擬似要素なら、両ペインの上に乗ります。変更行の左端の帯は `MergeView` の
+gutter(`gutter: false`)ではなく、行自身の `box-shadow: inset` です。gutter は本文の横に
+列を足すので、本文が 1 ペインのときより狭くなります。`tests/e2e/compare.spec.ts` が、開いた後の両ペインの幅と
+本文の幅を見ています。
+
+### 差分の計算と表示
+
+`@codemirror/merge` の差分は文字単位で、変更された文字の並びを行の境界で区切って chunk にします。これを
+そのまま使うと、左右で行を対応付ける表示としては困ることが 2 つあります。
+
+- 末尾に行を足すと、文字としては直前の行の末尾に改行を足したことになるので、直前の行が両側で変更扱いになり、
+  足した行の向かいに空きが出ない
+- 削除と挿入の間にある共通行が 3 文字未満だと 1 つの変更に併合され、共通行ごと塗られる
+
+VS Code や difff は先に行同士を対応付け、その中で初めて文字を比べます。draftpad も同じ順にしています
+(`src/linediff.ts`)。まず両方の文書の行を「同じ内容の行は同じ 1 文字」に置き換えた文字列を作り、それをパッケージの
+`diff` にかけると、行単位の差分がそのまま得られます(文字は UTF-16 の 1 単位で、diff が途中で割ってしまうサロゲート
+領域は避けているので、区別できる行の種類は 63,488 までです。超えたときだけパッケージ本来の文字単位の計算に戻します)。
+得られた各ブロックを `Chunk` にし、ブロックの中で改めて `presentableDiff` をかけて文字単位の印にします。
+
+`MergeView` に chunk を差し込む口はありませんが、chunk は `Chunk.build` / `Chunk.updateA` / `Chunk.updateB` という
+exported なクラスの静的メソッドから、必要になった時点で取り出されます。`installLineDiff` はこの 3 つを差し替えます。
+パッケージの更新でこの呼び方が変わると黙って元の挙動に戻るので、`tests/e2e/compare.spec.ts` の行アキのケースが番人です。
+
+パッケージ本来の `updateA` / `updateB` は編集箇所の前後 1000 文字だけを計算し直しますが、差し替え後は編集のたびに
+全文を計算します。行単位の pass は行数ぶんの文字列を比べるだけで、文字単位の pass は変更ブロックの中だけなので、
+似た 2 つのテキストなら大きくても数 ms から数十 ms です。
+
+`MergeView` は chunk に含まれる行を両側で `.cm-changedLine` として塗り、`highlightChanges` が有効なら行の中で
+異なる範囲を `.cm-changedText` として重ねて塗ります。README の「行単位」「文字単位」はこのオプションのオフ / オン
+そのものです(`Editor.setDiffMode`)。差分の計算自体は両方のモードで同じなので、切り替えに計算コストはありません。
+設定は `state.json` の `diffMode` に `"line"` / `"char"` で残ります。文字単位の印は、`presentableDiff` が異なる文字の
+前後を単語の境界まで(前後 8 文字まで)広げます。パッケージの挙動で、設定はありません。
+
+`MergeView` の既定は `diffConfig: { scanLimit: 500 }` で、差分の深さで精密な計算を打ち切ります。これだと 200 行のうち
+1 行おきに変わっている程度の 2 つのテキストでも 1 つの chunk に潰れるので、`scanLimit` は外して時間で打ち切ります
+(`src/editor.ts` の `DIFF_TIMEOUT_MS`、500ms)。この 1 つの予算を行単位の pass と各ブロックの文字単位の pass で
+分け合います(`linediff.ts` の `budget`)。上限に当たるのは内容がまるで違う大きなテキスト同士のときで、そのときは
+残りを粗い計算で埋めます(README の制限事項の「大まかな色付け」です)。
+
+右ペインのバーの `+N` / `−N` は、chunk ごとに右側の行数と左側の行数を数えて足したものです(`Editor` の `diffStat`)。
+両側で変わった行は、左で 1 行減って右で 1 行増えた、と数えます(git の numstat と同じ)。chunk の数ではありません。
+`MergeView` には差分が更新されたことを知らせる口が無いので、左ペインの `updateListener` で `getChunks(state)` の
+配列が入れ替わったかを見ています(両ペインに同じ配列が配られるので、片方で十分です)。
+
+### レイアウト
+
+`MergeView` は 2 つのエディタのスクロールを自前では同期しません。代わりに各エディタの高さを内容に合わせて
+伸ばし(`.cm-scroller` の高さを `auto` に固定)、chunk の高さの差を空白のウィジェット(spacer、`.cm-mergeSpacer`)で
+埋めて行を揃え、外側の `.cm-mergeView` 1 つをスクロールさせます。`style.css` はこれに従い、`.cm-mergeView` に
+箱の高さを与えています。spacer は片方のペインにしかない行の向かいに入る空きなので、VS Code と同じく `--border` の
+斜線で塗り、空行と見分けが付くようにしています。短いテキストのペインの下の余白をクリックしてもキャレットが入るよう、
+`.cm-mergeViewEditor` を縦の flex にしてエディタと `.cm-scroller` を下端まで伸ばしています。
+
+### キー
+
+`Mod+\` は VS Code の「エディターの分割」のキーで、開く専用です。閉じるキーは増やさず、`Mod+W` の意味を
+「いちばん内側の閉じられるものを閉じる」に広げてあります。2 ペインならキャレットのあるペイン、1 ペインなら
+ウィンドウ(= 終了)です。環境設定パネルが開いている間は、ペインの開閉はどちらも何もしません(パネルの裏で起きて
+しまうため)。ウィンドウを閉じる方はこれまでどおりです。macOS のアクセラレータは muda の綴りで `CmdOrCtrl+Backslash`
+です。
+
+### `state.json` のフィールド
+
+`compare`(2 ペインか)、`compareText`(右ペインの本文。1 ペインのときは空)、`diffMode`(`"line"` / `"char"`)の
+3 つが増えています。`text` はこれまでどおり下書きで、2 ペインのときは左ペインです。左を閉じて右が残った場合は、
+閉じた時点で右の本文が `text` になります。比較ペインが無かったころのファイルは、3 つとも既定値で読まれて
+1 ペインで開きます。
 
 ## プラットフォーム固有の実装
 
@@ -486,8 +611,8 @@ Tauri の NSIS スクリプトはビルド時のテンプレートなので、`t
 
 ## UI の寸法と色
 
-ステータスバー・検索パネル・環境設定パネルは、`src/style.css` の `:root` にあるカスタムプロパティだけで
-組み立てます。UI ライブラリは入れていません。デザインガイドラインという別の文書も置いていません。
+ペインのバー・ステータスバー・検索パネル・環境設定パネル・比較ペインの印は、`src/style.css` の `:root` にある
+カスタムプロパティだけで組み立てます。UI ライブラリは入れていません。デザインガイドラインという別の文書も置いていません。
 トークンの一覧そのものが仕様で、`pnpm lint:style` がそれを守らせます。値はここに書きません。CSS が唯一の
 出どころで、文書に写すと片方が古くなるだけです。
 
@@ -498,12 +623,14 @@ Tauri の NSIS スクリプトはビルド時のテンプレートなので、`t
 | 余白 | `--space-1` 〜 `--space-5` | 4px 刻みの 5 段。コントロール同士、バーとパネルの内側、グループ同士 |
 | 角丸 | `--radius-sm` / `-md` / `-lg` | 部品の大きさに対応した 3 段(チェックボックスとアイコンボタン / 高さ `--control-height` のコントロール / パネル) |
 | 寸法 | `--control-height`、`--checkbox-size`、`--toggle-width`、`--toggle-size-search`、`--glyph-size`、`--icon-size`、`--icon-button-size`、`--statusbar-height`、`--titlebar-height`、`--scrollbar-size`、`--scrollbar-thumb-size`、`--scrollbar-thumb-min` | コントロールとバーの大きさ、スクロールバーの溝とつまみ |
-| レイアウト | `--field-width`、`--field-width-narrow`、`--field-width-search`、`--button-width-search`、`--label-width`、`--panel-width`、`--panel-inset`、`--language-width`、`--count-width`、`--count-width-narrow` | 入力欄・ラベル列・検索パネルと環境設定パネルの配置と、ステータスバーの文字数・行数セルの幅 |
-| パレット | `--bg`、`--fg`、`--muted`、`--muted-strong`、`--placeholder`、`--border` など | 色、影 2 段(`--shadow-panel` / `--shadow-popup`)、描き込む印 8 枚(✓ / シェブロン上下 / × / 横棒 / Aa / .* / タブの矢印)、空白文字の印(`--whitespace`)、インデントガイドの色(`--indent-guide`)、行番号の色(`--line-number`)、スクロールバーのつまみの色 2 段(`--scrollbar-thumb` / `--scrollbar-thumb-hover`)と、`src/indent-guides.ts` と `src/overlay-scrollbar.ts` が入れる 2 つずつの数(`--indent-guide-levels` / `--indent-guide-step`、`--scrollbar-cover` / `--scrollbar-progress`。色でも長さでもありませんが、ファミリにも入らないのでここで数えます) |
+| レイアウト | `--field-width`、`--field-width-narrow`、`--field-width-search`、`--button-width-search`、`--label-width`、`--panel-width`、`--panel-inset`、`--language-width`、`--mode-width`、`--count-width`、`--count-width-narrow` | 入力欄・ラベル列・検索パネルと環境設定パネルの配置と、ペインのバーの 2 つのセレクタの下限幅、文字数・行数の数字を収める枠の幅 |
+| パレット | `--bg`、`--fg`、`--muted`、`--muted-strong`、`--placeholder`、`--border` など | 色、影 2 段(`--shadow-panel` / `--shadow-popup`)、描き込む印 8 枚(✓ / シェブロン上下 / × / 横棒 / Aa / .* / タブの矢印)、空白文字の印(`--whitespace`)、インデントガイドの色(`--indent-guide`)、行番号の色(`--line-number`)、スクロールバーのつまみの色 2 段(`--scrollbar-thumb` / `--scrollbar-thumb-hover`)、比較ペインの印の色 6 つ(`--diff-a-line` / `-text` / `-mark` と `b` 側。左が赤系、右が緑系で、行の地色・文字の印・行端の帯と `+N` / `−N` の文字色)と、`src/indent-guides.ts` と `src/overlay-scrollbar.ts` が入れる 2 つずつの数(`--indent-guide-levels` / `--indent-guide-step`、`--scrollbar-cover` / `--scrollbar-progress`。色でも長さでもありませんが、ファミリにも入らないのでここで数えます) |
 
 基準にしたのは Windows 11 のメモ帳のステータスバーです。macOS では `-apple-system`、Windows では Segoe UI が
 当たるだけで、寸法は共通です。OS ごとに変えたくなったら `:root[data-platform="macos"]` でトークンを上書き
-してください(`--titlebar-height` がすでにそうなっています)。
+してください(`--titlebar-height` がすでにそうなっています)。macOS のタイトルバーは透明なオーバーレイで、その下の
+帯(`#titlebar`)はページの一部です。帯はペインのバーと同じ `--panel` で塗り、間に線は引きません。仕様書の macOS の
+モックがそう描いていて、ウィンドウのボタンの帯とバーが 1 本に見えます。
 
 エディタ本文のフォントサイズは設定項目なので、このトークンには含めません。CodeMirror が自分で描く部分の色は
 `src/dark-theme.ts` にあり、構文ハイライトの色だけは直値です(パレットとは別の体系なので意図的にそうしています)。
@@ -688,7 +815,7 @@ Safari 16.6 まで更新できるので通常は問題になりませんが、Sa
 
 ## 状態の保存
 
-設定と本文は 1 つの JSON にまとめて保存します。書き込みは一時ファイルに書いてから置き換える方式なので、
+設定と本文(比較ペインが開いていれば、右ペインの本文も)は 1 つの JSON にまとめて保存します。書き込みは一時ファイルに書いてから置き換える方式なので、
 途中でプロセスが落ちても壊れたファイルは残りません。壊れていた場合は `state.json.broken` として退避します。
 
 - macOS: `~/Library/Application Support/com.ysaeki.draftpad/state.json`
@@ -754,19 +881,21 @@ draftpad/
     fixtures.ts           アプリを起動する launch フィクスチャと共通のロケータ
     global-setup.ts       harness/backend.ts を harness/dist/ へバンドル
     harness/backend.ts    偽の Rust 側(mockIPC)。invoke を記録し、状態を返す
-    *.spec.ts             起動 / 編集 / 環境設定 / ショートカット / メニュー
+    *.spec.ts             起動 / 編集 / 比較 / 環境設定 / ショートカット / メニュー / 右クリック / CSP
   src/
     main.ts               起動処理と各部品の配線
-    editor.ts             CodeMirror の構成(Compartment で動的切替)
+    editor.ts             CodeMirror の構成(Compartment で動的切替)。1 ペインの EditorView と 2 ペインの MergeView の作り直し
+    linediff.ts           MergeView の差分を行単位で対応付ける差し替え
     languages.ts          言語一覧と遅延ロード
     modes/                Batch / Solidity / PHP の自作ハイライト(簡易的なパーサ)
     state.ts              永続化する状態と保存のデバウンス
     commands.ts           コマンド表(メニュー・ショートカット共用)
     preferences.ts        環境設定パネル
-    statusbar.ts          ステータスバー
+    pane-bars.ts          各ペインの上のバー(言語・差異の単位・文字数と行数・+N / −N・開閉ボタン)
+    statusbar.ts          ステータスバー(常に手前に表示・環境設定)
     theme.ts              ライト / ダークの解決
     overlay-scrollbar.ts  本文に重ねて描く縦スクロールバー
-    style.css             ステータスバーとパネルのスタイル。寸法と色のトークンもここ
+    style.css             バー・パネル・比較ペインの印のスタイル。寸法と色のトークンもここ
   src-tauri/
     src/lib.rs            Tauri Builder。起動時のウィンドウサイズ復元
     src/state.rs          state.json の読み書き(原子的書き込み)

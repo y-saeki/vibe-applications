@@ -8,25 +8,63 @@
   </head>
   <body>
     <div id="titlebar" data-tauri-drag-region></div>
-    <main id="editor"></main>
+    <main id="editor">
+      <!-- One head per pane: its bar. The right pane's head is hidden until
+           that pane is opened. -->
+      <div class="pane-row" id="pane-heads">
+        <div class="pane-head" id="pane-head-a">
+          <div class="pane-bar">
+            <select id="language-select" aria-label="言語"></select>
+            <div class="pane-bar-group">
+              <span id="status-chars" class="pane-cell"><span class="count-figure">0</span> 文字</span>
+              <span id="status-lines" class="pane-cell"><span class="count-figure">1</span> 行</span>
+              <button type="button" id="open-compare" class="icon-button" aria-label="テキストを比較" title="テキストを比較">
+                <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false">
+                  <path fill="currentColor" fill-rule="evenodd" d="M4.6 1h6.8a3.6 3.6 0 0 1 3.6 3.6v6.8a3.6 3.6 0 0 1-3.6 3.6H4.6A3.6 3.6 0 0 1 1 11.4V4.6A3.6 3.6 0 0 1 4.6 1zM7.65 3.75L8.35 3.75A0.35 0.35 0 0 1 8.7 4.1L8.7 5.1A0.35 0.35 0 0 0 9.05 5.45L10.25 5.45A0.35 0.35 0 0 1 10.6 5.8L10.6 6.5A0.35 0.35 0 0 1 10.25 6.85L9.05 6.85A0.35 0.35 0 0 0 8.7 7.2L8.7 8.2A0.35 0.35 0 0 1 8.35 8.55L7.65 8.55A0.35 0.35 0 0 1 7.3 8.2L7.3 7.2A0.35 0.35 0 0 0 6.95 6.85L5.75 6.85A0.35 0.35 0 0 1 5.4 6.5L5.4 5.8A0.35 0.35 0 0 1 5.75 5.45L6.95 5.45A0.35 0.35 0 0 0 7.3 5.1L7.3 4.1A0.35 0.35 0 0 1 7.65 3.75zM5.75 10.6L10.25 10.6A0.35 0.35 0 0 1 10.6 10.95L10.6 11.65A0.35 0.35 0 0 1 10.25 12L5.75 12A0.35 0.35 0 0 1 5.4 11.65L5.4 10.95A0.35 0.35 0 0 1 5.75 10.6z" />
+                </svg>
+              </button>
+              <button type="button" id="close-a" class="icon-button" aria-label="左ペインを閉じる" title="左ペインを閉じる" hidden>
+                <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false">
+                  <path fill="currentColor" fill-rule="evenodd" d="M4.6 1h6.8a3.6 3.6 0 0 1 3.6 3.6v6.8a3.6 3.6 0 0 1-3.6 3.6H4.6A3.6 3.6 0 0 1 1 11.4V4.6A3.6 3.6 0 0 1 4.6 1zM10.758 4.747L11.253 5.242A0.35 0.35 0 0 1 11.253 5.737L9.237 7.753A0.35 0.35 0 0 0 9.237 8.247L11.253 10.263A0.35 0.35 0 0 1 11.253 10.758L10.758 11.253A0.35 0.35 0 0 1 10.263 11.253L8.247 9.237A0.35 0.35 0 0 0 7.753 9.237L5.737 11.253A0.35 0.35 0 0 1 5.242 11.253L4.747 10.758A0.35 0.35 0 0 1 4.747 10.263L6.763 8.247A0.35 0.35 0 0 0 6.763 7.753L4.747 5.737A0.35 0.35 0 0 1 4.747 5.242L5.242 4.747A0.35 0.35 0 0 1 5.737 4.747L7.753 6.763A0.35 0.35 0 0 0 8.247 6.763L10.263 4.747A0.35 0.35 0 0 1 10.758 4.747z" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+        <div class="pane-head" id="pane-head-b" hidden>
+          <div class="pane-bar">
+            <select id="diff-mode-select" aria-label="差異の単位">
+              <option value="line">行単位</option>
+              <option value="char">文字単位</option>
+            </select>
+            <div class="pane-bar-group">
+              <span id="status-diff" class="diff-stat"><span class="diff-added">+0</span><span class="diff-removed">−0</span></span>
+              <span id="status-chars-b" class="pane-cell"><span class="count-figure">0</span> 文字</span>
+              <span id="status-lines-b" class="pane-cell"><span class="count-figure">1</span> 行</span>
+              <button type="button" id="close-b" class="icon-button" aria-label="右ペインを閉じる" title="右ペインを閉じる">
+                <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false">
+                  <path fill="currentColor" fill-rule="evenodd" d="M4.6 1h6.8a3.6 3.6 0 0 1 3.6 3.6v6.8a3.6 3.6 0 0 1-3.6 3.6H4.6A3.6 3.6 0 0 1 1 11.4V4.6A3.6 3.6 0 0 1 4.6 1zM10.758 4.747L11.253 5.242A0.35 0.35 0 0 1 11.253 5.737L9.237 7.753A0.35 0.35 0 0 0 9.237 8.247L11.253 10.263A0.35 0.35 0 0 1 11.253 10.758L10.758 11.253A0.35 0.35 0 0 1 10.263 11.253L8.247 9.237A0.35 0.35 0 0 0 7.753 9.237L5.737 11.253A0.35 0.35 0 0 1 5.242 11.253L4.747 10.758A0.35 0.35 0 0 1 4.747 10.263L6.763 8.247A0.35 0.35 0 0 0 6.763 7.753L4.747 5.737A0.35 0.35 0 0 1 4.747 5.242L5.242 4.747A0.35 0.35 0 0 1 5.737 4.747L7.753 6.763A0.35 0.35 0 0 0 8.247 6.763L10.263 4.747A0.35 0.35 0 0 1 10.758 4.747z" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- The pane, or the two panes, which src/editor.ts builds here, each
+           with its own panels (search and replace, the Vim status line). -->
+      <div id="panes"></div>
+    </main>
     <footer id="statusbar">
-      <div class="statusbar-group">
-        <span id="status-chars" class="statusbar-cell">0 文字</span>
-        <span id="status-lines" class="statusbar-cell">1 行</span>
-      </div>
-      <div class="statusbar-group statusbar-actions">
-        <select id="language-select" aria-label="言語"></select>
-        <button type="button" id="always-on-top" class="icon-button" aria-pressed="false" aria-label="常に手前に表示" title="常に手前に表示">
-          <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false">
-            <path fill="currentColor" d="M5.25 1.5a.75.75 0 0 0 0 1.5h.45l-.5 3.35-1.65 1.65A.75.75 0 0 0 4.08 9.25H7.25v4.25a.75.75 0 0 0 1.5 0V9.25h3.17a.75.75 0 0 0 .53-1.28l-1.65-1.65-.5-3.32h.45a.75.75 0 0 0 0-1.5h-5.5Z" />
-          </svg>
-        </button>
-        <button type="button" id="open-preferences" class="icon-button" aria-label="環境設定" title="環境設定">
-          <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false">
-            <path fill="currentColor" fill-rule="evenodd" d="M15.07 6.63A7.2 7.2 0 0 1 15.07 9.37L13.35 9.28A5.5 5.5 0 0 1 12.69 10.87L13.97 12.03A7.2 7.2 0 0 1 12.03 13.97L10.87 12.69A5.5 5.5 0 0 1 9.28 13.35L9.37 15.07A7.2 7.2 0 0 1 6.63 15.07L6.72 13.35A5.5 5.5 0 0 1 5.13 12.69L3.97 13.97A7.2 7.2 0 0 1 2.03 12.03L3.31 10.87A5.5 5.5 0 0 1 2.65 9.28L0.93 9.37A7.2 7.2 0 0 1 0.93 6.63L2.65 6.72A5.5 5.5 0 0 1 3.31 5.13L2.03 3.97A7.2 7.2 0 0 1 3.97 2.03L5.13 3.31A5.5 5.5 0 0 1 6.72 2.65L6.63 0.93A7.2 7.2 0 0 1 9.37 0.93L9.28 2.65A5.5 5.5 0 0 1 10.87 3.31L12.03 2.03A7.2 7.2 0 0 1 13.97 3.97L12.69 5.13A5.5 5.5 0 0 1 13.35 6.72L15.07 6.63ZM10.5 8A2.5 2.5 0 1 0 5.5 8A2.5 2.5 0 1 0 10.5 8Z" />
-          </svg>
-        </button>
-      </div>
+      <button type="button" id="always-on-top" class="icon-button" aria-pressed="false" aria-label="常に手前に表示" title="常に手前に表示">
+        <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false">
+          <path fill="currentColor" d="M5.25 1.5a.75.75 0 0 0 0 1.5h.45l-.5 3.35-1.65 1.65A.75.75 0 0 0 4.08 9.25H7.25v4.25a.75.75 0 0 0 1.5 0V9.25h3.17a.75.75 0 0 0 .53-1.28l-1.65-1.65-.5-3.32h.45a.75.75 0 0 0 0-1.5h-5.5Z" />
+        </svg>
+      </button>
+      <button type="button" id="open-preferences" class="icon-button" aria-label="環境設定" title="環境設定">
+        <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false">
+          <path fill="currentColor" fill-rule="evenodd" d="M15.07 6.63A7.2 7.2 0 0 1 15.07 9.37L13.35 9.28A5.5 5.5 0 0 1 12.69 10.87L13.97 12.03A7.2 7.2 0 0 1 12.03 13.97L10.87 12.69A5.5 5.5 0 0 1 9.28 13.35L9.37 15.07A7.2 7.2 0 0 1 6.63 15.07L6.72 13.35A5.5 5.5 0 0 1 5.13 12.69L3.97 13.97A7.2 7.2 0 0 1 2.03 12.03L3.31 10.87A5.5 5.5 0 0 1 2.65 9.28L0.93 9.37A7.2 7.2 0 0 1 0.93 6.63L2.65 6.72A5.5 5.5 0 0 1 3.31 5.13L2.03 3.97A7.2 7.2 0 0 1 3.97 2.03L5.13 3.31A5.5 5.5 0 0 1 6.72 2.65L6.63 0.93A7.2 7.2 0 0 1 9.37 0.93L9.28 2.65A5.5 5.5 0 0 1 10.87 3.31L12.03 2.03A7.2 7.2 0 0 1 13.97 3.97L12.69 5.13A5.5 5.5 0 0 1 13.35 6.72L15.07 6.63ZM10.5 8A2.5 2.5 0 1 0 5.5 8A2.5 2.5 0 1 0 10.5 8Z" />
+        </svg>
+      </button>
     </footer>
 
     <dialog id="preferences" aria-labelledby="preferences-title">

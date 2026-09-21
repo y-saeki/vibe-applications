@@ -46,7 +46,7 @@ test("Windows lets the webview open its own menu", async ({ launch }) => {
   expect(await app.commands()).not.toContain('show_context_menu')
 })
 
-test('the status bar opens no menu at all', async ({ launch }) => {
+test('the pane bar opens no menu at all', async ({ launch }) => {
   const app = await launch(MAC)
 
   const prevented = preventedNextContextMenu(app)
