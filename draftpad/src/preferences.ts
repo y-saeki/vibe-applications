@@ -33,6 +33,7 @@ export class Preferences {
   private readonly quickSuggestions: HTMLInputElement
   private readonly showWhitespace: HTMLInputElement
   private readonly showIndentGuides: HTMLInputElement
+  private readonly showLineNumbers: HTMLInputElement
   private fontsLoaded = false
 
   constructor(
@@ -51,6 +52,7 @@ export class Preferences {
     this.quickSuggestions = q('#pref-quick-suggestions')
     this.showWhitespace = q('#pref-show-whitespace')
     this.showIndentGuides = q('#pref-show-indent-guides')
+    this.showLineNumbers = q('#pref-show-line-numbers')
     q<HTMLElement>('#pref-version').textContent = `draftpad ${options.version}`
     // The panel scrolls once the window is too short to hold it. Its bar goes
     // inside the dialog: it is in the top layer, and nothing outside it is
@@ -75,6 +77,7 @@ export class Preferences {
     this.quickSuggestions.addEventListener('change', () => store.set({ quickSuggestions: this.quickSuggestions.checked }))
     this.showWhitespace.addEventListener('change', () => store.set({ showWhitespace: this.showWhitespace.checked }))
     this.showIndentGuides.addEventListener('change', () => store.set({ showIndentGuides: this.showIndentGuides.checked }))
+    this.showLineNumbers.addEventListener('change', () => store.set({ showLineNumbers: this.showLineNumbers.checked }))
 
     q<HTMLButtonElement>('#preferences-close').addEventListener('click', () => this.close())
     // The dialog fills the window and draws the dim itself, so anything outside
@@ -123,6 +126,7 @@ export class Preferences {
     this.quickSuggestions.checked = state.quickSuggestions
     this.showWhitespace.checked = state.showWhitespace
     this.showIndentGuides.checked = state.showIndentGuides
+    this.showLineNumbers.checked = state.showLineNumbers
   }
 
   private async loadFonts(): Promise<void> {

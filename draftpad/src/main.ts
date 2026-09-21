@@ -172,6 +172,7 @@ async function main(): Promise<void> {
     quickSuggestions: () => ed.setQuickSuggestions(store.state.quickSuggestions),
     showWhitespace: () => ed.setShowWhitespace(store.state.showWhitespace),
     showIndentGuides: () => ed.setShowIndentGuides(store.state.showIndentGuides),
+    showLineNumbers: () => ed.setShowLineNumbers(store.state.showLineNumbers),
     alwaysOnTop: () => {
       statusBar.setAlwaysOnTop(store.state.alwaysOnTop)
       void appWindow.setAlwaysOnTop(store.state.alwaysOnTop)

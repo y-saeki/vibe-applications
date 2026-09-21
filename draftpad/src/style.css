@@ -55,6 +55,13 @@
      of a block carries one, so the same value would add up to a grid the draft
      has to be read through. */
   --indent-guide: rgba(31, 35, 40, 0.14);
+  /* The figures in the line number column, which are the marks' value rather
+     than one of their own — tied to it here so that moving one moves both.
+     They are the same kind of thing: something to find when it is looked for
+     and to be past the rest of the time. A number carries more of that weight
+     than a dot does, because a numeral has to be read as a value rather than
+     noticed, so the column comes out the quieter of the two at one value. */
+  --line-number: var(--whitespace);
   /* How deep the line being drawn is, and how wide one level is, both counted
      in levels and columns rather than written as a length: src/indent-guides.ts
      sets the first on each line it rules and the second from the tab width
@@ -502,6 +509,30 @@ option {
   background-size: calc(var(--indent-guide-levels) * var(--indent-guide-step) * 1ch) 100%;
   background-origin: content-box;
   background-repeat: no-repeat;
+}
+
+/* The line numbers, while that setting is on (@codemirror/view's lineNumbers
+   gutter draws them). CodeMirror dresses that gutter as a panel — a fill of its
+   own and a rule down the side facing the draft — and both go: the column has
+   only figures in it, and where it ends is where they end. What is left is a
+   margin the draft is counted in rather than a second surface beside it.
+
+   The figures keep the editor's font and size, inherited from the scroller they
+   sit in, so a number stands on the line it counts however the draft is set. A
+   line that wraps takes one number, at its top: the gutter is laid out in the
+   editor's lines, not in the rows they are drawn on.
+
+   The column is read from its right edge, where the ones stand, so the gap on
+   that side is the narrow one; the wider one goes outside it, against the
+   window. */
+#editor .cm-gutters {
+  border: none;
+  background: transparent;
+  color: var(--line-number);
+}
+
+#editor .cm-lineNumbers .cm-gutterElement {
+  padding: 0 var(--space-1) 0 var(--space-3);
 }
 
 /* The Vim status line keeps the editor font, at the status bar's size. */

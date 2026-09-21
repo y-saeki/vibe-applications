@@ -252,6 +252,51 @@ macOS Sequoia (15.0) 以降では、以前あった Control クリック →「�
 だけ続きます。折り返した 2 行目以降が字下げされないのは CodeMirror の既定なので、そこでは線が文字の後ろを
 通ります。
 
+## 行番号
+
+環境設定の「行番号を表示」を入れると、本文の左に行番号の列が付きます。設定は `state.json` の
+`showLineNumbers` に残り、他の表示設定と同じく `src/editor.ts` の Compartment 1 つで差し替えます。
+
+描くのは `@codemirror/view` の `lineNumbers()` です。インデントガイドと違って自前では持ちません。
+必要なものはガターの側にすべてあります。表示中の行だけを組み立てること、折り返した行に番号を 1 つ
+だけ付けること、下書きの行数が届く桁の幅を先に確保して、スクロールしても本文が横に動かないことです。
+
+### 余計な面を外す
+
+CodeMirror の既定のガターはパネルです。自分の地色を持ち、本文との境に罫線を引きます。`src/style.css`
+はその 2 つを外します。列にあるのは数字だけで、列の終わりは数字の終わりです。本文の脇にもう 1 つ面が
+増えるのではなく、本文が数えられている余白になります。
+
+字の色は `--line-number` で、中身は `--whitespace` そのものです。別の値を書くのではなく参照で
+持たせてあるので、印の色を動かせば番号も一緒に動きます。同じ役どころだからです。探しに行けば
+見つかり、それ以外のときは引っ込んでいる——draftpad にはファイルもコンパイラも差分もないので、
+行番号を読み取らなければならない場面がそもそもありません。「行へ移動」と、人に「12 行目の」と
+伝えるときくらいで、どちらも意識して探しに行く場面です。濃さの並びは 本文 > 行番号 = 空白文字の印
+> インデントガイド になります。
+
+Issue ([#88](https://github.com/y-saeki/vibe-applications/issues/88))は「空白文字やインデントの
+可視化よりは強く」でしたが、実物を並べて見たうえで同値に決めました。
+
+同じ値でも、数字のほうが体感は弱く出ます。点や線は「ある / ない」を見るだけですが、数字は字形を
+値として読み解く必要があり、そのぶん高いコントラストが要るためです。番号のほうが控えめに見えるのは
+承知のうえです。ここを上げるときは印とガイドも一緒に動くので、3 つまとめて考えてください。
+
+左右の余白は左が `--space-3`、右が `--space-1` です。列は右端(一の位)から読むので、狭いほうを本文側
+に置きます。本文との隙間は、行自身が持っている `--space-3` がここに足された分です。
+
+### 番号は本文のフォントで組む
+
+ガターはスクローラの中にあるので、`.cm-scroller` に当てている書体と太さ、`&` のフォントサイズを
+そのまま継ぎます。本文のフォントサイズは設定項目なので、番号だけ取り残されません。
+
+折り返した行に付く番号は 1 つで、その行が始まる段に立ちます(`EditorView.lineWrapping`)。数え方は
+ステータスバーの「n 行」と同じです。
+
+### ステータスバーからは切り替えません
+
+頻繁に変えるものではないので、環境設定だけに置きます。ステータスバーにあるトグルは「常に手前に表示」
+だけで、そちらは書いている最中に切り替えるものです。
+
 ## スクロールバー
 
 縦のスクロールバーは draftpad が自分で描きます(`src/overlay-scrollbar.ts`)。本文の脇ではなく上に重ねるので、
@@ -454,7 +499,7 @@ Tauri の NSIS スクリプトはビルド時のテンプレートなので、`t
 | 角丸 | `--radius-sm` / `-md` / `-lg` | 部品の大きさに対応した 3 段(チェックボックスとアイコンボタン / 高さ `--control-height` のコントロール / パネル) |
 | 寸法 | `--control-height`、`--checkbox-size`、`--toggle-width`、`--toggle-size-search`、`--glyph-size`、`--icon-size`、`--icon-button-size`、`--statusbar-height`、`--titlebar-height`、`--scrollbar-size`、`--scrollbar-thumb-size`、`--scrollbar-thumb-min` | コントロールとバーの大きさ、スクロールバーの溝とつまみ |
 | レイアウト | `--field-width`、`--field-width-narrow`、`--field-width-search`、`--button-width-search`、`--label-width`、`--panel-width`、`--panel-inset`、`--language-width`、`--count-width`、`--count-width-narrow` | 入力欄・ラベル列・検索パネルと環境設定パネルの配置と、ステータスバーの文字数・行数セルの幅 |
-| パレット | `--bg`、`--fg`、`--muted`、`--muted-strong`、`--placeholder`、`--border` など | 色、影 2 段(`--shadow-panel` / `--shadow-popup`)、描き込む印 8 枚(✓ / シェブロン上下 / × / 横棒 / Aa / .* / タブの矢印)、空白文字の印(`--whitespace`)、インデントガイドの色(`--indent-guide`)、スクロールバーのつまみの色 2 段(`--scrollbar-thumb` / `--scrollbar-thumb-hover`)と、`src/indent-guides.ts` と `src/overlay-scrollbar.ts` が入れる 2 つずつの数(`--indent-guide-levels` / `--indent-guide-step`、`--scrollbar-cover` / `--scrollbar-progress`。色でも長さでもありませんが、ファミリにも入らないのでここで数えます) |
+| パレット | `--bg`、`--fg`、`--muted`、`--muted-strong`、`--placeholder`、`--border` など | 色、影 2 段(`--shadow-panel` / `--shadow-popup`)、描き込む印 8 枚(✓ / シェブロン上下 / × / 横棒 / Aa / .* / タブの矢印)、空白文字の印(`--whitespace`)、インデントガイドの色(`--indent-guide`)、行番号の色(`--line-number`)、スクロールバーのつまみの色 2 段(`--scrollbar-thumb` / `--scrollbar-thumb-hover`)と、`src/indent-guides.ts` と `src/overlay-scrollbar.ts` が入れる 2 つずつの数(`--indent-guide-levels` / `--indent-guide-step`、`--scrollbar-cover` / `--scrollbar-progress`。色でも長さでもありませんが、ファミリにも入らないのでここで数えます) |
 
 基準にしたのは Windows 11 のメモ帳のステータスバーです。macOS では `-apple-system`、Windows では Segoe UI が
 当たるだけで、寸法は共通です。OS ごとに変えたくなったら `:root[data-platform="macos"]` でトークンを上書き
@@ -616,7 +661,7 @@ Safari 16.6 まで更新できるので通常は問題になりませんが、Sa
 
 ### 項目のまとまり
 
-9 項目は「編集」「表示」の 2 グループに分けてあります。`<fieldset>` + `<legend>` で、既定の枠線と余白は
+10 項目は「編集」「表示」の 2 グループに分けてあります。`<fieldset>` + `<legend>` で、既定の枠線と余白は
 消して、2 群の間の区切り線 1 本だけを描きます。DOM の順序がそのままタブ順なので、並べ替えは
 `tests/e2e/preferences.spec.ts` のタブ順のケースが押さえています。
 

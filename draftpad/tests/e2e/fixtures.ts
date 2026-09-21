@@ -123,6 +123,20 @@ export class App {
     )
   }
 
+  /** The line number column, while that setting is on. */
+  get lineNumbers(): Locator {
+    return this.page.locator('.cm-lineNumbers')
+  }
+
+  /**
+   * Every number in that column, from top to bottom. The gutter also holds a
+   * hidden cell carrying the widest number the draft reaches, which is how it
+   * reserves its width; `:visible` leaves that one out.
+   */
+  get lineNumberCells(): Locator {
+    return this.lineNumbers.locator('.cm-gutterElement:visible')
+  }
+
   /**
    * The scrollbar draftpad draws for itself, as the strip it runs in;
    * `.scrollbar-thumb` inside it is the part that moves.
