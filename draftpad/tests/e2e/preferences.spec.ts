@@ -509,7 +509,7 @@ test('draws the column as a margin rather than a panel, in both themes', async (
   // Neither survives: what stands beside the draft is the figures.
   await expect(gutters).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
   await expect(gutters).toHaveCSS('border-right-width', '0px')
-  await expect(gutters).toHaveCSS('color', 'rgba(31, 35, 40, 0.55)')
+  await expect(gutters).toHaveCSS('color', 'rgba(31, 35, 40, 0.42)')
 
   // Weaker than the draft, stronger than the whitespace marks and the
   // indentation rules: the numbers are read, those two are read past.
@@ -524,7 +524,7 @@ test('draws the column as a margin rather than a panel, in both themes', async (
   await app.gear.click()
   await app.page.locator('#pref-theme').selectOption('dark')
   await expect(gutters).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
-  await expect(gutters).toHaveCSS('color', 'rgba(216, 216, 216, 0.55)')
+  await expect(gutters).toHaveCSS('color', 'rgba(216, 216, 216, 0.42)')
 })
 
 test('sizes the numbers with the draft', async ({ launch }) => {

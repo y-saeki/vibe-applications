@@ -59,7 +59,7 @@
      as the two above and the strongest of the three: a mark and a rule are
      read past, while a number is read. Above it there is only the draft
      itself, and the order of the three alphas is the whole of this decision. */
-  --line-number: rgba(31, 35, 40, 0.55);
+  --line-number: rgba(31, 35, 40, 0.42);
   /* How deep the line being drawn is, and how wide one level is, both counted
      in levels and columns rather than written as a length: src/indent-guides.ts
      sets the first on each line it rules and the second from the tab width
@@ -174,7 +174,7 @@
   --toggle-knob-border: transparent;
   --whitespace: rgba(216, 216, 216, 0.26);
   --indent-guide: rgba(216, 216, 216, 0.14);
-  --line-number: rgba(216, 216, 216, 0.55);
+  --line-number: rgba(216, 216, 216, 0.42);
   --scrollbar-thumb: rgba(216, 216, 216, 0.26);
   --scrollbar-thumb-hover: rgba(216, 216, 216, 0.48);
   --editor-caret: #6cb6ff;
