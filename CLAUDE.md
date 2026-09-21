@@ -47,6 +47,10 @@ Keeping the README to its audience means, concretely:
 - Document only what the user is asked to do. Workarounds that no longer apply, paths that
   were never suggested, and behaviour the application does not have are noise — leave them
   out rather than mentioning them to rule them out.
+- A feature earns an entry only when a reader needs one. Two questions settle it: would
+  someone deciding whether to install the application weigh this, and would someone already
+  running it have to be told rather than seeing it where it lives? When the answer to both
+  is no — as it is for most settings — leave it out. The panel is its own documentation.
 - State the platforms actually shipped, not the ones the framework could target. The
   release workflow's build matrix is the source of truth.
 - An unsigned build trips the OS on every platform it ships to (macOS Gatekeeper, Windows
