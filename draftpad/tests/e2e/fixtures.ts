@@ -29,15 +29,33 @@ export interface ContextMenuState {
   canSearch: boolean
 }
 
+interface TauriConf {
+  app: {
+    windows: { minWidth: number; minHeight: number }[]
+    security: { csp: Record<string, string> }
+  }
+}
+
+function tauriConf(): TauriConf {
+  return JSON.parse(readFileSync(new URL('../../src-tauri/tauri.conf.json', import.meta.url), 'utf8')) as TauriConf
+}
+
 /** The policy in src-tauri/tauri.conf.json, as a header value. */
 function productionCsp(): string {
-  const path = new URL('../../src-tauri/tauri.conf.json', import.meta.url)
-  const conf = JSON.parse(readFileSync(path, 'utf8')) as {
-    app: { security: { csp: Record<string, string> } }
-  }
-  return Object.entries(conf.app.security.csp)
+  return Object.entries(tauriConf().app.security.csp)
     .map(([directive, value]) => `${directive} ${value}`)
     .join('; ')
+}
+
+/**
+ * The smallest the window may be made, which src-tauri/tauri.conf.json sets.
+ * Read rather than written down, so that lowering it there puts the cases that
+ * check what still fits on the new number.
+ */
+export function windowMinimum(): { width: number; height: number } {
+  const [window] = tauriConf().app.windows
+  if (!window) throw new Error('tauri.conf.json declares no window')
+  return { width: window.minWidth, height: window.minHeight }
 }
 
 const DEFAULT_CONFIG: BackendConfig = {
@@ -103,6 +121,16 @@ export class App {
     return this.indentGuides.evaluateAll((lines) =>
       lines.map((line) => (line as HTMLElement).style.getPropertyValue('--indent-guide-levels')),
     )
+  }
+
+  /**
+   * The scrollbar draftpad draws for itself, as the strip it runs in;
+   * `.scrollbar-thumb` inside it is the part that moves.
+   *
+   * @param over which box it stands for, by that box's id
+   */
+  scrollbar(over: 'editor' | 'preferences'): Locator {
+    return this.page.locator(`#${over} .scrollbar`)
   }
 
   /** One of the search panel's four buttons, by the name CodeMirror gives it. */

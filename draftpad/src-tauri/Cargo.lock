@@ -934,7 +934,7 @@ dependencies = [
 
 [[package]]
 name = "draftpad"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "font-kit",
  "objc2",

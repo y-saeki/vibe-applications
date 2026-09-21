@@ -1,4 +1,4 @@
-import { expect, test } from './fixtures'
+import { expect, test, windowMinimum } from './fixtures'
 
 test('opens from the gear button and closes with Escape', async ({ launch }) => {
   const app = await launch()
@@ -379,4 +379,77 @@ test('paints the indentation rules from the palette, in both themes', async ({ l
   await app.gear.click()
   await app.page.locator('#pref-theme').selectOption('dark')
   await expect(guides).toHaveCSS('background-image', /rgba\(216, 216, 216, 0\.14\)/)
+})
+
+test('keeps the panel inside its width at the narrowest the window goes', async ({ launch }) => {
+  const app = await launch()
+  // Hiding the platform's scrollbars takes the horizontal one with it — that
+  // cannot be asked for on one axis alone — and draftpad draws no horizontal
+  // bar of its own. Nothing here needs one: the label column is fixed and the
+  // field beside it takes what is left, down to the narrowest window the app
+  // opens at.
+  await app.page.setViewportSize({ width: windowMinimum().width, height: windowMinimum().height })
+
+  await app.gear.click()
+  // What is asked for is that nothing is laid out past the panel's content
+  // edge, which is the whole of what a horizontal bar would have been for.
+  // Not that the panel measures no wider than itself: WebKit puts about 11px
+  // of scrollable width over the theme row's native select with no box of any
+  // kind in it, which `.panel` clips rather than scrolls (see style.css).
+  //
+  // Everything measured comes back together, so that a failure names what
+  // stuck out instead of leaving the next reader to measure by hand. `own`
+  // and the panel's three widths do not decide it; they are there to read.
+  const { box, ...overflow } = await app.preferences.locator('.panel').evaluate((element: HTMLElement) => {
+    const inside =
+      element.getBoundingClientRect().left +
+      element.clientLeft +
+      element.clientWidth -
+      Number.parseFloat(getComputedStyle(element).paddingRight)
+    return {
+      spilling: [...element.querySelectorAll('*')]
+        .map((child) => ({
+          what:
+            child.tagName.toLowerCase() +
+            (child.id ? `#${child.id}` : '') +
+            (typeof child.className === 'string' && child.className ? `.${child.className.trim().split(/\s+/).join('.')}` : ''),
+          past: Math.round(child.getBoundingClientRect().right - inside),
+          own: child.scrollWidth - child.clientWidth,
+          wide: Math.round(child.getBoundingClientRect().width),
+        }))
+        .filter((child) => child.past > 0),
+      box: { scroll: element.scrollWidth, client: element.clientWidth, offset: element.offsetWidth },
+    }
+  })
+  expect(overflow, `panel ${JSON.stringify(box)}`).toEqual({ spilling: [] })
+})
+
+test('lays a bar over the panel when the window is too short to hold it', async ({ launch }) => {
+  const app = await launch()
+  // Short enough that the nine settings no longer fit between the panel's
+  // insets, whatever else is on screen.
+  await app.page.setViewportSize({ width: 600, height: 300 })
+
+  await app.gear.click()
+  const panel = app.preferences.locator('.panel')
+  const bar = app.scrollbar('preferences')
+
+  const box = await panel.evaluate((element: HTMLElement) => ({
+    overflows: element.scrollHeight > element.clientHeight,
+    // Its own border, and no column taken out for a scrollbar beside it.
+    taken: element.offsetWidth - element.clientWidth,
+    right: element.getBoundingClientRect().right,
+  }))
+  expect(box.overflows).toBe(true)
+  expect(box.taken).toBe(2)
+
+  await panel.evaluate((element: HTMLElement) => {
+    element.scrollTop = 40
+  })
+  await expect(bar).toHaveAttribute('data-shown', '')
+  // Inside the panel's own edge rather than beyond it: the bar is drawn within
+  // the dialog, which is the only thing the top layer lets over it.
+  const strip = (await bar.boundingBox())!
+  expect(strip.x + strip.width).toBeLessThanOrEqual(box.right)
+  expect(strip.x + strip.width).toBeGreaterThan(box.right - strip.width - 2)
 })

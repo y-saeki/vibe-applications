@@ -256,6 +256,133 @@ test('keeps the bar still however many digits the counts run to', async ({ launc
   expect((await app.languageSelect.boundingBox())?.x).toBe(wide?.x)
 })
 
+// A draft long enough that only a fraction of it is ever in view.
+const LONG_DRAFT = Array.from({ length: 400 }, (_, line) => `${line + 1} 行目`).join('\n')
+
+/** The scroller's own measurements, which is where a classic bar would show. */
+function scroller(app: App): Promise<{
+  overflows: boolean
+  client: number
+  offset: number
+  content: number
+  top: number
+  range: number
+}> {
+  return app.page.evaluate(() => {
+    const box = document.querySelector('.cm-scroller') as HTMLElement
+    return {
+      overflows: box.scrollHeight > box.clientHeight,
+      client: box.clientWidth,
+      offset: box.offsetWidth,
+      content: box.scrollWidth,
+      top: box.scrollTop,
+      range: box.scrollHeight - box.clientHeight,
+    }
+  })
+}
+
+/** Scrolls the draft with no pointer involved, the way a key press would. */
+function scrollDraft(app: App, top: number): Promise<void> {
+  return app.page.evaluate((to) => {
+    ;(document.querySelector('.cm-scroller') as HTMLElement).scrollTop = to
+  }, top)
+}
+
+test('leaves the draft its full width when it outgrows the window', async ({ launch }) => {
+  const app = await launch({ state: { text: LONG_DRAFT } })
+
+  // A platform scrollbar would be taking its width out of the scrollport here,
+  // which is what makes the wrapping shift as a window is resized. The
+  // difference between the two is the border, and .cm-scroller has none.
+  const box = await scroller(app)
+  expect(box.overflows).toBe(true)
+  expect(box.client).toBe(box.offset)
+})
+
+test('wraps whatever is in the draft, so it never runs off to the side', async ({ launch }) => {
+  // Hiding the platform's scrollbars cannot be asked for on one axis alone, so
+  // there is no horizontal bar of draftpad's own to put in their place either.
+  // What keeps that from stranding anything is this: with line wrapping on,
+  // nothing reaches past the right edge to begin with. The four lines are the
+  // shapes that would, if any could — a run with no space in it, the same in
+  // full-width characters, a URL, and tabs at the widest tab width the
+  // preferences panel offers.
+  const app = await launch({
+    state: {
+      tabSize: 10,
+      text: ['a'.repeat(2000), 'あ'.repeat(2000), `https://example.com/${'segment/'.repeat(300)}`, `${'\t'.repeat(200)}x`].join('\n'),
+    },
+  })
+
+  const box = await scroller(app)
+  expect(box.content).toBe(box.client)
+})
+
+test('brings the bar up while the draft scrolls, and takes it down after', async ({ launch }) => {
+  const app = await launch({ state: { text: LONG_DRAFT } })
+  const bar = app.scrollbar('editor')
+
+  await expect(bar).not.toHaveAttribute('data-shown')
+  await scrollDraft(app, 200)
+  await expect(bar).toHaveAttribute('data-shown', '')
+  // And fades out again once the scrolling stops. Where the pointer happens to
+  // be rests does not hold it up: it sits over the draft the whole time
+  // someone is writing.
+  await expect(bar).not.toHaveAttribute('data-shown')
+})
+
+test('carries no bar while the whole draft is in view', async ({ launch }) => {
+  const app = await launch({ state: { text: '一行だけ' } })
+
+  await expect(app.scrollbar('editor')).toBeHidden()
+})
+
+test('gives the thumb the share of the draft in view, and moves it to the end', async ({ launch }) => {
+  const app = await launch({ state: { text: LONG_DRAFT } })
+  const bar = app.scrollbar('editor')
+  const thumb = bar.locator('.scrollbar-thumb')
+
+  // Scrolling is the one thing that brings the bar up, so the far end of the
+  // draft is measured first; the draft opens at the top already.
+  const { range } = await scroller(app)
+  await scrollDraft(app, range)
+  await expect(bar).toHaveAttribute('data-shown', '')
+
+  const strip = (await bar.boundingBox())!
+  const atEnd = (await thumb.boundingBox())!
+  // Only part of the draft is in view, so the thumb covers part of the strip —
+  // and never less than the minimum, whatever the draft grows to. The far end
+  // of one puts it at the far end of the other; the two edges are rounded for
+  // painting on their own, so they may land a pixel apart.
+  expect(atEnd.height).toBeLessThan(strip.height)
+  expect(atEnd.height).toBeGreaterThanOrEqual(await token(app, '--scrollbar-thumb-min'))
+  expect(Math.abs(atEnd.y + atEnd.height - (strip.y + strip.height))).toBeLessThanOrEqual(1)
+
+  await scrollDraft(app, 0)
+  await expect
+    .poll(async () => Math.abs((await thumb.boundingBox())!.y - strip.y))
+    .toBeLessThanOrEqual(1)
+})
+
+test('scrolls the draft when the thumb is dragged', async ({ launch }) => {
+  const app = await launch({ state: { text: LONG_DRAFT } })
+  const bar = app.scrollbar('editor')
+  const thumb = bar.locator('.scrollbar-thumb')
+
+  // A scroll puts the bar up; the pointer arriving on the thumb is what keeps
+  // it there while it is taken hold of.
+  await scrollDraft(app, 200)
+  await expect(bar).toHaveAttribute('data-shown', '')
+
+  const grip = (await thumb.boundingBox())!
+  await app.page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2)
+  await app.page.mouse.down()
+  await app.page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2 + 120)
+  await app.page.mouse.up()
+
+  expect((await scroller(app)).top).toBeGreaterThan(200)
+})
+
 /** A length token as the sheet declares it, in px. */
 function token(app: App, name: string): Promise<number> {
   return app.page.evaluate(

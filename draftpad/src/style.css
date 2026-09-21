@@ -62,6 +62,20 @@
      nothing — so a line the extension has not marked stays clean. */
   --indent-guide-levels: 0;
   --indent-guide-step: 0;
+  /* The thumb draftpad draws over what scrolls. Translucent like the marks
+     above, so it takes a tint from whatever it crosses — the page, the text, a
+     panel — rather than stamping one grey over all of them. The second is for
+     a thumb under the pointer, which has to answer the hand reaching for it
+     without becoming another piece of chrome to read. */
+  --scrollbar-thumb: rgba(31, 35, 40, 0.28);
+  --scrollbar-thumb-hover: rgba(31, 35, 40, 0.5);
+  /* How much of the content the view covers, and how far through it the view
+     sits, both as a fraction rather than a length: src/overlay-scrollbar.ts
+     sets them on the bar and the rules below work the thumb's length and place
+     out of them. The zeros are what a bar that has never been measured would
+     draw, and it stays hidden until it has been. */
+  --scrollbar-cover: 0;
+  --scrollbar-progress: 0;
   /* Masked the same way, for the buttons that close a panel. */
   --close-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%23000000' stroke-width='1.5' stroke-linecap='round' d='M4 4 12 12M12 4 4 12'/%3E%3C/svg%3E");
   /* The tick inside a checked box, in whichever color reads on --accent. It is
@@ -108,6 +122,11 @@
   --toggle-size-search: 20px; /* the Aa / .* toggles inside the find field */
   --statusbar-height: 32px;
   --titlebar-height: 0px;
+  --scrollbar-size: 12px; /* the strip a thumb runs in */
+  --scrollbar-thumb-size: 8px; /* the thumb, centred in that strip */
+  /* The shortest a thumb may be. Without it, a long enough draft leaves
+     nothing to see or to take hold of. */
+  --scrollbar-thumb-min: 32px;
 
   /* ---- Layout ---- */
   --field-width: 240px; /* a text field's preferred width */
@@ -150,6 +169,8 @@
   --toggle-knob-border: transparent;
   --whitespace: rgba(216, 216, 216, 0.26);
   --indent-guide: rgba(216, 216, 216, 0.14);
+  --scrollbar-thumb: rgba(216, 216, 216, 0.26);
+  --scrollbar-thumb-hover: rgba(216, 216, 216, 0.48);
   --editor-caret: #6cb6ff;
   --editor-selection: #2c4a6e;
   --editor-selection-match: rgba(255, 255, 255, 0.1);
@@ -952,7 +973,14 @@ option {
 .panel {
   width: min(var(--panel-width), calc(100vw - var(--space-4) * 2));
   max-height: calc(100vh - var(--titlebar-height) - var(--panel-inset) * 2);
-  overflow: auto;
+  /* Sideways not at all. Nothing is ever laid out past the panel's content
+     edge — tests/e2e/preferences.spec.ts holds every control to that, which is
+     what lets draftpad draw no horizontal scrollbar — but WebKit still measures
+     the box a little wider than itself over the theme row's native select, and
+     without this the panel would shift under a sideways scroll to show empty
+     space. Clipping there hides nothing. */
+  overflow-x: hidden;
+  overflow-y: auto;
   box-sizing: border-box;
   padding: var(--space-5);
   border: 1px solid var(--border);
@@ -1008,13 +1036,30 @@ option {
   letter-spacing: 0.5px;
 }
 
-/* Label, then control, on one line the height of a control. */
+/* Label, then control, on one line the height of a control.
+
+   The control column takes what the label column leaves, down to nothing.
+   `1fr` on its own is `minmax(auto, 1fr)`, and that floor is the control's own
+   min-content width. At the narrowest window draftpad opens at that is wider
+   than the column, and the row runs off the side of the panel, where nothing
+   can reach it: the platform's horizontal scrollbar is hidden along with its
+   vertical one and draftpad draws no replacement (see "スクロールバー" in
+   DEVELOPMENT.md). */
 .form-row {
   display: grid;
-  grid-template-columns: var(--label-width) 1fr;
+  grid-template-columns: var(--label-width) minmax(0, 1fr);
   align-items: center;
   gap: var(--space-4);
   min-height: var(--control-height);
+}
+
+/* The same floor one level down: a grid or flex item carries its min-content
+   width as an automatic minimum too, so the column shrinking is not enough on
+   its own. The widths written above still hold; this only lets them give. */
+.form-row input,
+.form-row select,
+.form-control-with-unit {
+  min-width: 0;
 }
 
 .form-row + .form-row {
@@ -1112,4 +1157,81 @@ option {
   font-family: var(--font-mono);
   font-size: var(--font-size-caption);
   text-align: right;
+}
+
+/* ---- Scrollbars -------------------------------------------------------- */
+
+/* Two boxes scroll: the draft and the preferences panel. Both carry a bar of
+   draftpad's own (src/overlay-scrollbar.ts), laid over their content instead
+   of beside it, so that a draft which outgrows its window no longer takes a
+   column out of the editor and reflows every wrapped line on the way.
+
+   The platform's own bars step aside for them, on both axes: that cannot be
+   asked for on one alone. Neither box overflows sideways — every line of the
+   draft wraps, and the panel's fields shrink — and the E2E suite holds them
+   to it, which is what leaves nothing for a horizontal bar to reach.
+
+   Both properties are needed: `scrollbar-width` is the standard one, and the
+   WebKit a macOS that has never been updated is left on knows only the
+   pseudo-element. */
+#editor .cm-scroller,
+.panel {
+  scrollbar-width: none;
+}
+
+#editor .cm-scroller::-webkit-scrollbar,
+.panel::-webkit-scrollbar {
+  display: none;
+}
+
+/* The strip the thumb runs in. src/overlay-scrollbar.ts lays it along the
+   scrollport's right edge and sets nothing else on it but the two fractions
+   above. The strip never takes the pointer, because what it covers is the
+   draft; only the thumb does, and only while the bar is up. */
+.scrollbar {
+  position: fixed;
+  width: var(--scrollbar-size);
+  opacity: 0;
+  transition: opacity 120ms ease;
+  pointer-events: none;
+}
+
+.scrollbar[data-shown] {
+  opacity: 1;
+}
+
+/* The thumb is as long as the share of the content the view covers, never
+   shorter than --scrollbar-thumb-min, and stands that same share of the way
+   down the strip. Both percentages resolve against the strip, which is the
+   scrollport itself.
+
+   The length is written out twice rather than held in a token of its own: a
+   custom property declared in :root resolves the var() inside it there, where
+   the fraction is always the zero it is declared with, instead of on the bar
+   it is set on. */
+.scrollbar-thumb {
+  position: absolute;
+  top: calc(var(--scrollbar-progress) * (100% - max(var(--scrollbar-thumb-min), var(--scrollbar-cover) * 100%)));
+  left: calc((var(--scrollbar-size) - var(--scrollbar-thumb-size)) / 2);
+  width: var(--scrollbar-thumb-size);
+  height: max(var(--scrollbar-thumb-min), var(--scrollbar-cover) * 100%);
+  /* A window short enough that the minimum no longer fits. */
+  max-height: 100%;
+  border-radius: var(--radius-sm);
+  background: var(--scrollbar-thumb);
+}
+
+.scrollbar[data-shown] .scrollbar-thumb {
+  pointer-events: auto;
+}
+
+.scrollbar-thumb:hover,
+.scrollbar[data-dragging] .scrollbar-thumb {
+  background: var(--scrollbar-thumb-hover);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scrollbar {
+    transition: none;
+  }
 }
