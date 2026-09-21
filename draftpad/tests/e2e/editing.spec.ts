@@ -183,7 +183,9 @@ test('counts the matches and numbers the one the search is standing on', async (
   await expect(app.searchCount).toHaveText('2 / 3 件')
 })
 
-test('turns the four buttons off while the search has nothing to act on', async ({ launch }) => {
+// The fifth button, 選択範囲, asks for a selection on top of a match, so it is
+// left out here and has the test below to itself.
+test('turns the buttons off while the search has nothing to act on', async ({ launch }) => {
   const app = await launch()
   const buttons = ['prev', 'next', 'replace', 'replaceAll'] as const
 
@@ -202,6 +204,54 @@ test('turns the four buttons off while the search has nothing to act on', async 
   await app.page.keyboard.type('zzz')
   await expect(app.searchCount).toHaveText('一致なし')
   for (const name of buttons) await expect(app.searchButton(name)).toBeDisabled()
+})
+
+test('leaves the selection-only replace off until a range holds a whole match', async ({ launch }) => {
+  const app = await launch()
+  const inSelection = app.searchButton('replaceSelection')
+
+  await app.typeInEditor('alpha beta\nalpha gamma')
+  await app.press('KeyF')
+  await expect(app.searchPanel).toBeVisible()
+  await app.typeInSearch('alpha')
+
+  // Two matches to act on, but the caret is a point: there is no range to
+  // replace within, so this one button stays off while the other four are on.
+  await expect(app.searchCount).toHaveText('2 件')
+  await expect(app.searchButton('replaceAll')).toBeEnabled()
+  await expect(inSelection).toBeDisabled()
+
+  // A range of the second line that stops short of its match.
+  await app.editor.click()
+  await app.page.keyboard.press('Control+End')
+  for (let i = 0; i < 'gamma'.length; i++) await app.page.keyboard.press('Shift+ArrowLeft')
+  await expect(inSelection).toBeDisabled()
+
+  // Grown to the whole line, which holds one of the two matches.
+  await app.page.keyboard.press('Shift+Home')
+  await expect(inSelection).toBeEnabled()
+})
+
+test('replaces within the selected range and leaves the rest of the draft alone', async ({ launch }) => {
+  const app = await launch()
+
+  await app.typeInEditor('alpha\nalpha')
+  await app.page.keyboard.press('Control+Home')
+  await app.page.keyboard.press('Shift+End')
+
+  // CodeMirror opens the panel on the selected text, which is the query here.
+  await app.press('KeyF')
+  await expect(app.searchField).toHaveValue('alpha')
+  await app.searchPanel.getByPlaceholder('置換').click()
+  await app.page.keyboard.type('beta')
+
+  await app.searchButton('replaceSelection').click()
+  await app.expectSaved((state) => state.text === 'beta\nalpha')
+
+  // The whole pass is one entry in the history, the way すべて is.
+  await app.editor.click()
+  await app.press('KeyZ')
+  await app.expectSaved((state) => state.text === 'alpha\nalpha')
 })
 
 test('reads a half-written regular expression as a miss, not as an error', async ({ launch }) => {
@@ -230,13 +280,16 @@ test('lines the search panel up on two columns', async ({ launch }) => {
     return { left: Math.round(box.x), right: Math.round(box.x + box.width) }
   }
 
-  // The two fields are one column and the four buttons the other; within a row
-  // the pair of buttons touches. Nothing here is a wrapper CodeMirror gives us,
-  // so the edges are what says the grid held.
+  // The two fields are one column and the five buttons the other; within a row
+  // the buttons touch, and the two rows end together. Nothing here is a wrapper
+  // CodeMirror gives us, so the edges are what says the grid held.
   expect(await edges(app.searchField)).toEqual(await edges(app.searchPanel.getByPlaceholder('置換')))
-  expect(await edges(app.searchButton('prev'))).toEqual(await edges(app.searchButton('replace')))
+  expect(await edges(app.searchButton('prev'))).toEqual(await edges(app.searchButton('replaceSelection')))
   expect(await edges(app.searchButton('next'))).toEqual(await edges(app.searchButton('replaceAll')))
   expect((await edges(app.searchButton('prev'))).right).toBe((await edges(app.searchButton('next'))).left)
+  expect((await edges(app.searchButton('replace'))).right).toBe(
+    (await edges(app.searchButton('replaceSelection'))).left,
+  )
 })
 test('works the always-on-top toggle from the keyboard, and says which way it is', async ({ launch }) => {
   const app = await launch({ state: { alwaysOnTop: true } })

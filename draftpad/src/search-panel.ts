@@ -1,14 +1,15 @@
 // The parts of the search panel CodeMirror does not build: how many matches the
-// current query has and which one is selected, the names the buttons lose when
-// style.css collapses their text into an icon, and turning the buttons off while
-// there is nothing for them to act on.
+// current query has and which one is selected, replacing within the selected
+// range alone, the names the buttons lose when style.css collapses their text
+// into an icon, and turning the buttons off while there is nothing for them to
+// act on.
 //
 // CodeMirror offers no say over the panel's markup short of replacing the whole
-// panel, so this reaches into the one it built instead. Everything here is DOM
-// the editor does not own: the count is a span of draftpad's own, and the rest
-// is attributes and the disabled flag.
+// panel, so this reaches into the one it built instead. Two elements are
+// draftpad's own — the span the count is written into and the button between
+// 置換 and すべて — and the rest is attributes and the disabled flag.
 
-import { getSearchQuery, searchPanelOpen, type SearchQuery } from '@codemirror/search'
+import { getSearchQuery, replaceAll, SearchQuery, searchPanelOpen, setSearchQuery } from '@codemirror/search'
 import type { EditorState, Extension, Text } from '@codemirror/state'
 import { EditorView, ViewPlugin, type ViewUpdate } from '@codemirror/view'
 
@@ -23,8 +24,15 @@ const COUNT_CLASS = 'cm-search-count'
  *  not parse says the same thing as one that simply misses. */
 const NO_MATCH = '一致なし'
 
-/** The buttons that need a match to do anything. */
+/** The buttons CodeMirror builds that need a match to do anything. */
 const NEEDS_A_MATCH = ['prev', 'next', 'replace', 'replaceAll']
+
+/** The name, the word and the tooltip of the button draftpad adds, which
+ *  replaces within the selected range rather than across the whole draft. The
+ *  word is as short as the two it stands beside; the tooltip says the rest. */
+const IN_SELECTION = 'replaceSelection'
+const IN_SELECTION_LABEL = '選択範囲'
+const IN_SELECTION_TITLE = '選択範囲の中だけをすべて置換'
 
 interface Match {
   from: number
@@ -41,6 +49,45 @@ function matchesOf(query: SearchQuery, state: EditorState): Match[] {
     found.push({ from: step.value.from, to: step.value.to })
   }
   return found
+}
+
+/**
+ * Replaces every match that falls inside the selected range, and nothing
+ * outside it.
+ *
+ * CodeMirror replaces across the whole document and takes no range to narrow
+ * that to. What its query does take is `test`, a filter every match is put
+ * through, so the range goes in there, CodeMirror's own command runs under that
+ * query, and the query the panel shows is put back. Going through the command
+ * rather than working out the changes here keeps one copy of what a replacement
+ * means: the escapes a plain query allows, `$1` and `$&` in a regular
+ * expression one, the single entry the whole pass leaves in the undo history,
+ * and what a screen reader is told once it is done.
+ *
+ * @param view the editor whose panel the button was pressed in
+ */
+function replaceInSelection(view: EditorView): void {
+  const { from, to } = view.state.selection.main
+  if (from === to) return
+  const query = getSearchQuery(view.state)
+  const withinRange = new SearchQuery({
+    search: query.search,
+    caseSensitive: query.caseSensitive,
+    literal: query.literal,
+    regexp: query.regexp,
+    replace: query.replace,
+    wholeWord: query.wholeWord,
+    // A match the range holds only half of is left alone.
+    test: (_match, _state, matchFrom, matchTo) => matchFrom >= from && matchTo <= to,
+  })
+  view.dispatch({ effects: setSearchQuery.of(withinRange) })
+  try {
+    replaceAll(view)
+  } finally {
+    // The narrowed query is this one press and no more: 次へ is not meant to
+    // start stopping at the edge of a range the draft has moved on from.
+    view.dispatch({ effects: setSearchQuery.of(query) })
+  }
 }
 
 class SearchPanelExtras {
@@ -115,7 +162,7 @@ class SearchPanelExtras {
     // A panel closed and reopened is a new element, and a new span with it.
     if (panel !== this.panel) {
       this.panel = panel
-      this.count = adopt(panel)
+      this.count = adopt(panel, this.view)
       this.counted = null
     }
 
@@ -131,6 +178,19 @@ class SearchPanelExtras {
       const button = panel.querySelector<HTMLButtonElement>(`button[name="${name}"]`)
       if (button) button.disabled = this.matches.length === 0
     }
+    const inSelection = panel.querySelector<HTMLButtonElement>(`button[name="${IN_SELECTION}"]`)
+    if (inSelection) inSelection.disabled = !this.selectionHoldsAMatch()
+  }
+
+  /**
+   * Whether replacing within the selection has anything to do. A range has to
+   * be selected, and a match has to sit inside it whole: a range holding
+   * nothing but the halves of two matches would come back unchanged, so the
+   * button stays off rather than offering a pass that does nothing.
+   */
+  private selectionHoldsAMatch(): boolean {
+    const { from, to } = this.view.state.selection.main
+    return from !== to && this.matches.some((match) => match.from >= from && match.to <= to)
   }
 
   /** What the count says about the query as it stands. */
@@ -149,9 +209,10 @@ class SearchPanelExtras {
  * Takes over the panel CodeMirror has just built.
  *
  * @param panel the panel element
+ * @param view the editor the panel belongs to
  * @returns the span the count is written into
  */
-function adopt(panel: HTMLElement): HTMLElement {
+function adopt(panel: HTMLElement, view: EditorView): HTMLElement {
   // style.css collapses the text of these two, which is where their accessible
   // names came from. The words are CodeMirror's phrases, so they are read back
   // off the elements rather than repeated here.
@@ -162,6 +223,24 @@ function adopt(panel: HTMLElement): HTMLElement {
   }
   for (const label of panel.querySelectorAll<HTMLLabelElement>('label')) {
     label.title = label.textContent?.trim() ?? ''
+  }
+
+  // The button between 置換 and すべて. It carries the class and the type
+  // CodeMirror gives the buttons it builds, so that the panel's styling and its
+  // keyboard handling take it for one of them, and it goes into the markup
+  // where it is read — which is also where it falls in the tab order. A panel
+  // opened on a draft that cannot be edited has no replace row and no すべて to
+  // stand beside, and then there is nothing to add here either.
+  const replaceEverywhere = panel.querySelector<HTMLButtonElement>('button[name="replaceAll"]')
+  if (replaceEverywhere) {
+    const inSelection = document.createElement('button')
+    inSelection.className = 'cm-button'
+    inSelection.type = 'button'
+    inSelection.name = IN_SELECTION
+    inSelection.textContent = IN_SELECTION_LABEL
+    inSelection.title = IN_SELECTION_TITLE
+    inSelection.addEventListener('click', () => replaceInSelection(view))
+    replaceEverywhere.before(inSelection)
   }
 
   const count = document.createElement('span')
