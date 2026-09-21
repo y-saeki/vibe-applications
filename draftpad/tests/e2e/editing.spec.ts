@@ -241,10 +241,10 @@ test('keeps the bar still however many digits the counts run to', async ({ launc
 
   await expect(app.chars).toHaveText('111999 文字')
   await expect(app.lines).toHaveText('1000 行')
-  // Each cell is held at the width its token gives it, separator included, so
-  // the longest reading does not push it wider than the shortest one.
-  expect((await app.chars.boundingBox())?.width).toBe(await token(app, '--count-width'))
-  expect((await app.lines.boundingBox())?.width).toBe(await token(app, '--count-width-narrow'))
+  // Each figure is set in a box the width its token gives it, so the longest
+  // reading does not push the word after it, or anything beyond, along.
+  expect((await app.chars.locator('.count-figure').boundingBox())?.width).toBe(await token(app, '--count-width'))
+  expect((await app.lines.locator('.count-figure').boundingBox())?.width).toBe(await token(app, '--count-width-narrow'))
 
   // Which is what the bar is really being asked for: emptying the draft takes
   // the counts from their widest reading to their shortest, and the button to

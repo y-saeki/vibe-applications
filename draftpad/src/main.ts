@@ -97,10 +97,6 @@ async function main(): Promise<void> {
   editor = await Editor.create({
     parent: byId('panes'),
     host: byId('editor'),
-    panels: {
-      a: { top: byId('pane-panels-a'), bottom: byId('pane-foot-a') },
-      b: { top: byId('pane-panels-b'), bottom: byId('pane-foot-b') },
-    },
     initial: state,
     defaultFontFamily: fontFamily,
     dark: document.documentElement.dataset.theme === 'dark',

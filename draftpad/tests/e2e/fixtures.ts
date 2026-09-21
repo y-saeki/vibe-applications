@@ -160,9 +160,14 @@ export class App {
     return this.pane(side).locator('.cm-mergeSpacer')
   }
 
-  /** The search panel of one of the two panes, which sits under that pane (or over it, were it a top panel). */
+  /** The search panel of one of the two panes, at the foot of that pane. */
   searchPanelOf(side: Side): Locator {
-    return this.page.locator(`#pane-foot-${side} .cm-search, #pane-panels-${side} .cm-search`)
+    return this.pane(side).locator('.cm-search')
+  }
+
+  /** The bar above one of the two panes. */
+  paneBar(side: Side): Locator {
+    return this.page.locator(`#pane-head-${side} .pane-bar`)
   }
 
   /** Every mark the editor draws on its spaces and tabs, while that setting is on. */

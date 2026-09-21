@@ -158,8 +158,8 @@
   --panel-inset: 40px; /* the preferences panel's distance from the window */
   --language-width: 128px; /* the floor under the left pane bar's language selector */
   --mode-width: 96px; /* the floor under the right pane bar's diff unit selector */
-  --count-width: 112px; /* a pane bar's character count, hairline and padding included */
-  --count-width-narrow: 96px; /* its line count, which needs fewer digits */
+  --count-width: 48px; /* the box a pane bar's character count is set in: six digits */
+  --count-width-narrow: 32px; /* the box its line count is set in: four digits */
 
   color-scheme: light;
 }
@@ -459,12 +459,9 @@ option {
 
 /* ---- Editor ------------------------------------------------------------ */
 
-/* The editor is a column: the pane heads (each pane's bar), the panes, and
-   the pane feet (the search panel and the Vim status line, which CodeMirror
-   puts at the foot of a pane). The heads and feet are rows of one cell per
-   pane, so that a panel a pane opens sits below that pane alone — and outside
-   the panes' own boxes, where it neither scrolls away with the text nor adds
-   to the height the other pane is levelled against. */
+/* The editor is a column: the pane heads (each pane's bar), then the panes,
+   which carry their own panels (the search panel, the Vim status line) at
+   their feet. The heads are a row of one cell per pane. */
 #editor {
   display: flex;
   flex-direction: column;
@@ -473,6 +470,7 @@ option {
 }
 
 .pane-row {
+  position: relative;
   flex: none;
   display: flex;
   align-items: stretch;
@@ -481,36 +479,45 @@ option {
 /* Half each, by the same arithmetic the merge view lays its two panes out
    with (a basis of nothing and equal growth), so that the cells stand over
    the panes. */
-.pane-head,
-.pane-foot {
+.pane-head {
   flex: 1 1 0;
   min-width: 0;
 }
 
 /* The author sheet's display beats the `[hidden] { display: none }` the
-   browser ships, so the switch is spelled out. The right pane's head and foot
-   are hidden this way while there is one pane, and so is whichever of the
-   left pane's two buttons is not in use. */
+   browser ships, so the switch is spelled out. The right pane's head is
+   hidden this way while there is one pane, and so is whichever of the left
+   pane's two buttons is not in use. */
 .pane-head[hidden],
-.pane-foot[hidden],
 .icon-button[hidden] {
   display: none;
 }
 
-/* The rule between the two panes is a shadow rather than a border. A border
-   is a column of the layout: it would take one pixel out of the right pane
-   and leave the two unequal, or out of the left one and move its text, which
-   keeps the width it had alone. The shadow is drawn over the last pixel of
-   the left pane, inside its padding, and costs neither pane a thing. */
-.pane-head + .pane-head,
-.pane-foot + .pane-foot,
-#panes .cm-mergeViewEditor + .cm-mergeViewEditor {
-  box-shadow: -1px 0 0 var(--border);
-}
-
 #panes {
+  position: relative;
   flex: 1 1 auto;
   min-height: 0;
+}
+
+/* The rule between the two panes: one pixel down the middle of the row of
+   heads and of the box the panes are in, drawn last. It is not a border on
+   either pane, because a border is a column of the layout: it would take one
+   pixel out of the right pane and leave the two unequal, or out of the left
+   one and move its text, which keeps the width it had alone. Nor is it a
+   shadow on the right pane, because that is painted before the left pane's
+   own surface — the dark look gives the editor a background of its own, and
+   the rule went under it. As the last thing in each box it is painted over
+   the panes, on the first pixel of the right one, inside its padding. */
+:root[data-layout="compare"] .pane-row::after,
+:root[data-layout="compare"] #panes::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  background: var(--border);
+  pointer-events: none;
 }
 
 /* One pane: the editor fills the box, and its scroller is what scrolls. */
@@ -543,9 +550,17 @@ option {
   min-height: 100%;
 }
 
+/* The merge view clips each pane's box, which would also stop the panels in
+   it from sticking to the merge view as it scrolls: a sticky box holds to the
+   nearest ancestor that clips, and a box that clips does not scroll. Left
+   open, the pane's panels hold to the merge view instead and stay in view.
+   The clipping was what kept the pane from growing past its half; the floor
+   of nothing does the same. */
 #panes .cm-mergeViewEditor {
   display: flex;
   flex-direction: column;
+  min-width: 0;
+  overflow: visible;
 }
 
 #panes .cm-mergeViewEditor .cm-editor,
@@ -999,7 +1014,13 @@ option {
 /* The bar above each pane: the language selector at the left end and, at the
    right end, the counts and the button that opens the compare pane or closes
    this pane. The right pane's bar has the diff unit selector where the
-   language selector is, and the +N / −N figures before the counts. */
+   language selector is, and the +N / −N figures before the counts.
+
+   The spacing at the right end, from the spec: a hairline, --space-3, the
+   counts, --space-3, a hairline, and then --space-3 on either side of the
+   button's glyph — which the button's own gutter, --space-1 around the glyph,
+   makes up half of. Nothing here is a gap, so that each distance can be
+   read off the rule that sets it. */
 .pane-bar {
   display: flex;
   align-items: center;
@@ -1021,44 +1042,63 @@ option {
 .pane-bar-group {
   display: flex;
   align-items: center;
-  gap: var(--space-1);
   white-space: nowrap;
 }
 
 /* The counts are read-only cells, closed off by hairlines the way the
    platform's own status bars do it: one before the pair and one after.
 
-   Each cell is as wide as its longest reading rather than as wide as what it
-   currently says, and its figures are set against the right, so the words and
-   everything beside them stay put as the digits come and go. The widths count
-   the padding and the hairline, and the figures are lined up on the same
-   advance. */
+   Each count is a figure set against the right of a box as wide as its
+   longest reading — six digits of characters, four of lines — with its word
+   after it. The words, the hairlines and the button beyond them therefore
+   stay put as the digits come and go, and the word of one count sits close
+   to the box of the next, as the spec draws them. The figures are lined up
+   on the same advance. */
 .pane-cell {
-  box-sizing: border-box;
-  min-width: var(--count-width);
-  padding: 0 var(--space-3);
+  padding-left: var(--space-3);
   border-left: 1px solid var(--border);
-  font-variant-numeric: tabular-nums;
-  text-align: right;
 }
 
 .pane-cell + .pane-cell {
-  min-width: var(--count-width-narrow);
+  padding-left: var(--space-2);
+  padding-right: var(--space-3);
   border-left: none;
   border-right: 1px solid var(--border);
 }
 
-/* What the right pane adds and takes out, in the colors of the marks. Figures
-   that hold their width, in a box of its own width, so that the cells beside
-   them hold still as well. */
+.count-figure {
+  display: inline-block;
+  min-width: var(--count-width);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.pane-cell + .pane-cell .count-figure {
+  min-width: var(--count-width-narrow);
+}
+
+/* The button at the end of the bar stands --space-3 clear of the hairline
+   and of the window's edge alike, glyph to glyph: the button's own gutter
+   plus this margin on the one side, plus the bar's padding on the other. */
+.pane-bar-group .icon-button {
+  margin-left: var(--space-2);
+}
+
+/* What the right pane adds and takes out, in the colors of the marks, a step
+   quieter: the two at full strength are a shout beside the greys of the bar.
+   Figures that hold their width, in a box of its own width, so that the
+   cells beside them hold still as well, and the same distance from the
+   hairline as the line count keeps on its other side. */
 .diff-stat {
   display: inline-flex;
   justify-content: flex-end;
   gap: var(--space-2);
   min-width: var(--field-width-narrow);
+  padding-right: var(--space-3);
   font-family: var(--font-mono);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
+  opacity: 0.8;
 }
 
 .diff-added {

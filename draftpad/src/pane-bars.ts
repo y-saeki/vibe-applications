@@ -26,8 +26,8 @@ export class PaneBars {
   private readonly removed: HTMLElement
   private readonly openCompare: HTMLButtonElement
   private readonly closeA: HTMLButtonElement
-  /** The right pane's head and foot, which come and go with the pane. */
-  private readonly right: HTMLElement[]
+  /** The right pane's head, which comes and goes with the pane. */
+  private readonly right: HTMLElement
 
   /**
    * @param root the element holding both bars
@@ -37,13 +37,14 @@ export class PaneBars {
     const q = <T extends Element>(selector: string) => root.querySelector(selector) as T
     this.language = q('#language-select')
     this.diffMode = q('#diff-mode-select')
-    this.chars = { a: q('#status-chars'), b: q('#status-chars-b') }
-    this.lines = { a: q('#status-lines'), b: q('#status-lines-b') }
+    // The figures only: the words beside them are in the markup, and stay put.
+    this.chars = { a: q('#status-chars .count-figure'), b: q('#status-chars-b .count-figure') }
+    this.lines = { a: q('#status-lines .count-figure'), b: q('#status-lines-b .count-figure') }
     this.added = q('#status-diff .diff-added')
     this.removed = q('#status-diff .diff-removed')
     this.openCompare = q('#open-compare')
     this.closeA = q('#close-a')
-    this.right = [q('#pane-head-b'), q('#pane-foot-b')]
+    this.right = q('#pane-head-b')
 
     for (const lang of LANGUAGES) {
       const option = document.createElement('option')
@@ -59,8 +60,8 @@ export class PaneBars {
   }
 
   setCounts(side: Side, chars: number, lines: number): void {
-    this.chars[side].textContent = `${chars} 文字`
-    this.lines[side].textContent = `${lines} 行`
+    this.chars[side].textContent = String(chars)
+    this.lines[side].textContent = String(lines)
   }
 
   setLanguage(id: string): void {
@@ -84,7 +85,7 @@ export class PaneBars {
    * left pane, or back.
    */
   setCompare(open: boolean): void {
-    for (const element of this.right) element.hidden = !open
+    this.right.hidden = !open
     this.openCompare.hidden = open
     this.closeA.hidden = !open
   }

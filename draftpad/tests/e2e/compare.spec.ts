@@ -125,9 +125,118 @@ test('paints the two sides in their own colors, with a stripe at the edge of a l
   await expect(app.changedLines('a').first()).toHaveCSS('box-shadow', /rgb\(207, 34, 46\)/)
   await expect(app.changedLines('b').first()).toHaveCSS('box-shadow', /rgb\(26, 127, 55\)/)
   await expect(app.page.locator('.cm-gutters')).toHaveCount(0)
-  // The figures in the bar take the same two colors.
+  // The figures in the bar take the same two colors, a step quieter.
   await expect(app.diffAdded).toHaveCSS('color', 'rgb(26, 127, 55)')
   await expect(app.diffRemoved).toHaveCSS('color', 'rgb(207, 34, 46)')
+  await expect(app.page.locator('#status-diff')).toHaveCSS('opacity', '0.8')
+})
+
+test('rules the two panes apart, in both themes', async ({ launch }) => {
+  const app = await launch({ colorScheme: 'light', state: TWO_PANES })
+  // The rule is the last thing drawn in the row of bars and in the box the
+  // panes are in, so that it lies over the panes' own surfaces: the dark look
+  // gives the editor a background, which a shadow on the right pane went
+  // under. A pseudo-element is not in the DOM, so its computed style is what
+  // there is to read.
+  const rule = (selector: string) =>
+    app.page.evaluate((target) => {
+      const style = getComputedStyle(document.querySelector(target)!, '::after')
+      return { content: style.content, position: style.position, width: style.width, left: style.left, color: style.backgroundColor }
+    }, selector)
+
+  for (const selector of ['#pane-heads', '#panes']) {
+    const box = (await app.page.locator(selector).boundingBox())!
+    expect(await rule(selector)).toEqual({
+      content: '""',
+      position: 'absolute',
+      width: '1px',
+      left: `${box.width / 2}px`,
+      color: 'rgb(208, 215, 222)',
+    })
+  }
+
+  await app.gear.click()
+  await app.page.locator('#pref-theme').selectOption('dark')
+  expect((await rule('#panes')).color).toBe('rgb(44, 44, 44)')
+  expect((await rule('#pane-heads')).color).toBe('rgb(44, 44, 44)')
+
+  // With one pane there is nothing to rule apart.
+  await app.page.keyboard.press('Escape')
+  await app.closeB.click()
+  await expect(app.page.locator('html')).toHaveAttribute('data-layout', 'single')
+  expect((await rule('#panes')).content).toBe('none')
+})
+
+test('spaces the end of the bar as the spec draws it', async ({ launch }) => {
+  const app = await launch({ state: TWO_PANES })
+  const box = async (locator: ReturnType<App['paneBar']>) => (await locator.boundingBox())!
+
+  // The button's glyph stands --space-3 clear of the hairline and of the
+  // bar's edge alike: the button is --icon-button-size around an --icon-size
+  // glyph, so its own gutter is half of that on either side.
+  const gutter = (await token(app, '--icon-button-size') - (await token(app, '--icon-size'))) / 2
+  const clear = await token(app, '--space-3')
+  for (const [side, button] of [
+    ['a', app.closeA],
+    ['b', app.closeB],
+  ] as const) {
+    const bar = await box(app.paneBar(side))
+    const lines = await box(side === 'a' ? app.lines : app.linesB)
+    const glyph = await box(button)
+    expect(glyph.x - (lines.x + lines.width)).toBe(clear - gutter)
+    expect(bar.x + bar.width - (glyph.x + glyph.width)).toBe(clear - gutter)
+  }
+
+  // The +N / −N figures keep the same distance from the hairline as the line
+  // count keeps on its other side, and the words sit close to the next box.
+  const stat = await box(app.page.locator('#status-diff'))
+  const chars = await box(app.charsB)
+  expect(stat.x + stat.width).toBe(chars.x)
+  await expect(app.page.locator('#status-diff')).toHaveCSS('padding-right', `${clear}px`)
+  await expect(app.linesB).toHaveCSS('padding-right', `${clear}px`)
+  await expect(app.linesB).toHaveCSS('padding-left', `${await token(app, '--space-2')}px`)
+})
+
+test('keeps a search panel at the foot of its own pane, in view, without a blank under the other', async ({ launch }) => {
+  const app = await launch({ state: { compare: true, text: 'short', compareText: 'short' } })
+  const box = async (selector: string) => (await app.page.locator(selector).boundingBox())!
+
+  await app.editorA.click()
+  await app.press('KeyF')
+  await expect(app.searchPanelOf('a')).toBeVisible()
+
+  // The panel closes the left pane off at the bottom of the box, and the right
+  // pane runs all the way down beside it: the panel's height is the left
+  // pane's alone, not a strip taken out of both.
+  const panes = await box('#panes')
+  const panel = await box('.cm-merge-a .cm-search')
+  const scrollerA = await box('.cm-merge-a .cm-scroller')
+  const scrollerB = await box('.cm-merge-b .cm-scroller')
+  expect(Math.abs(panel.y + panel.height - (panes.y + panes.height))).toBeLessThanOrEqual(1)
+  expect(Math.abs(scrollerA.y + scrollerA.height - panel.y)).toBeLessThanOrEqual(1)
+  expect(Math.abs(scrollerB.y + scrollerB.height - (panes.y + panes.height))).toBeLessThanOrEqual(1)
+})
+
+test('keeps the search panel in view as the panes scroll', async ({ launch }) => {
+  const lines = Array.from({ length: 400 }, (_, line) => `${line + 1} 行目`).join('\n')
+  const app = await launch({ state: { compare: true, text: lines, compareText: lines } })
+  const box = async (selector: string) => (await app.page.locator(selector).boundingBox())!
+
+  await app.editorB.click()
+  await app.press('KeyF')
+  await expect(app.searchPanelOf('b')).toBeVisible()
+  const panes = await box('#panes')
+  const before = await box('.cm-merge-b .cm-search')
+  expect(Math.abs(before.y + before.height - (panes.y + panes.height))).toBeLessThanOrEqual(1)
+
+  // The panel is inside the pane, which is as tall as its text; it holds to
+  // the bottom of the merge view as that scrolls rather than going with the
+  // text.
+  await app.page.locator('.cm-mergeView').evaluate((element) => {
+    element.scrollTop = 300
+  })
+  await expect.poll(async () => (await box('.cm-merge-b .cm-search')).y).toBe(before.y)
+  await expect(app.searchField).toBeFocused()
 })
 
 test('counts each pane on its own', async ({ launch }) => {
@@ -297,4 +406,12 @@ test('scrolls the two panes together, under one bar', async ({ launch }) => {
 async function lineTop(app: App, side: Side, text: string): Promise<number> {
   const box = await app.pane(side).locator('.cm-line', { hasText: text }).first().boundingBox()
   return box!.y
+}
+
+/** A length token as the sheet declares it, in px. */
+function token(app: App, name: string): Promise<number> {
+  return app.page.evaluate(
+    (property) => Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue(property)),
+    name,
+  )
 }

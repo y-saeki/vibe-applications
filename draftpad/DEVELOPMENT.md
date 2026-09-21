@@ -399,14 +399,16 @@ content edge を越える中身があるか——をそのまま見ます。`.pa
 比較相手を貼り付ける場所がそこで、そのまま `Mod+W` を押せば開く前に戻る、という対称にもなっています。閉じたあとは
 残ったペインにキーボードを戻します。
 
-### パネルはペインの外に置く
+### パネルはペインの中に
 
-検索・置換パネルと Vim のステータス行は CodeMirror の bottom パネルで、既定ではエディタ要素の中、スクローラの下に
-付きます。`MergeView` の中でこれをやると、各エディタは本文と同じ高さまで伸びているので、パネルは本文の末尾まで
-送らないと見えず、もう一方のペインを揃える相手の高さにも加わります。そこで各ペインに
-`panels({ topContainer, bottomContainer })` を渡し、パネルを `#editor` の中の別の行——ペインの上の `.pane-head`、
-下の `.pane-foot`——へ出しています。1 ペインのときも同じ場所です。`src/search-panel.ts` は同じコンテナを受け取って、
-その中からパネルを探します。
+検索・置換パネルと Vim のステータス行は CodeMirror の bottom パネルで、エディタ要素の中、スクローラの下に付きます。
+2 ペインでもそのままです。`MergeView` の中では各エディタが本文と同じ高さまで伸びますが、CodeMirror のパネルは
+`position: sticky` なので、スクロールする `.cm-mergeView` の下端に張り付いて見え続けます。ただし sticky は
+いちばん近い「クリップする祖先」に対して効くので、`MergeView` が各ペインの箱に付けている `overflow: hidden` を
+`style.css` で `visible` に戻しています(幅の下限は `min-width: 0` で保ちます)。パネルの高さはそのペインの
+末尾、最終行の後ろに足されるだけなので、行の対応はずれません。もう一方のペインは同じ高さに引き伸ばされ、その分は
+末尾まで送ったときにだけ空きとして現れます。パネルをペインの外の行に出す形も試しましたが、開いていない側の
+ペインの下に常に空白が出るので、やめました。
 
 検索パネルはキャレットのあるペインにだけ開きます。「大文字小文字を区別」「正規表現」の 2 つは 1 つの設定で、
 片方のペインで切り替えるともう一方の `SearchQuery` にも `setSearchQuery` で同じフラグを送ります(検索語はペインごと)。
@@ -421,9 +423,11 @@ content edge を越える中身があるか——をそのまま見ます。`.pa
 その中で左右に分けます。ウィンドウのサイズは `resize` のたびに `state.json` へ残るので、2 ペインで終了すれば
 2 ペイン分の幅で起動します。
 
-「1 ドットも動かない」ために、レイアウトから 2 つ外してあります。ペインの仕切りは `border` ではなく `box-shadow` で、
-左ペインの最後の 1px(パディングの中)に重ねて描きます。`border` だと 1px がどちらかのペインから減ります。変更行の
-左端の帯は `MergeView` の gutter(`gutter: false`)ではなく、行自身の `box-shadow: inset` です。gutter は本文の横に
+「1 ドットも動かない」ために、レイアウトから 2 つ外してあります。ペインの仕切りは `border` ではなく、バーの行と
+ペインの箱それぞれの `::after` で真ん中に描く 1px の縦線です。`border` だと 1px がどちらかのペインから減ります。
+右ペインの `box-shadow` でも描けそうですが、ダークテーマではエディタ自身が背景を持ち、後から描かれる左ペインの面に
+隠れました。各箱の最後の子として描く擬似要素なら、両ペインの上に乗ります。変更行の左端の帯は `MergeView` の
+gutter(`gutter: false`)ではなく、行自身の `box-shadow: inset` です。gutter は本文の横に
 列を足すので、本文が 1 ペインのときより狭くなります。`tests/e2e/compare.spec.ts` が、開いた後の両ペインの幅と
 本文の幅を見ています。
 
@@ -619,7 +623,7 @@ Tauri の NSIS スクリプトはビルド時のテンプレートなので、`t
 | 余白 | `--space-1` 〜 `--space-5` | 4px 刻みの 5 段。コントロール同士、バーとパネルの内側、グループ同士 |
 | 角丸 | `--radius-sm` / `-md` / `-lg` | 部品の大きさに対応した 3 段(チェックボックスとアイコンボタン / 高さ `--control-height` のコントロール / パネル) |
 | 寸法 | `--control-height`、`--checkbox-size`、`--toggle-width`、`--toggle-size-search`、`--glyph-size`、`--icon-size`、`--icon-button-size`、`--statusbar-height`、`--titlebar-height`、`--scrollbar-size`、`--scrollbar-thumb-size`、`--scrollbar-thumb-min` | コントロールとバーの大きさ、スクロールバーの溝とつまみ |
-| レイアウト | `--field-width`、`--field-width-narrow`、`--field-width-search`、`--button-width-search`、`--label-width`、`--panel-width`、`--panel-inset`、`--language-width`、`--mode-width`、`--count-width`、`--count-width-narrow` | 入力欄・ラベル列・検索パネルと環境設定パネルの配置と、ペインのバーの 2 つのセレクタの下限幅、文字数・行数セルの幅 |
+| レイアウト | `--field-width`、`--field-width-narrow`、`--field-width-search`、`--button-width-search`、`--label-width`、`--panel-width`、`--panel-inset`、`--language-width`、`--mode-width`、`--count-width`、`--count-width-narrow` | 入力欄・ラベル列・検索パネルと環境設定パネルの配置と、ペインのバーの 2 つのセレクタの下限幅、文字数・行数の数字を収める枠の幅 |
 | パレット | `--bg`、`--fg`、`--muted`、`--muted-strong`、`--placeholder`、`--border` など | 色、影 2 段(`--shadow-panel` / `--shadow-popup`)、描き込む印 8 枚(✓ / シェブロン上下 / × / 横棒 / Aa / .* / タブの矢印)、空白文字の印(`--whitespace`)、インデントガイドの色(`--indent-guide`)、行番号の色(`--line-number`)、スクロールバーのつまみの色 2 段(`--scrollbar-thumb` / `--scrollbar-thumb-hover`)、比較ペインの印の色 6 つ(`--diff-a-line` / `-text` / `-mark` と `b` 側。左が赤系、右が緑系で、行の地色・文字の印・行端の帯と `+N` / `−N` の文字色)と、`src/indent-guides.ts` と `src/overlay-scrollbar.ts` が入れる 2 つずつの数(`--indent-guide-levels` / `--indent-guide-step`、`--scrollbar-cover` / `--scrollbar-progress`。色でも長さでもありませんが、ファミリにも入らないのでここで数えます) |
 
 基準にしたのは Windows 11 のメモ帳のステータスバーです。macOS では `-apple-system`、Windows では Segoe UI が

@@ -7,11 +7,6 @@
 // panel, so this reaches into the one it built instead. Everything here is DOM
 // the editor does not own: the count is a span of draftpad's own, and the rest
 // is attributes and the disabled flag.
-//
-// The panel is not inside the editor's own element: src/editor.ts sends each
-// pane's panels to containers above and below the pane, so that a panel open
-// in one pane stays in view and out of the other pane's way. This is given the
-// same containers, which are where it looks for the panel.
 
 import { getSearchQuery, searchPanelOpen, type SearchQuery } from '@codemirror/search'
 import type { EditorState, Extension, Text } from '@codemirror/state'
@@ -56,14 +51,7 @@ class SearchPanelExtras {
   private counted: { query: SearchQuery; doc: Text } | null = null
   private timer: ReturnType<typeof setTimeout> | undefined
 
-  /**
-   * @param view the pane
-   * @param containers where the pane's panels are put
-   */
-  constructor(
-    private readonly view: EditorView,
-    private readonly containers: readonly HTMLElement[],
-  ) {
+  constructor(private readonly view: EditorView) {
     if (searchPanelOpen(view.state)) this.sync(0)
   }
 
@@ -119,7 +107,7 @@ class SearchPanelExtras {
   }
 
   private refresh(): void {
-    const panel = this.containers.map((container) => container.querySelector<HTMLElement>('.cm-panel.cm-search')).find(Boolean) ?? null
+    const panel = this.view.dom.querySelector<HTMLElement>('.cm-panel.cm-search')
     if (!panel) {
       this.forget()
       return
@@ -184,12 +172,7 @@ function adopt(panel: HTMLElement): HTMLElement {
   return count
 }
 
-/**
- * Everything above, as an extension.
- *
- * @param containers where the pane's panels are put, which is where the
- *   search panel will be found
- */
-export function searchPanelExtras(containers: readonly HTMLElement[]): Extension {
-  return ViewPlugin.define((view) => new SearchPanelExtras(view, containers))
+/** Everything above, as an extension. */
+export function searchPanelExtras(): Extension {
+  return ViewPlugin.fromClass(SearchPanelExtras)
 }

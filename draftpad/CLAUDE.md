@@ -16,6 +16,9 @@ That file, and how it is written, is a developer-facing detail: it belongs in
 The two panes of the compare pane are 左 / 右 to users; `a` / `b` is what the code and the
 merge view call them, and stays in the code.
 
+A tooltip (`title`) goes on a control — a button, a selector — and nowhere else. Read-only
+text such as the counts and the +N / −N figures carries none.
+
 ## Documentation layout
 
 `README.md` is for people who install and use draftpad. `DEVELOPMENT.md` is for people who

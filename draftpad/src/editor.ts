@@ -16,7 +16,7 @@ import { bracketMatching, defaultHighlightStyle, indentOnInput, indentUnit, synt
 import { getChunks, MergeView } from '@codemirror/merge'
 import { getSearchQuery, highlightSelectionMatches, openSearchPanel, search, searchKeymap, SearchQuery, setSearchQuery } from '@codemirror/search'
 import { Compartment, type EditorSelection, EditorState, type Extension, type Text } from '@codemirror/state'
-import { drawSelection, dropCursor, EditorView, keymap, type KeyBinding, lineNumbers, panels } from '@codemirror/view'
+import { drawSelection, dropCursor, EditorView, keymap, type KeyBinding, lineNumbers } from '@codemirror/view'
 
 import { darkTheme } from './dark-theme'
 import { indentGuides } from './indent-guides'
@@ -46,22 +46,11 @@ export interface DiffStat {
   removed: number
 }
 
-/**
- * Where a pane's panels go: above the pane, and below it. The search panel and
- * the Vim status line are bottom panels, so they go under the pane.
- */
-export interface PanelContainers {
-  top: HTMLElement
-  bottom: HTMLElement
-}
-
 export interface EditorOptions {
   /** Where the pane, or the two panes, are put. */
   parent: HTMLElement
   /** Where the scrollbar's strip is appended; see src/overlay-scrollbar.ts. */
   host: HTMLElement
-  /** Each pane's panel containers. */
-  panels: Record<Side, PanelContainers>
   initial: Readonly<State>
   /** Used when `state.fontFamily` is empty. */
   defaultFontFamily: string
@@ -347,7 +336,6 @@ export class Editor {
   private paneExtensions(side: Side): Extension {
     const c = this.compartments
     const v = this.current
-    const containers = this.options.panels[side]
     return [
       // Vim must come before every other keymap.
       c.vim.of(v.vim),
@@ -367,13 +355,13 @@ export class Editor {
       closeBrackets(),
       highlightSelectionMatches(),
       searchExtension(this.searchOptions),
-      // The panels go above and below the pane rather than inside it. Inside
-      // the merge view, a pane's box is as tall as its text, so a panel at the
-      // foot of it would be out of view until the panes were scrolled to their
-      // end, and would add to the height the other pane is levelled against.
-      // Outside, the panel stays in view, and the lines stay level.
-      panels({ topContainer: containers.top, bottomContainer: containers.bottom }),
-      searchPanelExtras([containers.top, containers.bottom]),
+      // The search panel and the Vim status line are CodeMirror's bottom
+      // panels, at the foot of the pane's own box. In the merge view that box
+      // is as tall as the text, and the panel keeps itself in view by being
+      // sticky against the scrolling merge view — as long as nothing between
+      // the two clips, which style.css sees to. Its height goes on the end of
+      // this pane alone, after the last line, so the lines stay level.
+      searchPanelExtras(),
       EditorView.lineWrapping,
       EditorView.contentAttributes.of({ spellcheck: 'false', autocorrect: 'off', autocapitalize: 'off' }),
       phrases,
