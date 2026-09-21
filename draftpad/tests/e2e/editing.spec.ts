@@ -82,6 +82,25 @@ test('keeps the list shut until it is asked for', async ({ launch }) => {
   if (await app.listIsOurs()) await expect(firstOption).toBeVisible()
 })
 
+test('joins the strip under the macOS title bar to the pane bar, in both themes', async ({ launch }) => {
+  const app = await launch({ platform: 'macos', colorScheme: 'light' })
+  // The window's own buttons sit on a strip of the page, which the spec
+  // paints like the bar under it, with no rule between: one bar to the eye.
+  const surface = (selector: string) =>
+    app.page.evaluate((target) => {
+      const style = getComputedStyle(document.querySelector(target)!)
+      return { color: style.backgroundColor, height: style.height, seam: style.borderBottomWidth }
+    }, selector)
+
+  expect(await surface('#titlebar')).toEqual({ color: 'rgb(246, 248, 250)', height: '28px', seam: '0px' })
+  expect((await surface('#pane-head-a .pane-bar')).color).toBe('rgb(246, 248, 250)')
+
+  await app.gear.click()
+  await app.page.locator('#pref-theme').selectOption('dark')
+  expect((await surface('#titlebar')).color).toBe('rgb(17, 17, 17)')
+  expect((await surface('#pane-head-a .pane-bar')).color).toBe('rgb(17, 17, 17)')
+})
+
 test('leaves the list to macOS', async ({ launch }) => {
   const app = await launch({ platform: 'macos' })
 

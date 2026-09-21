@@ -208,7 +208,9 @@
   color-scheme: dark;
 }
 
-/* macOS uses a transparent overlay title bar; keep the top strip draggable. */
+/* macOS uses a transparent overlay title bar; keep the top strip draggable.
+   Windows draws a title bar of its own above the page, so there the strip has
+   no height. */
 :root[data-platform="macos"] {
   --titlebar-height: 28px;
 }
@@ -228,9 +230,14 @@ body {
   font: var(--font-size-body) var(--ui-font);
 }
 
+/* The strip the window's own buttons sit on. It is painted like the pane bar
+   under it, with no rule between the two, so that the two read as one bar: the
+   spec draws macOS that way. Left to the page's own background, the strip was
+   one shade and the bar under it another, and the seam between them showed. */
 #titlebar {
   flex: none;
   height: var(--titlebar-height);
+  background: var(--panel);
 }
 
 /* ---- Controls shared by every panel ------------------------------------ */
