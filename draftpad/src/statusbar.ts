@@ -1,48 +1,24 @@
-// Status bar: character/line counts, language selector, always-on-top toggle
-// and the gear button that opens Preferences.
-
-import { LANGUAGES } from './languages'
+// Status bar: the always-on-top toggle and the gear button that opens
+// Preferences. The counts and the language selector are in the bar above the
+// pane (src/pane-bars.ts).
 
 export interface StatusBarHandlers {
-  onLanguageChange: (id: string) => void
   onAlwaysOnTopChange: (enabled: boolean) => void
   onOpenPreferences: () => void
 }
 
 export class StatusBar {
-  private readonly chars: HTMLElement
-  private readonly lines: HTMLElement
-  private readonly language: HTMLSelectElement
   private readonly alwaysOnTop: HTMLButtonElement
 
   constructor(root: HTMLElement, handlers: StatusBarHandlers) {
     const q = <T extends Element>(selector: string) => root.querySelector(selector) as T
-    this.chars = q('#status-chars')
-    this.lines = q('#status-lines')
-    this.language = q('#language-select')
     this.alwaysOnTop = q('#always-on-top')
 
-    for (const lang of LANGUAGES) {
-      const option = document.createElement('option')
-      option.value = lang.id
-      option.textContent = lang.label
-      this.language.append(option)
-    }
-    this.language.addEventListener('change', () => handlers.onLanguageChange(this.language.value))
     // A button does not flip itself the way a checkbox does: it reports the
     // state it is asking for, and setAlwaysOnTop() writes back what the store
     // settled on.
     this.alwaysOnTop.addEventListener('click', () => handlers.onAlwaysOnTopChange(!this.pressed))
     q<HTMLButtonElement>('#open-preferences').addEventListener('click', () => handlers.onOpenPreferences())
-  }
-
-  setCounts(chars: number, lines: number): void {
-    this.chars.textContent = `${chars} 文字`
-    this.lines.textContent = `${lines} 行`
-  }
-
-  setLanguage(id: string): void {
-    this.language.value = id
   }
 
   setAlwaysOnTop(enabled: boolean): void {

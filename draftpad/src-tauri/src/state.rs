@@ -1,5 +1,6 @@
-//! Persistent application state: the draft text plus every user setting,
-//! stored as one `state.json` in the platform app-data directory.
+//! Persistent application state: the draft text, the compare pane's text
+//! and every user setting, stored as one `state.json` in the platform
+//! app-data directory.
 
 use std::fs;
 use std::io::{self, Write};
@@ -15,7 +16,15 @@ const FILE_NAME: &str = "state.json";
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct State {
+    /// The draft: the only pane, or the left one while the compare pane is open.
     pub text: String,
+    /// The right pane, while the compare pane is open; empty otherwise.
+    pub compare_text: String,
+    /// Whether the compare pane is open, so the window holds two panes.
+    pub compare: bool,
+    /// "line" or "char": whether the characters within a changed line are
+    /// marked as well as the line.
+    pub diff_mode: String,
     pub language: String,
     pub editor_mode: String,
     pub theme: String,
@@ -41,6 +50,9 @@ impl Default for State {
     fn default() -> Self {
         Self {
             text: String::new(),
+            compare_text: String::new(),
+            compare: false,
+            diff_mode: "char".into(),
             language: "markdown".into(),
             editor_mode: "normal".into(),
             theme: "system".into(),
@@ -151,6 +163,9 @@ mod tests {
         let state = load(&dir.state()).expect("a missing file is not an error");
 
         assert!(state.text.is_empty());
+        assert!(state.compare_text.is_empty());
+        assert!(!state.compare);
+        assert_eq!(state.diff_mode, "char");
         assert_eq!(state.language, "markdown");
         assert_eq!(state.font_size, 13);
         assert_eq!(state.font_weight, 400);
@@ -170,6 +185,9 @@ mod tests {
         let dir = TempDir::new();
         let written = State {
             text: "書きかけの下書き\n🌏".into(),
+            compare_text: "比較先\n🌍".into(),
+            compare: true,
+            diff_mode: "line".into(),
             language: "rust".into(),
             editor_mode: "vim".into(),
             theme: "dark".into(),
@@ -192,6 +210,9 @@ mod tests {
         let read = load(&dir.state()).expect("the state is read back");
 
         assert_eq!(read.text, written.text);
+        assert_eq!(read.compare_text, written.compare_text);
+        assert!(read.compare);
+        assert_eq!(read.diff_mode, "line");
         assert_eq!(read.language, "rust");
         assert_eq!(read.editor_mode, "vim");
         assert_eq!(read.theme, "dark");
@@ -211,13 +232,38 @@ mod tests {
     }
 
     #[test]
+    fn the_file_uses_the_frontend_s_field_names() {
+        let dir = TempDir::new();
+        let written = State {
+            text: "左".into(),
+            compare_text: "右".into(),
+            compare: true,
+            ..State::default()
+        };
+
+        save(&dir.state(), &written).expect("the state is written");
+        let raw = fs::read_to_string(dir.state()).expect("the file is read back");
+
+        // `src/state.ts` reads the same file through serde's camelCase mapping,
+        // so the names in it have to be the ones that side spells.
+        assert!(raw.contains("\"text\": \"左\""));
+        assert!(raw.contains("\"compareText\": \"右\""));
+        assert!(raw.contains("\"compare\": true"));
+        assert!(raw.contains("\"diffMode\""));
+    }
+
+    #[test]
     fn a_field_an_older_version_never_wrote_falls_back_to_its_default() {
         let dir = TempDir::new();
         fs::write(dir.state(), r#"{"text":"昔のファイル"}"#).expect("the file is written");
 
         let state = load(&dir.state()).expect("a partial file still loads");
 
+        // A draft written before the compare pane existed opens as one pane.
         assert_eq!(state.text, "昔のファイル");
+        assert!(state.compare_text.is_empty());
+        assert!(!state.compare);
+        assert_eq!(state.diff_mode, "char");
         assert_eq!(state.language, "markdown");
         assert_eq!(state.font_size, 13);
         assert_eq!(state.font_weight, 400);

@@ -143,6 +143,62 @@ test('closing the window goes through the same path as quitting', async ({ launc
   expect((await app.saved())?.text).toBe('閉じる前に残す')
 })
 
+test('Ctrl+\\ opens the compare pane, and does nothing once it is open', async ({ launch }) => {
+  const app = await launch({ platform: 'windows', innerSize: { width: 600, height: 400 } })
+
+  await app.typeInEditor('比べる')
+  await app.page.keyboard.press('Control+Backslash')
+  await expect(app.page.locator('html')).toHaveAttribute('data-layout', 'compare')
+  await expect(app.editorB).toHaveText('比べる')
+  await expect.poll(() => app.resized()).toEqual({ width: 1200, height: 400 })
+
+  // Opening is all the key does: pressed again, it neither adds a pane nor
+  // grows the window a second time.
+  await app.page.keyboard.press('Control+Backslash')
+  await expect(app.page.locator('html')).toHaveAttribute('data-layout', 'compare')
+  expect(await app.resized()).toEqual({ width: 1200, height: 400 })
+})
+
+test('Ctrl+W closes the pane with the caret while there are two, and the window once there is one', async ({ launch }) => {
+  const app = await launch({ platform: 'windows', state: { compare: true, text: 'left', compareText: 'right' } })
+
+  await app.editorB.click()
+  await expect(app.editorB).toBeFocused()
+  await app.press('KeyW')
+  await expect(app.page.locator('html')).toHaveAttribute('data-layout', 'single')
+  await expect(app.editor).toHaveText('left')
+  expect(await app.commands()).not.toContain('quit_app')
+
+  // The same key, one pane later: the innermost thing left to close is the window.
+  await app.press('KeyW')
+  await expect.poll(() => app.commands()).toContain('quit_app')
+  expect((await app.saved())?.text).toBe('left')
+})
+
+test('Ctrl+W closes the left pane when the caret is there, and the right one goes on as the draft', async ({ launch }) => {
+  const app = await launch({ platform: 'windows', state: { compare: true, text: 'left', compareText: 'right' } })
+
+  await app.editorA.click()
+  await expect(app.editorA).toBeFocused()
+  await app.press('KeyW')
+  await expect(app.page.locator('html')).toHaveAttribute('data-layout', 'single')
+  await expect(app.editor).toHaveText('right')
+  await app.expectSaved((state) => state.text === 'right' && state.compareText === '' && !state.compare)
+})
+
+test('Ctrl+\\ and Ctrl+W leave the panes alone while preferences has the keyboard', async ({ launch }) => {
+  const app = await launch({ platform: 'windows', state: { compare: true, text: 'left', compareText: 'right' } })
+
+  await app.press('Comma')
+  await expect(app.preferences).toBeVisible()
+  // A pane would close, or open, behind the preferences panel.
+  await app.press('KeyW')
+  await app.page.keyboard.press('Control+Backslash')
+  await expect(app.page.locator('html')).toHaveAttribute('data-layout', 'compare')
+  expect(await app.commands()).not.toContain('quit_app')
+  expect(await app.resized()).toBeNull()
+})
+
 test('a window resize is remembered, in logical pixels', async ({ launch }) => {
   const app = await launch({ platform: 'windows', innerSize: { width: 1000, height: 750 }, scaleFactor: 2 })
 

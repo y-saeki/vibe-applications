@@ -13,6 +13,9 @@ it is saved.
 That file, and how it is written, is a developer-facing detail: it belongs in
 `DEVELOPMENT.md`.
 
+The two panes of the compare pane are 左 / 右 to users; `a` / `b` is what the code and the
+merge view call them, and stays in the code.
+
 ## Documentation layout
 
 `README.md` is for people who install and use draftpad. `DEVELOPMENT.md` is for people who
@@ -41,7 +44,8 @@ covers it changes in the same commit:
 | What the right-click menu offers (`src/context-menu.ts`, `src-tauri/src/menu.rs`, `src-tauri/src/context_menu.rs`) | `tests/e2e/context-menu.spec.ts` |
 | A preferences control | `tests/e2e/preferences.spec.ts` |
 | What is restored at startup | `tests/e2e/startup.spec.ts` |
-| Editing behaviour, or the status bar | `tests/e2e/editing.spec.ts` |
+| Editing behaviour, the counts in the pane bar, or the status bar | `tests/e2e/editing.spec.ts` |
+| The compare pane: opening and closing it, the diff between the panes and its marks, what the two panes share (`src/pane-bars.ts`, `src/linediff.ts`, the two-pane half of `src/editor.ts`) | `tests/e2e/compare.spec.ts` |
 | A field on `State` | `DEFAULT_STATE` in `tests/e2e/harness/backend.ts`, which mirrors `impl Default for State`, and `mod tests` in `src-tauri/src/state.rs` |
 | A command the frontend invokes | `handle` in `tests/e2e/harness/backend.ts`. It throws on a command it does not know, so the tests fail until the command is added |
 | An asset the page loads from anywhere but its own files (a `data:` URI, say), or the `csp` in `src-tauri/tauri.conf.json` | `tests/e2e/csp.spec.ts`, which is the only spec served under that policy |
@@ -54,8 +58,9 @@ is the failure this list exists to prevent.
 
 Two things when writing a new case:
 
-- Put text into the editor through the `typeInEditor` helper, never `page.keyboard.type`.
-  Typing character by character races with CodeMirror in WebKit; the helper says why.
+- Put text into the editor through the `typeInEditor` helper — `typeInPane` for one of two
+  panes — never `page.keyboard.type`. Typing character by character races with CodeMirror
+  in WebKit; the helper says why.
 - `DEVELOPMENT.md` lists what these tests cannot reach — native menus, the jump list, the IME,
   what the window actually does. Assert the `invoke` that was made and leave the rest to the
   manual pass; do not write a case that looks like it covers one of them.

@@ -247,13 +247,13 @@ test('keeps the bar still however many digits the counts run to', async ({ launc
   expect((await app.lines.boundingBox())?.width).toBe(await token(app, '--count-width-narrow'))
 
   // Which is what the bar is really being asked for: emptying the draft takes
-  // the counts from their widest reading to their shortest, and nothing to the
-  // right of them moves.
-  const wide = await app.languageSelect.boundingBox()
+  // the counts from their widest reading to their shortest, and the button to
+  // the right of them does not move.
+  const wide = await app.compareButton.boundingBox()
   await app.press('KeyA')
   await app.page.keyboard.press('Backspace')
   await expect(app.chars).toHaveText('0 文字')
-  expect((await app.languageSelect.boundingBox())?.x).toBe(wide?.x)
+  expect((await app.compareButton.boundingBox())?.x).toBe(wide?.x)
 })
 
 // A draft long enough that only a fraction of it is ever in view.

@@ -1,21 +1,38 @@
 // CodeMirror setup. Everything a setting can change lives in a Compartment so
 // it can be swapped at runtime without rebuilding the editor.
+//
+// The editor is one pane most of the time and two while the compare pane is
+// open. One pane is a plain EditorView. Two are a MergeView, which holds an
+// EditorView for each side, recomputes the chunks between them on every edit
+// on either side (line by line, see linediff.ts) and keeps the two level.
+// Opening the compare pane and closing either side rebuild the editor from the
+// one form into the other, carrying the surviving text, its caret and every
+// setting across. The history is not carried: a pane opened or closed is where
+// undo stops.
 
 import { autocompletion, closeBrackets, closeBracketsKeymap, completeAnyWord, completionKeymap } from '@codemirror/autocomplete'
 import { defaultKeymap, history, historyKeymap, indentWithTab, redo as redoCommand, redoDepth, undo as undoCommand, undoDepth } from '@codemirror/commands'
 import { bracketMatching, defaultHighlightStyle, indentOnInput, indentUnit, syntaxHighlighting } from '@codemirror/language'
-import { getSearchQuery, highlightSelectionMatches, openSearchPanel, search, searchKeymap } from '@codemirror/search'
-import { Compartment, EditorState, type Extension } from '@codemirror/state'
-import { drawSelection, dropCursor, EditorView, keymap, type KeyBinding, lineNumbers } from '@codemirror/view'
+import { getChunks, MergeView } from '@codemirror/merge'
+import { getSearchQuery, highlightSelectionMatches, openSearchPanel, search, searchKeymap, SearchQuery, setSearchQuery } from '@codemirror/search'
+import { Compartment, type EditorSelection, EditorState, type Extension, type Text } from '@codemirror/state'
+import { drawSelection, dropCursor, EditorView, keymap, type KeyBinding, lineNumbers, panels } from '@codemirror/view'
 
 import { darkTheme } from './dark-theme'
 import { indentGuides } from './indent-guides'
 import { languageExtension } from './languages'
-import { overlayScrollbar } from './overlay-scrollbar'
+import { installLineDiff } from './linediff'
+import { overlayScrollbar, type OverlayScrollbar } from './overlay-scrollbar'
 import { searchPanelExtras } from './search-panel'
-import type { State } from './state'
+import type { DiffMode, State } from './state'
 import { vimExtension } from './vim'
 import { whitespaceMarks } from './whitespace'
+
+/**
+ * The left pane is `a` and the right one `b`, as MergeView names them. While
+ * there is one pane, it is `a`.
+ */
+export type Side = 'a' | 'b'
 
 /** The two toggles in the search panel, as they are persisted. */
 export interface SearchOptions {
@@ -23,15 +40,50 @@ export interface SearchOptions {
   regexp: boolean
 }
 
+/** How many lines the right pane adds to the left one, and how many it takes out, over every chunk. */
+export interface DiffStat {
+  added: number
+  removed: number
+}
+
+/**
+ * Where a pane's panels go: above the pane, and below it. The search panel and
+ * the Vim status line are bottom panels, so they go under the pane.
+ */
+export interface PanelContainers {
+  top: HTMLElement
+  bottom: HTMLElement
+}
+
 export interface EditorOptions {
+  /** Where the pane, or the two panes, are put. */
   parent: HTMLElement
+  /** Where the scrollbar's strip is appended; see src/overlay-scrollbar.ts. */
+  host: HTMLElement
+  /** Each pane's panel containers. */
+  panels: Record<Side, PanelContainers>
   initial: Readonly<State>
   /** Used when `state.fontFamily` is empty. */
   defaultFontFamily: string
   dark: boolean
-  onDocChanged: () => void
+  onDocChanged: (side: Side) => void
   onSearchOptionsChanged: (options: SearchOptions) => void
+  /** Called with what the right pane adds and takes out, whenever the chunks are recomputed. */
+  onDiffChanged: (stat: DiffStat) => void
 }
+
+/**
+ * How long one diff may take before the rest of it is approximated.
+ *
+ * The merge view's own default bounds the diff by its depth instead
+ * (`scanLimit: 500`), which gives up on two versions of a document that differ
+ * in a few hundred places and paints them as one chunk. A time budget keeps
+ * the precise diff wherever it is affordable, which is every realistic pair of
+ * similar texts, and only two unrelated texts of some size run into it. The
+ * budget covers the line-level pass and the character-level passes within
+ * the chunks together.
+ */
+const DIFF_TIMEOUT_MS = 500
 
 const phrases = EditorState.phrases.of({
   Find: '検索',
@@ -109,9 +161,9 @@ function lineNumberExtension(show: boolean): Extension {
 // The search extension reads these when it builds the initial query, which is
 // the one the panel shows the first time it opens. Every later query inherits
 // the flags from the one before it, so setting them here is enough to carry the
-// toggles over from the previous run.
-function searchExtension(initial: Readonly<State>): Extension {
-  return search({ caseSensitive: initial.searchCaseSensitive, regexp: initial.searchRegexp })
+// toggles over — from the previous run, and into a pane built later.
+function searchExtension(options: SearchOptions): Extension {
+  return search({ caseSensitive: options.caseSensitive, regexp: options.regexp })
 }
 
 function searchOptionsOf(state: EditorState): SearchOptions {
@@ -119,62 +171,70 @@ function searchOptionsOf(state: EditorState): SearchOptions {
   return { caseSensitive: query.caseSensitive, regexp: query.regexp }
 }
 
+function sameSearchOptions(x: SearchOptions, y: SearchOptions): boolean {
+  return x.caseSensitive === y.caseSensitive && x.regexp === y.regexp
+}
+
+/**
+ * How many lines of `doc` lie between `from` and `to`, where `to` is one past
+ * the end of the last line — which is past the document itself when that line
+ * is its last, as the merge view builds its chunks.
+ */
+function linesBetween(doc: Text, from: number, to: number): number {
+  if (to <= from) return 0
+  return doc.lineAt(Math.min(to - 1, doc.length)).number - doc.lineAt(from).number + 1
+}
+
+/** The settings that live in a compartment each, by name. */
+type Slot = 'vim' | 'language' | 'colors' | 'font' | 'tab' | 'completion' | 'whitespace' | 'indentGuides' | 'lineNumbers'
+
 export class Editor {
-  readonly view: EditorView
-  private readonly language = new Compartment()
-  private readonly vim = new Compartment()
-  private readonly colors = new Compartment()
-  private readonly font = new Compartment()
-  private readonly tab = new Compartment()
-  private readonly completion = new Compartment()
-  private readonly whitespace = new Compartment()
-  private readonly indentGuides = new Compartment()
-  private readonly lineNumbers = new Compartment()
+  private single: EditorView | null = null
+  private merge: MergeView | null = null
+  /** The pane that last had the keyboard, which is where a command acts. */
+  private activeSide: Side = 'a'
+  private scrollbar: OverlayScrollbar | null = null
+  // One compartment serves both panes: each state keeps its own content for
+  // it, and a change is dispatched to every pane in turn.
+  private readonly compartments: Record<Slot, Compartment> = {
+    vim: new Compartment(),
+    language: new Compartment(),
+    colors: new Compartment(),
+    font: new Compartment(),
+    tab: new Compartment(),
+    completion: new Compartment(),
+    whitespace: new Compartment(),
+    indentGuides: new Compartment(),
+    lineNumbers: new Compartment(),
+  }
+  /** What each compartment holds, so that a pane built later starts out the same. */
+  private readonly current: Record<Slot, Extension>
+  private searchOptions: SearchOptions
+  private diffMode: DiffMode
   private readonly defaultFontFamily: string
 
-  private constructor(options: EditorOptions, language: Extension, vim: Extension) {
+  private constructor(
+    private readonly options: EditorOptions,
+    language: Extension,
+    vim: Extension,
+  ) {
     const { initial } = options
     this.defaultFontFamily = options.defaultFontFamily
-    const state = EditorState.create({
-      doc: initial.text,
-      extensions: [
-        // Vim must come before every other keymap.
-        this.vim.of(vim),
-        this.language.of(language),
-        this.colors.of(colorExtension(options.dark)),
-        this.font.of(fontTheme(initial.fontSize, this.fontFamily(initial.fontFamily), initial.fontWeight)),
-        this.tab.of(tabExtension(initial.tabSize)),
-        this.completion.of(completionExtension(initial.quickSuggestions)),
-        this.whitespace.of(whitespaceExtension(initial.showWhitespace)),
-        this.indentGuides.of(indentGuideExtension(initial.showIndentGuides)),
-        this.lineNumbers.of(lineNumberExtension(initial.showLineNumbers)),
-        history(),
-        drawSelection(),
-        dropCursor(),
-        indentOnInput(),
-        bracketMatching(),
-        closeBrackets(),
-        highlightSelectionMatches(),
-        searchExtension(initial),
-        searchPanelExtras(),
-        EditorView.lineWrapping,
-        EditorView.contentAttributes.of({ spellcheck: 'false', autocorrect: 'off', autocapitalize: 'off' }),
-        phrases,
-        keymap.of([...closeBracketsKeymap, ...searchBindings, ...redoKeymap, ...historyKeymap, ...completionKeymap, ...defaultKeymap, indentWithTab]),
-        EditorView.updateListener.of((update) => {
-          if (update.docChanged) options.onDocChanged()
-          const before = searchOptionsOf(update.startState)
-          const after = searchOptionsOf(update.state)
-          if (after.caseSensitive !== before.caseSensitive || after.regexp !== before.regexp) {
-            options.onSearchOptionsChanged(after)
-          }
-        }),
-      ],
-    })
-    this.view = new EditorView({ state, parent: options.parent })
-    // The scroller keeps its size as the draft grows, so the bar is given
-    // the content to watch as well.
-    overlayScrollbar(this.view.scrollDOM, options.parent, this.view.contentDOM)
+    this.current = {
+      vim,
+      language,
+      colors: colorExtension(options.dark),
+      font: fontTheme(initial.fontSize, this.fontFamily(initial.fontFamily), initial.fontWeight),
+      tab: tabExtension(initial.tabSize),
+      completion: completionExtension(initial.quickSuggestions),
+      whitespace: whitespaceExtension(initial.showWhitespace),
+      indentGuides: indentGuideExtension(initial.showIndentGuides),
+      lineNumbers: lineNumberExtension(initial.showLineNumbers),
+    }
+    this.searchOptions = { caseSensitive: initial.searchCaseSensitive, regexp: initial.searchRegexp }
+    this.diffMode = initial.diffMode
+    if (initial.compare) this.buildMerge(initial.text, initial.compareText)
+    else this.buildSingle(initial.text)
   }
 
   static async create(options: EditorOptions): Promise<Editor> {
@@ -185,21 +245,216 @@ export class Editor {
     return new Editor(options, language, vim)
   }
 
-  getText(): string {
-    return this.view.state.doc.toString()
+  // ---- the panes ----------------------------------------------------------
+
+  /** True while the compare pane is open, so there are two panes. */
+  get compare(): boolean {
+    return this.merge !== null
   }
 
-  get lineCount(): number {
-    return this.view.state.doc.lines
+  /** The pane that last had the keyboard. */
+  get activePane(): Side {
+    return this.merge ? this.activeSide : 'a'
   }
+
+  /** The text of a pane; empty for the right one while there is no such pane. */
+  text(side: Side): string {
+    return this.paneView(side)?.state.doc.toString() ?? ''
+  }
+
+  lineCount(side: Side): number {
+    return this.paneView(side)?.state.doc.lines ?? 0
+  }
+
+  /**
+   * Opens the compare pane: the draft becomes the left pane, and the right one
+   * starts out as a copy of it, caret included. The keyboard goes to the new
+   * pane, which is where the text to compare against is about to be put.
+   */
+  openCompare(): void {
+    if (this.merge) return
+    const { state } = this.single!
+    this.teardown()
+    this.buildMerge(state.doc, state.doc, state.selection, state.selection)
+    this.activeSide = 'b'
+    this.merge!.b.focus()
+  }
+
+  /**
+   * Closes one of the two panes. The other one goes on as the draft, with its
+   * text and caret; what the closed pane held is gone.
+   *
+   * @param side which pane to close
+   */
+  closePane(side: Side): void {
+    if (!this.merge) return
+    const { state } = side === 'a' ? this.merge.b : this.merge.a
+    this.teardown()
+    this.buildSingle(state.doc, state.selection)
+    this.activeSide = 'a'
+    this.single!.focus()
+  }
+
+  private buildSingle(doc: string | Text, selection?: EditorSelection): void {
+    const view = new EditorView({
+      state: EditorState.create({ doc, selection, extensions: this.paneExtensions('a') }),
+      parent: this.options.parent,
+    })
+    this.single = view
+    // The scroller keeps its size as the draft grows, so the bar is given
+    // the content to watch as well.
+    this.scrollbar = overlayScrollbar(view.scrollDOM, this.options.host, view.contentDOM)
+  }
+
+  private buildMerge(docA: string | Text, docB: string | Text, selectionA?: EditorSelection, selectionB?: EditorSelection): void {
+    installLineDiff()
+    // The merge view hands the recomputed chunks to both panes after an edit on
+    // either, so listening on one of them is enough.
+    const chunks = EditorView.updateListener.of((update) => {
+      const before = getChunks(update.startState)?.chunks
+      const after = getChunks(update.state)?.chunks
+      if (before !== after) this.options.onDiffChanged(this.diffStat())
+    })
+    const merge = new MergeView({
+      a: { doc: docA, selection: selectionA, extensions: [this.paneExtensions('a'), chunks] },
+      b: { doc: docB, selection: selectionB, extensions: this.paneExtensions('b') },
+      parent: this.options.parent,
+      // The stripe beside a changed line is drawn by style.css on the line
+      // itself, so that the pane keeps the width it had alone: the merge
+      // view's own gutter would take a column out of it.
+      gutter: false,
+      highlightChanges: this.diffMode === 'char',
+      diffConfig: { timeout: DIFF_TIMEOUT_MS },
+    })
+    this.merge = merge
+    // The merge view is what scrolls; the two panes inside it grow with their
+    // text, so the bar watches the element that holds them.
+    const editors = merge.dom.querySelector<HTMLElement>('.cm-mergeViewEditors') ?? undefined
+    this.scrollbar = overlayScrollbar(merge.dom, this.options.host, editors)
+    this.options.onDiffChanged(this.diffStat())
+  }
+
+  private teardown(): void {
+    this.scrollbar?.destroy()
+    this.scrollbar = null
+    this.single?.destroy()
+    this.single = null
+    this.merge?.destroy()
+    this.merge = null
+  }
+
+  /** Everything a pane is made of, from the settings as they stand. */
+  private paneExtensions(side: Side): Extension {
+    const c = this.compartments
+    const v = this.current
+    const containers = this.options.panels[side]
+    return [
+      // Vim must come before every other keymap.
+      c.vim.of(v.vim),
+      c.language.of(v.language),
+      c.colors.of(v.colors),
+      c.font.of(v.font),
+      c.tab.of(v.tab),
+      c.completion.of(v.completion),
+      c.whitespace.of(v.whitespace),
+      c.indentGuides.of(v.indentGuides),
+      c.lineNumbers.of(v.lineNumbers),
+      history(),
+      drawSelection(),
+      dropCursor(),
+      indentOnInput(),
+      bracketMatching(),
+      closeBrackets(),
+      highlightSelectionMatches(),
+      searchExtension(this.searchOptions),
+      // The panels go above and below the pane rather than inside it. Inside
+      // the merge view, a pane's box is as tall as its text, so a panel at the
+      // foot of it would be out of view until the panes were scrolled to their
+      // end, and would add to the height the other pane is levelled against.
+      // Outside, the panel stays in view, and the lines stay level.
+      panels({ topContainer: containers.top, bottomContainer: containers.bottom }),
+      searchPanelExtras([containers.top, containers.bottom]),
+      EditorView.lineWrapping,
+      EditorView.contentAttributes.of({ spellcheck: 'false', autocorrect: 'off', autocapitalize: 'off' }),
+      phrases,
+      keymap.of([...closeBracketsKeymap, ...searchBindings, ...redoKeymap, ...historyKeymap, ...completionKeymap, ...defaultKeymap, indentWithTab]),
+      EditorView.updateListener.of((update) => {
+        if (update.docChanged) this.options.onDocChanged(side)
+        if (update.focusChanged && update.view.hasFocus) this.activeSide = side
+        const before = searchOptionsOf(update.startState)
+        const after = searchOptionsOf(update.state)
+        if (!sameSearchOptions(before, after)) this.searchOptionsChanged(side, after)
+      }),
+    ]
+  }
+
+  /**
+   * The two toggles are one setting, whichever pane's panel they were flipped
+   * in: the other pane's query takes the same flags, keeping its own words.
+   * The other pane is updated once this update has run its course, as the
+   * view asks; it will report the change back through the same path and find
+   * nothing left to do.
+   */
+  private searchOptionsChanged(side: Side, options: SearchOptions): void {
+    this.searchOptions = options
+    this.options.onSearchOptionsChanged(options)
+    const other = this.paneView(side === 'a' ? 'b' : 'a')
+    if (!other) return
+    queueMicrotask(() => {
+      const query = getSearchQuery(other.state)
+      if (sameSearchOptions(query, options)) return
+      other.dispatch({
+        effects: setSearchQuery.of(
+          new SearchQuery({
+            search: query.search,
+            replace: query.replace,
+            caseSensitive: options.caseSensitive,
+            regexp: options.regexp,
+            wholeWord: query.wholeWord,
+          }),
+        ),
+      })
+    })
+  }
+
+  /** Lines added on the right and taken out on the left, summed over the chunks. */
+  private diffStat(): DiffStat {
+    if (!this.merge) return { added: 0, removed: 0 }
+    const docA = this.merge.a.state.doc
+    const docB = this.merge.b.state.doc
+    let added = 0
+    let removed = 0
+    for (const chunk of this.merge.chunks) {
+      removed += linesBetween(docA, chunk.fromA, chunk.toA)
+      added += linesBetween(docB, chunk.fromB, chunk.toB)
+    }
+    return { added, removed }
+  }
+
+  private get views(): EditorView[] {
+    if (this.single) return [this.single]
+    if (this.merge) return [this.merge.a, this.merge.b]
+    return []
+  }
+
+  private paneView(side: Side): EditorView | null {
+    if (this.merge) return side === 'a' ? this.merge.a : this.merge.b
+    return side === 'a' ? this.single : null
+  }
+
+  private get activeView(): EditorView {
+    return this.paneView(this.activePane)!
+  }
+
+  // ---- the active pane ----------------------------------------------------
 
   focus(): void {
-    this.view.focus()
+    this.activeView.focus()
   }
 
   /** False while the search panel or the preferences panel holds the keyboard. */
   get hasFocus(): boolean {
-    return this.view.hasFocus
+    return this.views.some((view) => view.hasFocus)
   }
 
   /**
@@ -212,7 +467,8 @@ export class Editor {
    * @param text what to put in
    */
   insertText(text: string): void {
-    this.view.dispatch(this.view.state.replaceSelection(text), { scrollIntoView: true, userEvent: 'input.paste' })
+    const view = this.activeView
+    view.dispatch(view.state.replaceSelection(text), { scrollIntoView: true, userEvent: 'input.paste' })
   }
 
   // The view is deliberately not focused afterwards. CodeMirror mounts the
@@ -221,69 +477,83 @@ export class Editor {
   // term would be typed into the draft. Nothing else depends on this call:
   // the caret Windows needs for the IME is the panel's own field, and the
   // window that comes back with nothing focused is handled in src/main.ts.
+  //
+  // The panel opens in the pane that has the keyboard, and in that one only.
   openSearch(): void {
-    openSearchPanel(this.view)
+    openSearchPanel(this.activeView)
   }
 
   undo(): void {
-    undoCommand(this.view)
-    this.view.focus()
+    undoCommand(this.activeView)
+    this.activeView.focus()
   }
 
   redo(): void {
-    redoCommand(this.view)
-    this.view.focus()
+    redoCommand(this.activeView)
+    this.activeView.focus()
   }
 
   /** True while the history holds a step to undo. */
   get canUndo(): boolean {
-    return undoDepth(this.view.state) > 0
+    return undoDepth(this.activeView.state) > 0
   }
 
   /** True while the history holds an undone step to put back. */
   get canRedo(): boolean {
-    return redoDepth(this.view.state) > 0
+    return redoDepth(this.activeView.state) > 0
+  }
+
+  // ---- settings, which reach every pane ------------------------------------
+
+  /** Whole lines only, or the changed characters within them as well. */
+  setDiffMode(mode: DiffMode): void {
+    this.diffMode = mode
+    this.merge?.reconfigure({ highlightChanges: mode === 'char' })
   }
 
   async setLanguage(id: string): Promise<void> {
-    const extension = await languageExtension(id)
-    this.view.dispatch({ effects: this.language.reconfigure(extension) })
+    this.reconfigure('language', await languageExtension(id))
   }
 
   async setVim(enabled: boolean): Promise<void> {
-    const extension = enabled ? await vimExtension() : []
-    this.view.dispatch({ effects: this.vim.reconfigure(extension) })
+    this.reconfigure('vim', enabled ? await vimExtension() : [])
   }
 
   setDark(dark: boolean): void {
-    this.view.dispatch({ effects: this.colors.reconfigure(colorExtension(dark)) })
+    this.reconfigure('colors', colorExtension(dark))
   }
 
   setFont(size: number, family: string, weight: number): void {
-    this.view.dispatch({ effects: this.font.reconfigure(fontTheme(size, this.fontFamily(family), weight)) })
+    this.reconfigure('font', fontTheme(size, this.fontFamily(family), weight))
   }
 
   setTabSize(size: number): void {
-    this.view.dispatch({ effects: this.tab.reconfigure(tabExtension(size)) })
+    this.reconfigure('tab', tabExtension(size))
   }
 
   setQuickSuggestions(enabled: boolean): void {
-    this.view.dispatch({ effects: this.completion.reconfigure(completionExtension(enabled)) })
+    this.reconfigure('completion', completionExtension(enabled))
   }
 
   /** Whether the spaces and tabs in the draft carry a mark. */
   setShowWhitespace(show: boolean): void {
-    this.view.dispatch({ effects: this.whitespace.reconfigure(whitespaceExtension(show)) })
+    this.reconfigure('whitespace', whitespaceExtension(show))
   }
 
   /** Whether each level of indentation carries a rule. */
   setShowIndentGuides(show: boolean): void {
-    this.view.dispatch({ effects: this.indentGuides.reconfigure(indentGuideExtension(show)) })
+    this.reconfigure('indentGuides', indentGuideExtension(show))
   }
 
   /** Whether the draft carries a column of line numbers beside it. */
   setShowLineNumbers(show: boolean): void {
-    this.view.dispatch({ effects: this.lineNumbers.reconfigure(lineNumberExtension(show)) })
+    this.reconfigure('lineNumbers', lineNumberExtension(show))
+  }
+
+  private reconfigure(slot: Slot, extension: Extension): void {
+    this.current[slot] = extension
+    const effect = this.compartments[slot].reconfigure(extension)
+    for (const view of this.views) view.dispatch({ effects: effect })
   }
 
   private fontFamily(family: string): string {

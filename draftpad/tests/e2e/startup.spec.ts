@@ -36,6 +36,31 @@ test('restores the saved settings', async ({ launch }) => {
   expect(await app.commands()).toContain('plugin:window|set_always_on_top')
 })
 
+test('starts with the two panes it was closed with', async ({ launch }) => {
+  const app = await launch({ state: { compare: true, text: 'a\nb', compareText: 'a\nc', diffMode: 'line' } })
+
+  await expect(app.page.locator('html')).toHaveAttribute('data-layout', 'compare')
+  await expect(app.editorA.locator('.cm-line')).toHaveText(['a', 'b'])
+  await expect(app.editorB.locator('.cm-line')).toHaveText(['a', 'c'])
+  await expect(app.paneHeadB).toBeVisible()
+  await expect(app.diffModeSelect).toHaveValue('line')
+  await expect(app.diffAdded).toHaveText('+1')
+  await expect(app.diffRemoved).toHaveText('−1')
+  // The window was closed at the width of two panes and comes back at it; the
+  // page asks nothing of it.
+  expect(await app.resized()).toBeNull()
+  await expect(app.editorA).toBeFocused()
+})
+
+test('starts with one pane, as before, when the compare pane was closed', async ({ launch }) => {
+  const app = await launch({ state: { text: '下書き' } })
+
+  await expect(app.page.locator('html')).toHaveAttribute('data-layout', 'single')
+  await expect(app.paneHeadB).toBeHidden()
+  await expect(app.page.locator('.cm-mergeView')).toHaveCount(0)
+  await expect(app.compareButton).toBeVisible()
+})
+
 test('starts at the saved font weight, snapped onto the scale the panel offers', async ({ launch }) => {
   const app = await launch({ state: { fontWeight: 460 } })
 

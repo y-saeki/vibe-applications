@@ -41,12 +41,14 @@ function clamp01(value: number): number {
 }
 
 /** The strip, the thumb inside it, and everything that places and shows them. */
-class OverlayScrollbar {
+export class OverlayScrollbar {
   private readonly track = document.createElement('div')
   private readonly thumb = document.createElement('div')
   private drag: Drag | null = null
   private idle: number | undefined
   private hovered = false
+  private readonly observer: ResizeObserver
+  private readonly onWindowResize = (): void => this.measure()
 
   /**
    * @param scroller the box whose overflow this bar stands for
@@ -88,12 +90,24 @@ class OverlayScrollbar {
     // The strip follows the scrollport, and the thumb follows the content. The
     // observer measures once on its own as soon as it starts, which is what
     // places the bar to begin with.
-    const observer = new ResizeObserver(() => this.measure())
-    observer.observe(scroller)
-    if (content) observer.observe(content)
+    this.observer = new ResizeObserver(() => this.measure())
+    this.observer.observe(scroller)
+    if (content) this.observer.observe(content)
     // Resizing the window moves the preferences panel without resizing it,
     // and nothing above notices that.
-    window.addEventListener('resize', () => this.measure())
+    window.addEventListener('resize', this.onWindowResize)
+  }
+
+  /**
+   * Takes the bar down for good: the draft's bar goes with the editor it
+   * stood for when the panes are rebuilt (src/editor.ts), and a strip left
+   * behind would go on measuring a box that is no longer on the page.
+   */
+  destroy(): void {
+    this.observer.disconnect()
+    window.removeEventListener('resize', this.onWindowResize)
+    if (this.idle !== undefined) window.clearTimeout(this.idle)
+    this.track.remove()
   }
 
   /**
@@ -194,7 +208,8 @@ class OverlayScrollbar {
  *   over; it positions itself against the viewport either way
  * @param content an element inside the scroller whose size follows the content,
  *   for a scroller that does not change size as what it holds does
+ * @returns the bar, for taking it down again with the box it stands for
  */
-export function overlayScrollbar(scroller: HTMLElement, host: HTMLElement, content?: HTMLElement): void {
-  new OverlayScrollbar(scroller, host, content)
+export function overlayScrollbar(scroller: HTMLElement, host: HTMLElement, content?: HTMLElement): OverlayScrollbar {
+  return new OverlayScrollbar(scroller, host, content)
 }
