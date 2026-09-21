@@ -51,7 +51,7 @@ const LIMITS = {
   /** The palette, including the two shadows, the eight masked and drawn marks,
       the two counts src/indent-guides.ts fills in while it draws, and the two
       fractions src/overlay-scrollbar.ts sets on each bar. */
-  palette: 41,
+  palette: 42,
   /** Hairlines, focus rings and optical nudges stay where they are used. */
   literalPx: 2,
 }

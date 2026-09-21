@@ -6,7 +6,7 @@ import { defaultKeymap, history, historyKeymap, indentWithTab, redo as redoComma
 import { bracketMatching, defaultHighlightStyle, indentOnInput, indentUnit, syntaxHighlighting } from '@codemirror/language'
 import { getSearchQuery, highlightSelectionMatches, openSearchPanel, search, searchKeymap } from '@codemirror/search'
 import { Compartment, EditorState, type Extension } from '@codemirror/state'
-import { drawSelection, dropCursor, EditorView, keymap, type KeyBinding } from '@codemirror/view'
+import { drawSelection, dropCursor, EditorView, keymap, type KeyBinding, lineNumbers } from '@codemirror/view'
 
 import { darkTheme } from './dark-theme'
 import { indentGuides } from './indent-guides'
@@ -97,6 +97,15 @@ function indentGuideExtension(show: boolean): Extension {
   return show ? indentGuides : []
 }
 
+// The gutter the view package already draws, rather than a column of
+// draftpad's own: it reserves its width from the largest number in the draft,
+// renders only what the viewport holds, and leaves a wrapped line one number
+// at its top. style.css takes the panel and the rule it comes dressed in off
+// again, so that what is left beside the draft is the figures.
+function lineNumberExtension(show: boolean): Extension {
+  return show ? lineNumbers() : []
+}
+
 // The search extension reads these when it builds the initial query, which is
 // the one the panel shows the first time it opens. Every later query inherits
 // the flags from the one before it, so setting them here is enough to carry the
@@ -120,6 +129,7 @@ export class Editor {
   private readonly completion = new Compartment()
   private readonly whitespace = new Compartment()
   private readonly indentGuides = new Compartment()
+  private readonly lineNumbers = new Compartment()
   private readonly defaultFontFamily: string
 
   private constructor(options: EditorOptions, language: Extension, vim: Extension) {
@@ -137,6 +147,7 @@ export class Editor {
         this.completion.of(completionExtension(initial.quickSuggestions)),
         this.whitespace.of(whitespaceExtension(initial.showWhitespace)),
         this.indentGuides.of(indentGuideExtension(initial.showIndentGuides)),
+        this.lineNumbers.of(lineNumberExtension(initial.showLineNumbers)),
         history(),
         drawSelection(),
         dropCursor(),
@@ -268,6 +279,11 @@ export class Editor {
   /** Whether each level of indentation carries a rule. */
   setShowIndentGuides(show: boolean): void {
     this.view.dispatch({ effects: this.indentGuides.reconfigure(indentGuideExtension(show)) })
+  }
+
+  /** Whether the draft carries a column of line numbers beside it. */
+  setShowLineNumbers(show: boolean): void {
+    this.view.dispatch({ effects: this.lineNumbers.reconfigure(lineNumberExtension(show)) })
   }
 
   private fontFamily(family: string): string {

@@ -28,6 +28,8 @@ pub struct State {
     pub show_whitespace: bool,
     /// Whether each level of indentation carries a rule.
     pub show_indent_guides: bool,
+    /// Whether the draft carries a column of line numbers beside it.
+    pub show_line_numbers: bool,
     pub always_on_top: bool,
     pub search_case_sensitive: bool,
     pub search_regexp: bool,
@@ -49,6 +51,7 @@ impl Default for State {
             quick_suggestions: true,
             show_whitespace: false,
             show_indent_guides: false,
+            show_line_numbers: false,
             always_on_top: false,
             search_case_sensitive: false,
             search_regexp: false,
@@ -155,6 +158,7 @@ mod tests {
         assert!(state.quick_suggestions);
         assert!(!state.show_whitespace);
         assert!(!state.show_indent_guides);
+        assert!(!state.show_line_numbers);
         assert!(!state.always_on_top);
         assert!(!state.search_case_sensitive);
         assert!(!state.search_regexp);
@@ -176,6 +180,7 @@ mod tests {
             quick_suggestions: false,
             show_whitespace: true,
             show_indent_guides: true,
+            show_line_numbers: true,
             always_on_top: true,
             search_case_sensitive: true,
             search_regexp: true,
@@ -197,6 +202,7 @@ mod tests {
         assert!(!read.quick_suggestions);
         assert!(read.show_whitespace);
         assert!(read.show_indent_guides);
+        assert!(read.show_line_numbers);
         assert!(read.always_on_top);
         assert!(read.search_case_sensitive);
         assert!(read.search_regexp);
@@ -217,6 +223,7 @@ mod tests {
         assert_eq!(state.font_weight, 400);
         assert!(!state.show_whitespace);
         assert!(!state.show_indent_guides);
+        assert!(!state.show_line_numbers);
     }
 
     #[test]

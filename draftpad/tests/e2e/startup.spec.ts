@@ -19,6 +19,7 @@ test('restores the saved settings', async ({ launch }) => {
       theme: 'dark',
       showWhitespace: true,
       showIndentGuides: true,
+      showLineNumbers: true,
     },
   })
 
@@ -30,6 +31,7 @@ test('restores the saved settings', async ({ launch }) => {
   // marked on its own; the second line is the one level the rules are for.
   await expect(app.whitespaceMarks).toHaveCount(5)
   await expect(app.indentGuides).toHaveCount(1)
+  await expect(app.lineNumberCells).toHaveText(['1', '2'])
   // The window setting is the backend's to apply.
   expect(await app.commands()).toContain('plugin:window|set_always_on_top')
 })

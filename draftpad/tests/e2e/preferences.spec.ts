@@ -52,6 +52,7 @@ test('gathers the settings into the two groups, in that order', async ({ launch 
     '#pref-font-size',
     '#pref-show-whitespace',
     '#pref-show-indent-guides',
+    '#pref-show-line-numbers',
   ]
   await app.page.locator('#pref-mode').focus()
   for (const id of ids) {
@@ -69,6 +70,7 @@ test('gathers the settings into the two groups, in that order', async ({ launch 
   expect(await groupOf('#pref-theme')).toBe('表示')
   expect(await groupOf('#pref-show-whitespace')).toBe('表示')
   expect(await groupOf('#pref-show-indent-guides')).toBe('表示')
+  expect(await groupOf('#pref-show-line-numbers')).toBe('表示')
 
   // One rule between the two, and it hangs off the group above: a fieldset's
   // block-start border is the one its legend notches and sits on, so a
@@ -452,4 +454,88 @@ test('lays a bar over the panel when the window is too short to hold it', async 
   const strip = (await bar.boundingBox())!
   expect(strip.x + strip.width).toBeLessThanOrEqual(box.right)
   expect(strip.x + strip.width).toBeGreaterThan(box.right - strip.width - 2)
+})
+
+test('numbers the lines of the draft, and counts them the way the status bar does', async ({ launch }) => {
+  const app = await launch({ state: { text: 'a\nb\nc' } })
+  const showLineNumbers = app.page.locator('#pref-show-line-numbers')
+
+  await expect(app.lineNumbers).toHaveCount(0)
+
+  await app.gear.click()
+  await expect(showLineNumbers).not.toBeChecked()
+  await showLineNumbers.check()
+  await app.expectSaved((state) => state.showLineNumbers)
+  await app.page.keyboard.press('Escape')
+
+  await expect(app.lineNumberCells).toHaveText(['1', '2', '3'])
+  await expect(app.lines).toHaveText('3 行')
+
+  // A line the draft gains is a line the column gains.
+  await app.typeInEditor('\nd')
+  await expect(app.lineNumberCells).toHaveText(['1', '2', '3', '4'])
+
+  await app.gear.click()
+  await showLineNumbers.uncheck()
+  await expect(app.lineNumbers).toHaveCount(0)
+  await app.expectSaved((state) => !state.showLineNumbers)
+})
+
+test('gives a wrapped line one number, at its top', async ({ launch }) => {
+  // The draft wraps every line (EditorView.lineWrapping), so the first of these
+  // two is drawn on several rows and the second on one.
+  const app = await launch({ state: { showLineNumbers: true, text: `${'wrap '.repeat(80)}\nlast` } })
+
+  // Two lines in the draft, so two numbers, however many rows they take.
+  await expect(app.lineNumberCells).toHaveText(['1', '2'])
+
+  const cell = (await app.lineNumberCells.first().boundingBox())!
+  const wrapped = (await app.page.locator('.cm-line').first().boundingBox())!
+  const single = (await app.page.locator('.cm-line').last().boundingBox())!
+  expect(wrapped.height).toBeGreaterThan(single.height * 2)
+
+  // The cell covers the whole of the line it counts, and its number sits at the
+  // top of it: the column is laid out in the draft's lines, not in the rows
+  // they are drawn on.
+  expect(Math.abs(cell.height - wrapped.height)).toBeLessThan(2)
+  expect(Math.abs(cell.y - wrapped.y)).toBeLessThan(2)
+})
+
+test('draws the column as a margin rather than a panel, in both themes', async ({ launch }) => {
+  const app = await launch({ colorScheme: 'light', state: { showLineNumbers: true, text: 'a\nb' } })
+  const gutters = app.page.locator('.cm-gutters')
+
+  // CodeMirror's own theme fills the gutter and rules it off from the draft.
+  // Neither survives: what stands beside the draft is the figures.
+  await expect(gutters).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
+  await expect(gutters).toHaveCSS('border-right-width', '0px')
+  await expect(gutters).toHaveCSS('color', 'rgba(31, 35, 40, 0.55)')
+
+  // Weaker than the draft, stronger than the whitespace marks and the
+  // indentation rules: the numbers are read, those two are read past.
+  await expect(app.editor).toHaveCSS('color', 'rgb(31, 35, 40)')
+
+  // Right-aligned, so the ones column stands where the draft begins, and the
+  // narrow gap is the one on that side.
+  await expect(app.lineNumberCells.first()).toHaveCSS('text-align', 'right')
+  await expect(app.lineNumberCells.first()).toHaveCSS('padding-right', '4px')
+  await expect(app.lineNumberCells.first()).toHaveCSS('padding-left', '12px')
+
+  await app.gear.click()
+  await app.page.locator('#pref-theme').selectOption('dark')
+  await expect(gutters).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
+  await expect(gutters).toHaveCSS('color', 'rgba(216, 216, 216, 0.55)')
+})
+
+test('sizes the numbers with the draft', async ({ launch }) => {
+  const app = await launch({ state: { showLineNumbers: true, fontSize: 24, text: 'a' } })
+
+  // The gutter sits inside the scroller, so it takes the editor's font as well:
+  // a number stays on the line it counts at any size.
+  await expect(app.lineNumbers).toHaveCSS('font-size', '24px')
+
+  await app.gear.click()
+  await app.page.locator('#pref-font-size').fill('40')
+  await app.page.keyboard.press('Escape')
+  await expect(app.lineNumbers).toHaveCSS('font-size', '40px')
 })

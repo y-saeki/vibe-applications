@@ -21,6 +21,8 @@ export interface State {
   showWhitespace: boolean
   /** Whether each level of indentation carries a rule. */
   showIndentGuides: boolean
+  /** Whether the draft carries a column of line numbers beside it. */
+  showLineNumbers: boolean
   alwaysOnTop: boolean
   searchCaseSensitive: boolean
   searchRegexp: boolean

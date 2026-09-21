@@ -20,6 +20,7 @@ export interface State {
   quickSuggestions: boolean
   showWhitespace: boolean
   showIndentGuides: boolean
+  showLineNumbers: boolean
   alwaysOnTop: boolean
   searchCaseSensitive: boolean
   searchRegexp: boolean
@@ -71,6 +72,7 @@ const DEFAULT_STATE: State = {
   quickSuggestions: true,
   showWhitespace: false,
   showIndentGuides: false,
+  showLineNumbers: false,
   alwaysOnTop: false,
   searchCaseSensitive: false,
   searchRegexp: false,
