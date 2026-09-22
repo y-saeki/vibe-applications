@@ -134,12 +134,13 @@
 
   /* ---- Control and chrome metrics ---- */
   --control-height: 28px; /* text fields, selects, buttons */
+  --control-height-search: 24px; /* the same in the search panel, which runs a size smaller */
   --checkbox-size: 16px;
   --toggle-width: 48px; /* the toggle's track; it is --control-height tall */
   --glyph-size: 12px; /* the mark inside a toggle: the switch's knob, Aa and .* */
   --icon-size: 16px;
   --icon-button-size: 24px;
-  --toggle-size-search: 20px; /* the Aa / .* toggles inside the find field */
+  --toggle-size-search: 16px; /* the Aa / .* toggles inside the find field */
   --statusbar-height: 32px;
   --titlebar-height: 0px;
   --scrollbar-size: 12px; /* the strip a thumb runs in */
@@ -151,8 +152,8 @@
   /* ---- Layout ---- */
   --field-width: 240px; /* a text field's preferred width */
   --field-width-narrow: 80px; /* a number field's, the match count's, and the +N / −N figures' */
-  --field-width-search: 320px; /* the find and replace fields, which carry more */
-  --button-width-search: 64px; /* each of the search panel's five buttons */
+  --field-width-search: 360px; /* the find and replace fields, which carry more */
+  --button-width-search: 56px; /* each of the search panel's five buttons */
   --label-width: 128px; /* the preferences label column */
   --panel-width: 440px;
   --panel-inset: 40px; /* the preferences panel's distance from the window */
@@ -723,6 +724,21 @@ option {
   font: var(--font-size-body) var(--ui-font);
 }
 
+/* The search panel is the one piece of chrome a step smaller than the rest: two
+   fields, five buttons, two toggles and two counts add up, and at the body size
+   they crowd the draft they sit under. The size goes on the panel rather than
+   on each control, so the words, the fields, the buttons and the counts come
+   down together. It is the size the status bar is set in, so the chrome still
+   reads as one set. */
+#editor .cm-panel.cm-search {
+  font-size: var(--font-size-caption);
+}
+
+#editor .cm-panel.cm-search .cm-textfield,
+#editor .cm-panel.cm-search .cm-button {
+  height: var(--control-height-search);
+}
+
 /* One short line: the field and the button that acts on it. */
 #editor .cm-panel.cm-dialog {
   display: flex;
@@ -736,12 +752,10 @@ option {
    order.
 
    The right-hand column is exactly as wide as the replace row's three buttons,
-   each of which starts from the column's left edge and is pushed over by as
-   many button widths as stand to its left. The find row's two are pushed over
-   the same way, one place further, so they end at the column's right edge along
-   with すべて rather than leaving the row short of it. That is what holds the
-   two rows to one right edge at every panel width, without a wrapper to put
-   them in. */
+   and each button is pushed over by as many button widths as stand to its left
+   in its own row. Both rows therefore open at the column's left edge, which is
+   what puts 前へ over 置換 and 次へ over 選択範囲 at every panel width, without
+   a wrapper to put them in. */
 #editor .cm-panel.cm-search {
   display: grid;
   grid-template-columns:
@@ -750,6 +764,20 @@ option {
   grid-template-areas:
     "find    findnav"
     "replace replacenav";
+}
+
+/* Narrower than the two columns need, and each row of buttons drops under its
+   own field rather than overlapping it. The breakpoint is a window width, not a
+   step in the scale, so it is written here the way a viewport length is. */
+@media (max-width: 484px) {
+  #editor .cm-panel.cm-search {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "find"
+      "findnav"
+      "replace"
+      "replacenav";
+  }
 }
 
 #editor .cm-panel.cm-search br {
@@ -788,8 +816,11 @@ option {
   padding-right: calc(var(--field-width-narrow) + var(--space-2) + var(--toggle-size-search) * 2 + var(--space-1) * 2);
 }
 
+/* The same on the replace field, for the figure that says how many matches the
+   last pass took. */
 #editor .cm-panel.cm-search input[name="replace"] {
   grid-area: replace;
+  padding-right: calc(var(--field-width-narrow) + var(--space-2));
 }
 
 #editor .cm-panel.cm-search button[name="prev"],
@@ -813,12 +844,11 @@ option {
   padding: 0;
 }
 
-#editor .cm-panel.cm-search button[name="prev"],
+#editor .cm-panel.cm-search button[name="next"],
 #editor .cm-panel.cm-search button[name="replaceSelection"] {
   margin-left: var(--button-width-search);
 }
 
-#editor .cm-panel.cm-search button[name="next"],
 #editor .cm-panel.cm-search button[name="replaceAll"] {
   margin-left: calc(var(--button-width-search) * 2);
 }
@@ -837,31 +867,6 @@ option {
 #editor .cm-panel.cm-search button[name="replaceAll"] {
   border-left: none;
   border-radius: 0 var(--radius-md) var(--radius-md) 0;
-}
-
-/* Narrower than the two columns need: each row of buttons drops under its own
-   field rather than overlapping it, and the find row's two open at the left
-   edge like the others, there being no row of three left to end level with.
-   The breakpoint is a window width, not a step in the scale, so it is written
-   here the way a viewport length is. It comes after the offsets above because
-   it undoes one of them. */
-@media (max-width: 510px) {
-  #editor .cm-panel.cm-search {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-areas:
-      "find"
-      "findnav"
-      "replace"
-      "replacenav";
-  }
-
-  #editor .cm-panel.cm-search button[name="prev"] {
-    margin-left: 0;
-  }
-
-  #editor .cm-panel.cm-search button[name="next"] {
-    margin-left: var(--button-width-search);
-  }
 }
 
 /* CodeMirror writes 前へ / 次へ into these two, which a button this narrow has
@@ -965,22 +970,33 @@ option {
   outline-offset: 1px;
 }
 
-/* The match count, which src/search-panel.ts puts into the panel. It shares the
-   find field's cell with the toggles and is right-aligned in a box of its own
-   width, so neither it nor they move when the number of digits changes. */
-#editor .cm-panel.cm-search .cm-search-count {
-  grid-area: find;
+/* The two counts, which src/search-panel.ts puts into the panel: how many
+   matches the query has, on the tail of the find field, and how many the last
+   pass replaced, on the tail of the replace field. Each is right-aligned in a
+   box of its own width, so neither it nor anything beside it moves when the
+   number of digits changes. The first shares its cell with the toggles and
+   stops short of them. */
+#editor .cm-panel.cm-search .cm-search-count,
+#editor .cm-panel.cm-search .cm-replace-count {
   justify-self: end;
   align-self: center;
   width: var(--field-width-narrow);
-  margin-right: calc(var(--space-2) + var(--toggle-size-search) * 2 + var(--space-1) * 2);
   overflow: hidden;
   color: var(--muted);
-  font-size: var(--font-size-caption);
   font-variant-numeric: tabular-nums;
   text-align: right;
   white-space: nowrap;
   pointer-events: none;
+}
+
+#editor .cm-panel.cm-search .cm-search-count {
+  grid-area: find;
+  margin-right: calc(var(--space-2) + var(--toggle-size-search) * 2 + var(--space-1) * 2);
+}
+
+#editor .cm-panel.cm-search .cm-replace-count {
+  grid-area: replace;
+  margin-right: var(--space-2);
 }
 
 /* Down to half its width before the row wraps instead. */

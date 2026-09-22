@@ -248,10 +248,81 @@ test('replaces within the selected range and leaves the rest of the draft alone'
   await app.searchButton('replaceSelection').click()
   await app.expectSaved((state) => state.text === 'beta\nalpha')
 
-  // The whole pass is one entry in the history, the way すべて is.
-  await app.editor.click()
+  // The whole pass is one entry in the history, the way すべて is, and the
+  // press lands in the draft because the button handed the keyboard back.
   await app.press('KeyZ')
   await app.expectSaved((state) => state.text === 'alpha\nalpha')
+})
+
+// The query CodeMirror hands a multi-line cursor — one holding \n — used to come
+// back from a range with nothing at all: that cursor leaves its read position
+// where it is when a match is turned down, so a single match before the range
+// ended the scan. src/search-panel.ts asks the cursor for the range instead.
+test('replaces within the selection when the query spans lines', async ({ launch }) => {
+  const app = await launch({ state: { searchRegexp: true, text: '- one\n- two\n\n- three\n- four' } })
+
+  await app.press('KeyF')
+  await expect(app.searchPanel).toBeVisible()
+  await app.typeInSearch('\\n- ')
+  await expect(app.searchCount).toHaveText('3 件')
+
+  // The last line and the one above it: the only match inside is the one
+  // between them. The two in the first list come before the range.
+  await app.editor.click()
+  await app.page.keyboard.press('Control+End')
+  await app.page.keyboard.press('Shift+ArrowUp')
+  await app.page.keyboard.press('Shift+Home')
+
+  await app.searchPanel.getByPlaceholder('置換').click()
+  await app.page.keyboard.type(' / ')
+  await app.searchButton('replaceSelection').click()
+
+  await app.expectSaved((state) => state.text === '- one\n- two\n\n- three / four')
+})
+
+test('says how many matches a pass replaced, until the draft moves on', async ({ launch }) => {
+  const app = await launch()
+  const replaced = app.searchPanel.locator('.cm-replace-count')
+
+  await app.typeInEditor('alpha alpha alpha')
+  await app.press('KeyF')
+  await expect(app.searchPanel).toBeVisible()
+  await app.typeInSearch('alpha')
+  await app.searchPanel.getByPlaceholder('置換').click()
+  await app.page.keyboard.type('beta')
+
+  // Nothing has been replaced yet, so the replace field's tail says nothing.
+  await expect(replaced).toHaveText('')
+  await app.searchButton('replaceAll').click()
+  await expect(replaced).toHaveText('3 件置換')
+
+  // The figure stands for one pass over one draft; the next keystroke in the
+  // draft leaves it counting nothing, so it goes.
+  await app.page.keyboard.type('x')
+  await expect(replaced).toHaveText('')
+})
+
+test('hands the keyboard back to the draft after a replacement', async ({ launch }) => {
+  const app = await launch()
+
+  await app.typeInEditor('alpha alpha')
+  await app.press('KeyF')
+  await expect(app.searchPanel).toBeVisible()
+  await app.typeInSearch('alpha')
+  await app.searchPanel.getByPlaceholder('置換').click()
+  await app.page.keyboard.type('beta')
+  await expect(app.searchPanel.getByPlaceholder('置換')).toBeFocused()
+
+  // Pressed with the keyboard in the panel; it ends up in the draft, so that
+  // the undo that follows takes back the replacement rather than the typing.
+  // The first press steps to the match and the second replaces it, which is
+  // how CodeMirror's 置換 has always worked.
+  await app.searchButton('replace').click()
+  await expect(app.editor).toBeFocused()
+  await app.searchButton('replace').click()
+  await app.expectSaved((state) => state.text === 'beta alpha')
+  await app.press('KeyZ')
+  await app.expectSaved((state) => state.text === 'alpha alpha')
 })
 
 test('reads a half-written regular expression as a miss, not as an error', async ({ launch }) => {
@@ -280,15 +351,16 @@ test('lines the search panel up on two columns', async ({ launch }) => {
     return { left: Math.round(box.x), right: Math.round(box.x + box.width) }
   }
 
-  // The two fields are one column and the five buttons the other; within a row
-  // the buttons touch, and the two rows end together. Nothing here is a wrapper
-  // CodeMirror gives us, so the edges are what says the grid held.
+  // The two fields are one column and the five buttons the other; each row
+  // opens at the column's left edge and its buttons touch, so 前へ stands over
+  // 置換 and 次へ over 選択範囲. Nothing here is a wrapper CodeMirror gives us,
+  // so the edges are what says the grid held.
   expect(await edges(app.searchField)).toEqual(await edges(app.searchPanel.getByPlaceholder('置換')))
-  expect(await edges(app.searchButton('prev'))).toEqual(await edges(app.searchButton('replaceSelection')))
-  expect(await edges(app.searchButton('next'))).toEqual(await edges(app.searchButton('replaceAll')))
+  expect(await edges(app.searchButton('prev'))).toEqual(await edges(app.searchButton('replace')))
+  expect(await edges(app.searchButton('next'))).toEqual(await edges(app.searchButton('replaceSelection')))
   expect((await edges(app.searchButton('prev'))).right).toBe((await edges(app.searchButton('next'))).left)
-  expect((await edges(app.searchButton('replace'))).right).toBe(
-    (await edges(app.searchButton('replaceSelection'))).left,
+  expect((await edges(app.searchButton('replaceSelection'))).right).toBe(
+    (await edges(app.searchButton('replaceAll'))).left,
   )
 })
 test('works the always-on-top toggle from the keyboard, and says which way it is', async ({ launch }) => {
