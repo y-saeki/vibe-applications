@@ -1552,17 +1552,25 @@ option {
 /* The strip the thumb runs in. src/overlay-scrollbar.ts lays it along the
    scrollport's right edge and sets nothing else on it but the two fractions
    above. The strip never takes the pointer, because what it covers is the
-   draft; only the thumb does, and only while the bar is up. */
+   draft; only the thumb does, and only while the bar is up.
+
+   The two directions ease differently. A transition is taken from the state
+   being entered, so the one here is the way out and the one under
+   [data-shown] the way in: the bar snaps up as soon as the draft moves, and
+   drifts away once it has settled, slow at both ends so that the moment it
+   leaves is not one the eye catches. */
 .scrollbar {
   position: fixed;
   width: var(--scrollbar-size);
   opacity: 0;
-  transition: opacity 120ms ease;
+  transition: opacity 480ms cubic-bezier(0.45, 0, 0.55, 1);
   pointer-events: none;
 }
 
 .scrollbar[data-shown] {
   opacity: 1;
+  transition-duration: 120ms;
+  transition-timing-function: ease-out;
 }
 
 /* The thumb is as long as the share of the content the view covers, never
