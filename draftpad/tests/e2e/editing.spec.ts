@@ -152,6 +152,25 @@ test('puts the gear and then the pin at the right end of the macOS title bar, cl
   expect(bar.x + bar.width - (pin.x + pin.width)).toBeLessThan(await token(app, '--icon-button-size'))
 })
 
+test('lines the macOS title bar buttons up with the traffic lights, wherever macOS put them', async ({ launch }) => {
+  // How low the lights sit is the system's to decide and differs between
+  // releases; the Rust side reads it off the window, and the strip is made to
+  // have its middle there.
+  const app = await launch({ platform: 'macos', trafficLightsCenter: 19 })
+
+  await expect(app.page.locator('#titlebar')).toHaveCSS('height', '38px')
+  for (const button of [app.alwaysOnTop, app.gear]) {
+    const box = (await button.boundingBox())!
+    expect(box.y + box.height / 2).toBe(19)
+  }
+})
+
+test('keeps the Windows title bar its own height whatever is said of traffic lights', async ({ launch }) => {
+  const app = await launch({ platform: 'windows', trafficLightsCenter: 19 })
+
+  await expect(app.page.locator('#titlebar')).toHaveCSS('height', '32px')
+})
+
 test('works the window from the buttons of the Windows title bar', async ({ launch }) => {
   const app = await launch({ platform: 'windows' })
   const maximize = app.page.locator('#window-maximize')

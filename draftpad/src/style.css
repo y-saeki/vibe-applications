@@ -220,8 +220,10 @@
 }
 
 /* macOS lays the page under a transparent title bar, so the bar the page
-   draws is the strip its traffic lights sit on, as tall as the system makes
-   it. Windows has no frame, and the page draws the whole of the bar. */
+   draws is the strip its traffic lights sit on. This is its height until
+   src/main.ts has read where the lights are, and sets it to twice that, so
+   that the buttons centred on the strip sit on the lights' line. Windows has
+   no frame, and the page draws the whole of the bar. */
 :root[data-platform="macos"] {
   --titlebar-height: 28px;
 }

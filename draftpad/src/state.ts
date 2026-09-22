@@ -45,6 +45,11 @@ export interface Loaded {
   version: string
   /** True when this process was started by the Windows jump list "設定" task. */
   openPreferences: boolean
+  /**
+   * macOS: how far down the window the middle of its traffic lights is, in
+   * CSS pixels. Null elsewhere, and when the Rust side could not tell.
+   */
+  trafficLightsCenter: number | null
 }
 
 /** The two texts, as the editor hands them back at save time. */

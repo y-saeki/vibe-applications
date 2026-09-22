@@ -38,6 +38,8 @@ export interface BackendConfig {
   platform: string
   version: string
   openPreferences: boolean
+  /** What the Rust side reads off the macOS traffic lights; left out, it could not tell. */
+  trafficLightsCenter?: number
   fonts: string[]
   /** Makes `load_state` reject, as a failing state file would. */
   failLoad?: string
@@ -111,6 +113,7 @@ function handle(cmd: string, args: unknown): unknown {
         platform: config.platform,
         version: config.version,
         openPreferences: config.openPreferences,
+        trafficLightsCenter: config.trafficLightsCenter ?? null,
       }
     case 'save_state': {
       if (config.failSave) throw new Error(config.failSave)

@@ -10,6 +10,8 @@ mod fonts;
 mod jumplist;
 mod menu;
 mod state;
+#[cfg(target_os = "macos")]
+mod traffic_lights;
 
 use std::time::Duration;
 

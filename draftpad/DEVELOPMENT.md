@@ -113,6 +113,7 @@ Windows 側の経路(アプリ内のキー処理)を、どちらも Linux のラ
 - Windows のタイトルバーでウィンドウが実際に動くか。ドラッグでの移動、ダブルクリックでの最大化、枠のない
   ウィンドウの縁でのサイズ変更、最小化・最大化ボタンの結果です(ボタンが `minimize` / `toggle_maximize` /
   `quit_app` を呼ぶところと、最大化ボタンが状態に合わせて切り替わるところまでは確認します)
+- macOS の信号機ボタンが実際にどの高さにあるか(`load_state` が返す値に帯とボタンが合わせるところまでは確認します)
 - 展開したドロップダウンの macOS での見た目。Playwright が同梱する WebKit は 26.0 で、
   `appearance: base-select` は WebKit 27 からなので、プラットフォームのメニューが開く側の経路しか
   通りません。該当のテストは `CSS.supports()` を見て自分をスキップするため、Playwright が 27 以降を
@@ -597,6 +598,12 @@ macOS はウィンドウの枠を残したまま、タイトルバーを透明�
 `titleBarStyle: "Overlay"` と `hiddenTitle`)。ページはその下まで伸び、信号機ボタンが乗る帯(`#titlebar`)は
 ページの一部です。2 つのボタンは右端に置き、ピンが外側です。
 
+信号機ボタンの縦位置は macOS のリリースによって違うため、決め打ちせずに実機から読みます。`load_state` が
+閉じるボタンの中心がウィンドウ上端から何 pt 下にあるかを返し(`src-tauri/src/traffic_lights.rs`)、`src/main.ts` が
+帯の高さ(`--titlebar-height`)をその 2 倍にします。ボタンは帯の上下中央に並ぶので、信号機と同じ高さに来ます。
+読めなかったときは `style.css` の 28px のままです。AppKit はメインスレッドでしか答えないので、`load_state` は
+`async` にしていません。
+
 Windows にはタイトルバーをオーバーレイにする設定がないため、ウィンドウの枠そのものを外し
 (`src-tauri/src/lib.rs` の `set_decorations(false)`)、タイトルバーを丸ごとページが描きます。左端にピンと歯車、
 右端に最小化・最大化・閉じるの 3 つです。アイコンとアプリ名は出しません。`tauri.conf.json` の `decorations` で
@@ -955,6 +962,7 @@ draftpad/
     src/menu.rs           macOS のメニュー
     src/jumplist.rs       Windows のタスクバーメニュー(ジャンプリスト)
     src/autofill.rs       Windows の WebView2 オートフィル抑止
+    src/traffic_lights.rs macOS の信号機ボタンの縦位置の読み取り
     src/fonts.rs          フォント列挙
     installer.nsi         Windows インストーラ(NSIS)のテンプレート
     tauri.conf.json       ウィンドウ・バンドル設定

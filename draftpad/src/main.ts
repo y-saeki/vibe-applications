@@ -44,13 +44,20 @@ function byId<T extends HTMLElement>(id: string): T {
 }
 
 async function main(): Promise<void> {
-  const { state, platform, version, openPreferences: startWithPreferences } = await loadState()
+  const { state, platform, version, openPreferences: startWithPreferences, trafficLightsCenter } = await loadState()
   // The panel offers the weight as a fixed scale, while a file written by hand
   // can hold any number. Snapping it once here keeps every later reader — the
   // editor and the panel alike — on the same value.
   state.fontWeight = nearestFontWeight(state.fontWeight)
   const isMac = platform === 'macos'
   document.documentElement.dataset.platform = platform
+  // The strip under the macOS title bar is made twice as tall as the traffic
+  // lights are low, so that the buttons centred on it sit on their line
+  // whichever macOS release decided where that is. Without a reading, the
+  // stylesheet's height stands.
+  if (isMac && trafficLightsCenter !== null && Number.isFinite(trafficLightsCenter) && trafficLightsCenter > 0) {
+    document.documentElement.style.setProperty('--titlebar-height', `${trafficLightsCenter * 2}px`)
+  }
 
   const store = new Store(state)
   const appWindow = getCurrentWindow()
