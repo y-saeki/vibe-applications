@@ -47,7 +47,7 @@ const FONT_STACKS = new Set(['--ui-font', '--font-mono'])
 const LIMITS = {
   families: FAMILIES,
   /** Everything else measured in pixels: control metrics and layout. */
-  otherLengths: { budget: 23, accepts: (px) => px % 4 === 0, wants: 'a multiple of 4px' },
+  otherLengths: { budget: 24, accepts: (px) => px % 4 === 0, wants: 'a multiple of 4px' },
   /** The palette, including the two shadows, the eight masked and drawn marks,
       the six colors of the compare pane's marks, the two counts
       src/indent-guides.ts fills in while it draws, and the two fractions

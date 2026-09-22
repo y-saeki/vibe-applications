@@ -211,8 +211,11 @@ export class App {
     return this.page.locator(`#${over} .scrollbar`)
   }
 
-  /** One of the search panel's four buttons, by the name CodeMirror gives it. */
-  searchButton(name: 'prev' | 'next' | 'replace' | 'replaceAll'): Locator {
+  /**
+   * One of the search panel's five buttons, by its name — CodeMirror's for the
+   * four it builds, and src/search-panel.ts's for the one draftpad adds.
+   */
+  searchButton(name: 'prev' | 'next' | 'replace' | 'replaceSelection' | 'replaceAll'): Locator {
     return this.searchPanel.locator(`button[name="${name}"]`)
   }
 
