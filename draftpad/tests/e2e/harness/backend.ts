@@ -50,6 +50,8 @@ export interface BackendConfig {
   clipboard?: string
   /** The window's inner size in physical pixels, which `set_size` moves on. */
   innerSize: { width: number; height: number }
+  /** The window's top-left corner in physical pixels, which `set_position` moves. */
+  outerPosition: { x: number; y: number }
   scaleFactor: number
 }
 
@@ -72,6 +74,8 @@ export interface Harness {
   saved: State | null
   /** The size the last `set_size` asked for, or null before the first. */
   resized: Resize | null
+  /** The corner the last `set_position` asked for, in physical pixels, or null before the first. */
+  moved: { x: number; y: number } | null
 }
 
 // Matches `impl Default for State` in src-tauri/src/state.rs.
@@ -157,6 +161,17 @@ function handle(cmd: string, args: unknown): unknown {
       return maximized
     case 'plugin:window|inner_size':
       return config.innerSize
+    case 'plugin:window|outer_position':
+      return config.outerPosition
+    case 'plugin:window|set_position': {
+      // Sent back as it came: draftpad only ever hands over the corner
+      // `outer_position` gave it, which is physical.
+      const wire = JSON.parse(JSON.stringify((args as { value: unknown }).value)) as { Physical?: { x: number; y: number } }
+      if (!wire.Physical) throw new Error('draftpad test: set_position was given a position that is not physical')
+      harness.moved = wire.Physical
+      config.outerPosition = wire.Physical
+      return null
+    }
     case 'plugin:window|scale_factor':
       return config.scaleFactor
     case 'plugin:window|set_size': {
@@ -167,6 +182,9 @@ function handle(cmd: string, args: unknown): unknown {
       const wire = JSON.parse(JSON.stringify((args as { value: unknown }).value)) as { Logical?: Resize }
       if (!wire.Logical) throw new Error('draftpad test: set_size was given a size that is not logical')
       harness.resized = wire.Logical
+      // A maximized window stops being one when it is given a size, as the
+      // real one does on Windows.
+      maximized = false
       // The window is that size from now on, so the next resize scales this one.
       config.innerSize = {
         width: wire.Logical.width * config.scaleFactor,

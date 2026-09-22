@@ -67,6 +67,7 @@ const DEFAULT_CONFIG: BackendConfig = {
   openPreferences: false,
   fonts: [],
   innerSize: { width: 600, height: 400 },
+  outerPosition: { x: 0, y: 0 },
   scaleFactor: 1,
 }
 
@@ -270,6 +271,11 @@ export class App {
     return this.page.evaluate(() => window.__draftpad.resized)
   }
 
+  /** The top-left corner the app last asked the window to move to, in physical pixels, or null before it asked. */
+  moved(): Promise<{ x: number; y: number } | null> {
+    return this.page.evaluate(() => window.__draftpad.moved)
+  }
+
   /** Waits for a `save_state` whose state satisfies `predicate`. */
   async expectSaved(predicate: (state: State) => boolean): Promise<void> {
     await expect
@@ -362,7 +368,7 @@ export const test = base.extend<{ launch: (options?: LaunchOptions) => Promise<A
         if (/content security policy/i.test(message.text())) cspViolations.push(message.text())
       })
       await page.addInitScript((value: BackendConfig) => {
-        window.__draftpad = { config: value, calls: [], saved: null, resized: null }
+        window.__draftpad = { config: value, calls: [], saved: null, resized: null, moved: null }
       }, config)
       await page.addInitScript({ path: HARNESS_BUNDLE })
       await page.goto('/')
