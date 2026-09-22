@@ -47,7 +47,7 @@ covers it changes in the same commit:
 | What the right-click menu offers (`src/context-menu.ts`, `src-tauri/src/menu.rs`, `src-tauri/src/context_menu.rs`) | `tests/e2e/context-menu.spec.ts` |
 | A preferences control | `tests/e2e/preferences.spec.ts` |
 | What is restored at startup | `tests/e2e/startup.spec.ts` |
-| Editing behaviour, the counts in the pane bar, or the status bar | `tests/e2e/editing.spec.ts` |
+| Editing behaviour, the counts in the pane bar, or the title bar | `tests/e2e/editing.spec.ts` |
 | The compare pane: opening and closing it, the diff between the panes and its marks, what the two panes share (`src/pane-bars.ts`, `src/linediff.ts`, the two-pane half of `src/editor.ts`) | `tests/e2e/compare.spec.ts` |
 | A field on `State` | `DEFAULT_STATE` in `tests/e2e/harness/backend.ts`, which mirrors `impl Default for State`, and `mod tests` in `src-tauri/src/state.rs` |
 | A command the frontend invokes | `handle` in `tests/e2e/harness/backend.ts`. It throws on a command it does not know, so the tests fail until the command is added |

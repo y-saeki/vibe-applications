@@ -94,7 +94,7 @@ fn build(
 ) -> Result<()> {
     unsafe {
         // The draft and the panels' text fields are the whole of what this
-        // menu acts on. Over the status bar, a button or a dropdown it would
+        // menu acts on. Over the bars, a button or a dropdown it would
         // have nothing to offer.
         let mut editable = BOOL::default();
         args.ContextMenuTarget()?.IsEditable(&mut editable)?;

@@ -13,8 +13,8 @@ import { defaultFontFamily } from './fonts'
 import { PaneBars } from './pane-bars'
 import { Preferences } from './preferences'
 import { loadState, nearestFontWeight, Store, type StateKey } from './state'
-import { StatusBar } from './statusbar'
 import { ThemeController } from './theme'
+import { TitleBar } from './titlebar'
 
 const COUNT_DEBOUNCE_MS = 100
 const RESIZE_DEBOUNCE_MS = 500
@@ -65,6 +65,7 @@ async function main(): Promise<void> {
   let openPreferences = (): void => {}
   let openCompare = async (): Promise<void> => {}
   let closePane = async (_side: Side): Promise<void> => {}
+  let quit = async (): Promise<void> => {}
   const paneBars = new PaneBars(byId('editor'), {
     onLanguageChange: (language) => store.set({ language }),
     onDiffModeChange: (diffMode) => store.set({ diffMode }),
@@ -73,11 +74,17 @@ async function main(): Promise<void> {
   })
   paneBars.setLanguage(state.language)
   paneBars.setDiffMode(state.diffMode)
-  const statusBar = new StatusBar(byId('statusbar'), {
+  const titleBar = new TitleBar(byId('titlebar'), {
     onAlwaysOnTopChange: (alwaysOnTop) => store.set({ alwaysOnTop }),
     onOpenPreferences: () => openPreferences(),
+    // The window buttons are only on the page on Windows, where the window
+    // has no frame of its own. Closing there is quitting, the same way the
+    // close request below goes.
+    onMinimize: () => void appWindow.minimize(),
+    onToggleMaximize: () => void appWindow.toggleMaximize(),
+    onClose: () => void quit(),
   })
-  statusBar.setAlwaysOnTop(state.alwaysOnTop)
+  titleBar.setAlwaysOnTop(state.alwaysOnTop)
 
   // Which of the two layouts the page is in, for the bars and for the tests.
   const setLayout = (compare: boolean): void => {
@@ -119,7 +126,7 @@ async function main(): Promise<void> {
 
   // ---- quitting ----------------------------------------------------------
   let quitting = false
-  const quit = async (): Promise<void> => {
+  quit = async (): Promise<void> => {
     if (quitting) return
     quitting = true
     try {
@@ -240,7 +247,7 @@ async function main(): Promise<void> {
     showIndentGuides: () => ed.setShowIndentGuides(store.state.showIndentGuides),
     showLineNumbers: () => ed.setShowLineNumbers(store.state.showLineNumbers),
     alwaysOnTop: () => {
-      statusBar.setAlwaysOnTop(store.state.alwaysOnTop)
+      titleBar.setAlwaysOnTop(store.state.alwaysOnTop)
       void appWindow.setAlwaysOnTop(store.state.alwaysOnTop)
     },
   }
@@ -285,6 +292,11 @@ async function main(): Promise<void> {
   }
 
   // ---- window size (position is intentionally not remembered) ------------
+  // The maximize button follows the window however it got there: the button
+  // itself, a double click on the title bar, or a snap from the keyboard.
+  const refreshMaximized = async (): Promise<void> => titleBar.setMaximized(await appWindow.isMaximized())
+  window.addEventListener('resize', () => void refreshMaximized())
+  await refreshMaximized()
   window.addEventListener(
     'resize',
     debounce(RESIZE_DEBOUNCE_MS, () => {

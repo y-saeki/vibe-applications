@@ -77,6 +77,16 @@ pub fn run() {
             }
             #[cfg(target_os = "windows")]
             {
+                // The page draws the whole title bar, window buttons included
+                // (`src/index.html`), so that the bar can carry draftpad's own
+                // buttons and run on into the pane bar under it. Done here
+                // rather than in `tauri.conf.json` because macOS keeps its
+                // frame and lays the page under a transparent title bar
+                // instead. The window is still hidden, so the frame it had is
+                // never seen.
+                if let Err(err) = window.set_decorations(false) {
+                    eprintln!("draftpad: failed to remove the window frame: {err}");
+                }
                 autofill::disable(&window);
                 context_menu::install(&window);
                 jumplist::install();

@@ -1,4 +1,4 @@
-/* draftpad's chrome — the pane bars, the status bar, the search panel, the
+/* draftpad's chrome — the title bar, the pane bars, the search panel, the
    preferences panel, and the marks of the compare pane.
    Every size, spacing and color it uses is a custom property declared below,
    and nothing outside these blocks writes a number or a color of its own.
@@ -12,7 +12,7 @@
   --muted: #6e7781;
   /* One step short of --fg, for the group headings in the preferences panel:
      they sit above the labels they gather, and --muted would read as the same
-     kind of secondary text as the status bar. */
+     kind of secondary text as the pane bar. */
   --muted-strong: #57606a;
   /* Weaker than --muted: a placeholder has to read as an empty field rather
      than as something already typed. */
@@ -27,6 +27,11 @@
   --focus-ring: rgba(43, 108, 176, 0.25);
   --shadow-panel: 0 8px 32px rgba(0, 0, 0, 0.25); /* the preferences panel */
   --shadow-popup: 0 4px 16px rgba(0, 0, 0, 0.18); /* a dropped-open list */
+  /* The close button of the Windows title bar under the pointer: the red and
+     the white glyph Windows gives its own, in both themes, so that the one
+     button that ends the session reads as it does in every other window. */
+  --caption-close: #c42b1c;
+  --caption-close-fg: #ffffff;
   /* The chevron on a select, and on the search panel's next button. Painted
      with currentColor through a mask, so one asset serves both themes; the tick
      below cannot do that because a background color cannot reach a
@@ -118,7 +123,7 @@
   --font-mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
   --font-size-title: 16px; /* the preferences heading */
   --font-size-body: 13px; /* panels and their controls */
-  --font-size-caption: 12px; /* the status bar, the version line */
+  --font-size-caption: 12px; /* the pane bars, the version line */
 
   /* ---- Spacing ---- */
   --space-1: 4px;
@@ -141,8 +146,13 @@
   --icon-size: 16px;
   --icon-button-size: 24px;
   --toggle-size-search: 16px; /* the Aa / .* toggles inside the find field */
-  --statusbar-height: 32px;
-  --titlebar-height: 0px;
+  --bar-height: 32px; /* the pane bars */
+  /* The title bar the page draws. Windows is this; macOS, below, is the
+     strip under its transparent title bar. */
+  --titlebar-height: 32px;
+  /* Each of the Windows title bar's own three buttons, the full height of the
+     bar: the width Windows gives its own, rounded to the 4px scale. */
+  --caption-button-width: 48px;
   --scrollbar-size: 12px; /* the strip a thumb runs in */
   --scrollbar-thumb-size: 8px; /* the thumb, centred in that strip */
   /* The shortest a thumb may be. Without it, a long enough draft leaves
@@ -209,9 +219,9 @@
   color-scheme: dark;
 }
 
-/* macOS uses a transparent overlay title bar; keep the top strip draggable.
-   Windows draws a title bar of its own above the page, so there the strip has
-   no height. */
+/* macOS lays the page under a transparent title bar, so the bar the page
+   draws is the strip its traffic lights sit on, as tall as the system makes
+   it. Windows has no frame, and the page draws the whole of the bar. */
 :root[data-platform="macos"] {
   --titlebar-height: 28px;
 }
@@ -231,14 +241,92 @@ body {
   font: var(--font-size-body) var(--ui-font);
 }
 
-/* The strip the window's own buttons sit on. It is painted like the pane bar
-   under it, with no rule between the two, so that the two read as one bar: the
-   spec draws macOS that way. Left to the page's own background, the strip was
-   one shade and the bar under it another, and the seam between them showed. */
+/* The title bar: the always-on-top toggle and the gear, and on Windows the
+   window's three buttons. It is painted like the pane bar under it, with no
+   rule between the two, so that the two read as one bar. Left to the page's
+   own background, the strip was one shade and the bar under it another, and
+   the seam between them showed.
+
+   Windows puts the toggle and the gear at the left end, where the platform
+   would have its icon and the window's name, and the window buttons at the
+   right. macOS has its traffic lights at the left, so the pair go to the
+   right end, the toggle outermost. */
 #titlebar {
   flex: none;
+  display: flex;
+  align-items: center;
   height: var(--titlebar-height);
   background: var(--panel);
+  color: var(--muted);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.titlebar-tools {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0 var(--space-2);
+}
+
+:root[data-platform="macos"] .titlebar-tools {
+  flex-direction: row-reverse;
+  margin-left: auto;
+}
+
+/* Always-on-top is a state of the window rather than a field to fill in, so
+   the button carries it: pressed, it takes the accent instead of a tick. */
+#always-on-top[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  color: var(--accent);
+}
+
+/* Only a window without a frame needs them. */
+.window-controls {
+  display: none;
+}
+
+:root[data-platform="windows"] .window-controls {
+  display: flex;
+  align-self: stretch;
+  margin-left: auto;
+}
+
+/* Square-cornered and the bar's full height, the way Windows draws its own,
+   so that the pointer finds them at the window's very edge. */
+.caption-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--caption-button-width);
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--fg);
+}
+
+.caption-button:hover {
+  background: var(--control-hover);
+}
+
+.caption-button:active {
+  background: var(--control-active);
+}
+
+#window-close:hover,
+#window-close:active {
+  background: var(--caption-close);
+  color: var(--caption-close-fg);
+}
+
+/* One button, two glyphs: maximize, and restore once the window is maximized. */
+#window-maximize .glyph-restore,
+#window-maximize[data-maximized="true"] .glyph-maximize {
+  display: none;
+}
+
+#window-maximize[data-maximized="true"] .glyph-restore {
+  display: block;
 }
 
 /* ---- Controls shared by every panel ------------------------------------ */
@@ -313,7 +401,7 @@ option {
   box-shadow: 0 0 0 2px var(--focus-ring);
 }
 
-/* A button that is only an icon: the gear in the status bar, the × that
+/* A button that is only an icon: the gear in the title bar, the × that
    closes a panel. */
 .icon-button,
 #editor .cm-panel [name="close"],
@@ -687,7 +775,7 @@ option {
   padding: 0 var(--space-1) 0 var(--space-3);
 }
 
-/* The Vim status line keeps the editor font, at the status bar's size. */
+/* The Vim status line keeps the editor font, at the pane bar's size. */
 #editor .cm-vim-panel {
   font-family: inherit;
   font-size: var(--font-size-caption);
@@ -728,7 +816,7 @@ option {
    fields, five buttons, two toggles and two counts add up, and at the body size
    they crowd the draft they sit under. The size goes on the panel rather than
    on each control, so the words, the fields, the buttons and the counts come
-   down together. It is the size the status bar is set in, so the chrome still
+   down together. It is the size the pane bar is set in, so the chrome still
    reads as one set. */
 #editor .cm-panel.cm-search {
   font-size: var(--font-size-caption);
@@ -1079,7 +1167,7 @@ option {
   align-items: center;
   justify-content: space-between;
   gap: var(--space-4);
-  height: var(--statusbar-height);
+  height: var(--bar-height);
   /* Thinner on the right: an icon button is --icon-button-size around an
      --icon-size glyph, so it already brings a gutter of its own and an equal
      padding at both ends would read as a wider gap on that side. */
@@ -1195,33 +1283,6 @@ option {
 
 :root[data-platform="windows"] #diff-mode-select {
   min-width: var(--mode-width);
-}
-
-/* ---- Status bar -------------------------------------------------------- */
-
-/* What stays at the bottom of the window: the always-on-top toggle and the
-   gear, at the right end. */
-#statusbar {
-  flex: none;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: var(--space-1);
-  height: var(--statusbar-height);
-  padding: 0 var(--space-2);
-  border-top: 1px solid var(--border);
-  background: var(--panel);
-  color: var(--muted);
-  font-size: var(--font-size-caption);
-  user-select: none;
-  -webkit-user-select: none;
-}
-
-/* Always-on-top is a state of the window rather than a field to fill in, so
-   the button carries it: pressed, it takes the accent instead of a tick. */
-#always-on-top[aria-pressed="true"] {
-  background: color-mix(in srgb, var(--accent) 15%, transparent);
-  color: var(--accent);
 }
 
 /* ---- Preferences ------------------------------------------------------- */

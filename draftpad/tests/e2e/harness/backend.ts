@@ -99,6 +99,7 @@ const harness = window.__draftpad
 const { config } = harness
 const state: State = { ...DEFAULT_STATE, ...config.state }
 let fullscreen = false
+let maximized = false
 
 function handle(cmd: string, args: unknown): unknown {
   harness.calls.push({ cmd, args })
@@ -133,16 +134,22 @@ function handle(cmd: string, args: unknown): unknown {
     case 'plugin:window|show':
     case 'plugin:window|destroy':
     case 'plugin:window|set_always_on_top':
+    case 'plugin:window|minimize':
+      return null
+    // The Windows title bar's maximize button. What the page learns of the
+    // result comes back the way the real window tells it: a resize.
+    case 'plugin:window|toggle_maximize':
+      maximized = !maximized
       return null
     case 'plugin:window|set_fullscreen':
       fullscreen = (args as { value: boolean }).value
       return null
     case 'plugin:window|is_fullscreen':
       return fullscreen
-    // draftpad never maximizes the window itself; it only asks before it
-    // records a new size, and before it changes one.
+    // Asked before a new size is recorded or changed, and by the maximize
+    // button, which follows the window.
     case 'plugin:window|is_maximized':
-      return false
+      return maximized
     case 'plugin:window|inner_size':
       return config.innerSize
     case 'plugin:window|scale_factor':

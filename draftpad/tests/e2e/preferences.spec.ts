@@ -157,10 +157,10 @@ test('switches to the dark look and remembers it', async ({ launch }) => {
   await expect(app.page.locator('html')).toHaveAttribute('data-theme', 'dark')
   await app.expectSaved((state) => state.theme === 'dark')
 
-  // The editor is painted by CodeMirror (src/dark-theme.ts) and the status bar
+  // The editor is painted by CodeMirror (src/dark-theme.ts) and the title bar
   // by style.css; the palette has to reach both, not just the chrome.
   await expect(app.page.locator('.cm-editor')).toHaveCSS('background-color', 'rgb(21, 21, 21)')
-  await expect(app.page.locator('#statusbar')).toHaveCSS('background-color', 'rgb(17, 17, 17)')
+  await expect(app.page.locator('#titlebar')).toHaveCSS('background-color', 'rgb(17, 17, 17)')
 
   // The controls the platform would otherwise draw in its own greys: the
   // language selector stays flat against the bar, and the pin reads as the
@@ -456,7 +456,7 @@ test('lays a bar over the panel when the window is too short to hold it', async 
   expect(strip.x + strip.width).toBeGreaterThan(box.right - strip.width - 2)
 })
 
-test('numbers the lines of the draft, and counts them the way the status bar does', async ({ launch }) => {
+test('numbers the lines of the draft, and counts them the way the pane bar does', async ({ launch }) => {
   const app = await launch({ state: { text: 'a\nb\nc' } })
   const showLineNumbers = app.page.locator('#pref-show-line-numbers')
 
