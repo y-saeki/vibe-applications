@@ -74,13 +74,12 @@ test('the menu writes the draft out before quitting', async ({ launch }) => {
 })
 
 test('the menu opens the compare pane', async ({ launch }) => {
-  const app = await launch({ ...MAC, innerSize: { width: 600, height: 400 } })
+  const app = await launch(MAC)
 
   await app.typeInEditor('比べる')
   await app.runMenuCommand('open_compare')
   await expect(app.page.locator('html')).toHaveAttribute('data-layout', 'compare')
   await expect(app.editorB).toHaveText('比べる')
-  await expect.poll(() => app.resized()).toEqual({ width: 1200, height: 400 })
 })
 
 test('the menu closes the pane with the caret while there are two, and the window once there is one', async ({ launch }) => {

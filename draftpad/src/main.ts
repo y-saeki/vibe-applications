@@ -1,7 +1,6 @@
 import './style.css'
 
 import { invoke } from '@tauri-apps/api/core'
-import { LogicalSize } from '@tauri-apps/api/dpi'
 import { listen } from '@tauri-apps/api/event'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { readText } from '@tauri-apps/plugin-clipboard-manager'
@@ -156,24 +155,8 @@ async function main(): Promise<void> {
   openPreferences = () => preferences.open()
 
   // ---- the compare pane ---------------------------------------------------
-  // The window grows to the right by its own width when the pane opens, and
-  // shrinks back when one closes, so that the pane that stays keeps the width
-  // it had: not a dot of its text moves. Only full screen keeps its size and
-  // splits what there is. A window that merely covers the screen — maximized,
-  // zoomed, or dragged to that size — is resized like any other, so that one
-  // parked on half the screen comes back to that half when the pane closes.
-  // A maximized window stops being maximized on the way, and is put back at
-  // the top-left corner it had rather than where it was before maximizing.
-  // Whether the screen has room is not looked at: a window that runs off its
-  // right edge can be moved.
-  const scaleWindowWidth = async (factor: number): Promise<void> => {
-    if (await appWindow.isFullscreen()) return
-    const maximized = await appWindow.isMaximized()
-    const position = maximized ? await appWindow.outerPosition() : null
-    const size = (await appWindow.innerSize()).toLogical(await appWindow.scaleFactor())
-    await appWindow.setSize(new LogicalSize(Math.round(size.width * factor), Math.round(size.height)))
-    if (position) await appWindow.setPosition(position)
-  }
+  // The window keeps its size either way: opening the pane splits it in two,
+  // and closing one gives the other the whole of it.
   openCompare = async () => {
     // Guarded like the search panel: the pane would open behind the
     // preferences panel, which is taking the keyboard.
@@ -183,7 +166,6 @@ async function main(): Promise<void> {
     store.set({ compare: true })
     store.markTextChanged()
     refreshCounts('b')
-    await scaleWindowWidth(2)
   }
   closePane = async (side) => {
     if (!ed.compare || preferences.isOpen) return
@@ -192,7 +174,6 @@ async function main(): Promise<void> {
     store.set({ compare: false })
     store.markTextChanged()
     refreshCounts('a')
-    await scaleWindowWidth(0.5)
   }
 
   const commands = createCommands(

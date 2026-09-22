@@ -46,9 +46,6 @@ test('starts with the two panes it was closed with', async ({ launch }) => {
   await expect(app.diffModeSelect).toHaveValue('line')
   await expect(app.diffAdded).toHaveText('+1')
   await expect(app.diffRemoved).toHaveText('−1')
-  // The window was closed at the width of two panes and comes back at it; the
-  // page asks nothing of it.
-  expect(await app.resized()).toBeNull()
   await expect(app.editorA).toBeFocused()
 })
 
