@@ -528,6 +528,24 @@ option {
   pointer-events: none;
 }
 
+/* While the window is being resized around a change of panes. The panes are
+   rebuilt a moment before the window has the width they are meant for, so the
+   row of bars and the box of panes are given that width here rather than the
+   one they have: the panes are built at their final size straight away, and no
+   line is wrapped twice. What hangs over the window's edge in the meantime is
+   clipped by the body, and 100% is the same width once the window has caught
+   up, so taking the scale off moves nothing. src/main.ts sets the attribute
+   and says what it is worth. */
+:root[data-resizing="grow"] #pane-heads,
+:root[data-resizing="grow"] #panes {
+  width: 200%;
+}
+
+:root[data-resizing="shrink"] #pane-heads,
+:root[data-resizing="shrink"] #panes {
+  width: 50%;
+}
+
 /* One pane: the editor fills the box, and its scroller is what scrolls. */
 #panes > .cm-editor {
   height: 100%;

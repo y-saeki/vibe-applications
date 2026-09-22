@@ -18,6 +18,14 @@ import { ThemeController } from './theme'
 
 const COUNT_DEBOUNCE_MS = 100
 const RESIZE_DEBOUNCE_MS = 500
+/**
+ * How long the editor may be held at a width the window has yet to reach; see
+ * `changePanes`. Generous, because letting go early is the very jolt the hold
+ * is there to stop, and a resize does take its time on a loaded machine, while
+ * holding on is only ever seen in a case neither platform reaches: a size the
+ * window took without changing size at all.
+ */
+const RESIZE_SETTLE_MS = 2000
 const SIDES: readonly Side[] = ['a', 'b']
 
 function countCodePoints(text: string): number {
@@ -35,6 +43,25 @@ function debounce(ms: number, fn: () => void): () => void {
       fn()
     }, ms)
   }
+}
+
+/**
+ * Resolves once a size asked of the window has reached the page, which is the
+ * page's own resize, and after `RESIZE_SETTLE_MS` whatever happens: a size the
+ * platform will not take raises no resize at all, and nothing may be left
+ * waiting on one for ever.
+ */
+function windowResized(): Promise<void> {
+  return new Promise((resolve) => {
+    let timer = 0
+    const done = (): void => {
+      window.removeEventListener('resize', done)
+      window.clearTimeout(timer)
+      resolve()
+    }
+    window.addEventListener('resize', done)
+    timer = window.setTimeout(done, RESIZE_SETTLE_MS)
+  })
 }
 
 function byId<T extends HTMLElement>(id: string): T {
@@ -148,30 +175,77 @@ async function main(): Promise<void> {
   // what there is; so does a maximized window, which has nowhere to grow into
   // either. Whether the screen has room is not looked at: a window that runs
   // off its right edge can be moved.
-  const scaleWindowWidth = async (factor: number): Promise<void> => {
-    if ((await appWindow.isFullscreen()) || (await appWindow.isMaximized())) return
+  //
+  // The two do not land together. The panes are rebuilt here, while the window
+  // is resized by the platform, which comes back a moment later; whichever is
+  // first, the editor is laid out once at a width it is not about to keep —
+  // two panes in the window as it was, or one pane in the window as it becomes
+  // — and every wrapped line wraps at that width until the other one lands.
+  // That moment is the jolt the text was seen to make.
+  //
+  // So the editor is given the width it is about to have before either
+  // happens: `data-resizing` has style.css scale the row of bars and the box
+  // of panes by the same factor, the body clips whatever hangs over the
+  // window's edge, and the panes are rebuilt inside a box that is already the
+  // size it will be. The scale comes off once the window has caught up, where
+  // 100% is that same width, so nothing moves then either.
+  //
+  // How many changes have been asked for, so that one waiting on the window can
+  // tell whether the scale it set is still its own.
+  let changes = 0
+  // @param factor what to multiply the window's width by
+  // @param ready whether the change is still the one to make
+  // @param rebuild makes it, in one go
+  const changePanes = async (factor: number, ready: () => boolean, rebuild: () => void): Promise<void> => {
+    if ((await appWindow.isFullscreen()) || (await appWindow.isMaximized())) {
+      // The panes split the width there is instead, so they do change width
+      // and there is nothing to hold them to.
+      if (ready()) rebuild()
+      return
+    }
     const size = (await appWindow.innerSize()).toLogical(await appWindow.scaleFactor())
+    // Asked again now that the window has been measured, which took an await
+    // or two: the same key held down would otherwise open a pane that is
+    // already open, and scale the window a second time for it.
+    if (!ready()) return
+    const root = document.documentElement
+    const turn = ++changes
+    root.dataset.resizing = factor > 1 ? 'grow' : 'shrink'
+    rebuild()
+    const settled = windowResized()
     await appWindow.setSize(new LogicalSize(Math.round(size.width * factor), Math.round(size.height)))
+    await settled
+    // A pane opened or closed while this one waited holds the scale now, and it
+    // is that change's to take off.
+    if (changes === turn) delete root.dataset.resizing
   }
   openCompare = async () => {
-    // Guarded like the search panel: the pane would open behind the
-    // preferences panel, which is taking the keyboard.
-    if (ed.compare || preferences.isOpen) return
-    ed.openCompare()
-    setLayout(true)
-    store.set({ compare: true })
-    store.markTextChanged()
-    refreshCounts('b')
-    await scaleWindowWidth(2)
+    await changePanes(
+      2,
+      // Guarded like the search panel: the pane would open behind the
+      // preferences panel, which is taking the keyboard.
+      () => !ed.compare && !preferences.isOpen,
+      () => {
+        ed.openCompare()
+        setLayout(true)
+        store.set({ compare: true })
+        store.markTextChanged()
+        refreshCounts('b')
+      },
+    )
   }
   closePane = async (side) => {
-    if (!ed.compare || preferences.isOpen) return
-    ed.closePane(side)
-    setLayout(false)
-    store.set({ compare: false })
-    store.markTextChanged()
-    refreshCounts('a')
-    await scaleWindowWidth(0.5)
+    await changePanes(
+      0.5,
+      () => ed.compare && !preferences.isOpen,
+      () => {
+        ed.closePane(side)
+        setLayout(false)
+        store.set({ compare: false })
+        store.markTextChanged()
+        refreshCounts('a')
+      },
+    )
   }
 
   const commands = createCommands(

@@ -42,8 +42,11 @@ test('gives each pane exactly half, and the left one the width it had', async ({
   const alone = await width('.cm-content')
   await app.compareButton.click()
   await expect(app.paneHeadB).toBeVisible()
-  // The window has doubled; the page is given the new width the same way.
+  // The window has doubled; the page is given the new width the same way, and
+  // the editor lets go of the width it was held at once that reaches it — which
+  // is the case below this one.
   await app.page.setViewportSize({ width: 1200, height: 400 })
+  await expect(app.page.locator('html')).not.toHaveAttribute('data-resizing', 'grow')
 
   // Half each, bars and panes alike, with no pixel taken out of either for the
   // rule between them — and the left pane's text as wide as it was alone, so
@@ -54,6 +57,45 @@ test('gives each pane exactly half, and the left one the width it had', async ({
   expect(await width('.cm-merge-b')).toBe(600)
   expect(await width('.cm-merge-a .cm-content')).toBe(alone)
   expect(await width('.cm-merge-b .cm-content')).toBe(alone)
+})
+
+test('holds the editor at the width the window is about to have, opening the pane', async ({ launch }) => {
+  const app = await launch({ innerSize: { width: 600, height: 400 } })
+  await app.page.setViewportSize({ width: 600, height: 400 })
+  const alone = (await app.page.locator('.cm-content').boundingBox())!.width
+
+  await app.compareButton.click()
+
+  // The window is asked to double and comes back a moment later, while the
+  // panes are rebuilt straight away. Until the two are in step the bars and the
+  // panes are as wide as the window is about to be, so the left pane is built
+  // exactly as wide as it was alone and nothing in it wraps twice.
+  await expect(app.page.locator('html')).toHaveAttribute('data-resizing', 'grow')
+  expect(await sizes(app)).toEqual({ heads: 1200, panes: 1200, left: alone, window: 600 })
+
+  // The window's new width reaching the page is what lets that go, and 100% is
+  // the width it was held at, so nothing moves then either.
+  await app.page.setViewportSize({ width: 1200, height: 400 })
+  await expect(app.page.locator('html')).not.toHaveAttribute('data-resizing', 'grow')
+  expect(await sizes(app)).toEqual({ heads: 1200, panes: 1200, left: alone, window: 1200 })
+})
+
+test('holds it the same way as the window shrinks back, closing a pane', async ({ launch }) => {
+  const app = await launch({ state: TWO_PANES, innerSize: { width: 1200, height: 400 } })
+  await app.page.setViewportSize({ width: 1200, height: 400 })
+  const beside = (await app.page.locator('.cm-merge-a .cm-content').boundingBox())!.width
+
+  await app.closeB.click()
+
+  // The same the other way round: the bars and the panes are already half the
+  // window, so the pane that stays is built exactly as wide as it stood beside
+  // the other one, and it is the window's edge that takes the rest away.
+  await expect(app.page.locator('html')).toHaveAttribute('data-resizing', 'shrink')
+  expect(await sizes(app)).toEqual({ heads: 600, panes: 600, left: beside, window: 1200 })
+
+  await app.page.setViewportSize({ width: 600, height: 400 })
+  await expect(app.page.locator('html')).not.toHaveAttribute('data-resizing', 'shrink')
+  expect(await sizes(app)).toEqual({ heads: 600, panes: 600, left: beside, window: 600 })
 })
 
 test('pairs the lines up first, and counts what each side has that the other has not', async ({ launch }) => {
@@ -406,6 +448,20 @@ test('scrolls the two panes together, under one bar', async ({ launch }) => {
 async function lineTop(app: App, side: Side, text: string): Promise<number> {
   const box = await app.pane(side).locator('.cm-line', { hasText: text }).first().boundingBox()
   return box!.y
+}
+
+/**
+ * The four widths a change of panes has to keep in step: the row of bars, the
+ * box of panes, the left pane's text, and the window they are in. Read in one
+ * go, because the first three are only held apart from the last one for as long
+ * as the window has yet to catch up.
+ */
+function sizes(app: App): Promise<{ heads: number; panes: number; left: number; window: number }> {
+  return app.page.evaluate(() => {
+    const width = (selector: string): number => document.querySelector(selector)!.getBoundingClientRect().width
+    // The first .cm-content is the left pane's, with one pane and with two.
+    return { heads: width('#pane-heads'), panes: width('#panes'), left: width('.cm-content'), window: window.innerWidth }
+  })
 }
 
 /** A length token as the sheet declares it, in px. */
