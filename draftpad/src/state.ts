@@ -8,6 +8,8 @@ export type EditorMode = 'normal' | 'vim'
 export type Theme = 'system' | 'light' | 'dark'
 /** How a differing chunk is marked: whole lines only, or the characters within them too. */
 export type DiffMode = 'line' | 'char'
+/** What the Tab key and automatic indentation put in: spaces up to the tab width, or tab characters. */
+export type IndentStyle = 'spaces' | 'tabs'
 
 export interface State {
   /** The draft: the only pane, or the left one while the compare pane is open. */
@@ -24,6 +26,7 @@ export interface State {
   fontFamily: string
   fontWeight: number
   tabSize: number
+  indentStyle: IndentStyle
   quickSuggestions: boolean
   /** Whether the spaces and tabs in the draft carry a mark. */
   showWhitespace: boolean

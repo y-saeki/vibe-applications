@@ -57,6 +57,16 @@ test('indents with spaces, as many as the tab width', async ({ launch }) => {
   await app.expectSaved((state) => state.text === '  x')
 })
 
+test('indents with tabs when the setting asks for them', async ({ launch }) => {
+  const app = await launch({ state: { tabSize: 2, indentStyle: 'tabs' } })
+
+  await app.typeInEditor('x')
+  await app.page.keyboard.press('Home')
+  await app.page.keyboard.press('Tab')
+  await app.page.keyboard.press('Tab')
+  await app.expectSaved((state) => state.text === '\t\tx')
+})
+
 test('switches the grammar from the pane bar and remembers it', async ({ launch }) => {
   const app = await launch()
 

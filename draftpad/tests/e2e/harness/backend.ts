@@ -20,6 +20,7 @@ export interface State {
   fontFamily: string
   fontWeight: number
   tabSize: number
+  indentStyle: string
   quickSuggestions: boolean
   showWhitespace: boolean
   showIndentGuides: boolean
@@ -86,6 +87,7 @@ const DEFAULT_STATE: State = {
   fontFamily: '',
   fontWeight: 400,
   tabSize: 4,
+  indentStyle: 'spaces',
   quickSuggestions: true,
   showWhitespace: false,
   showIndentGuides: false,

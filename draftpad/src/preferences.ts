@@ -12,6 +12,7 @@ import {
   TAB_SIZE_MAX,
   TAB_SIZE_MIN,
   type EditorMode,
+  type IndentStyle,
   type Store,
   type Theme,
 } from './state'
@@ -30,6 +31,7 @@ export class Preferences {
   private readonly fontList: HTMLDataListElement
   private readonly fontWeight: HTMLSelectElement
   private readonly tabSize: HTMLInputElement
+  private readonly indentStyle: HTMLSelectElement
   private readonly quickSuggestions: HTMLInputElement
   private readonly showWhitespace: HTMLInputElement
   private readonly showIndentGuides: HTMLInputElement
@@ -49,6 +51,7 @@ export class Preferences {
     this.fontList = q('#font-list')
     this.fontWeight = q('#pref-font-weight')
     this.tabSize = q('#pref-tab-size')
+    this.indentStyle = q('#pref-indent-style')
     this.quickSuggestions = q('#pref-quick-suggestions')
     this.showWhitespace = q('#pref-show-whitespace')
     this.showIndentGuides = q('#pref-show-indent-guides')
@@ -74,6 +77,7 @@ export class Preferences {
       this.tabSize.value = String(tabSize)
       store.set({ tabSize })
     })
+    this.indentStyle.addEventListener('change', () => store.set({ indentStyle: this.indentStyle.value as IndentStyle }))
     this.quickSuggestions.addEventListener('change', () => store.set({ quickSuggestions: this.quickSuggestions.checked }))
     this.showWhitespace.addEventListener('change', () => store.set({ showWhitespace: this.showWhitespace.checked }))
     this.showIndentGuides.addEventListener('change', () => store.set({ showIndentGuides: this.showIndentGuides.checked }))
@@ -123,6 +127,7 @@ export class Preferences {
     if (document.activeElement !== this.fontFamily) this.fontFamily.value = state.fontFamily
     this.fontWeight.value = String(state.fontWeight)
     this.tabSize.value = String(state.tabSize)
+    this.indentStyle.value = state.indentStyle
     this.quickSuggestions.checked = state.quickSuggestions
     this.showWhitespace.checked = state.showWhitespace
     this.showIndentGuides.checked = state.showIndentGuides

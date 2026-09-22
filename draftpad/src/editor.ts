@@ -24,7 +24,7 @@ import { languageExtension } from './languages'
 import { installLineDiff } from './linediff'
 import { overlayScrollbar, type OverlayScrollbar } from './overlay-scrollbar'
 import { searchPanelExtras } from './search-panel'
-import type { DiffMode, State } from './state'
+import type { DiffMode, IndentStyle, State } from './state'
 import { vimExtension } from './vim'
 import { whitespaceMarks } from './whitespace'
 
@@ -118,8 +118,10 @@ function fontTheme(size: number, family: string, weight: number): Extension {
   })
 }
 
-function tabExtension(size: number): Extension {
-  return [EditorState.tabSize.of(size), indentUnit.of(' '.repeat(size))]
+// With a tab as the unit, CodeMirror indents with tabs and fills any columns
+// left over with spaces, so a tab stays one tab width wide either way.
+function tabExtension(size: number, style: IndentStyle): Extension {
+  return [EditorState.tabSize.of(size), indentUnit.of(style === 'tabs' ? '\t' : ' '.repeat(size))]
 }
 
 function completionExtension(enabled: boolean): Extension {
@@ -214,7 +216,7 @@ export class Editor {
       language,
       colors: colorExtension(options.dark),
       font: fontTheme(initial.fontSize, this.fontFamily(initial.fontFamily), initial.fontWeight),
-      tab: tabExtension(initial.tabSize),
+      tab: tabExtension(initial.tabSize, initial.indentStyle),
       completion: completionExtension(initial.quickSuggestions),
       whitespace: whitespaceExtension(initial.showWhitespace),
       indentGuides: indentGuideExtension(initial.showIndentGuides),
@@ -515,8 +517,9 @@ export class Editor {
     this.reconfigure('font', fontTheme(size, this.fontFamily(family), weight))
   }
 
-  setTabSize(size: number): void {
-    this.reconfigure('tab', tabExtension(size))
+  /** The tab width, and whether indenting puts in spaces or tab characters. */
+  setTab(size: number, style: IndentStyle): void {
+    this.reconfigure('tab', tabExtension(size, style))
   }
 
   setQuickSuggestions(enabled: boolean): void {

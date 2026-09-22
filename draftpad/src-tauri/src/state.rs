@@ -32,6 +32,8 @@ pub struct State {
     pub font_family: String,
     pub font_weight: u32,
     pub tab_size: u32,
+    /// "spaces" or "tabs": what indenting puts in.
+    pub indent_style: String,
     pub quick_suggestions: bool,
     /// Whether the spaces and tabs in the draft carry a mark.
     pub show_whitespace: bool,
@@ -60,6 +62,7 @@ impl Default for State {
             font_family: String::new(),
             font_weight: 400,
             tab_size: 4,
+            indent_style: "spaces".into(),
             quick_suggestions: true,
             show_whitespace: false,
             show_indent_guides: false,
@@ -170,6 +173,7 @@ mod tests {
         assert_eq!(state.font_size, 13);
         assert_eq!(state.font_weight, 400);
         assert_eq!(state.tab_size, 4);
+        assert_eq!(state.indent_style, "spaces");
         assert!(state.quick_suggestions);
         assert!(!state.show_whitespace);
         assert!(!state.show_indent_guides);
@@ -195,6 +199,7 @@ mod tests {
             font_family: "BIZ UDGothic".into(),
             font_weight: 300,
             tab_size: 2,
+            indent_style: "tabs".into(),
             quick_suggestions: false,
             show_whitespace: true,
             show_indent_guides: true,
@@ -220,6 +225,7 @@ mod tests {
         assert_eq!(read.font_family, "BIZ UDGothic");
         assert_eq!(read.font_weight, 300);
         assert_eq!(read.tab_size, 2);
+        assert_eq!(read.indent_style, "tabs");
         assert!(!read.quick_suggestions);
         assert!(read.show_whitespace);
         assert!(read.show_indent_guides);
@@ -267,6 +273,7 @@ mod tests {
         assert_eq!(state.language, "markdown");
         assert_eq!(state.font_size, 13);
         assert_eq!(state.font_weight, 400);
+        assert_eq!(state.indent_style, "spaces");
         assert!(!state.show_whitespace);
         assert!(!state.show_indent_guides);
         assert!(!state.show_line_numbers);

@@ -45,6 +45,7 @@ test('gathers the settings into the two groups, in that order', async ({ launch 
   const ids = [
     '#pref-mode',
     '#pref-tab-size',
+    '#pref-indent-style',
     '#pref-quick-suggestions',
     '#pref-theme',
     '#pref-font-family',
@@ -204,6 +205,22 @@ test('pulls an out-of-range tab width back in', async ({ launch }) => {
   await tabSize.blur()
   await expect(tabSize).toHaveValue('1')
   await app.expectSaved((state) => state.tabSize === 1)
+})
+
+test('switches indenting between spaces and tabs', async ({ launch }) => {
+  const app = await launch({ state: { tabSize: 2 } })
+  const indentStyle = app.page.locator('#pref-indent-style')
+
+  await app.gear.click()
+  await expect(indentStyle).toHaveValue('spaces')
+  await indentStyle.selectOption('tabs')
+  await app.expectSaved((state) => state.indentStyle === 'tabs')
+  await app.page.keyboard.press('Escape')
+
+  await app.typeInEditor('x')
+  await app.page.keyboard.press('Home')
+  await app.page.keyboard.press('Tab')
+  await app.expectSaved((state) => state.text === '\tx')
 })
 
 test('offers the fonts the backend reports', async ({ launch }) => {
