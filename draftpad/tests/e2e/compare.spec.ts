@@ -284,6 +284,26 @@ test('closes the left pane and goes on with the right, as the draft', async ({ l
   await app.expectSaved((state) => !state.compare && state.text === 'a\nc\nd\ne' && state.compareText === '')
 })
 
+test('resizes a maximized window like any other, from the corner it had', async ({ launch }) => {
+  const app = await launch({ platform: 'windows', innerSize: { width: 1200, height: 800 }, outerPosition: { x: -8, y: -8 } })
+
+  await app.page.locator('#window-maximize').click()
+  await expect.poll(() => app.commands()).toContain('plugin:window|toggle_maximize')
+  await app.compareButton.click()
+  await expect(app.paneHeadB).toBeVisible()
+  // Covering the screen is not full screen: the window still doubles, and is
+  // put back where it was rather than where it was before maximizing.
+  await expect.poll(() => app.resized()).toEqual({ width: 2400, height: 800 })
+  await expect.poll(() => app.moved()).toEqual({ x: -8, y: -8 })
+
+  // Once resized it is no longer maximized, so closing the pane halves it
+  // again and leaves it where it is.
+  await app.closeB.click()
+  await expect.poll(() => app.resized()).toEqual({ width: 1200, height: 800 })
+  const moves = (await app.calls()).filter((call) => call.cmd === 'plugin:window|set_position')
+  expect(moves).toHaveLength(1)
+})
+
 test('keeps the window as it is in full screen, and splits it', async ({ launch }) => {
   const app = await launch({ platform: 'windows' })
 
