@@ -44,8 +44,8 @@ test('gathers the settings into the two groups, in that order', async ({ launch 
   // check covers both.
   const ids = [
     '#pref-mode',
-    '#pref-tab-size',
     '#pref-indent-style',
+    '#pref-tab-size',
     '#pref-quick-suggestions',
     '#pref-theme',
     '#pref-font-family',
