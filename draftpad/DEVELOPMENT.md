@@ -110,6 +110,10 @@ Windows 側の経路(アプリ内のキー処理)を、どちらも Linux のラ
 - IME の未確定文字列と変換候補の位置
 - 常に手前に表示・フルスクリーン・ウィンドウサイズが実際にどうなるか
   (`invoke` が正しく呼ばれたところまでは確認します。比較ペインの開閉でウィンドウの幅が本当に倍になるかも同じです)
+- Windows のタイトルバーでウィンドウが実際に動くか。ドラッグでの移動、ダブルクリックでの最大化、枠のない
+  ウィンドウの縁でのサイズ変更、最小化・最大化ボタンの結果です(ボタンが `minimize` / `toggle_maximize` /
+  `quit_app` を呼ぶところと、最大化ボタンが状態に合わせて切り替わるところまでは確認します)
+- macOS の信号機ボタンが実際にどの高さにあるか(`load_state` が返す値に帯とボタンが合わせるところまでは確認します)
 - 展開したドロップダウンの macOS での見た目。Playwright が同梱する WebKit は 26.0 で、
   `appearance: base-select` は WebKit 27 からなので、プラットフォームのメニューが開く側の経路しか
   通りません。該当のテストは `CSS.supports()` を見て自分をスキップするため、Playwright が 27 以降を
@@ -296,11 +300,11 @@ Issue ([#88](https://github.com/y-saeki/vibe-applications/issues/88))は「空�
 そのまま継ぎます。本文のフォントサイズは設定項目なので、番号だけ取り残されません。
 
 折り返した行に付く番号は 1 つで、その行が始まる段に立ちます(`EditorView.lineWrapping`)。数え方は
-ステータスバーの「n 行」と同じです。
+ペインのバーの「n 行」と同じです。
 
-### ステータスバーからは切り替えません
+### バーからは切り替えません
 
-頻繁に変えるものではないので、環境設定だけに置きます。ステータスバーにあるトグルは「常に手前に表示」
+頻繁に変えるものではないので、環境設定だけに置きます。タイトルバーにあるトグルは「常に手前に表示」
 だけで、そちらは書いている最中に切り替えるものです。
 
 ## スクロールバー
@@ -549,7 +553,7 @@ macOS では、AppKit が「編集」メニューに勝手に 4 つの項目を�
 取り除く側が項目の名前を知っている必要はありません。`RunEvent::Ready` がそのタイミングです。
 
 右クリックメニューが出るのは、テキストを編集できる場所——下書きと、検索・置換パネル / 環境設定パネルの
-テキスト入力欄——だけです。ステータスバーやボタン、チェックボックスの上では、切り取りもコピーも貼り付けも
+テキスト入力欄——だけです。バーやボタン、チェックボックスの上では、切り取りもコピーも貼り付けも
 対象を持たないため、メニューごと出しません。Windows は `ICoreWebView2ContextMenuTarget` の `IsEditable`、
 macOS はページ側で `contextmenu` の `target` を見て判定します。
 
@@ -586,6 +590,38 @@ Windows 側は WebView2 の表記なので日本語で出ますが、macOS 側�
 macOS では、選択範囲の外を右クリックするとカーソル下の単語が選択されます。WebKit が `contextmenu` イベントを
 投げる前に行う macOS の編集挙動で、Windows (Chromium) にはありません。どちらもエンジンの標準どおりにしてあります。
 
+### タイトルバー
+
+「常に手前に表示」と環境設定のボタンはタイトルバーに置きます。
+
+macOS はウィンドウの枠を残したまま、タイトルバーを透明なオーバーレイにしています(`tauri.conf.json` の
+`titleBarStyle: "Overlay"` と `hiddenTitle`)。ページはその下まで伸び、信号機ボタンが乗る帯(`#titlebar`)は
+ページの一部です。2 つのボタンは右端に置き、ピンが外側です。
+
+信号機ボタンの縦位置は macOS のリリースによって違うため、決め打ちせずに実機から読みます。`load_state` が
+閉じるボタンの中心がウィンドウ上端から何 pt 下にあるかを返し(`src-tauri/src/traffic_lights.rs`)、`src/main.ts` が
+帯の高さ(`--titlebar-height`)をその 2 倍にします。ボタンは帯の上下中央に並ぶので、信号機と同じ高さに来ます。
+読めなかったときは `style.css` の 28px のままです。AppKit はメインスレッドでしか答えないので、`load_state` は
+`async` にしていません。
+
+Windows にはタイトルバーをオーバーレイにする設定がないため、ウィンドウの枠そのものを外し
+(`src-tauri/src/lib.rs` の `set_decorations(false)`)、タイトルバーを丸ごとページが描きます。左端にピンと歯車、
+右端に最小化・最大化・閉じるの 3 つです。アイコンとアプリ名は出しません。`tauri.conf.json` の `decorations` で
+外さないのは、macOS では枠を残す必要があるためです。起動時のウィンドウは非表示なので、枠が付いた姿は
+一度も見えません。
+
+- **移動**。`#titlebar` の `data-tauri-drag-region="deep"` で、帯のどこを掴んでもドラッグでき、
+  ダブルクリックで最大化します。ボタンの上だけは Tauri の側で除外されます
+- **ウィンドウのボタン**。`src/titlebar.ts` が `minimize` / `toggle_maximize` を呼びます
+  (`capabilities/default.json` で許可)。閉じるボタンは `Ctrl + Q` と同じ終了処理を通るので、下書きを
+  書き出してから終わります。最大化ボタンはウィンドウの `resize` のたびに `isMaximized` を聞き直し、
+  最大化中は「元に戻す」の絵柄に替わります。3 つとも Windows 自身のものと同じくフォーカスを取らない
+  ので、押してもキャレットはエディタに残ります
+- **失うもの**。Windows 11 の最大化ボタンに重ねると出るスナップレイアウトは、ネイティブのボタンにしか
+  出ません
+- **環境設定パネル**。開いている間はタイトルバーも暗幕の下に入り、ボタンは押せません。モーダルな
+  ダイアログを出している間は親ウィンドウに触れない、という Windows の動きと同じです
+
 ### Windows インストーラ(NSIS)
 
 自動アップデートに対応していないぶん、手動の入れ直しが軽く済むようにインストーラへ手を入れています。
@@ -611,26 +647,26 @@ Tauri の NSIS スクリプトはビルド時のテンプレートなので、`t
 
 ## UI の寸法と色
 
-ペインのバー・ステータスバー・検索パネル・環境設定パネル・比較ペインの印は、`src/style.css` の `:root` にある
+タイトルバー・ペインのバー・検索パネル・環境設定パネル・比較ペインの印は、`src/style.css` の `:root` にある
 カスタムプロパティだけで組み立てます。UI ライブラリは入れていません。デザインガイドラインという別の文書も置いていません。
 トークンの一覧そのものが仕様で、`pnpm lint:style` がそれを守らせます。値はここに書きません。CSS が唯一の
 出どころで、文書に写すと片方が古くなるだけです。
 
 | ファミリ | トークン | 役割 |
 |---|---|---|
-| 文字サイズ | `--font-size-title` / `-body` / `-caption` | 環境設定の見出し / パネル本文 / ステータスバーとバージョン表示 |
+| 文字サイズ | `--font-size-title` / `-body` / `-caption` | 環境設定の見出し / パネル本文 / ペインのバーとバージョン表示 |
 | 書体 | `--ui-font`、`--font-mono` | UI 全体 / バージョン表示。数の段階ではないので、予算の数え方も他と別です |
 | 余白 | `--space-1` 〜 `--space-5` | 4px 刻みの 5 段。コントロール同士、バーとパネルの内側、グループ同士 |
 | 角丸 | `--radius-sm` / `-md` / `-lg` | 部品の大きさに対応した 3 段(チェックボックスとアイコンボタン / 高さ `--control-height` のコントロール / パネル) |
-| 寸法 | `--control-height`、`--control-height-search`、`--checkbox-size`、`--toggle-width`、`--toggle-size-search`、`--glyph-size`、`--icon-size`、`--icon-button-size`、`--statusbar-height`、`--titlebar-height`、`--scrollbar-size`、`--scrollbar-thumb-size`、`--scrollbar-thumb-min` | コントロールとバーの大きさ、スクロールバーの溝とつまみ |
+| 寸法 | `--control-height`、`--control-height-search`、`--checkbox-size`、`--toggle-width`、`--toggle-size-search`、`--glyph-size`、`--icon-size`、`--icon-button-size`、`--bar-height`、`--titlebar-height`、`--caption-button-width`、`--scrollbar-size`、`--scrollbar-thumb-size`、`--scrollbar-thumb-min` | コントロールとバーの大きさ、Windows のタイトルバーのウィンドウボタンの幅、スクロールバーの溝とつまみ |
 | レイアウト | `--field-width`、`--field-width-narrow`、`--field-width-search`、`--button-width-search`、`--label-width`、`--panel-width`、`--panel-inset`、`--language-width`、`--mode-width`、`--count-width`、`--count-width-narrow` | 入力欄・ラベル列・検索パネルと環境設定パネルの配置と、ペインのバーの 2 つのセレクタの下限幅、文字数・行数の数字を収める枠の幅 |
-| パレット | `--bg`、`--fg`、`--muted`、`--muted-strong`、`--placeholder`、`--border` など | 色、影 2 段(`--shadow-panel` / `--shadow-popup`)、描き込む印 8 枚(✓ / シェブロン上下 / × / 横棒 / Aa / .* / タブの矢印)、空白文字の印(`--whitespace`)、インデントガイドの色(`--indent-guide`)、行番号の色(`--line-number`)、スクロールバーのつまみの色 2 段(`--scrollbar-thumb` / `--scrollbar-thumb-hover`)、比較ペインの印の色 6 つ(`--diff-a-line` / `-text` / `-mark` と `b` 側。左が赤系、右が緑系で、行の地色・文字の印・行端の帯と `+N` / `−N` の文字色)と、`src/indent-guides.ts` と `src/overlay-scrollbar.ts` が入れる 2 つずつの数(`--indent-guide-levels` / `--indent-guide-step`、`--scrollbar-cover` / `--scrollbar-progress`。色でも長さでもありませんが、ファミリにも入らないのでここで数えます) |
+| パレット | `--bg`、`--fg`、`--muted`、`--muted-strong`、`--placeholder`、`--border` など | 色、影 2 段(`--shadow-panel` / `--shadow-popup`)、描き込む印 8 枚(✓ / シェブロン上下 / × / 横棒 / Aa / .* / タブの矢印)、空白文字の印(`--whitespace`)、インデントガイドの色(`--indent-guide`)、行番号の色(`--line-number`)、スクロールバーのつまみの色 2 段(`--scrollbar-thumb` / `--scrollbar-thumb-hover`)、Windows のタイトルバーの閉じるボタンの赤とその上の × の色(`--caption-close` / `--caption-close-fg`。どちらのテーマでも Windows 自身の色のままです)、比較ペインの印の色 6 つ(`--diff-a-line` / `-text` / `-mark` と `b` 側。左が赤系、右が緑系で、行の地色・文字の印・行端の帯と `+N` / `−N` の文字色)と、`src/indent-guides.ts` と `src/overlay-scrollbar.ts` が入れる 2 つずつの数(`--indent-guide-levels` / `--indent-guide-step`、`--scrollbar-cover` / `--scrollbar-progress`。色でも長さでもありませんが、ファミリにも入らないのでここで数えます) |
 
 基準にしたのは Windows 11 のメモ帳のステータスバーです。macOS では `-apple-system`、Windows では Segoe UI が
 当たるだけで、寸法は共通です。OS ごとに変えたくなったら `:root[data-platform="macos"]` でトークンを上書き
-してください(`--titlebar-height` がすでにそうなっています)。macOS のタイトルバーは透明なオーバーレイで、その下の
-帯(`#titlebar`)はページの一部です。帯はペインのバーと同じ `--panel` で塗り、間に線は引きません。仕様書の macOS の
-モックがそう描いていて、ウィンドウのボタンの帯とバーが 1 本に見えます。
+してください(`--titlebar-height` がすでにそうなっています)。タイトルバー(`#titlebar`)はどちらのプラットフォームでも
+ページの一部です(作りは「タイトルバー」の節)。帯はペインのバーと同じ `--panel` で塗り、間に線は引きません。
+タイトルバーとバーが 1 本に見えます。
 
 エディタ本文のフォントサイズは設定項目なので、このトークンには含めません。CodeMirror が自分で描く部分の色は
 `src/dark-theme.ts` にあり、構文ハイライトの色だけは直値です(パレットとは別の体系なので意図的にそうしています)。
@@ -662,7 +698,7 @@ Tauri の NSIS スクリプトはビルド時のテンプレートなので、`t
 沈みすぎ、`--fg` では項目名と同じ強さになります。文字サイズは項目名より小さいままにして、太さと字間で
 上下関係を示しています(サイズを上げて示そうとすると、項目名との差が「大きさ」だけになります)。
 
-プレースホルダは `--muted` ではなく `--placeholder` です。`--muted` はステータスバーやバージョン表示に
+プレースホルダは `--muted` ではなく `--placeholder` です。`--muted` はペインのバーやバージョン表示に
 使う「読ませる二次テキスト」で、プレースホルダは「まだ何も入っていない」ことを示すものなので、同じ色だと
 入力済みに見えます。ライト・ダークとも背景に対して約 3.3:1 に揃えてあります。
 
@@ -742,7 +778,7 @@ Windows 側では、指定しないと元の見た目が変わるところが 2 
 - **矢印**。プラットフォームが描いていたものが `::picker-icon` に移ります。`--chevron-down` を
   `currentColor` でマスクして塗るので、テーマごとに画像を用意する必要はありません(チェックボックスの
   ✓ だけは `input` の擬似要素に背景色が届かないため、いまも色別に 2 つ持っています)
-- **ステータスバーのセレクトの幅**。ネイティブの `<select>` は一番長い選択肢に合わせた幅を持つため、
+- **ペインのバーのセレクトの幅**。ネイティブの `<select>` は一番長い選択肢に合わせた幅を持つため、
   言語を変えてもバーは動きませんでした。base-select は選択中のラベルに合わせて縮むので、
   `--language-width` を下限として与えて同じ挙動に戻しています。この下限も Windows だけに掛けて
   あります(macOS はネイティブの幅のまま)
@@ -818,8 +854,8 @@ Safari 16.6 まで更新できるので通常は問題になりませんが、Sa
 ### 真偽値のコントロール
 
 環境設定の「入力候補を表示」はトグルとして描きます。パネルの設定は切り替えた瞬間に効くもので、
-チェックボックスは「これから送信するもの」に見えるためです。ステータスバーの「常に手前に表示」は
-チェックボックスのままです(バーに 28px のトグルは入りません)。スコープが `#preferences` の中だけに
+チェックボックスは「これから送信するもの」に見えるためです。タイトルバーの「常に手前に表示」は
+押し込み式のボタンです(バーに 28px のトグルは入りません)。スコープが `#preferences` の中だけに
 なっているのはこのためで、共有の `input[type="checkbox"]` の規則はそちらが使い続けます。
 
 中身は `<input type="checkbox">` のままです。`appearance: none` で枠(トラック)を描き、`::before` を
@@ -915,17 +951,18 @@ draftpad/
     commands.ts           コマンド表(メニュー・ショートカット共用)
     preferences.ts        環境設定パネル
     pane-bars.ts          各ペインの上のバー(言語・差異の単位・文字数と行数・+N / −N・開閉ボタン)
-    statusbar.ts          ステータスバー(常に手前に表示・環境設定)
+    titlebar.ts           タイトルバー(常に手前に表示・環境設定、Windows ではウィンドウのボタン)
     theme.ts              ライト / ダークの解決
     overlay-scrollbar.ts  本文に重ねて描く縦スクロールバー
     style.css             バー・パネル・比較ペインの印のスタイル。寸法と色のトークンもここ
   src-tauri/
-    src/lib.rs            Tauri Builder。起動時のウィンドウサイズ復元
+    src/lib.rs            Tauri Builder。起動時のウィンドウサイズ復元、Windows の枠の取り外し
     src/state.rs          state.json の読み書き(原子的書き込み)
     src/commands.rs       load_state / save_state / list_fonts / quit_app
     src/menu.rs           macOS のメニュー
     src/jumplist.rs       Windows のタスクバーメニュー(ジャンプリスト)
     src/autofill.rs       Windows の WebView2 オートフィル抑止
+    src/traffic_lights.rs macOS の信号機ボタンの縦位置の読み取り
     src/fonts.rs          フォント列挙
     installer.nsi         Windows インストーラ(NSIS)のテンプレート
     tauri.conf.json       ウィンドウ・バンドル設定

@@ -21,7 +21,7 @@ const TEXT_INPUT_TYPES = new Set(['text', 'search', 'number', 'url', 'tel', 'ema
 
 /**
  * True where text can be edited: the draft, and the text fields in the search
- * and preferences panels. The rest of the window — the status bar, a button, a
+ * and preferences panels. The rest of the window — the bars, a button, a
  * checkbox, a dropdown — has nothing for this menu to act on.
  */
 function isEditable(target: EventTarget | null): boolean {
@@ -35,7 +35,7 @@ function isEditable(target: EventTarget | null): boolean {
  * Replaces WKWebView's context menu with draftpad's.
  *
  * WKWebView's is stopped everywhere, including where draftpad opens none of
- * its own: a menu over the status bar would only offer commands with nothing
+ * its own: a menu over the title bar would only offer commands with nothing
  * to act on.
  *
  * @param state what to leave enabled in the menu

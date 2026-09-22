@@ -1,4 +1,4 @@
-// The language list shown in the status bar. Markdown uses
+// The language list shown in the pane bar. Markdown uses
 // the Lezer-based @codemirror/lang-markdown; everything else is a stream
 // parser from @codemirror/legacy-modes or a small mode of our own. Each
 // grammar is loaded on demand so startup only pays for the selected language.

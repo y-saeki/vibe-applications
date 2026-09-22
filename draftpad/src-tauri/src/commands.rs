@@ -2,7 +2,7 @@
 //! `src/preferences.ts` and `src/context-menu.ts`).
 
 use serde::Serialize;
-use tauri::{AppHandle, Window};
+use tauri::{AppHandle, WebviewWindow, Window};
 
 use crate::fonts;
 use crate::menu::{self, ContextState};
@@ -19,6 +19,10 @@ pub struct Loaded {
     /// Set when the Windows jump list task started this process, so the
     /// frontend opens the Preferences panel as soon as it is wired up.
     pub open_preferences: bool,
+    /// macOS: how far down the window the middle of its traffic lights is,
+    /// in points, so that the page's title bar can line its buttons up with
+    /// them. `None` elsewhere, and whenever it cannot be told.
+    pub traffic_lights_center: Option<f64>,
 }
 
 #[cfg(target_os = "windows")]
@@ -31,8 +35,20 @@ fn started_for_preferences() -> bool {
     false
 }
 
+#[cfg(target_os = "macos")]
+fn traffic_lights_center(window: &WebviewWindow) -> Option<f64> {
+    crate::traffic_lights::center(window)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn traffic_lights_center(_window: &WebviewWindow) -> Option<f64> {
+    None
+}
+
+/// Synchronous so that it runs on the main thread, which is the only one
+/// AppKit answers `traffic_lights_center` on.
 #[tauri::command]
-pub fn load_state(app: AppHandle) -> Result<Loaded, String> {
+pub fn load_state(app: AppHandle, window: WebviewWindow) -> Result<Loaded, String> {
     let path = state::path(&app).map_err(|err| err.to_string())?;
     let state = state::load(&path).map_err(|err| err.to_string())?;
     Ok(Loaded {
@@ -40,6 +56,7 @@ pub fn load_state(app: AppHandle) -> Result<Loaded, String> {
         platform: std::env::consts::OS,
         version: app.package_info().version.to_string(),
         open_preferences: started_for_preferences(),
+        traffic_lights_center: traffic_lights_center(&window),
     })
 }
 

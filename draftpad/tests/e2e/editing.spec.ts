@@ -57,7 +57,7 @@ test('indents with spaces, as many as the tab width', async ({ launch }) => {
   await app.expectSaved((state) => state.text === '  x')
 })
 
-test('switches the grammar from the status bar and remembers it', async ({ launch }) => {
+test('switches the grammar from the pane bar and remembers it', async ({ launch }) => {
   const app = await launch()
 
   await expect(app.editor).toHaveAttribute('data-language', 'markdown')
@@ -82,23 +82,115 @@ test('keeps the list shut until it is asked for', async ({ launch }) => {
   if (await app.listIsOurs()) await expect(firstOption).toBeVisible()
 })
 
-test('joins the strip under the macOS title bar to the pane bar, in both themes', async ({ launch }) => {
-  const app = await launch({ platform: 'macos', colorScheme: 'light' })
-  // The window's own buttons sit on a strip of the page, which the spec
-  // paints like the bar under it, with no rule between: one bar to the eye.
-  const surface = (selector: string) =>
-    app.page.evaluate((target) => {
-      const style = getComputedStyle(document.querySelector(target)!)
-      return { color: style.backgroundColor, height: style.height, seam: style.borderBottomWidth }
-    }, selector)
+/** The title bar's background, height and the rule under it, beside the pane bar's background. */
+async function surfaces(app: App) {
+  return app.page.evaluate(() => {
+    const style = (selector: string) => getComputedStyle(document.querySelector(selector)!)
+    const bar = style('#titlebar')
+    return {
+      color: bar.backgroundColor,
+      height: bar.height,
+      seam: bar.borderBottomWidth,
+      paneBar: style('#pane-head-a .pane-bar').backgroundColor,
+    }
+  })
+}
 
-  expect(await surface('#titlebar')).toEqual({ color: 'rgb(246, 248, 250)', height: '28px', seam: '0px' })
-  expect((await surface('#pane-head-a .pane-bar')).color).toBe('rgb(246, 248, 250)')
+/** Where each of the title bar's buttons sits, left to right, as its id. */
+async function titleBarOrder(app: App): Promise<string[]> {
+  return app.page.evaluate(() =>
+    [...document.querySelectorAll<HTMLElement>('#titlebar button')]
+      .filter((button) => button.getBoundingClientRect().width > 0)
+      .sort((a, b) => a.getBoundingClientRect().left - b.getBoundingClientRect().left)
+      .map((button) => button.id),
+  )
+}
 
-  await app.gear.click()
-  await app.page.locator('#pref-theme').selectOption('dark')
-  expect((await surface('#titlebar')).color).toBe('rgb(17, 17, 17)')
-  expect((await surface('#pane-head-a .pane-bar')).color).toBe('rgb(17, 17, 17)')
+// The spec draws the two as one bar: painted alike, with no rule between.
+for (const [platform, height] of [
+  ['macos', '28px'],
+  ['windows', '32px'],
+] as const) {
+  test(`joins the ${platform} title bar to the pane bar, in both themes`, async ({ launch }) => {
+    const app = await launch({ platform, colorScheme: 'light' })
+    expect(await surfaces(app)).toEqual({ color: 'rgb(246, 248, 250)', height, seam: '0px', paneBar: 'rgb(246, 248, 250)' })
+
+    await app.gear.click()
+    await app.page.locator('#pref-theme').selectOption('dark')
+    expect(await surfaces(app)).toMatchObject({ color: 'rgb(17, 17, 17)', paneBar: 'rgb(17, 17, 17)' })
+  })
+}
+
+test('puts the pin and the gear at the left of the Windows title bar, and the window buttons at the right', async ({
+  launch,
+}) => {
+  const app = await launch({ platform: 'windows' })
+
+  expect(await titleBarOrder(app)).toEqual([
+    'always-on-top',
+    'open-preferences',
+    'window-minimize',
+    'window-maximize',
+    'window-close',
+  ])
+  const bar = (await app.page.locator('#titlebar').boundingBox())!
+  const pin = (await app.alwaysOnTop.boundingBox())!
+  const close = (await app.page.locator('#window-close').boundingBox())!
+  expect(pin.x - bar.x).toBeLessThan(await token(app, '--caption-button-width'))
+  expect(close.x + close.width).toBe(bar.x + bar.width)
+})
+
+test('puts the gear and then the pin at the right end of the macOS title bar, clear of the traffic lights', async ({
+  launch,
+}) => {
+  const app = await launch({ platform: 'macos' })
+
+  // The window's buttons are the system's there, drawn over the left end.
+  expect(await titleBarOrder(app)).toEqual(['open-preferences', 'always-on-top'])
+  const bar = (await app.page.locator('#titlebar').boundingBox())!
+  const pin = (await app.alwaysOnTop.boundingBox())!
+  expect(bar.x + bar.width - (pin.x + pin.width)).toBeLessThan(await token(app, '--icon-button-size'))
+})
+
+test('lines the macOS title bar buttons up with the traffic lights, wherever macOS put them', async ({ launch }) => {
+  // How low the lights sit is the system's to decide and differs between
+  // releases; the Rust side reads it off the window, and the strip is made to
+  // have its middle there.
+  const app = await launch({ platform: 'macos', trafficLightsCenter: 19 })
+
+  await expect(app.page.locator('#titlebar')).toHaveCSS('height', '38px')
+  for (const button of [app.alwaysOnTop, app.gear]) {
+    const box = (await button.boundingBox())!
+    expect(box.y + box.height / 2).toBe(19)
+  }
+})
+
+test('keeps the Windows title bar its own height whatever is said of traffic lights', async ({ launch }) => {
+  const app = await launch({ platform: 'windows', trafficLightsCenter: 19 })
+
+  await expect(app.page.locator('#titlebar')).toHaveCSS('height', '32px')
+})
+
+test('works the window from the buttons of the Windows title bar', async ({ launch }) => {
+  const app = await launch({ platform: 'windows' })
+  const maximize = app.page.locator('#window-maximize')
+
+  await app.page.locator('#window-minimize').click()
+  await expect.poll(() => app.commands()).toContain('plugin:window|minimize')
+
+  await expect(maximize).toHaveAttribute('aria-label', '最大化')
+  await maximize.click()
+  await expect.poll(() => app.commands()).toContain('plugin:window|toggle_maximize')
+  // The real window says it has changed by resizing; the page is not resized
+  // here, so the event stands in for it.
+  await app.page.evaluate(() => window.dispatchEvent(new Event('resize')))
+  await expect(maximize).toHaveAttribute('aria-label', '元に戻す')
+
+  // None of them took the caret from the editor.
+  await app.typeInEditor('閉じる前に残す')
+  await app.page.locator('#window-close').click()
+  await expect.poll(() => app.commands()).toContain('quit_app')
+  expect((await app.saved())?.text).toBe('閉じる前に残す')
 })
 
 test('leaves the list to macOS', async ({ launch }) => {
@@ -336,7 +428,7 @@ test('reads a half-written regular expression as a miss, not as an error', async
   // Half of "(beta)" is a perfectly ordinary thing to have typed so far, so the
   // count says what it found and keeps the panel's own colors.
   await expect(app.searchCount).toHaveText('一致なし')
-  const muted = await app.page.evaluate(() => getComputedStyle(document.querySelector('#statusbar')!).color)
+  const muted = await app.page.evaluate(() => getComputedStyle(document.querySelector('.pane-bar')!).color)
   await expect(app.searchCount).toHaveCSS('color', muted)
 })
 
