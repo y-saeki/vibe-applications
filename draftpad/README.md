@@ -5,11 +5,11 @@ macOS / Windows 対応。
 
 - 書いた内容は自動的に引き継がれ、次回起動するとそのまま続きから書けます
 - 起動は速く、閉じると終了します。常駐しません
-- 20 言語のシンタックスハイライト、正規表現対応の検索・置換、Vim モード
-- 2 つのテキストを左右に並べて、差異をその場で色付けして比較できます
+- 20 言語のシンタックスハイライト、正規表現対応の検索・置換
+- 2 つのテキストを左右に並べて差分を見れる diffpad モード
 - ライト / ダークテーマ対応
 
-<img width="1798" height="1418" alt="CleanShot 2026-09-16 at 11 32 48@2x" src="https://github.com/user-attachments/assets/bb67394d-ff1f-4fba-90e6-700d53d1a3c5" />
+<img width="2240" height="1688" alt="CleanShot 2026-09-23 at 18 36 10@2x" src="https://github.com/user-attachments/assets/994e6c0a-7289-4fdc-8336-7770d8fba631" />
 
 ## 動作環境
 
@@ -18,7 +18,7 @@ macOS / Windows 対応。
 
 ## インストール
 
-[Releases](https://github.com/y-saeki/vibe-applications/releases/latest) の `draftpad-v<version>` から、お使いの OS 向けのファイルをダウンロードしてください。
+[Releases](https://github.com/y-saeki/vibe-applications/releases) の `draftpad-v<version>` から、お使いの OS 向けのファイルをダウンロードしてください。
 
 - macOS: `draftpad_<version>_aarch64.dmg`
   - 開いて `draftpad.app` を「アプリケーション」フォルダへ入れます
@@ -52,7 +52,7 @@ xattr -dr com.apple.quarantine /Applications/draftpad.app
 
 ### 常に手前に表示
 
-タイトルバーのピンのボタン(macOS は右端、Windows は左端)を押すと、ウィンドウが他のウィンドウより手前に固定されます。  
+タイトルバーのピンのボタンを押すと、ウィンドウが他のウィンドウより手前に固定されます。  
 この設定は次回起動時に引き継がれます。
 
 ### 検索・置換
@@ -61,9 +61,6 @@ xattr -dr com.apple.quarantine /Applications/draftpad.app
 
 検索欄では「大文字小文字を区別」と「正規表現」のオプションを使用できます。  
 この設定は次回起動時に引き継がれます。
-
-置換は「置換」(現在の一致だけ)・「選択範囲」(選択した範囲の中だけ)・「すべて」(下書き全体)の
-3 つのボタンで実行します。「選択範囲」は、一致を含む範囲を選択しているときだけ押せます。
 
 正規表現モードでは、置換文字列に `$1` `$2` … と `$&` が使えます。
 
@@ -74,34 +71,14 @@ Markdown のフェンスコードブロック(```js など)を使用した場合
 
 対応言語は以下の通りです。
 
-- Markdown
-- plaintext
-- YAML
-- Batch
-- HTML
-- XML
-- Dockerfile
-- JavaScript
-- TypeScript
-- Ruby
-- Go
-- CSS
-- LESS
-- SCSS
-- Solidity
-- MySQL
-- pgSQL
-- PHP
-- PowerShell
-- Rust
+Markdown / plaintext / YAML / Batch / HTML / XML / Dockerfile / JavaScript / TypeScript / Ruby / Go / CSS / LESS / SCSS / Solidity / MySQL / pgSQL / PHP / PowerShell / Rust
 
-### diffpadモード
+### diffpad モード
 
-ウィンドウ上部のバー右端にある `+-` ボタンを押下すると、2ペイン表示で差分表示を行うdiffpadモードになります。  
+<img width="2896" height="1804" alt="CleanShot 2026-09-23 at 18 32 07@2x" src="https://github.com/user-attachments/assets/698b2757-6da2-4437-84dc-e9c73382fae5" />
+
+ウィンドウの右上にある `+-` ボタンを押下すると、2ペイン表示で差分表示を行う diffpad モードになります。  
 ローカルで気軽にdiffを見たい時や、diffを見ながらテキスト編集したい時に便利です。
-
-右ペイン左上のドロップダウンで、差分表示のモードを変更できます。  
-この設定は次回起動時に引き継がれます。
 
 diffpadモードを終了するには、不要になったペインの右上にある × ボタンを押下してください。  
 もしくは、不要になったペインにキャレットを置いた状態で `⌘W` / `Ctrl+W` を押下しても同様です。
