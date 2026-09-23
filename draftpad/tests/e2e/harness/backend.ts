@@ -48,10 +48,8 @@ export interface BackendConfig {
   failSave?: string
   /** What the clipboard holds; left out, reading it fails as an empty one does. */
   clipboard?: string
-  /** The window's inner size in physical pixels, which `set_size` moves on. */
+  /** The window's inner size in physical pixels. */
   innerSize: { width: number; height: number }
-  /** The window's top-left corner in physical pixels, which `set_position` moves. */
-  outerPosition: { x: number; y: number }
   scaleFactor: number
 }
 
@@ -61,21 +59,11 @@ export interface Call {
   args: unknown
 }
 
-/** A window size in logical pixels, as the app asks for one. */
-export interface Resize {
-  width: number
-  height: number
-}
-
 export interface Harness {
   config: BackendConfig
   calls: Call[]
   /** The state the last `save_state` was given, or null before the first save. */
   saved: State | null
-  /** The size the last `set_size` asked for, or null before the first. */
-  resized: Resize | null
-  /** The corner the last `set_position` asked for, in physical pixels, or null before the first. */
-  moved: { x: number; y: number } | null
 }
 
 // Matches `impl Default for State` in src-tauri/src/state.rs.
@@ -155,43 +143,14 @@ function handle(cmd: string, args: unknown): unknown {
       return null
     case 'plugin:window|is_fullscreen':
       return fullscreen
-    // Asked before a new size is recorded or changed, and by the maximize
+    // Asked before a new size is recorded, and by the maximize
     // button, which follows the window.
     case 'plugin:window|is_maximized':
       return maximized
     case 'plugin:window|inner_size':
       return config.innerSize
-    case 'plugin:window|outer_position':
-      return config.outerPosition
-    case 'plugin:window|set_position': {
-      // Sent back as it came: draftpad only ever hands over the corner
-      // `outer_position` gave it, which is physical.
-      const wire = JSON.parse(JSON.stringify((args as { value: unknown }).value)) as { Physical?: { x: number; y: number } }
-      if (!wire.Physical) throw new Error('draftpad test: set_position was given a position that is not physical')
-      harness.moved = wire.Physical
-      config.outerPosition = wire.Physical
-      return null
-    }
     case 'plugin:window|scale_factor':
       return config.scaleFactor
-    case 'plugin:window|set_size': {
-      // The size arrives as the API's own `Size`, which goes on the wire as
-      // `{ Logical: { width, height } }` or `{ Physical: ... }`. draftpad
-      // only ever asks in logical pixels, which is what the real window
-      // scales for the screen.
-      const wire = JSON.parse(JSON.stringify((args as { value: unknown }).value)) as { Logical?: Resize }
-      if (!wire.Logical) throw new Error('draftpad test: set_size was given a size that is not logical')
-      harness.resized = wire.Logical
-      // A maximized window stops being one when it is given a size, as the
-      // real one does on Windows.
-      maximized = false
-      // The window is that size from now on, so the next resize scales this one.
-      config.innerSize = {
-        width: wire.Logical.width * config.scaleFactor,
-        height: wire.Logical.height * config.scaleFactor,
-      }
-      return null
-    }
     default:
       throw new Error(`draftpad test: unexpected command ${cmd}`)
   }

@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs'
 
 import { test as base, expect, type Locator, type Page } from '@playwright/test'
 
-import type { BackendConfig, Call, Resize, State } from './harness/backend'
+import type { BackendConfig, Call, State } from './harness/backend'
 import { HARNESS_BUNDLE } from './harness/paths'
 
 export type { State }
@@ -67,7 +67,6 @@ const DEFAULT_CONFIG: BackendConfig = {
   openPreferences: false,
   fonts: [],
   innerSize: { width: 600, height: 400 },
-  outerPosition: { x: 0, y: 0 },
   scaleFactor: 1,
 }
 
@@ -266,16 +265,6 @@ export class App {
     return this.page.evaluate(() => window.__draftpad.saved)
   }
 
-  /** The size the app last asked the window to take, in logical pixels, or null before it asked. */
-  resized(): Promise<Resize | null> {
-    return this.page.evaluate(() => window.__draftpad.resized)
-  }
-
-  /** The top-left corner the app last asked the window to move to, in physical pixels, or null before it asked. */
-  moved(): Promise<{ x: number; y: number } | null> {
-    return this.page.evaluate(() => window.__draftpad.moved)
-  }
-
   /** Waits for a `save_state` whose state satisfies `predicate`. */
   async expectSaved(predicate: (state: State) => boolean): Promise<void> {
     await expect
@@ -368,7 +357,7 @@ export const test = base.extend<{ launch: (options?: LaunchOptions) => Promise<A
         if (/content security policy/i.test(message.text())) cspViolations.push(message.text())
       })
       await page.addInitScript((value: BackendConfig) => {
-        window.__draftpad = { config: value, calls: [], saved: null, resized: null, moved: null }
+        window.__draftpad = { config: value, calls: [], saved: null }
       }, config)
       await page.addInitScript({ path: HARNESS_BUNDLE })
       await page.goto('/')

@@ -311,7 +311,7 @@ export class Editor {
       b: { doc: docB, selection: selectionB, extensions: this.paneExtensions('b') },
       parent: this.options.parent,
       // The stripe beside a changed line is drawn by style.css on the line
-      // itself, so that the pane keeps the width it had alone: the merge
+      // itself, so that the text has the pane's whole width: the merge
       // view's own gutter would take a column out of it.
       gutter: false,
       highlightChanges: this.diffMode === 'char',

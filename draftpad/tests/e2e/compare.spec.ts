@@ -7,8 +7,8 @@ import { type App, expect, type Side, test } from './fixtures'
 /** Two panes as they were closed: "b" is only on the left and "e" only on the right. */
 const TWO_PANES = { compare: true, text: 'a\nb\nc\nd', compareText: 'a\nc\nd\ne' } as const
 
-test('opens beside the draft as a copy of it, and doubles the window', async ({ launch }) => {
-  const app = await launch({ innerSize: { width: 600, height: 400 } })
+test('opens beside the draft as a copy of it, in the window it already has', async ({ launch }) => {
+  const app = await launch()
 
   await app.typeInEditor('比べる前の下書き')
   await expect(app.paneHeadB).toBeHidden()
@@ -25,35 +25,29 @@ test('opens beside the draft as a copy of it, and doubles the window', async ({ 
   // The button that opened the pane becomes the one that closes this side.
   await expect(app.compareButton).toBeHidden()
   await expect(app.closeA).toBeVisible()
-  // Twice as wide and the same height, in logical pixels: the window grows to
-  // the right, and the pane that was there keeps every dot it had.
-  await expect.poll(() => app.resized()).toEqual({ width: 1200, height: 400 })
   await app.expectSaved((state) => state.compare && state.text === '比べる前の下書き' && state.compareText === '比べる前の下書き')
   // Nothing to tell apart yet.
   await expect(app.diffAdded).toHaveText('+0')
   await expect(app.diffRemoved).toHaveText('−0')
+  // The pane is made room for inside the window; its size is not touched.
+  expect(await app.commands()).not.toContain('plugin:window|set_size')
 })
 
-test('gives each pane exactly half, and the left one the width it had', async ({ launch }) => {
-  const app = await launch({ innerSize: { width: 600, height: 400 } })
-  await app.page.setViewportSize({ width: 600, height: 400 })
+test('gives each pane exactly half of the window', async ({ launch }) => {
+  const app = await launch()
+  await app.page.setViewportSize({ width: 1200, height: 400 })
   const width = async (selector: string) => (await app.page.locator(selector).boundingBox())!.width
 
-  const alone = await width('.cm-content')
   await app.compareButton.click()
   await expect(app.paneHeadB).toBeVisible()
-  // The window has doubled; the page is given the new width the same way.
-  await app.page.setViewportSize({ width: 1200, height: 400 })
 
   // Half each, bars and panes alike, with no pixel taken out of either for the
-  // rule between them — and the left pane's text as wide as it was alone, so
-  // that nothing in it wraps differently.
+  // rule between them, and the text as wide in one pane as in the other.
   expect(await width('#pane-head-a')).toBe(600)
   expect(await width('#pane-head-b')).toBe(600)
   expect(await width('.cm-merge-a')).toBe(600)
   expect(await width('.cm-merge-b')).toBe(600)
-  expect(await width('.cm-merge-a .cm-content')).toBe(alone)
-  expect(await width('.cm-merge-b .cm-content')).toBe(alone)
+  expect(await width('.cm-merge-a .cm-content')).toBe(await width('.cm-merge-b .cm-content'))
 })
 
 test('pairs the lines up first, and counts what each side has that the other has not', async ({ launch }) => {
@@ -257,7 +251,7 @@ test('counts each pane on its own', async ({ launch }) => {
 })
 
 test('closes the right pane and goes on with the left', async ({ launch }) => {
-  const app = await launch({ state: TWO_PANES, innerSize: { width: 1200, height: 400 } })
+  const app = await launch({ state: TWO_PANES })
 
   await app.closeB.click()
 
@@ -266,57 +260,21 @@ test('closes the right pane and goes on with the left', async ({ launch }) => {
   await expect(app.compareButton).toBeVisible()
   await expect(app.editor.locator('.cm-line')).toHaveText(['a', 'b', 'c', 'd'])
   await expect(app.editor).toBeFocused()
-  // Half as wide again, from the same top-left corner.
-  await expect.poll(() => app.resized()).toEqual({ width: 600, height: 400 })
+  // The pane that stays takes the whole window, which keeps its size.
+  expect(await app.commands()).not.toContain('plugin:window|set_size')
   // What the closed pane held is gone; there is no asking first.
   await app.expectSaved((state) => !state.compare && state.text === 'a\nb\nc\nd' && state.compareText === '')
 })
 
 test('closes the left pane and goes on with the right, as the draft', async ({ launch }) => {
-  const app = await launch({ state: TWO_PANES, innerSize: { width: 1200, height: 400 } })
+  const app = await launch({ state: TWO_PANES })
 
   await app.closeA.click()
 
   await expect(app.page.locator('html')).toHaveAttribute('data-layout', 'single')
   await expect(app.editor.locator('.cm-line')).toHaveText(['a', 'c', 'd', 'e'])
   await expect(app.editor).toBeFocused()
-  await expect.poll(() => app.resized()).toEqual({ width: 600, height: 400 })
   await app.expectSaved((state) => !state.compare && state.text === 'a\nc\nd\ne' && state.compareText === '')
-})
-
-test('resizes a maximized window like any other, from the corner it had', async ({ launch }) => {
-  const app = await launch({ platform: 'windows', innerSize: { width: 1200, height: 800 }, outerPosition: { x: -8, y: -8 } })
-
-  await app.page.locator('#window-maximize').click()
-  await expect.poll(() => app.commands()).toContain('plugin:window|toggle_maximize')
-  await app.compareButton.click()
-  await expect(app.paneHeadB).toBeVisible()
-  // Covering the screen is not full screen: the window still doubles, and is
-  // put back where it was rather than where it was before maximizing.
-  await expect.poll(() => app.resized()).toEqual({ width: 2400, height: 800 })
-  await expect.poll(() => app.moved()).toEqual({ x: -8, y: -8 })
-
-  // Once resized it is no longer maximized, so closing the pane halves it
-  // again and leaves it where it is.
-  await app.closeB.click()
-  await expect.poll(() => app.resized()).toEqual({ width: 1200, height: 800 })
-  const moves = (await app.calls()).filter((call) => call.cmd === 'plugin:window|set_position')
-  expect(moves).toHaveLength(1)
-})
-
-test('keeps the window as it is in full screen, and splits it', async ({ launch }) => {
-  const app = await launch({ platform: 'windows' })
-
-  await app.page.keyboard.press('F11')
-  await expect.poll(() => app.commands()).toContain('plugin:window|set_fullscreen')
-  await app.compareButton.click()
-  await expect(app.page.locator('html')).toHaveAttribute('data-layout', 'compare')
-  await expect(app.paneHeadB).toBeVisible()
-  expect(await app.resized()).toBeNull()
-
-  await app.closeB.click()
-  await expect(app.page.locator('html')).toHaveAttribute('data-layout', 'single')
-  expect(await app.resized()).toBeNull()
 })
 
 test('opens the search panel in the pane with the caret, and in that one only', async ({ launch }) => {

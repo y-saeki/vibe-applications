@@ -144,19 +144,17 @@ test('closing the window goes through the same path as quitting', async ({ launc
 })
 
 test('Ctrl+\\ opens the compare pane, and does nothing once it is open', async ({ launch }) => {
-  const app = await launch({ platform: 'windows', innerSize: { width: 600, height: 400 } })
+  const app = await launch({ platform: 'windows' })
 
   await app.typeInEditor('比べる')
   await app.page.keyboard.press('Control+Backslash')
   await expect(app.page.locator('html')).toHaveAttribute('data-layout', 'compare')
   await expect(app.editorB).toHaveText('比べる')
-  await expect.poll(() => app.resized()).toEqual({ width: 1200, height: 400 })
 
-  // Opening is all the key does: pressed again, it neither adds a pane nor
-  // grows the window a second time.
+  // Opening is all the key does: pressed again, it adds no pane.
   await app.page.keyboard.press('Control+Backslash')
   await expect(app.page.locator('html')).toHaveAttribute('data-layout', 'compare')
-  expect(await app.resized()).toEqual({ width: 1200, height: 400 })
+  await expect(app.editorB).toHaveText('比べる')
 })
 
 test('Ctrl+W closes the pane with the caret while there are two, and the window once there is one', async ({ launch }) => {
@@ -196,7 +194,6 @@ test('Ctrl+\\ and Ctrl+W leave the panes alone while preferences has the keyboar
   await app.page.keyboard.press('Control+Backslash')
   await expect(app.page.locator('html')).toHaveAttribute('data-layout', 'compare')
   expect(await app.commands()).not.toContain('quit_app')
-  expect(await app.resized()).toBeNull()
 })
 
 test('a window resize is remembered, in logical pixels', async ({ launch }) => {
