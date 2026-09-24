@@ -70,6 +70,12 @@ This is not a demand for coverage of everything. Each application's `DEVELOPMENT
 its tests are for and what they cannot reach. That is the scope — and what it lists as out of
 reach stays out of reach rather than being faked with a case that asserts nothing.
 
+## Name the session after the issue
+
+A session that starts from a GitHub issue is renamed to `<issue title> #<issue number>` —
+`[draftpad] 定期リファクタリング #117`, say — before any other work, so that the list of
+sessions reads as the list of issues being worked on.
+
 ## Write issues and pull requests in Japanese
 
 GitHub issues and pull requests — titles and bodies alike — are written in Japanese.

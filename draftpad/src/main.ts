@@ -64,11 +64,22 @@ async function main(): Promise<void> {
 
   let editor: Editor | undefined
   const theme = new ThemeController(state.theme, (resolved) => editor?.setDark(resolved === 'dark'))
+  const preferences = new Preferences(byId<HTMLDialogElement>('preferences'), store, {
+    version,
+    defaultFontFamily: fontFamily,
+    onClose: () => editor?.focus(),
+  })
+  const openPreferences = (): void => preferences.open()
+  // While the preferences panel is open it holds the keyboard, and whatever
+  // these guard would happen behind it.
+  const unlessPreferencesOpen =
+    (action: () => void): (() => void) =>
+    () => {
+      if (!preferences.isOpen) action()
+    }
 
-  // The preferences panel and the editor only exist further down, so the
-  // buttons in the bars go through late-bound references to the same actions
-  // the command table gets.
-  let openPreferences = (): void => {}
+  // The editor only exists further down, so the buttons in the bars go
+  // through late-bound references to the same actions the command table gets.
   let openCompare = async (): Promise<void> => {}
   let closePane = async (_side: Side): Promise<void> => {}
   let quit = async (): Promise<void> => {}
@@ -82,7 +93,7 @@ async function main(): Promise<void> {
   paneBars.setDiffMode(state.diffMode)
   const titleBar = new TitleBar(byId('titlebar'), {
     onAlwaysOnTopChange: (alwaysOnTop) => store.set({ alwaysOnTop }),
-    onOpenPreferences: () => openPreferences(),
+    onOpenPreferences: openPreferences,
     // The window buttons are only on the page on Windows, where the window
     // has no frame of its own. Closing there is quitting, the same way the
     // close request below goes.
@@ -148,32 +159,26 @@ async function main(): Promise<void> {
   })
   window.addEventListener('blur', () => void store.flush())
 
-  // ---- preferences --------------------------------------------------------
-  const focusEditor = (): void => ed.focus()
-  const preferences = new Preferences(byId<HTMLDialogElement>('preferences'), store, { version, defaultFontFamily: fontFamily, onClose: focusEditor })
-
-  openPreferences = () => preferences.open()
-
   // ---- the compare pane ---------------------------------------------------
   // The window keeps its size either way: opening the pane splits it in two,
-  // and closing one gives the other the whole of it.
+  // and closing one gives the other the whole of it. Both are guarded like the
+  // search panel: the pane would open or close behind the preferences panel.
+  // `recount` is the pane whose text is new to the bar above it.
+  const afterCompareChanged = (compare: boolean, recount: Side): void => {
+    setLayout(compare)
+    store.set({ compare })
+    store.markTextChanged()
+    refreshCounts(recount)
+  }
   openCompare = async () => {
-    // Guarded like the search panel: the pane would open behind the
-    // preferences panel, which is taking the keyboard.
     if (ed.compare || preferences.isOpen) return
     ed.openCompare()
-    setLayout(true)
-    store.set({ compare: true })
-    store.markTextChanged()
-    refreshCounts('b')
+    afterCompareChanged(true, 'b')
   }
   closePane = async (side) => {
     if (!ed.compare || preferences.isOpen) return
     ed.closePane(side)
-    setLayout(false)
-    store.set({ compare: false })
-    store.markTextChanged()
-    refreshCounts('a')
+    afterCompareChanged(false, 'a')
   }
 
   const commands = createCommands(
@@ -181,12 +186,8 @@ async function main(): Promise<void> {
       openPreferences,
       // The preferences panel owns the keyboard while it is open, so the
       // editor's history stays out of the way.
-      undo: () => {
-        if (!preferences.isOpen) ed.undo()
-      },
-      redo: () => {
-        if (!preferences.isOpen) ed.redo()
-      },
+      undo: unlessPreferencesOpen(() => ed.undo()),
+      redo: unlessPreferencesOpen(() => ed.redo()),
       quit,
       // The innermost thing that can be closed: the pane with the caret while
       // there are two, otherwise the window, which is the app.
@@ -195,9 +196,7 @@ async function main(): Promise<void> {
       toggleFullscreen: async () => appWindow.setFullscreen(!(await appWindow.isFullscreen())),
       // Guarded like undo and redo: the panel would open behind the
       // preferences panel, which is taking the keyboard.
-      openSearch: () => {
-        if (!preferences.isOpen) ed.openSearch()
-      },
+      openSearch: unlessPreferencesOpen(() => ed.openSearch()),
       // The editor is the only place this writes into: while the search panel
       // or the preferences panel holds the keyboard, dropping the clipboard
       // into the draft behind them is not what the key press asked for.
@@ -222,6 +221,7 @@ async function main(): Promise<void> {
 
   // ---- reacting to settings ----------------------------------------------
   const applyFont = (): void => ed.setFont(store.state.fontSize, store.state.fontFamily, store.state.fontWeight)
+  const applyTab = (): void => ed.setTab(store.state.tabSize, store.state.indentStyle)
   const apply: Partial<Record<StateKey, () => void>> = {
     language: () => {
       paneBars.setLanguage(store.state.language)
@@ -233,11 +233,11 @@ async function main(): Promise<void> {
     },
     editorMode: () => void ed.setVim(store.state.editorMode === 'vim'),
     theme: () => theme.set(store.state.theme),
-    fontSize: () => applyFont(),
-    fontFamily: () => applyFont(),
-    fontWeight: () => applyFont(),
-    tabSize: () => ed.setTab(store.state.tabSize, store.state.indentStyle),
-    indentStyle: () => ed.setTab(store.state.tabSize, store.state.indentStyle),
+    fontSize: applyFont,
+    fontFamily: applyFont,
+    fontWeight: applyFont,
+    tabSize: applyTab,
+    indentStyle: applyTab,
     quickSuggestions: () => ed.setQuickSuggestions(store.state.quickSuggestions),
     showWhitespace: () => ed.setShowWhitespace(store.state.showWhitespace),
     showIndentGuides: () => ed.setShowIndentGuides(store.state.showIndentGuides),

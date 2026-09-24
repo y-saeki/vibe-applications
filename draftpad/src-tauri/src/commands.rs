@@ -1,6 +1,8 @@
 //! Commands invoked from the webview (`invoke(...)` in `src/state.ts`,
 //! `src/preferences.ts` and `src/context-menu.ts`).
 
+use std::path::PathBuf;
+
 use serde::Serialize;
 use tauri::{AppHandle, WebviewWindow, Window};
 
@@ -45,11 +47,16 @@ fn traffic_lights_center(_window: &WebviewWindow) -> Option<f64> {
     None
 }
 
+/// Where `state.json` lives, with the error as the webview receives it.
+fn state_path(app: &AppHandle) -> Result<PathBuf, String> {
+    state::path(app).map_err(|err| err.to_string())
+}
+
 /// Synchronous so that it runs on the main thread, which is the only one
 /// AppKit answers `traffic_lights_center` on.
 #[tauri::command]
 pub fn load_state(app: AppHandle, window: WebviewWindow) -> Result<Loaded, String> {
-    let path = state::path(&app).map_err(|err| err.to_string())?;
+    let path = state_path(&app)?;
     let state = state::load(&path).map_err(|err| err.to_string())?;
     Ok(Loaded {
         state,
@@ -63,7 +70,7 @@ pub fn load_state(app: AppHandle, window: WebviewWindow) -> Result<Loaded, Strin
 /// Async so the file write happens off the main thread.
 #[tauri::command]
 pub async fn save_state(app: AppHandle, state: State) -> Result<(), String> {
-    let path = state::path(&app).map_err(|err| err.to_string())?;
+    let path = state_path(&app)?;
     state::save(&path, &state).map_err(|err| err.to_string())
 }
 
