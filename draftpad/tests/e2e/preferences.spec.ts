@@ -132,22 +132,22 @@ test('draws that toggle as a switch the width of two controls', async ({ launch 
         ),
       )
   await knob('translate').toBe('20px')
-  await knob('background-color').toBe('rgb(43, 108, 176)')
-  await expect(suggestions).toHaveCSS('background-color', 'rgb(238, 241, 244)')
+  await knob('background-color').toBe('rgb(47, 95, 149)')
+  await expect(suggestions).toHaveCSS('background-color', 'rgb(240, 237, 231)')
 
   await suggestions.uncheck()
   await knob('translate').toBe('none')
-  // Off, the knob is a white face the border keeps apart from the track.
+  // Off, the knob is the raised face, kept apart from the sunken track by a
+  // rule — in both themes, which are the same palette with the lightness
+  // turned over.
   await knob('background-color').toBe('rgb(255, 255, 255)')
-  await knob('border-top-color').toBe('rgb(208, 215, 222)')
-  await expect(suggestions).toHaveCSS('background-color', 'rgb(238, 241, 244)')
+  await knob('border-top-color').toBe('rgb(229, 224, 215)')
+  await expect(suggestions).toHaveCSS('background-color', 'rgb(240, 237, 231)')
 
-  // Dark has no white face to set the knob apart, so lightness does it instead
-  // and the outline goes away rather than darkening an already dark knob.
   await app.page.locator('#pref-theme').selectOption('dark')
-  await knob('background-color').toBe('rgb(51, 51, 51)')
-  await knob('border-top-color').toBe('rgba(0, 0, 0, 0)')
-  await expect(suggestions).toHaveCSS('background-color', 'rgb(28, 28, 28)')
+  await knob('background-color').toBe('rgb(42, 40, 37)')
+  await knob('border-top-color').toBe('rgb(52, 49, 45)')
+  await expect(suggestions).toHaveCSS('background-color', 'rgb(38, 36, 33)')
 })
 
 test('switches to the dark look and remembers it', async ({ launch }) => {
@@ -158,16 +158,16 @@ test('switches to the dark look and remembers it', async ({ launch }) => {
   await expect(app.page.locator('html')).toHaveAttribute('data-theme', 'dark')
   await app.expectSaved((state) => state.theme === 'dark')
 
-  // The editor is painted by CodeMirror (src/dark-theme.ts) and the title bar
+  // The editor is painted by CodeMirror (src/editor-theme.ts) and the title bar
   // by style.css; the palette has to reach both, not just the chrome.
-  await expect(app.page.locator('.cm-editor')).toHaveCSS('background-color', 'rgb(21, 21, 21)')
-  await expect(app.page.locator('#titlebar')).toHaveCSS('background-color', 'rgb(17, 17, 17)')
+  await expect(app.page.locator('.cm-editor')).toHaveCSS('background-color', 'rgb(28, 27, 25)')
+  await expect(app.page.locator('#titlebar')).toHaveCSS('background-color', 'rgb(28, 27, 25)')
 
   // The controls the platform would otherwise draw in its own greys: the
   // language selector stays flat against the bar, and the pin reads as the
   // secondary text beside it rather than in a fixed grey of its own.
   await expect(app.languageSelect).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
-  await expect(app.alwaysOnTop).toHaveCSS('color', 'rgb(170, 170, 170)')
+  await expect(app.alwaysOnTop).toHaveCSS('color', 'rgb(160, 154, 143)')
 })
 
 test('applies the font size and pulls out-of-range values back in', async ({ launch }) => {
@@ -281,7 +281,7 @@ test('dims the window with the palette alone, not the browser\'s own backdrop', 
   const app = await launch({ colorScheme: 'light' })
 
   await app.gear.click()
-  await expect(app.preferences).toHaveCSS('background-color', 'rgba(0, 0, 0, 0.35)')
+  await expect(app.preferences).toHaveCSS('background-color', 'rgba(38, 36, 31, 0.26)')
   // Browsers paint ::backdrop themselves, and it would sit under that colour
   // and deepen it by a different amount on each engine.
   const backdrop = await app.page.evaluate(
@@ -329,19 +329,19 @@ test('paints the whitespace marks from the palette, in both themes', async ({ la
 
   // The dot is a gradient and the arrow a mask over a fill, so the colour shows
   // up in a different property for each; both come from --whitespace.
-  await expect(space).toHaveCSS('background-image', /rgba\(31, 35, 40, 0\.26\)/)
+  await expect(space).toHaveCSS('background-image', /rgba\(38, 36, 31, 0\.26\)/)
   // The two stops sit apart, which is what gives the dot a soft edge. A hard
   // one rasterises differently in each space of a run, because their boxes land
   // on different halves of a pixel; style.css says more. This pins the
   // declaration, not the pixels — those are for the manual pass.
   await expect(space).toHaveCSS('background-image', /0\.26\) 8%, rgba\(0, 0, 0, 0\) 20%/)
-  await expect(tab).toHaveCSS('background-color', 'rgba(31, 35, 40, 0.26)')
+  await expect(tab).toHaveCSS('background-color', 'rgba(38, 36, 31, 0.26)')
   await expect(tab).toHaveCSS('mask-image', /url\("data:image\/svg\+xml/)
 
   await app.gear.click()
   await app.page.locator('#pref-theme').selectOption('dark')
-  await expect(space).toHaveCSS('background-image', /rgba\(216, 216, 216, 0\.26\)/)
-  await expect(tab).toHaveCSS('background-color', 'rgba(216, 216, 216, 0.26)')
+  await expect(space).toHaveCSS('background-image', /rgba\(228, 224, 216, 0\.26\)/)
+  await expect(tab).toHaveCSS('background-color', 'rgba(228, 224, 216, 0.26)')
 })
 
 test('rules every line that is inside an indented block, and no other', async ({ launch }) => {
@@ -393,11 +393,11 @@ test('paints the indentation rules from the palette, in both themes', async ({ l
   const app = await launch({ colorScheme: 'light', state: { showIndentGuides: true, text: 'a\n    b' } })
   const guides = app.indentGuides
 
-  await expect(guides).toHaveCSS('background-image', /rgba\(31, 35, 40, 0\.14\)/)
+  await expect(guides).toHaveCSS('background-image', /rgba\(38, 36, 31, 0\.14\)/)
 
   await app.gear.click()
   await app.page.locator('#pref-theme').selectOption('dark')
-  await expect(guides).toHaveCSS('background-image', /rgba\(216, 216, 216, 0\.14\)/)
+  await expect(guides).toHaveCSS('background-image', /rgba\(228, 224, 216, 0\.14\)/)
 })
 
 test('keeps the panel inside its width at the narrowest the window goes', async ({ launch }) => {
@@ -534,9 +534,9 @@ test('draws the column as a margin rather than a panel, in both themes', async (
   // The marks' own value, which --line-number points at rather than repeating:
   // a number is something to find when it is looked for, the same as a mark,
   // and the draft is the only thing above either of them.
-  await expect(gutters).toHaveCSS('color', 'rgba(31, 35, 40, 0.26)')
-  await expect(app.page.locator('.cm-highlightSpace').first()).toHaveCSS('background-image', /rgba\(31, 35, 40, 0\.26\)/)
-  await expect(app.editor).toHaveCSS('color', 'rgb(31, 35, 40)')
+  await expect(gutters).toHaveCSS('color', 'rgba(38, 36, 31, 0.26)')
+  await expect(app.page.locator('.cm-highlightSpace').first()).toHaveCSS('background-image', /rgba\(38, 36, 31, 0\.26\)/)
+  await expect(app.editor).toHaveCSS('color', 'rgb(38, 36, 31)')
 
   // Right-aligned, so the ones column stands where the draft begins, and the
   // narrow gap is the one on that side.
@@ -549,7 +549,7 @@ test('draws the column as a margin rather than a panel, in both themes', async (
   await expect(gutters).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
   // The dark block redefines --whitespace and nothing else; the column follows
   // it there because that is what its own token resolves to.
-  await expect(gutters).toHaveCSS('color', 'rgba(216, 216, 216, 0.26)')
+  await expect(gutters).toHaveCSS('color', 'rgba(228, 224, 216, 0.26)')
 })
 
 test('sizes the numbers with the draft', async ({ launch }) => {

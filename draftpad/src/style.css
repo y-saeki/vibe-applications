@@ -7,26 +7,46 @@
 
 :root {
   /* ---- Palette ---- */
-  --bg: #ffffff;
-  --fg: #1f2328;
-  --muted: #6e7781;
+  /* Paper and ink. The window is one sheet of slightly warm paper, and every
+     bar and panel sits on it rather than making a band of its own color; the
+     text and the rules are ink of the same hue. One ink blue is the only color
+     that answers the hand: a pressed button, the focus, the selection, a
+     switch that is on. Nothing else wears it. */
+  --bg: #faf8f4; /* the paper: the whole window, the title bar and the pane bars included */
+  --fg: #26241f; /* the ink: the draft, labels, the words on buttons */
+  --muted: #6b665e; /* the words and icons of the bars, the counts */
   /* One step short of --fg, for the group headings in the preferences panel:
      they sit above the labels they gather, and --muted would read as the same
      kind of secondary text as the pane bar. */
-  --muted-strong: #57606a;
+  --muted-strong: #57534c;
   /* Weaker than --muted: a placeholder has to read as an empty field rather
      than as something already typed. */
-  --placeholder: #848d97;
-  --border: #d0d7de;
-  --panel: #f6f8fa;
-  --accent: #2b6cb0;
-  --overlay: rgba(0, 0, 0, 0.35);
-  --control-bg: #ffffff;
-  --control-hover: #eef1f4;
-  --control-active: #e2e6ea;
-  --focus-ring: rgba(43, 108, 176, 0.25);
-  --shadow-panel: 0 8px 32px rgba(0, 0, 0, 0.25); /* the preferences panel */
-  --shadow-popup: 0 4px 16px rgba(0, 0, 0, 0.18); /* a dropped-open list */
+  --placeholder: #8a847a;
+  --border: #e5e0d7; /* every rule, and the outline of a control */
+  /* What lies on top of the paper: the preferences panel, a dropped-open list,
+     the search panel. A step lighter than the paper, so that it reads as in
+     front by its color as well as by its shadow. */
+  --panel: #ffffff;
+  --accent: #2f5f95;
+  /* A button that stays pressed (always on top, Aa and .*): the accent as a
+     wash under the accent itself, which is what tells it from a hover. */
+  --accent-soft: rgba(47, 95, 149, 0.12);
+  --overlay: rgba(38, 36, 31, 0.26);
+  /* The face that sets a control apart from the paper: sunken rather than
+     outlined, and a step deeper under the pointer and again while pressed. */
+  --control-bg: #f0ede7;
+  --control-hover: #e9e5dd;
+  --control-active: #e1dcd3;
+  --focus-ring: rgba(47, 95, 149, 0.25);
+  --shadow-panel: 0 8px 32px rgba(38, 36, 31, 0.25); /* the preferences panel */
+  --shadow-popup: 0 4px 16px rgba(38, 36, 31, 0.18); /* a dropped-open list */
+  /* What CodeMirror paints inside the draft, read by src/editor-theme.ts: the
+     selection in the accent's wash, and search matches in a highlighter's
+     yellow, so the two never read as each other where they overlap. The match
+     that is current is the same yellow pressed harder. */
+  --editor-selection: rgba(47, 95, 149, 0.16);
+  --editor-search-match: rgba(222, 168, 40, 0.24);
+  --editor-search-match-selected: rgba(222, 168, 40, 0.58);
   /* The close button of the Windows title bar under the pointer: the red and
      the white glyph Windows gives its own, in both themes, so that the one
      button that ends the session reads as it does in every other window. */
@@ -54,13 +74,13 @@
      of its own, so that a mark takes a tint from whatever it lands on — the
      page, a search match, a selection — and stays a step quieter than the text
      in both themes. */
-  --whitespace: rgba(31, 35, 40, 0.26);
+  --whitespace: rgba(38, 36, 31, 0.26);
   /* The rules that stand at each level of indentation. Fainter than the marks
      above, which is not the same decision made twice: a mark is a point inside
      one character, while a rule runs the whole height of a line and every line
      of a block carries one, so the same value would add up to a grid the draft
      has to be read through. */
-  --indent-guide: rgba(31, 35, 40, 0.14);
+  --indent-guide: rgba(38, 36, 31, 0.14);
   /* The figures in the line number column, which are the marks' value rather
      than one of their own — tied to it here so that moving one moves both.
      They are the same kind of thing: something to find when it is looked for
@@ -80,8 +100,8 @@
      panel — rather than stamping one grey over all of them. The second is for
      a thumb under the pointer, which has to answer the hand reaching for it
      without becoming another piece of chrome to read. */
-  --scrollbar-thumb: rgba(31, 35, 40, 0.28);
-  --scrollbar-thumb-hover: rgba(31, 35, 40, 0.5);
+  --scrollbar-thumb: rgba(38, 36, 31, 0.28);
+  --scrollbar-thumb-hover: rgba(38, 36, 31, 0.5);
   /* How much of the content the view covers, and how far through it the view
      sits, both as a fraction rather than a length: src/overlay-scrollbar.ts
      sets them on the bar and the rules below work the thumb's length and place
@@ -96,25 +116,25 @@
   --check-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%23ffffff' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round' d='M3.5 8.5 6.5 11.5 12.5 4.5'/%3E%3C/svg%3E");
   /* The toggle's off glyph, drawn in --muted. A bar rather than a cross: off is
      a resting state, and a cross reads as a refusal. */
-  --minus-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%236e7781' stroke-width='2.4' stroke-linecap='round' d='M4.5 8h7'/%3E%3C/svg%3E");
+  --minus-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%236b665e' stroke-width='2.4' stroke-linecap='round' d='M4.5 8h7'/%3E%3C/svg%3E");
 
   /* The compare pane's marks. The left pane is what the right one is compared
      against, so a chunk reads as taken out on the left and put in on the
-     right: the usual red and green, in a wash for the whole line and a
+     right: the usual red and green, dulled to sit on the paper, in a wash for the whole line and a
      stronger one for the characters that differ. The mark is the stripe at
      the line's edge, and the color the +N / −N figures in the bar take. */
-  --diff-a-line: #ffebe9;
-  --diff-a-text: rgba(255, 129, 130, 0.4);
-  --diff-a-mark: #cf222e;
-  --diff-b-line: #dafbe1;
-  --diff-b-text: rgba(74, 194, 107, 0.4);
-  --diff-b-mark: #1a7f37;
+  --diff-a-line: rgba(190, 72, 56, 0.08);
+  --diff-a-text: rgba(190, 72, 56, 0.22);
+  --diff-a-mark: #b5473a;
+  --diff-b-line: rgba(58, 138, 82, 0.09);
+  --diff-b-text: rgba(58, 138, 82, 0.24);
+  --diff-b-mark: #3d7f4f;
 
-  /* The toggle. The track keeps the surface every other control has, one step
-     sunken so the knob's own face separates from it; only the knob carries the
-     accent. */
-  --toggle-track: var(--control-hover);
-  --toggle-knob: var(--control-bg);
+  /* The toggle. The track is the sunken face every other control has, and the
+     knob lies on it the way a panel lies on the paper, kept apart by a rule;
+     only the knob carries the accent. */
+  --toggle-track: var(--control-bg);
+  --toggle-knob: var(--panel);
   --toggle-knob-border: var(--border);
 
   /* ---- Type ---- */
@@ -175,46 +195,45 @@
   color-scheme: light;
 }
 
-/* The editor-only properties are read by src/dark-theme.ts, which dresses the
-   parts CodeMirror paints itself. */
+/* The same paper and ink with the lightness turned over: paper steeped in
+   ink, and ink the color of the light paper. The editor-only properties are
+   read by src/editor-theme.ts, which dresses the parts CodeMirror paints
+   itself. */
 :root[data-theme="dark"] {
-  --bg: #151515;
-  --fg: #d8d8d8;
-  --muted: #aaaaaa;
-  --muted-strong: #c4c4c4;
-  --placeholder: #6f6f6f;
-  --border: #2c2c2c;
-  --panel: #111111;
-  --accent: #6cb6ff;
-  --overlay: rgba(0, 0, 0, 0.6);
-  --control-bg: #1c1c1c;
-  --control-hover: #262626;
-  --control-active: #333333;
-  --focus-ring: rgba(108, 182, 255, 0.32);
-  --check-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%230b0b0b' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round' d='M3.5 8.5 6.5 11.5 12.5 4.5'/%3E%3C/svg%3E");
-  --minus-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%23aaaaaa' stroke-width='2.4' stroke-linecap='round' d='M4.5 8h7'/%3E%3C/svg%3E");
-  /* Dark has no light face to put the knob against, so the two are told apart
-     by lightness instead of by an outline; the border goes away rather than
-     drawing a darker edge around an already dark knob. */
-  --toggle-track: var(--control-bg);
-  --toggle-knob: var(--control-active);
-  --toggle-knob-border: transparent;
-  --whitespace: rgba(216, 216, 216, 0.26);
-  --indent-guide: rgba(216, 216, 216, 0.14);
-  --scrollbar-thumb: rgba(216, 216, 216, 0.26);
-  --scrollbar-thumb-hover: rgba(216, 216, 216, 0.48);
-  --diff-a-line: rgba(248, 81, 73, 0.15);
-  --diff-a-text: rgba(248, 81, 73, 0.4);
-  --diff-a-mark: #f85149;
-  --diff-b-line: rgba(46, 160, 67, 0.15);
-  --diff-b-text: rgba(63, 185, 80, 0.4);
-  --diff-b-mark: #3fb950;
-  --editor-caret: #6cb6ff;
-  --editor-selection: #2c4a6e;
+  --bg: #1c1b19;
+  --fg: #e4e0d8;
+  --muted: #a09a8f;
+  --muted-strong: #c4bfb5;
+  --placeholder: #7a756b;
+  --border: #34312d;
+  --panel: #2a2825;
+  --accent: #8db3e2;
+  --accent-soft: rgba(141, 179, 226, 0.16);
+  --overlay: rgba(0, 0, 0, 0.5);
+  --control-bg: #262421;
+  --control-hover: #2e2c28;
+  --control-active: #37342f;
+  --focus-ring: rgba(141, 179, 226, 0.32);
+  /* Shadows stay black here: ink-colored ones would be lighter than the
+     paper they fall on. */
+  --shadow-panel: 0 8px 32px rgba(0, 0, 0, 0.25);
+  --shadow-popup: 0 4px 16px rgba(0, 0, 0, 0.18);
+  --check-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%231c1b19' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round' d='M3.5 8.5 6.5 11.5 12.5 4.5'/%3E%3C/svg%3E");
+  --minus-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%23a09a8f' stroke-width='2.4' stroke-linecap='round' d='M4.5 8h7'/%3E%3C/svg%3E");
+  --whitespace: rgba(228, 224, 216, 0.26);
+  --indent-guide: rgba(228, 224, 216, 0.14);
+  --scrollbar-thumb: rgba(228, 224, 216, 0.26);
+  --scrollbar-thumb-hover: rgba(228, 224, 216, 0.48);
+  --diff-a-line: rgba(240, 110, 95, 0.1);
+  --diff-a-text: rgba(240, 110, 95, 0.26);
+  --diff-a-mark: #ec7a6c;
+  --diff-b-line: rgba(110, 200, 130, 0.09);
+  --diff-b-text: rgba(110, 200, 130, 0.24);
+  --diff-b-mark: #7cc48f;
+  --editor-selection: rgba(141, 179, 226, 0.24);
   --editor-selection-match: rgba(255, 255, 255, 0.1);
-  --editor-search-match: rgba(108, 182, 255, 0.24);
-  --editor-search-match-outline: rgba(108, 182, 255, 0.55);
-  --editor-search-match-selected: rgba(255, 175, 90, 0.35);
+  --editor-search-match: rgba(230, 184, 80, 0.2);
+  --editor-search-match-selected: rgba(230, 184, 80, 0.45);
   --editor-bracket: rgba(255, 255, 255, 0.14);
   color-scheme: dark;
 }
@@ -244,10 +263,10 @@ body {
 }
 
 /* The title bar: the always-on-top toggle and the gear, and on Windows the
-   window's three buttons. It is painted like the pane bar under it, with no
-   rule between the two, so that the two read as one bar. Left to the page's
-   own background, the strip was one shade and the bar under it another, and
-   the seam between them showed.
+   window's three buttons. It is the paper, like the pane bar under it and the
+   draft under that, with no rule between it and the pane bar, so that the two
+   read as one bar. The one rule under the pane bar is all that marks where
+   the chrome ends.
 
    Windows puts the toggle and the gear at the left end, where the platform
    would have its icon and the window's name, and the window buttons at the
@@ -258,7 +277,7 @@ body {
   display: flex;
   align-items: center;
   height: var(--titlebar-height);
-  background: var(--panel);
+  background: var(--bg);
   color: var(--muted);
   user-select: none;
   -webkit-user-select: none;
@@ -279,7 +298,7 @@ body {
 /* Always-on-top is a state of the window rather than a field to fill in, so
    the button carries it: pressed, it takes the accent instead of a tick. */
 #always-on-top[aria-pressed="true"] {
-  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  background: var(--accent-soft);
   color: var(--accent);
 }
 
@@ -368,7 +387,7 @@ input[type="checkbox"]:focus-visible {
    these colors, while the native menu WKWebView opens follows color-scheme
    alone. */
 option {
-  background: var(--control-bg);
+  background: var(--panel);
   color: var(--fg);
 }
 
@@ -453,7 +472,7 @@ option {
 .icon-button:hover,
 #editor .cm-panel [name="close"]:hover,
 #editor .cm-panel .cm-dialog-close:hover {
-  background: var(--control-hover);
+  background: var(--control-bg);
   color: var(--fg);
 }
 
@@ -501,7 +520,7 @@ option {
   padding: 0 var(--space-1);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  background: var(--control-bg);
+  background: var(--panel);
   box-shadow: var(--shadow-popup);
   color: var(--fg);
   font: inherit;
@@ -1051,8 +1070,8 @@ option {
 }
 
 #editor .cm-panel.cm-search label:has(input:checked) {
-  background: var(--accent);
-  color: var(--bg);
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
 #editor .cm-panel.cm-search label:has(input:focus-visible) {
@@ -1175,7 +1194,7 @@ option {
      padding at both ends would read as a wider gap on that side. */
   padding: 0 var(--space-2) 0 var(--space-3);
   border-bottom: 1px solid var(--border);
-  background: var(--panel);
+  background: var(--bg);
   color: var(--muted);
   font-size: var(--font-size-caption);
   user-select: none;
@@ -1347,7 +1366,7 @@ option {
   padding: var(--space-5);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  background: var(--bg);
+  background: var(--panel);
   box-shadow: var(--shadow-panel);
 }
 

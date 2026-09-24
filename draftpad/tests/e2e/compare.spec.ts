@@ -107,21 +107,22 @@ test('marks the lines of a chunk on both sides, and the characters only in char 
 test('paints the two sides in their own colors, with a stripe at the edge of a line', async ({ launch }) => {
   const app = await launch({ colorScheme: 'light', state: { compare: true, text: 'old', compareText: 'new' } })
 
-  // Taken out on the left, put in on the right: the usual red and green, with
-  // the characters in a stronger wash than the line.
-  await expect(app.changedLines('a').first()).toHaveCSS('background-color', 'rgb(255, 235, 233)')
-  await expect(app.changedLines('b').first()).toHaveCSS('background-color', 'rgb(218, 251, 225)')
-  await expect(app.changedText('a').first()).toHaveCSS('background-color', 'rgba(255, 129, 130, 0.4)')
-  await expect(app.changedText('b').first()).toHaveCSS('background-color', 'rgba(74, 194, 107, 0.4)')
+  // Taken out on the left, put in on the right: the usual red and green,
+  // dulled to sit on the paper, with the characters in a stronger wash than
+  // the line.
+  await expect(app.changedLines('a').first()).toHaveCSS('background-color', 'rgba(190, 72, 56, 0.08)')
+  await expect(app.changedLines('b').first()).toHaveCSS('background-color', 'rgba(58, 138, 82, 0.09)')
+  await expect(app.changedText('a').first()).toHaveCSS('background-color', 'rgba(190, 72, 56, 0.22)')
+  await expect(app.changedText('b').first()).toHaveCSS('background-color', 'rgba(58, 138, 82, 0.24)')
   // The stripe is drawn inside the line rather than in a column beside it, so
   // the text stands where it did with one pane.
   await expect(app.changedLines('a').first()).toHaveCSS('box-shadow', /inset/)
-  await expect(app.changedLines('a').first()).toHaveCSS('box-shadow', /rgb\(207, 34, 46\)/)
-  await expect(app.changedLines('b').first()).toHaveCSS('box-shadow', /rgb\(26, 127, 55\)/)
+  await expect(app.changedLines('a').first()).toHaveCSS('box-shadow', /rgb\(181, 71, 58\)/)
+  await expect(app.changedLines('b').first()).toHaveCSS('box-shadow', /rgb\(61, 127, 79\)/)
   await expect(app.page.locator('.cm-gutters')).toHaveCount(0)
   // The figures in the bar take the same two colors, a step quieter.
-  await expect(app.diffAdded).toHaveCSS('color', 'rgb(26, 127, 55)')
-  await expect(app.diffRemoved).toHaveCSS('color', 'rgb(207, 34, 46)')
+  await expect(app.diffAdded).toHaveCSS('color', 'rgb(61, 127, 79)')
+  await expect(app.diffRemoved).toHaveCSS('color', 'rgb(181, 71, 58)')
   await expect(app.page.locator('#status-diff')).toHaveCSS('opacity', '0.8')
 })
 
@@ -145,14 +146,14 @@ test('rules the two panes apart, in both themes', async ({ launch }) => {
       position: 'absolute',
       width: '1px',
       left: `${box.width / 2}px`,
-      color: 'rgb(208, 215, 222)',
+      color: 'rgb(229, 224, 215)',
     })
   }
 
   await app.gear.click()
   await app.page.locator('#pref-theme').selectOption('dark')
-  expect((await rule('#panes')).color).toBe('rgb(44, 44, 44)')
-  expect((await rule('#pane-heads')).color).toBe('rgb(44, 44, 44)')
+  expect((await rule('#panes')).color).toBe('rgb(52, 49, 45)')
+  expect((await rule('#pane-heads')).color).toBe('rgb(52, 49, 45)')
 
   // With one pane there is nothing to rule apart.
   await app.page.keyboard.press('Escape')

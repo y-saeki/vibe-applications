@@ -116,18 +116,19 @@ async function titleBarOrder(app: App): Promise<string[]> {
   )
 }
 
-// The spec draws the two as one bar: painted alike, with no rule between.
+// The spec draws the two as one bar: both the paper the draft is on, with no
+// rule between.
 for (const [platform, height] of [
   ['macos', '28px'],
   ['windows', '32px'],
 ] as const) {
   test(`joins the ${platform} title bar to the pane bar, in both themes`, async ({ launch }) => {
     const app = await launch({ platform, colorScheme: 'light' })
-    expect(await surfaces(app)).toEqual({ color: 'rgb(246, 248, 250)', height, seam: '0px', paneBar: 'rgb(246, 248, 250)' })
+    expect(await surfaces(app)).toEqual({ color: 'rgb(250, 248, 244)', height, seam: '0px', paneBar: 'rgb(250, 248, 244)' })
 
     await app.gear.click()
     await app.page.locator('#pref-theme').selectOption('dark')
-    expect(await surfaces(app)).toMatchObject({ color: 'rgb(17, 17, 17)', paneBar: 'rgb(17, 17, 17)' })
+    expect(await surfaces(app)).toMatchObject({ color: 'rgb(28, 27, 25)', paneBar: 'rgb(28, 27, 25)' })
   })
 }
 
@@ -283,6 +284,55 @@ test('counts the matches and numbers the one the search is standing on', async (
   await expect(app.searchCount).toHaveText('1 / 3 件')
   await app.page.keyboard.press('Enter')
   await expect(app.searchCount).toHaveText('2 / 3 件')
+})
+
+// The two can land on the same text, so they are told apart by hue: the
+// highlighter's yellow for a match, the accent's blue for the selection. The
+// light look is painted by the same rules as the dark one rather than left to
+// CodeMirror's defaults.
+test('marks matches in yellow and the selection in the accent, in both themes', async ({ launch }) => {
+  const app = await launch({ colorScheme: 'light' })
+
+  await app.typeInEditor('alpha beta alpha')
+  await app.press('KeyF')
+  await app.typeInSearch('alpha')
+  await app.page.keyboard.press('Enter')
+
+  const match = app.page.locator('.cm-searchMatch:not(.cm-searchMatch-selected)').first()
+  const current = app.page.locator('.cm-searchMatch-selected')
+  const selection = app.page.locator('.cm-selectionBackground').first()
+  await expect(match).toHaveCSS('background-color', 'rgba(222, 168, 40, 0.24)')
+  await expect(match).toHaveCSS('outline-style', 'none')
+  await expect(current).toHaveCSS('background-color', 'rgba(222, 168, 40, 0.58)')
+  await expect(selection).toHaveCSS('background-color', 'rgba(47, 95, 149, 0.16)')
+  // The caret is one CodeMirror draws, so its color is the drawn one's edge.
+  const caret = app.page.locator('.cm-cursor').first()
+  await expect(caret).toHaveCSS('border-left-color', 'rgb(47, 95, 149)')
+
+  await app.gear.click()
+  await app.page.locator('#pref-theme').selectOption('dark')
+  await expect(match).toHaveCSS('background-color', 'rgba(230, 184, 80, 0.2)')
+  await expect(current).toHaveCSS('background-color', 'rgba(230, 184, 80, 0.45)')
+  await expect(selection).toHaveCSS('background-color', 'rgba(141, 179, 226, 0.24)')
+  await expect(caret).toHaveCSS('border-left-color', 'rgb(141, 179, 226)')
+})
+
+// Pressed is the accent over its own wash, which a hover — the sunken face and
+// the ink — never is.
+test('paints a pressed toggle in the accent over its wash', async ({ launch }) => {
+  const app = await launch({ colorScheme: 'light', state: { alwaysOnTop: true, searchCaseSensitive: true } })
+
+  await expect(app.alwaysOnTop).toHaveCSS('background-color', 'rgba(47, 95, 149, 0.12)')
+  await expect(app.alwaysOnTop).toHaveCSS('color', 'rgb(47, 95, 149)')
+
+  await app.press('KeyF')
+  const caseToggle = app.searchPanel.locator('label:has(input[name="case"])')
+  await expect(caseToggle).toHaveCSS('background-color', 'rgba(47, 95, 149, 0.12)')
+  await expect(caseToggle).toHaveCSS('color', 'rgb(47, 95, 149)')
+
+  await app.gear.hover()
+  await expect(app.gear).toHaveCSS('background-color', 'rgb(240, 237, 231)')
+  await expect(app.gear).toHaveCSS('color', 'rgb(38, 36, 31)')
 })
 
 // The fifth button, 選択範囲, asks for a selection on top of a match, so it is

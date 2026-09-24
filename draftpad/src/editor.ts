@@ -12,13 +12,13 @@
 
 import { autocompletion, closeBrackets, closeBracketsKeymap, completeAnyWord, completionKeymap } from '@codemirror/autocomplete'
 import { defaultKeymap, history, historyKeymap, indentWithTab, redo as redoCommand, redoDepth, undo as undoCommand, undoDepth } from '@codemirror/commands'
-import { bracketMatching, defaultHighlightStyle, indentOnInput, indentUnit, syntaxHighlighting } from '@codemirror/language'
+import { bracketMatching, indentOnInput, indentUnit } from '@codemirror/language'
 import { getChunks, MergeView } from '@codemirror/merge'
 import { getSearchQuery, highlightSelectionMatches, openSearchPanel, search, searchKeymap, SearchQuery, setSearchQuery } from '@codemirror/search'
 import { Compartment, type EditorSelection, EditorState, type Extension, type Text } from '@codemirror/state'
 import { drawSelection, dropCursor, EditorView, keymap, type KeyBinding, lineNumbers } from '@codemirror/view'
 
-import { darkTheme } from './dark-theme'
+import { darkTheme, lightTheme } from './editor-theme'
 import { indentGuides } from './indent-guides'
 import { languageExtension } from './languages'
 import { installLineDiff } from './linediff'
@@ -129,7 +129,7 @@ function completionExtension(enabled: boolean): Extension {
 }
 
 function colorExtension(dark: boolean): Extension {
-  return dark ? darkTheme : syntaxHighlighting(defaultHighlightStyle)
+  return dark ? darkTheme : lightTheme
 }
 
 function whitespaceExtension(show: boolean): Extension {

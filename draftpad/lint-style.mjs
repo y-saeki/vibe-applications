@@ -268,8 +268,8 @@ if (broken.length > 0) {
 // ---- the real stylesheet -----------------------------------------------
 
 const STYLE = new URL('./src/style.css', import.meta.url)
-// src/dark-theme.ts reads the palette too, so a token used only there is used.
-const OTHER_CONSUMERS = [new URL('./src/dark-theme.ts', import.meta.url)]
+// src/editor-theme.ts reads the palette too, so a token used only there is used.
+const OTHER_CONSUMERS = [new URL('./src/editor-theme.ts', import.meta.url)]
 
 const problems = findProblems({
   css: readFileSync(STYLE, 'utf8'),
