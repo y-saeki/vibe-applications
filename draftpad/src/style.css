@@ -144,6 +144,9 @@
   --toggle-width: 48px; /* the toggle's track; it is --control-height tall */
   --glyph-size: 12px; /* the mark inside a toggle: the switch's knob, Aa and .* */
   --icon-size: 16px;
+  /* The pin and the sliders in the title bar, a size up from --icon-size:
+     drawn in 1px lines, they read small at 16px beside the window buttons. */
+  --titlebar-icon-size: 20px;
   --icon-button-size: 24px;
   --toggle-size-search: 16px; /* the Aa / .* toggles inside the find field */
   --bar-height: 32px; /* the pane bars */
@@ -427,6 +430,11 @@ option {
 .icon-button svg {
   width: var(--icon-size);
   height: var(--icon-size);
+}
+
+#titlebar .icon-button svg {
+  width: var(--titlebar-icon-size);
+  height: var(--titlebar-icon-size);
 }
 
 /* The × is drawn rather than typed. A glyph sits where the font's metrics put

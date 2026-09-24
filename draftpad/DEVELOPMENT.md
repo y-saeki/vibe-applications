@@ -674,7 +674,7 @@ Tauri の NSIS スクリプトはビルド時のテンプレートなので、`t
 | 書体 | `--ui-font`、`--font-mono` | UI 全体 / バージョン表示。数の段階ではないので、予算の数え方も他と別です |
 | 余白 | `--space-1` 〜 `--space-5` | 4px 刻みの 5 段。コントロール同士、バーとパネルの内側、グループ同士 |
 | 角丸 | `--radius-sm` / `-md` / `-lg` | 部品の大きさに対応した 3 段(チェックボックスとアイコンボタン / 高さ `--control-height` のコントロール / パネル) |
-| 寸法 | `--control-height`、`--control-height-search`、`--checkbox-size`、`--toggle-width`、`--toggle-size-search`、`--glyph-size`、`--icon-size`、`--icon-button-size`、`--bar-height`、`--titlebar-height`、`--caption-button-width`、`--scrollbar-size`、`--scrollbar-thumb-size`、`--scrollbar-thumb-min` | コントロールとバーの大きさ、Windows のタイトルバーのウィンドウボタンの幅、スクロールバーの溝とつまみ |
+| 寸法 | `--control-height`、`--control-height-search`、`--checkbox-size`、`--toggle-width`、`--toggle-size-search`、`--glyph-size`、`--icon-size`、`--titlebar-icon-size`、`--icon-button-size`、`--bar-height`、`--titlebar-height`、`--caption-button-width`、`--scrollbar-size`、`--scrollbar-thumb-size`、`--scrollbar-thumb-min` | コントロールとバーの大きさ、Windows のタイトルバーのウィンドウボタンの幅、スクロールバーの溝とつまみ |
 | レイアウト | `--field-width`、`--field-width-narrow`、`--field-width-search`、`--button-width-search`、`--label-width`、`--panel-width`、`--panel-inset`、`--language-width`、`--mode-width`、`--count-width`、`--count-width-narrow` | 入力欄・ラベル列・検索パネルと環境設定パネルの配置と、ペインのバーの 2 つのセレクタの下限幅、文字数・行数の数字を収める枠の幅 |
 | パレット | `--bg`、`--fg`、`--muted`、`--muted-strong`、`--placeholder`、`--border` など | 色、影 2 段(`--shadow-panel` / `--shadow-popup`)、描き込む印 8 枚(✓ / シェブロン上下 / × / 横棒 / Aa / .* / タブの矢印)、空白文字の印(`--whitespace`)、インデントガイドの色(`--indent-guide`)、行番号の色(`--line-number`)、スクロールバーのつまみの色 2 段(`--scrollbar-thumb` / `--scrollbar-thumb-hover`)、Windows のタイトルバーの閉じるボタンの赤とその上の × の色(`--caption-close` / `--caption-close-fg`。どちらのテーマでも Windows 自身の色のままです)、比較ペインの印の色 6 つ(`--diff-a-line` / `-text` / `-mark` と `b` 側。左が赤系、右が緑系で、行の地色・文字の印・行端の帯と `+N` / `−N` の文字色)と、`src/indent-guides.ts` と `src/overlay-scrollbar.ts` が入れる 2 つずつの数(`--indent-guide-levels` / `--indent-guide-step`、`--scrollbar-cover` / `--scrollbar-progress`。色でも長さでもありませんが、ファミリにも入らないのでここで数えます) |
 
@@ -706,7 +706,11 @@ Tauri の NSIS スクリプトはビルド時のテンプレートなので、`t
 持ってきたように見えます。
 
 タイトルバーのピンとスライダーだけは例外で、太さ 1 の線だけで描き、塗りを使いません。Windows では
-自前で描いている最小化・最大化・閉じるボタン(1px の線)と並ぶため、そちらに合わせています。
+自前で描いている最小化・最大化・閉じるボタン(1px の線)と並ぶため、そちらに合わせています。線が細い分
+16px では小さく見えるので、`--titlebar-icon-size`(20px)で描きます。viewBox もその寸法(20×20)にして
+あり、線の太さ 1 がそのまま 1px になります。スライダーの横線は y 座標を .5 に置いて 1x でもにじまない
+ようにしてあり、そのぶん全体が枠の中央から 0.5px 上に寄っています。ピンは見た目の重心が上に寄るので、
+1px 下げて(`translate(0 1)`)置いています。
 スライダーのつまみは円の手前で線を切って描き、円の内側は透明です。下地の色で塗った円を重ねて線を隠すと、
 ホバーで下地の色が変わったときにつまみの中だけ元の色が残ります。
 
