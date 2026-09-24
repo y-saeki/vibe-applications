@@ -13,6 +13,9 @@ import {
   TAB_SIZE_MIN,
   type EditorMode,
   type IndentStyle,
+  type SettingsKey,
+  type SettingsPatch,
+  type State,
   type Store,
   type Theme,
 } from './state'
@@ -23,19 +26,58 @@ export interface PreferencesOptions {
   onClose: () => void
 }
 
+/** Writes the store's value back into one control. */
+type Sync = (state: Readonly<State>) => void
+
+/** The settings whose value is of type `T`. */
+type KeyOf<T> = { [K in SettingsKey]: State[K] extends T ? K : never }[SettingsKey]
+
+/**
+ * A dropdown: the option picked goes into the store as `parse` reads it.
+ *
+ * @returns what puts the store's value back into it
+ */
+function bindSelect<K extends SettingsKey>(store: Store, element: HTMLSelectElement, key: K, parse: (value: string) => State[K]): Sync {
+  element.addEventListener('change', () => store.set({ [key]: parse(element.value) } as SettingsPatch))
+  return (state) => {
+    element.value = String(state[key])
+  }
+}
+
+/**
+ * A number field, held to `min`–`max`. A value outside that range is pulled
+ * into it in the field as well, so that what it shows is what was taken.
+ *
+ * @returns what puts the store's value back into it
+ */
+function bindNumber(store: Store, element: HTMLInputElement, key: KeyOf<number>, min: number, max: number): Sync {
+  element.addEventListener('change', () => {
+    const value = clamp(Number(element.value), min, max)
+    element.value = String(value)
+    store.set({ [key]: value } as SettingsPatch)
+  })
+  return (state) => {
+    element.value = String(state[key])
+  }
+}
+
+/**
+ * A checkbox.
+ *
+ * @returns what puts the store's value back into it
+ */
+function bindCheckbox(store: Store, element: HTMLInputElement, key: KeyOf<boolean>): Sync {
+  element.addEventListener('change', () => store.set({ [key]: element.checked } as SettingsPatch))
+  return (state) => {
+    element.checked = state[key]
+  }
+}
+
 export class Preferences {
   private readonly mode: HTMLSelectElement
-  private readonly theme: HTMLSelectElement
-  private readonly fontSize: HTMLInputElement
-  private readonly fontFamily: HTMLInputElement
   private readonly fontList: HTMLDataListElement
-  private readonly fontWeight: HTMLSelectElement
-  private readonly tabSize: HTMLInputElement
-  private readonly indentStyle: HTMLSelectElement
-  private readonly quickSuggestions: HTMLInputElement
-  private readonly showWhitespace: HTMLInputElement
-  private readonly showIndentGuides: HTMLInputElement
-  private readonly showLineNumbers: HTMLInputElement
+  /** One per control, in the order the panel holds them. */
+  private readonly syncs: Sync[]
   private fontsLoaded = false
 
   constructor(
@@ -45,43 +87,34 @@ export class Preferences {
   ) {
     const q = <T extends Element>(selector: string) => root.querySelector(selector) as T
     this.mode = q('#pref-mode')
-    this.theme = q('#pref-theme')
-    this.fontSize = q('#pref-font-size')
-    this.fontFamily = q('#pref-font-family')
     this.fontList = q('#font-list')
-    this.fontWeight = q('#pref-font-weight')
-    this.tabSize = q('#pref-tab-size')
-    this.indentStyle = q('#pref-indent-style')
-    this.quickSuggestions = q('#pref-quick-suggestions')
-    this.showWhitespace = q('#pref-show-whitespace')
-    this.showIndentGuides = q('#pref-show-indent-guides')
-    this.showLineNumbers = q('#pref-show-line-numbers')
     q<HTMLElement>('#pref-version').textContent = `draftpad ${options.version}`
     // The panel scrolls once the window is too short to hold it. Its bar goes
     // inside the dialog: it is in the top layer, and nothing outside it is
     // drawn over it.
     overlayScrollbar(q<HTMLElement>('.panel'), root)
-    this.fontFamily.placeholder = options.defaultFontFamily
 
-    this.mode.addEventListener('change', () => store.set({ editorMode: this.mode.value as EditorMode }))
-    this.theme.addEventListener('change', () => store.set({ theme: this.theme.value as Theme }))
-    this.fontSize.addEventListener('change', () => {
-      const fontSize = clamp(Number(this.fontSize.value), FONT_SIZE_MIN, FONT_SIZE_MAX)
-      this.fontSize.value = String(fontSize)
-      store.set({ fontSize })
-    })
-    this.fontFamily.addEventListener('change', () => store.set({ fontFamily: this.fontFamily.value.trim() }))
-    this.fontWeight.addEventListener('change', () => store.set({ fontWeight: Number(this.fontWeight.value) }))
-    this.tabSize.addEventListener('change', () => {
-      const tabSize = clamp(Number(this.tabSize.value), TAB_SIZE_MIN, TAB_SIZE_MAX)
-      this.tabSize.value = String(tabSize)
-      store.set({ tabSize })
-    })
-    this.indentStyle.addEventListener('change', () => store.set({ indentStyle: this.indentStyle.value as IndentStyle }))
-    this.quickSuggestions.addEventListener('change', () => store.set({ quickSuggestions: this.quickSuggestions.checked }))
-    this.showWhitespace.addEventListener('change', () => store.set({ showWhitespace: this.showWhitespace.checked }))
-    this.showIndentGuides.addEventListener('change', () => store.set({ showIndentGuides: this.showIndentGuides.checked }))
-    this.showLineNumbers.addEventListener('change', () => store.set({ showLineNumbers: this.showLineNumbers.checked }))
+    const fontFamily = q<HTMLInputElement>('#pref-font-family')
+    fontFamily.placeholder = options.defaultFontFamily
+    fontFamily.addEventListener('change', () => store.set({ fontFamily: fontFamily.value.trim() }))
+
+    this.syncs = [
+      bindSelect(store, this.mode, 'editorMode', (value) => value as EditorMode),
+      bindSelect(store, q('#pref-indent-style'), 'indentStyle', (value) => value as IndentStyle),
+      bindNumber(store, q('#pref-tab-size'), 'tabSize', TAB_SIZE_MIN, TAB_SIZE_MAX),
+      bindCheckbox(store, q('#pref-quick-suggestions'), 'quickSuggestions'),
+      bindSelect(store, q('#pref-theme'), 'theme', (value) => value as Theme),
+      // Left alone while it has the keyboard, so that what is being typed is
+      // not overwritten by what was there before.
+      (state) => {
+        if (document.activeElement !== fontFamily) fontFamily.value = state.fontFamily
+      },
+      bindSelect(store, q('#pref-font-weight'), 'fontWeight', Number),
+      bindNumber(store, q('#pref-font-size'), 'fontSize', FONT_SIZE_MIN, FONT_SIZE_MAX),
+      bindCheckbox(store, q('#pref-show-whitespace'), 'showWhitespace'),
+      bindCheckbox(store, q('#pref-show-indent-guides'), 'showIndentGuides'),
+      bindCheckbox(store, q('#pref-show-line-numbers'), 'showLineNumbers'),
+    ]
 
     q<HTMLButtonElement>('#preferences-close').addEventListener('click', () => this.close())
     // The dialog fills the window and draws the dim itself, so anything outside
@@ -120,18 +153,7 @@ export class Preferences {
   }
 
   private sync(): void {
-    const { state } = this.store
-    this.mode.value = state.editorMode
-    this.theme.value = state.theme
-    this.fontSize.value = String(state.fontSize)
-    if (document.activeElement !== this.fontFamily) this.fontFamily.value = state.fontFamily
-    this.fontWeight.value = String(state.fontWeight)
-    this.tabSize.value = String(state.tabSize)
-    this.indentStyle.value = state.indentStyle
-    this.quickSuggestions.checked = state.quickSuggestions
-    this.showWhitespace.checked = state.showWhitespace
-    this.showIndentGuides.checked = state.showIndentGuides
-    this.showLineNumbers.checked = state.showLineNumbers
+    for (const sync of this.syncs) sync(this.store.state)
   }
 
   private async loadFonts(): Promise<void> {

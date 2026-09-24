@@ -23,6 +23,11 @@ export interface CommandActions {
   pastePlain: () => Promise<void>
 }
 
+/** The order `comboFromEvent` writes the modifiers in, and `indexByKeys` sorts them into. */
+const MODIFIER_ORDER = ['Ctrl', 'Alt', 'Shift', 'Mod']
+
+const FUNCTION_KEY = /^F\d{1,2}$/
+
 export function createCommands(actions: CommandActions, platform: string): Command[] {
   const isMac = platform === 'macos'
   const commands: Command[] = [
@@ -59,27 +64,21 @@ export function comboFromEvent(event: KeyboardEvent, platform: string): string |
   const ctrl = isMac ? event.ctrlKey : false
   const key = normalizeKey(event)
   if (!key) return null
-  const isFunctionKey = /^F\d{1,2}$/.test(key)
-  if (!mod && !isFunctionKey) return null
-  const parts: string[] = []
-  if (ctrl) parts.push('Ctrl')
-  if (event.altKey) parts.push('Alt')
-  if (event.shiftKey) parts.push('Shift')
-  if (mod) parts.push('Mod')
-  parts.push(key)
-  return parts.join('+')
+  if (!mod && !FUNCTION_KEY.test(key)) return null
+  const held: Record<string, boolean> = { Ctrl: ctrl, Alt: event.altKey, Shift: event.shiftKey, Mod: mod }
+  return [...MODIFIER_ORDER.filter((name) => held[name]), key].join('+')
 }
 
 function normalizeKey(event: KeyboardEvent): string | null {
   const { key } = event
   if (key.length === 1) return key.toUpperCase()
-  if (/^F\d{1,2}$/.test(key)) return key
+  if (FUNCTION_KEY.test(key)) return key
   return null
 }
 
 /**
- * Sorts commands so "Ctrl+Mod+F" style lookups are exact: the modifier order
- * produced by `comboFromEvent` is Ctrl, Alt, Shift, Mod.
+ * Indexes commands by their keys, with the modifiers put in the order
+ * `comboFromEvent` produces, so that its lookups are exact.
  */
 export function indexByKeys(commands: readonly Command[]): Map<string, Command> {
   const index = new Map<string, Command>()
@@ -87,8 +86,7 @@ export function indexByKeys(commands: readonly Command[]): Map<string, Command> 
     if (!command.keys) continue
     const parts = command.keys.split('+')
     const key = parts.pop()!
-    const order = ['Ctrl', 'Alt', 'Shift', 'Mod']
-    const mods = order.filter((mod) => parts.includes(mod))
+    const mods = MODIFIER_ORDER.filter((mod) => parts.includes(mod))
     index.set([...mods, key.length === 1 ? key.toUpperCase() : key].join('+'), command)
   }
   return index
