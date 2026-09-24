@@ -14,14 +14,12 @@ export interface State {
   compare: boolean
   diffMode: string
   language: string
-  editorMode: string
   theme: string
   fontSize: number
   fontFamily: string
   fontWeight: number
   tabSize: number
   indentStyle: string
-  quickSuggestions: boolean
   showWhitespace: boolean
   showIndentGuides: boolean
   showLineNumbers: boolean
@@ -73,14 +71,12 @@ const DEFAULT_STATE: State = {
   compare: false,
   diffMode: 'char',
   language: 'markdown',
-  editorMode: 'normal',
   theme: 'system',
   fontSize: 13,
   fontFamily: '',
   fontWeight: 400,
   tabSize: 4,
   indentStyle: 'spaces',
-  quickSuggestions: true,
   showWhitespace: false,
   showIndentGuides: false,
   showLineNumbers: false,

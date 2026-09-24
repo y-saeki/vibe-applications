@@ -38,9 +38,6 @@ importers:
       '@lezer/highlight':
         specifier: ^1.2.0
         version: 1.2.3
-      '@replit/codemirror-vim':
-        specifier: ^6.3.0
-        version: 6.4.0(@codemirror/commands@6.11.0)(@codemirror/language@6.12.4)(@codemirror/search@6.7.2)(@codemirror/state@6.7.2)(@codemirror/view@6.43.10)
       '@tauri-apps/api':
         specifier: ^2.5.0
         version: 2.11.1
@@ -289,18 +286,6 @@ packages:
     resolution: {integrity: sha512-Tzh95Twig7hUwwNe381/K3PggZBZblKUe2wv25oIpzWLr6Z0m4KgV1ZVIjnR6GM9ANEqjZD7XsZEa6JL/7YEgg==}
     engines: {node: '>=18'}
     hasBin: true
-
-  '@replit/codemirror-vim-core@0.1.0':
-    resolution: {integrity: sha512-1i6EBKpcNfDKvTmTh6N6g9lL6udD5t+uFNh4JCqozRnVlvUGOps7h/QzS2ne4zcvPUjvApKpmcP7Grc3fNbZiQ==}
-
-  '@replit/codemirror-vim@6.4.0':
-    resolution: {integrity: sha512-t9UMDNhkmeAkl0uRbiJVotv97bGD6mf4GyJJoEbrjUqa/Pov0s9eL+4AaI0Xto3OGri17i9qwIpT0JbVlVXt8A==}
-    peerDependencies:
-      '@codemirror/commands': 6.x.x
-      '@codemirror/language': 6.x.x
-      '@codemirror/search': 6.x.x
-      '@codemirror/state': 6.x.x
-      '@codemirror/view': 6.x.x
 
   '@tauri-apps/api@2.11.1':
     resolution: {integrity: sha512-M2FPuYND2m+wh5hfW9ZpSdxMPdEJovPBWwoHJmwUpysTYNHaOkVFN419m/K0LIgjb/7KU2vBgsUepJWugQCvAA==}
@@ -760,17 +745,6 @@ snapshots:
   '@playwright/test@1.56.0':
     dependencies:
       playwright: 1.56.0
-
-  '@replit/codemirror-vim-core@0.1.0': {}
-
-  '@replit/codemirror-vim@6.4.0(@codemirror/commands@6.11.0)(@codemirror/language@6.12.4)(@codemirror/search@6.7.2)(@codemirror/state@6.7.2)(@codemirror/view@6.43.10)':
-    dependencies:
-      '@codemirror/commands': 6.11.0
-      '@codemirror/language': 6.12.4
-      '@codemirror/search': 6.7.2
-      '@codemirror/state': 6.7.2
-      '@codemirror/view': 6.43.10
-      '@replit/codemirror-vim-core': 0.1.0
 
   '@tauri-apps/api@2.11.1': {}
 

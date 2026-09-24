@@ -4,7 +4,6 @@
 
 import { invoke } from '@tauri-apps/api/core'
 
-export type EditorMode = 'normal' | 'vim'
 export type Theme = 'system' | 'light' | 'dark'
 /** How a differing chunk is marked: whole lines only, or the characters within them too. */
 export type DiffMode = 'line' | 'char'
@@ -20,14 +19,12 @@ export interface State {
   compare: boolean
   diffMode: DiffMode
   language: string
-  editorMode: EditorMode
   theme: Theme
   fontSize: number
   fontFamily: string
   fontWeight: number
   tabSize: number
   indentStyle: IndentStyle
-  quickSuggestions: boolean
   /** Whether the spaces and tabs in the draft carry a mark. */
   showWhitespace: boolean
   /** Whether each level of indentation carries a rule. */

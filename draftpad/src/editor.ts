@@ -12,7 +12,7 @@
 // none. A pane closed is where undo stops for the pane that goes on, but one
 // more undo there puts the closed pane back, with its text, caret and history.
 
-import { autocompletion, closeBrackets, closeBracketsKeymap, completeAnyWord, completionKeymap } from '@codemirror/autocomplete'
+import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete'
 import { defaultKeymap, history, historyField, historyKeymap, indentWithTab, redo as redoCommand, redoDepth, undo as undoCommand, undoDepth } from '@codemirror/commands'
 import { bracketMatching, defaultHighlightStyle, indentOnInput, indentUnit, syntaxHighlighting } from '@codemirror/language'
 import { getChunks, MergeView } from '@codemirror/merge'
@@ -27,7 +27,6 @@ import { installLineDiff } from './linediff'
 import { overlayScrollbar, type OverlayScrollbar } from './overlay-scrollbar'
 import { searchPanelExtras } from './search-panel'
 import type { DiffMode, IndentStyle, State } from './state'
-import { vimExtension } from './vim'
 import { whitespaceMarks } from './whitespace'
 
 /**
@@ -113,7 +112,6 @@ const phrases = EditorState.phrases.of({
   'on line': '行',
   'Go to line': '行へ移動',
   go: '移動',
-  Completions: '入力候補',
 })
 
 // Multiple selections stay off (EditorState.allowMultipleSelections), so a
@@ -143,10 +141,6 @@ function fontTheme(size: number, family: string, weight: number): Extension {
 // left over with spaces, so a tab stays one tab width wide either way.
 function tabExtension(size: number, style: IndentStyle): Extension {
   return [EditorState.tabSize.of(size), indentUnit.of(style === 'tabs' ? '\t' : ' '.repeat(size))]
-}
-
-function completionExtension(enabled: boolean): Extension {
-  return enabled ? autocompletion({ override: [completeAnyWord], icons: false }) : []
 }
 
 function colorExtension(dark: boolean): Extension {
@@ -198,7 +192,7 @@ function linesBetween(doc: Text, from: number, to: number): number {
 }
 
 /** The settings that live in a compartment each, by name. */
-type Slot = 'vim' | 'language' | 'colors' | 'font' | 'tab' | 'completion' | 'whitespace' | 'indentGuides' | 'lineNumbers'
+type Slot = 'language' | 'colors' | 'font' | 'tab' | 'whitespace' | 'indentGuides' | 'lineNumbers'
 
 export class Editor {
   private single: EditorView | null = null
@@ -211,12 +205,10 @@ export class Editor {
   // One compartment serves both panes: each state keeps its own content for
   // it, and a change is dispatched to every pane in turn.
   private readonly compartments: Record<Slot, Compartment> = {
-    vim: new Compartment(),
     language: new Compartment(),
     colors: new Compartment(),
     font: new Compartment(),
     tab: new Compartment(),
-    completion: new Compartment(),
     whitespace: new Compartment(),
     indentGuides: new Compartment(),
     lineNumbers: new Compartment(),
@@ -244,17 +236,14 @@ export class Editor {
   private constructor(
     private readonly options: EditorOptions,
     language: Extension,
-    vim: Extension,
   ) {
     const { initial } = options
     this.defaultFontFamily = options.defaultFontFamily
     this.current = {
-      vim,
       language,
       colors: colorExtension(options.dark),
       font: fontTheme(initial.fontSize, this.fontFamily(initial.fontFamily), initial.fontWeight),
       tab: tabExtension(initial.tabSize, initial.indentStyle),
-      completion: completionExtension(initial.quickSuggestions),
       whitespace: whitespaceExtension(initial.showWhitespace),
       indentGuides: indentGuideExtension(initial.showIndentGuides),
       lineNumbers: lineNumberExtension(initial.showLineNumbers),
@@ -266,11 +255,7 @@ export class Editor {
   }
 
   static async create(options: EditorOptions): Promise<Editor> {
-    const [language, vim] = await Promise.all([
-      languageExtension(options.initial.language),
-      options.initial.editorMode === 'vim' ? vimExtension() : Promise.resolve<Extension>([]),
-    ])
-    return new Editor(options, language, vim)
+    return new Editor(options, await languageExtension(options.initial.language))
   }
 
   // ---- the panes ----------------------------------------------------------
@@ -426,13 +411,10 @@ export class Editor {
     const c = this.compartments
     const v = this.current
     return [
-      // Vim must come before every other keymap.
-      c.vim.of(v.vim),
       c.language.of(v.language),
       c.colors.of(v.colors),
       c.font.of(v.font),
       c.tab.of(v.tab),
-      c.completion.of(v.completion),
       c.whitespace.of(v.whitespace),
       c.indentGuides.of(v.indentGuides),
       c.lineNumbers.of(v.lineNumbers),
@@ -445,8 +427,7 @@ export class Editor {
       closeBrackets(),
       highlightSelectionMatches(),
       searchExtension(this.searchOptions),
-      // The search panel and the Vim status line are CodeMirror's bottom
-      // panels, at the foot of the pane's own box. In the merge view that box
+      // The search panel is one of CodeMirror's bottom panels, at the foot of the pane's own box. In the merge view that box
       // is as tall as the text, and the panel keeps itself in view by being
       // sticky against the scrolling merge view — as long as nothing between
       // the two clips, which style.css sees to. Its height goes on the end of
@@ -455,7 +436,7 @@ export class Editor {
       EditorView.lineWrapping,
       EditorView.contentAttributes.of({ spellcheck: 'false', autocorrect: 'off', autocapitalize: 'off' }),
       phrases,
-      keymap.of([...closeBracketsKeymap, ...searchBindings, ...redoKeymap, this.restoreKey, ...historyKeymap, ...completionKeymap, ...defaultKeymap, indentWithTab]),
+      keymap.of([...closeBracketsKeymap, ...searchBindings, ...redoKeymap, this.restoreKey, ...historyKeymap, ...defaultKeymap, indentWithTab]),
       EditorView.updateListener.of((update) => {
         if (update.docChanged) this.options.onDocChanged(side)
         if (update.focusChanged && update.view.hasFocus) this.activeSide = side
@@ -593,10 +574,6 @@ export class Editor {
     this.reconfigure('language', await languageExtension(id))
   }
 
-  async setVim(enabled: boolean): Promise<void> {
-    this.reconfigure('vim', enabled ? await vimExtension() : [])
-  }
-
   setDark(dark: boolean): void {
     this.reconfigure('colors', colorExtension(dark))
   }
@@ -608,10 +585,6 @@ export class Editor {
   /** The tab width, and whether indenting puts in spaces or tab characters. */
   setTab(size: number, style: IndentStyle): void {
     this.reconfigure('tab', tabExtension(size, style))
-  }
-
-  setQuickSuggestions(enabled: boolean): void {
-    this.reconfigure('completion', completionExtension(enabled))
   }
 
   /** Whether the spaces and tabs in the draft carry a mark. */
