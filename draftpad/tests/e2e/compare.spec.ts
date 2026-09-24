@@ -149,7 +149,7 @@ test('rules the two panes apart, in both themes', async ({ launch }) => {
     })
   }
 
-  await app.gear.click()
+  await app.openPreferences.click()
   await app.page.locator('#pref-theme').selectOption('dark')
   expect((await rule('#panes')).color).toBe('rgb(44, 44, 44)')
   expect((await rule('#pane-heads')).color).toBe('rgb(44, 44, 44)')
@@ -414,7 +414,7 @@ test('applies the language and the font to both panes', async ({ launch }) => {
   await expect(app.editorA).toHaveAttribute('data-language', 'rust')
   await expect(app.editorB).toHaveAttribute('data-language', 'rust')
 
-  await app.gear.click()
+  await app.openPreferences.click()
   await app.page.locator('#pref-font-size').fill('24')
   await app.page.keyboard.press('Escape')
   await expect(app.pane('a')).toHaveCSS('font-size', '24px')

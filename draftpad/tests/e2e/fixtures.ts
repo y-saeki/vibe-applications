@@ -94,7 +94,7 @@ export class App {
   /** The right pane's bar, which is in the page only while that pane is. */
   readonly paneHeadB: Locator
   readonly alwaysOnTop: Locator
-  readonly gear: Locator
+  readonly openPreferences: Locator
   readonly preferences: Locator
   readonly searchPanel: Locator
   readonly searchField: Locator
@@ -124,7 +124,7 @@ export class App {
     this.closeB = page.locator('#close-b')
     this.paneHeadB = page.locator('#pane-head-b')
     this.alwaysOnTop = page.locator('#always-on-top')
-    this.gear = page.locator('#open-preferences')
+    this.openPreferences = page.locator('#open-preferences')
     this.preferences = page.locator('#preferences')
     this.searchPanel = page.locator('.cm-search')
     this.searchField = this.searchPanel.getByPlaceholder('検索')

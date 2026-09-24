@@ -243,15 +243,15 @@ body {
   font: var(--font-size-body) var(--ui-font);
 }
 
-/* The title bar: the always-on-top toggle and the gear, and on Windows the
-   window's three buttons. It is painted like the pane bar under it, with no
+/* The title bar: the always-on-top toggle and the preferences button, and on
+   Windows the window's three buttons. It is painted like the pane bar under it, with no
    rule between the two, so that the two read as one bar. Left to the page's
    own background, the strip was one shade and the bar under it another, and
    the seam between them showed.
 
-   Windows puts the toggle and the gear at the left end, where the platform
-   would have its icon and the window's name, and the window buttons at the
-   right. macOS has its traffic lights at the left, so the pair go to the
+   Windows puts the toggle and the preferences button at the left end, where
+   the platform would have its icon and the window's name, and the window
+   buttons at the right. macOS has its traffic lights at the left, so the pair go to the
    right end, the toggle outermost. */
 #titlebar {
   flex: none;
@@ -403,8 +403,8 @@ option {
   box-shadow: 0 0 0 2px var(--focus-ring);
 }
 
-/* A button that is only an icon: the gear in the title bar, the × that
-   closes a panel. */
+/* A button that is only an icon: the pin and the preferences button in the
+   title bar, the × that closes a panel. */
 .icon-button,
 #editor .cm-panel [name="close"],
 #editor .cm-panel .cm-dialog-close {
