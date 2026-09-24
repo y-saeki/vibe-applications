@@ -82,6 +82,7 @@ async function main(): Promise<void> {
   // through late-bound references to the same actions the command table gets.
   let openCompare = async (): Promise<void> => {}
   let closePane = async (_side: Side): Promise<void> => {}
+  let afterPaneRestored = (): void => {}
   let quit = async (): Promise<void> => {}
   const paneBars = new PaneBars(byId('editor'), {
     onLanguageChange: (language) => store.set({ language }),
@@ -136,6 +137,9 @@ async function main(): Promise<void> {
         searchRegexp: options.regexp,
       }),
     onDiffChanged: (stat) => paneBars.setDiffStat(stat),
+    // Undo brings a closed pane back from inside the editor, where the key
+    // lands, so the rest of the page catches up from here.
+    onPaneRestored: () => afterPaneRestored(),
   })
   const ed = editor
   store.setTextProvider(() => ({ text: ed.text('a'), compareText: ed.text('b') }))
@@ -179,6 +183,12 @@ async function main(): Promise<void> {
     if (!ed.compare || preferences.isOpen) return
     ed.closePane(side)
     afterCompareChanged(false, 'a')
+  }
+  // Either pane may be the one that came back, and the one that stayed may
+  // have moved from the left to the right, so both bars are counted afresh.
+  afterPaneRestored = () => {
+    afterCompareChanged(true, 'a')
+    refreshCounts('b')
   }
 
   const commands = createCommands(

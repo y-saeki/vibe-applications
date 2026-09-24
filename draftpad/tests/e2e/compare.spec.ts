@@ -277,6 +277,77 @@ test('closes the left pane and goes on with the right, as the draft', async ({ l
   await app.expectSaved((state) => !state.compare && state.text === 'a\nc\nd\ne' && state.compareText === '')
 })
 
+test('undo puts a closed pane back, with the history it had', async ({ launch }) => {
+  const app = await launch({ state: { compare: true, text: 'left', compareText: 'right' } })
+
+  await app.typeInPane('b', ' more')
+  await app.press('KeyW')
+  await expect(app.page.locator('html')).toHaveAttribute('data-layout', 'single')
+  await app.expectSaved((state) => !state.compare && state.compareText === '')
+
+  await app.press('KeyZ')
+  await expect(app.page.locator('html')).toHaveAttribute('data-layout', 'compare')
+  await expect(app.editorA).toHaveText('left')
+  await expect(app.editorB).toHaveText('right more')
+  await expect(app.editorB).toBeFocused()
+  await expect(app.charsB).toHaveText('10 文字')
+  await app.expectSaved((state) => state.compare && state.text === 'left' && state.compareText === 'right more')
+
+  // The pane's own history came back with it.
+  await app.press('KeyZ')
+  await expect(app.editorB).toHaveText('right')
+  await expect(app.editorA).toHaveText('left')
+})
+
+test('undoes what was typed after the close before putting the pane back', async ({ launch }) => {
+  const app = await launch({ state: TWO_PANES })
+
+  await app.closeB.click()
+  await app.page.keyboard.press('Control+End')
+  await app.typeInEditor('!')
+  await expect(app.editor.locator('.cm-line')).toHaveText(['a', 'b', 'c', 'd!'])
+
+  await app.press('KeyZ')
+  await expect(app.page.locator('html')).toHaveAttribute('data-layout', 'single')
+  await expect(app.editor.locator('.cm-line')).toHaveText(['a', 'b', 'c', 'd'])
+
+  await app.press('KeyZ')
+  await expect(app.page.locator('html')).toHaveAttribute('data-layout', 'compare')
+  await expect(app.changedLines('b')).toHaveText(['e'])
+})
+
+test('puts a closed left pane back on the left', async ({ launch }) => {
+  const app = await launch({ state: { compare: true, text: 'left', compareText: 'the right' } })
+
+  await app.closeA.click()
+  await expect(app.chars).toHaveText('9 文字')
+  await app.press('KeyZ')
+
+  await expect(app.page.locator('html')).toHaveAttribute('data-layout', 'compare')
+  await expect(app.editorA).toHaveText('left')
+  await expect(app.editorB).toHaveText('the right')
+  await expect(app.editorA).toBeFocused()
+  // The text that stayed has moved back to the right, and each bar counts its own pane.
+  await expect(app.chars).toHaveText('4 文字')
+  await expect(app.charsB).toHaveText('9 文字')
+  await app.expectSaved((state) => state.compare && state.text === 'left' && state.compareText === 'the right')
+})
+
+test('puts back only the pane closed last', async ({ launch }) => {
+  const app = await launch({ state: { compare: true, text: 'left', compareText: 'right' } })
+
+  await app.closeB.click()
+  await app.compareButton.click()
+  await app.closeB.click()
+  await app.press('KeyZ')
+  // The copy of the draft the second opening made, not the pane before it.
+  await expect(app.editorB).toHaveText('left')
+  await expect(app.editorB).toBeFocused()
+  await app.press('KeyZ')
+  await expect(app.editorB).toHaveText('left')
+  await expect(app.page.locator('html')).toHaveAttribute('data-layout', 'compare')
+})
+
 test('opens the search panel in the pane with the caret, and in that one only', async ({ launch }) => {
   const app = await launch({ state: TWO_PANES })
 

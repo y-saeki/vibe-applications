@@ -7,11 +7,12 @@
 // on either side (line by line, see linediff.ts) and keeps the two level.
 // Opening the compare pane and closing either side rebuild the editor from the
 // one form into the other, carrying the surviving text, its caret and every
-// setting across. The history is not carried: a pane opened or closed is where
-// undo stops.
+// setting across. The history is not carried: a pane opened is where undo
+// stops. A pane closed is where it stops for the pane that goes on, but one
+// more undo there puts the closed pane back, with its text, caret and history.
 
 import { autocompletion, closeBrackets, closeBracketsKeymap, completeAnyWord, completionKeymap } from '@codemirror/autocomplete'
-import { defaultKeymap, history, historyKeymap, indentWithTab, redo as redoCommand, redoDepth, undo as undoCommand, undoDepth } from '@codemirror/commands'
+import { defaultKeymap, history, historyField, historyKeymap, indentWithTab, redo as redoCommand, redoDepth, undo as undoCommand, undoDepth } from '@codemirror/commands'
 import { bracketMatching, defaultHighlightStyle, indentOnInput, indentUnit, syntaxHighlighting } from '@codemirror/language'
 import { getChunks, MergeView } from '@codemirror/merge'
 import { getSearchQuery, highlightSelectionMatches, openSearchPanel, search, searchKeymap, SearchQuery, setSearchQuery } from '@codemirror/search'
@@ -59,6 +60,25 @@ export interface EditorOptions {
   onSearchOptionsChanged: (options: SearchOptions) => void
   /** Called with what the right pane adds and takes out, whenever the chunks are recomputed. */
   onDiffChanged: (stat: DiffStat) => void
+  /** Called once undo has put a closed pane back, so that there are two again. */
+  onPaneRestored: () => void
+}
+
+/** What a pane is built with: its text, and optionally where the caret is and the history behind it. */
+interface PaneStart {
+  doc: string | Text
+  selection?: EditorSelection
+  /** As `historyField` holds it; an empty history when left out. */
+  history?: unknown
+}
+
+/** The two panes as they were the moment one of them was closed. */
+interface ClosedPane {
+  side: Side
+  /** The pane that was closed, history and all. */
+  closed: EditorState
+  /** The pane that went on, as it was then. */
+  survivor: EditorState
 }
 
 /**
@@ -185,6 +205,8 @@ export class Editor {
   /** The pane that last had the keyboard, which is where a command acts. */
   private activeSide: Side = 'a'
   private scrollbar: OverlayScrollbar | null = null
+  /** What the last close took away, for as long as undo can still bring it back. */
+  private closedPane: ClosedPane | null = null
   // One compartment serves both panes: each state keeps its own content for
   // it, and a change is dispatched to every pane in turn.
   private readonly compartments: Record<Slot, Compartment> = {
@@ -202,6 +224,20 @@ export class Editor {
   private readonly current: Record<Slot, Extension>
   private searchOptions: SearchOptions
   private diffMode: DiffMode
+  /**
+   * The undo key, ahead of the history's own, while undo would put a closed
+   * pane back rather than step through a history. The rebuild waits for the
+   * key's handling to finish, since it destroys the view handling it.
+   */
+  private readonly restoreKey: KeyBinding = {
+    key: 'Mod-z',
+    run: () => {
+      if (!this.canRestoreClosedPane) return false
+      queueMicrotask(() => this.restoreClosedPane())
+      return true
+    },
+    preventDefault: true,
+  }
   private readonly defaultFontFamily: string
 
   private constructor(
@@ -224,7 +260,7 @@ export class Editor {
     }
     this.searchOptions = { caseSensitive: initial.searchCaseSensitive, regexp: initial.searchRegexp }
     this.diffMode = initial.diffMode
-    if (initial.compare) this.buildMerge(initial.text, initial.compareText)
+    if (initial.compare) this.buildMerge({ doc: initial.text }, { doc: initial.compareText })
     else this.buildSingle(initial.text)
   }
 
@@ -265,25 +301,68 @@ export class Editor {
   openCompare(): void {
     if (this.merge) return
     const { state } = this.single!
+    this.closedPane = null
     this.teardown()
-    this.buildMerge(state.doc, state.doc, state.selection, state.selection)
+    const start: PaneStart = { doc: state.doc, selection: state.selection }
+    this.buildMerge(start, start)
     this.activeSide = 'b'
     this.merge!.b.focus()
   }
 
   /**
    * Closes one of the two panes. The other one goes on as the draft, with its
-   * text and caret; what the closed pane held is gone.
+   * text and caret and a history of its own that starts here. Undoing past
+   * that start brings the closed pane back; see `restoreClosedPane`.
    *
    * @param side which pane to close
    */
   closePane(side: Side): void {
     if (!this.merge) return
-    const { state } = side === 'a' ? this.merge.b : this.merge.a
+    const closed = side === 'a' ? this.merge.a.state : this.merge.b.state
+    const survivor = side === 'a' ? this.merge.b.state : this.merge.a.state
     this.teardown()
-    this.buildSingle(state.doc, state.selection)
+    this.buildSingle(survivor.doc, survivor.selection)
+    this.closedPane = { side, closed, survivor }
     this.activeSide = 'a'
     this.single!.focus()
+  }
+
+  /**
+   * True while undo would put the last closed pane back: every edit made to
+   * the draft since, if any, has been undone. The document is compared as
+   * well, because the history forgets its oldest steps past a certain depth,
+   * and a draft that cannot be undone back to where it was cannot take the
+   * old history either.
+   */
+  private get canRestoreClosedPane(): boolean {
+    const closed = this.closedPane
+    if (!closed || !this.single) return false
+    const { state } = this.single
+    return undoDepth(state) === 0 && state.doc.eq(closed.survivor.doc)
+  }
+
+  /**
+   * Puts the last closed pane back beside the draft, as the undo of closing
+   * it. Each pane takes up its history from where it stood at the close, so
+   * undoing further goes on into what was typed before it. The keyboard goes
+   * to the pane that comes back.
+   *
+   * @returns whether there was a pane to put back
+   */
+  private restoreClosedPane(): boolean {
+    if (!this.canRestoreClosedPane) return false
+    const { side, closed, survivor } = this.closedPane!
+    const { selection } = this.single!.state
+    const kept: PaneStart = { doc: survivor.doc, selection, history: survivor.field(historyField) }
+    const back: PaneStart = { doc: closed.doc, selection: closed.selection, history: closed.field(historyField) }
+    this.closedPane = null
+    this.teardown()
+    if (side === 'a') this.buildMerge(back, kept)
+    else this.buildMerge(kept, back)
+    this.activeSide = side
+    this.paneView(side)!.focus()
+    this.options.onPaneRestored()
+    return true
   }
 
   private buildSingle(doc: string | Text, selection?: EditorSelection): void {
@@ -297,7 +376,7 @@ export class Editor {
     this.scrollbar = overlayScrollbar(view.scrollDOM, this.options.host, view.contentDOM)
   }
 
-  private buildMerge(docA: string | Text, docB: string | Text, selectionA?: EditorSelection, selectionB?: EditorSelection): void {
+  private buildMerge(a: PaneStart, b: PaneStart): void {
     installLineDiff()
     // The merge view hands the recomputed chunks to both panes after an edit on
     // either, so listening on one of them is enough.
@@ -307,8 +386,8 @@ export class Editor {
       if (before !== after) this.options.onDiffChanged(this.diffStat())
     })
     const merge = new MergeView({
-      a: { doc: docA, selection: selectionA, extensions: [this.paneExtensions('a'), chunks] },
-      b: { doc: docB, selection: selectionB, extensions: this.paneExtensions('b') },
+      a: { doc: a.doc, selection: a.selection, extensions: [this.paneExtensions('a', a.history), chunks] },
+      b: { doc: b.doc, selection: b.selection, extensions: this.paneExtensions('b', b.history) },
       parent: this.options.parent,
       // The stripe beside a changed line is drawn by style.css on the line
       // itself, so that the text has the pane's whole width: the merge
@@ -334,8 +413,14 @@ export class Editor {
     this.merge = null
   }
 
-  /** Everything a pane is made of, from the settings as they stand. */
-  private paneExtensions(side: Side): Extension {
+  /**
+   * Everything a pane is made of, from the settings as they stand.
+   *
+   * @param past a history to start from, as `historyField` held it, in
+   *   place of an empty one. It must belong to the document the pane starts
+   *   with.
+   */
+  private paneExtensions(side: Side, past?: unknown): Extension {
     const c = this.compartments
     const v = this.current
     return [
@@ -350,6 +435,7 @@ export class Editor {
       c.indentGuides.of(v.indentGuides),
       c.lineNumbers.of(v.lineNumbers),
       history(),
+      past === undefined ? [] : historyField.init(() => past),
       drawSelection(),
       dropCursor(),
       indentOnInput(),
@@ -367,7 +453,7 @@ export class Editor {
       EditorView.lineWrapping,
       EditorView.contentAttributes.of({ spellcheck: 'false', autocorrect: 'off', autocapitalize: 'off' }),
       phrases,
-      keymap.of([...closeBracketsKeymap, ...searchBindings, ...redoKeymap, ...historyKeymap, ...completionKeymap, ...defaultKeymap, indentWithTab]),
+      keymap.of([...closeBracketsKeymap, ...searchBindings, ...redoKeymap, this.restoreKey, ...historyKeymap, ...completionKeymap, ...defaultKeymap, indentWithTab]),
       EditorView.updateListener.of((update) => {
         if (update.docChanged) this.options.onDocChanged(side)
         if (update.focusChanged && update.view.hasFocus) this.activeSide = side
@@ -474,7 +560,7 @@ export class Editor {
   }
 
   undo(): void {
-    undoCommand(this.activeView)
+    if (!this.restoreClosedPane()) undoCommand(this.activeView)
     this.activeView.focus()
   }
 
@@ -485,7 +571,7 @@ export class Editor {
 
   /** True while the history holds a step to undo. */
   get canUndo(): boolean {
-    return undoDepth(this.activeView.state) > 0
+    return undoDepth(this.activeView.state) > 0 || this.canRestoreClosedPane
   }
 
   /** True while the history holds an undone step to put back. */

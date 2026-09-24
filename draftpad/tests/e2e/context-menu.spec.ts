@@ -97,6 +97,18 @@ test('the menu follows what the history holds', async ({ launch }) => {
   await expect.poll(() => app.contextMenuState()).toEqual({ canUndo: false, canRedo: true, canSearch: true })
 })
 
+test('offers undo right after a pane is closed, which puts it back', async ({ launch }) => {
+  const app = await launch({ ...MAC, state: { compare: true, text: 'left', compareText: 'right' } })
+
+  await app.closeB.click()
+  await app.editor.click({ button: 'right' })
+  await expect.poll(() => app.contextMenuState()).toEqual({ canUndo: true, canRedo: false, canSearch: true })
+
+  await app.runMenuCommand('undo')
+  await expect(app.page.locator('html')).toHaveAttribute('data-layout', 'compare')
+  await expect(app.editorB).toHaveText('right')
+})
+
 test('the menu leaves the draft alone while preferences has the keyboard', async ({ launch }) => {
   const app = await launch(MAC)
 
