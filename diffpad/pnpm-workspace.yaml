@@ -1,8 +1,0 @@
-# Supply-chain hardening: refuse to resolve any package version published less
-# than 7 days ago (unit: minutes). See https://pnpm.io/supply-chain-security
-minimumReleaseAge: 10080
-# Every dependency's build script has to be ruled on explicitly, or the install
-# fails. esbuild's only picks the platform binary, which pnpm already installs
-# as an optional dependency, so it has never run here.
-allowBuilds:
-  esbuild: false
