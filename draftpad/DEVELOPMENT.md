@@ -621,7 +621,7 @@ macOS はウィンドウの枠を残したまま、タイトルバーを透明�
 `async` にしていません。
 
 Windows にはタイトルバーをオーバーレイにする設定がないため、ウィンドウの枠そのものを外し
-(`src-tauri/src/lib.rs` の `set_decorations(false)`)、タイトルバーを丸ごとページが描きます。左端にピンと歯車、
+(`src-tauri/src/lib.rs` の `set_decorations(false)`)、タイトルバーを丸ごとページが描きます。左端にピンと環境設定、
 右端に最小化・最大化・閉じるの 3 つです。アイコンとアプリ名は出しません。`tauri.conf.json` の `decorations` で
 外さないのは、macOS では枠を残す必要があるためです。起動時のウィンドウは非表示なので、枠が付いた姿は
 一度も見えません。
@@ -674,7 +674,7 @@ Tauri の NSIS スクリプトはビルド時のテンプレートなので、`t
 | 書体 | `--ui-font`、`--font-mono` | UI 全体 / バージョン表示。数の段階ではないので、予算の数え方も他と別です |
 | 余白 | `--space-1` 〜 `--space-5` | 4px 刻みの 5 段。コントロール同士、バーとパネルの内側、グループ同士 |
 | 角丸 | `--radius-sm` / `-md` / `-lg` | 部品の大きさに対応した 3 段(チェックボックスとアイコンボタン / 高さ `--control-height` のコントロール / パネル) |
-| 寸法 | `--control-height`、`--control-height-search`、`--checkbox-size`、`--toggle-width`、`--toggle-size-search`、`--glyph-size`、`--icon-size`、`--icon-button-size`、`--bar-height`、`--titlebar-height`、`--caption-button-width`、`--scrollbar-size`、`--scrollbar-thumb-size`、`--scrollbar-thumb-min` | コントロールとバーの大きさ、Windows のタイトルバーのウィンドウボタンの幅、スクロールバーの溝とつまみ |
+| 寸法 | `--control-height`、`--control-height-search`、`--checkbox-size`、`--toggle-width`、`--toggle-size-search`、`--glyph-size`、`--icon-size`、`--titlebar-icon-size`、`--icon-button-size`、`--bar-height`、`--titlebar-height`、`--caption-button-width`、`--scrollbar-size`、`--scrollbar-thumb-size`、`--scrollbar-thumb-min` | コントロールとバーの大きさ、Windows のタイトルバーのウィンドウボタンの幅、スクロールバーの溝とつまみ |
 | レイアウト | `--field-width`、`--field-width-narrow`、`--field-width-search`、`--button-width-search`、`--label-width`、`--panel-width`、`--panel-inset`、`--language-width`、`--mode-width`、`--count-width`、`--count-width-narrow` | 入力欄・ラベル列・検索パネルと環境設定パネルの配置と、ペインのバーの 2 つのセレクタの下限幅、文字数・行数の数字を収める枠の幅 |
 | パレット | `--bg`、`--fg`、`--muted`、`--muted-strong`、`--placeholder`、`--border` など | 色、影 2 段(`--shadow-panel` / `--shadow-popup`)、描き込む印 8 枚(✓ / シェブロン上下 / × / 横棒 / Aa / .* / タブの矢印)、空白文字の印(`--whitespace`)、インデントガイドの色(`--indent-guide`)、行番号の色(`--line-number`)、スクロールバーのつまみの色 2 段(`--scrollbar-thumb` / `--scrollbar-thumb-hover`)、Windows のタイトルバーの閉じるボタンの赤とその上の × の色(`--caption-close` / `--caption-close-fg`。どちらのテーマでも Windows 自身の色のままです)、比較ペインの印の色 6 つ(`--diff-a-line` / `-text` / `-mark` と `b` 側。左が赤系、右が緑系で、行の地色・文字の印・行端の帯と `+N` / `−N` の文字色)と、`src/indent-guides.ts` と `src/overlay-scrollbar.ts` が入れる 2 つずつの数(`--indent-guide-levels` / `--indent-guide-step`、`--scrollbar-cover` / `--scrollbar-progress`。色でも長さでもありませんが、ファミリにも入らないのでここで数えます) |
 
@@ -689,13 +689,13 @@ Tauri の NSIS スクリプトはビルド時のテンプレートなので、`t
 
 ### アイコンと淡い文字
 
-歯車とピン(常に手前に表示)は HTML に直接書いた SVG です。閉じるボタンの × は `--close-icon` をマスクして描きます。文字として
+ピン(常に手前に表示)と環境設定のスライダーは HTML に直接書いた SVG です。閉じるボタンの × は `--close-icon` をマスクして描きます。文字として
 置くと、字形の中心と文字の送り幅の中心がずれる分だけボタンの中央から外れ、その量がフォントによって
 変わります。CodeMirror は自前の閉じるボタンに × の文字を書き込むので、そちらは文字を `font-size: 0` で
 畳んで同じマスクを被せています。検索パネルの「前へ」「次へ」も同じで、文字を畳んで `--chevron-up` /
 `--chevron-down` を被せます(`--chevron-down` はセレクトの矢印と同じ画像です)。読み上げ用の名前は文字と
 一緒に消えるので、`src/search-panel.ts` が `aria-label` に移し替えます。擬似要素にしか届かないもの
-(✓・シェブロン・×・横棒・Aa・.*)が CSS の画像で、HTML から触れるもの(歯車・ピン)が SVG です。
+(✓・シェブロン・×・横棒・Aa・.*)が CSS の画像で、HTML から触れるもの(ピン・スライダー)が SVG です。
 
 検索パネルの「Aa」「.\*」トグルも同じ理由で画像です(`--case-mark` / `--regexp-mark`)。文字として置くと、
 当たるフォントが macOS と Windows で違うぶんだけ字形も送り幅も変わり、20px の枠の中での位置が揃いません。
@@ -704,6 +704,16 @@ Tauri の NSIS スクリプトはビルド時のテンプレートなので、`t
 描く印も `--icon-size` で描く印も、画面上ではほぼ同じ太さになります。タブの矢印は行の高さに合わせて
 拡大しますが、これもその範囲に収まります。ここを 1 枚だけ太くすると、その印だけ別の出どころから
 持ってきたように見えます。
+
+タイトルバーのピンとスライダーだけは例外で、太さ 1 の線だけで描き、塗りを使いません。Windows では
+自前で描いている最小化・最大化・閉じるボタン(1px の線)と並ぶため、そちらに合わせています。線が細い分
+16px では小さく見えるので、`--titlebar-icon-size`(20px)で描きます。viewBox もその寸法(20×20)にして
+あり、線の太さ 1 がそのまま 1px になります。スライダーの横線は y 座標を .5 に置いて 1x でもにじまない
+ようにしてあり、そのぶん全体が枠の中央から 0.5px 下に寄っています。上に寄せるより下に寄せたほうが、
+Windows の最小化ボタンの横線と中段の線が同じ行に並びます。ピンは見た目の重心が上に寄るので、
+1px 下げて(`translate(0 1)`)置いています。
+スライダーのつまみは円の手前で線を切って描き、円の内側は透明です。下地の色で塗った円を重ねて線を隠すと、
+ホバーで下地の色が変わったときにつまみの中だけ元の色が残ります。
 
 2 つのシェブロンと `--close-icon` はマスクなので `currentColor` で塗れますが、`--check-mark` と `--minus-mark`
 は `input` の擬似要素の背景として敷くため色を焼き込んであり、テーマごとに 2 つずつ持っています。

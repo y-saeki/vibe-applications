@@ -1,4 +1,4 @@
-// Title bar: the always-on-top toggle and the gear button that opens
+// Title bar: the always-on-top toggle and the button that opens
 // Preferences and, on Windows, the window's own minimize, maximize and close
 // buttons, which the frameless window no longer draws for us. The counts and
 // the language selector are in the bar above the pane (src/pane-bars.ts).

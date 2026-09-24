@@ -113,7 +113,7 @@ test('the menu leaves the draft alone while preferences has the keyboard', async
   const app = await launch(MAC)
 
   await app.typeInEditor('残るはず')
-  await app.gear.click()
+  await app.openPreferences.click()
   await expect(app.preferences).toBeVisible()
 
   // The same guards the command table carries: while the panel is open the

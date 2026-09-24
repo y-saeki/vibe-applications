@@ -13,7 +13,7 @@ test('paints the toggle in both states without tripping the policy', async ({ la
   // sits on the knob rather than on the control itself. Each mark is a
   // background image, so a policy that blocks it leaves the knob bare rather
   // than failing outright.
-  await app.gear.click()
+  await app.openPreferences.click()
   await expect(app.preferences).toBeVisible()
   const knob = () =>
     app.page.evaluate(
@@ -42,7 +42,7 @@ test('paints the masked marks without tripping the policy', async ({ launch }) =
   // or the tab simply blank rather than failing outright.
   expect(await maskOf('.cm-highlightTab', '')).toMatch(/url\("data:image\/svg\+xml/)
 
-  await app.gear.click()
+  await app.openPreferences.click()
   await expect(app.preferences).toBeVisible()
   expect(await maskOf('#preferences-close', '::before')).toMatch(/url\("data:image\/svg\+xml/)
 

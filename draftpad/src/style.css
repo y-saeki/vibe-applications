@@ -144,6 +144,9 @@
   --toggle-width: 48px; /* the toggle's track; it is --control-height tall */
   --glyph-size: 12px; /* the mark inside a toggle: the switch's knob, Aa and .* */
   --icon-size: 16px;
+  /* The pin and the sliders in the title bar, a size up from --icon-size:
+     drawn in 1px lines, they read small at 16px beside the window buttons. */
+  --titlebar-icon-size: 20px;
   --icon-button-size: 24px;
   --toggle-size-search: 16px; /* the Aa / .* toggles inside the find field */
   --bar-height: 32px; /* the pane bars */
@@ -243,15 +246,15 @@ body {
   font: var(--font-size-body) var(--ui-font);
 }
 
-/* The title bar: the always-on-top toggle and the gear, and on Windows the
-   window's three buttons. It is painted like the pane bar under it, with no
+/* The title bar: the always-on-top toggle and the preferences button, and on
+   Windows the window's three buttons. It is painted like the pane bar under it, with no
    rule between the two, so that the two read as one bar. Left to the page's
    own background, the strip was one shade and the bar under it another, and
    the seam between them showed.
 
-   Windows puts the toggle and the gear at the left end, where the platform
-   would have its icon and the window's name, and the window buttons at the
-   right. macOS has its traffic lights at the left, so the pair go to the
+   Windows puts the toggle and the preferences button at the left end, where
+   the platform would have its icon and the window's name, and the window
+   buttons at the right. macOS has its traffic lights at the left, so the pair go to the
    right end, the toggle outermost. */
 #titlebar {
   flex: none;
@@ -403,8 +406,8 @@ option {
   box-shadow: 0 0 0 2px var(--focus-ring);
 }
 
-/* A button that is only an icon: the gear in the title bar, the × that
-   closes a panel. */
+/* A button that is only an icon: the pin and the preferences button in the
+   title bar, the × that closes a panel. */
 .icon-button,
 #editor .cm-panel [name="close"],
 #editor .cm-panel .cm-dialog-close {
@@ -427,6 +430,11 @@ option {
 .icon-button svg {
   width: var(--icon-size);
   height: var(--icon-size);
+}
+
+#titlebar .icon-button svg {
+  width: var(--titlebar-icon-size);
+  height: var(--titlebar-icon-size);
 }
 
 /* The × is drawn rather than typed. A glyph sits where the font's metrics put

@@ -62,7 +62,7 @@ test('starts at the saved font weight, snapped onto the scale the panel offers',
   const app = await launch({ state: { fontWeight: 460 } })
 
   await expect(app.editor).toHaveCSS('font-weight', '500')
-  await app.gear.click()
+  await app.openPreferences.click()
   await expect(app.page.locator('#pref-font-weight')).toHaveValue('500')
 })
 

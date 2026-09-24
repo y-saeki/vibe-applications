@@ -125,13 +125,13 @@ for (const [platform, height] of [
     const app = await launch({ platform, colorScheme: 'light' })
     expect(await surfaces(app)).toEqual({ color: 'rgb(246, 248, 250)', height, seam: '0px', paneBar: 'rgb(246, 248, 250)' })
 
-    await app.gear.click()
+    await app.openPreferences.click()
     await app.page.locator('#pref-theme').selectOption('dark')
     expect(await surfaces(app)).toMatchObject({ color: 'rgb(17, 17, 17)', paneBar: 'rgb(17, 17, 17)' })
   })
 }
 
-test('puts the pin and the gear at the left of the Windows title bar, and the window buttons at the right', async ({
+test('puts the pin and the preferences button at the left of the Windows title bar, and the window buttons at the right', async ({
   launch,
 }) => {
   const app = await launch({ platform: 'windows' })
@@ -150,7 +150,7 @@ test('puts the pin and the gear at the left of the Windows title bar, and the wi
   expect(close.x + close.width).toBe(bar.x + bar.width)
 })
 
-test('puts the gear and then the pin at the right end of the macOS title bar, clear of the traffic lights', async ({
+test('puts the preferences button and then the pin at the right end of the macOS title bar, clear of the traffic lights', async ({
   launch,
 }) => {
   const app = await launch({ platform: 'macos' })
@@ -169,7 +169,7 @@ test('lines the macOS title bar buttons up with the traffic lights, wherever mac
   const app = await launch({ platform: 'macos', trafficLightsCenter: 19 })
 
   await expect(app.page.locator('#titlebar')).toHaveCSS('height', '38px')
-  for (const button of [app.alwaysOnTop, app.gear]) {
+  for (const button of [app.alwaysOnTop, app.openPreferences]) {
     const box = (await button.boundingBox())!
     expect(box.y + box.height / 2).toBe(19)
   }

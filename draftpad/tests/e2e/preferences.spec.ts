@@ -1,10 +1,10 @@
 import { expect, test, windowMinimum } from './fixtures'
 
-test('opens from the gear button and closes with Escape', async ({ launch }) => {
+test('opens from the title bar button and closes with Escape', async ({ launch }) => {
   const app = await launch()
 
   await expect(app.preferences).toBeHidden()
-  await app.gear.click()
+  await app.openPreferences.click()
   await expect(app.preferences).toBeVisible()
 
   await app.page.keyboard.press('Escape')
@@ -16,7 +16,7 @@ test('opens from the gear button and closes with Escape', async ({ launch }) => 
 test('closes when the backdrop is clicked', async ({ launch }) => {
   const app = await launch()
 
-  await app.gear.click()
+  await app.openPreferences.click()
   await expect(app.preferences).toBeVisible()
   await app.preferences.click({ position: { x: 4, y: 4 } })
   await expect(app.preferences).toBeHidden()
@@ -25,7 +25,7 @@ test('closes when the backdrop is clicked', async ({ launch }) => {
 test('shows the version, set apart from the settings above it', async ({ launch }) => {
   const app = await launch({ version: '9.8.7' })
 
-  await app.gear.click()
+  await app.openPreferences.click()
   const version = app.page.locator('#pref-version')
   await expect(version).toHaveText('draftpad 9.8.7')
   // Not a setting, so it is deliberately outside the label column: bottom
@@ -37,7 +37,7 @@ test('shows the version, set apart from the settings above it', async ({ launch 
 test('gathers the settings into the two groups, in that order', async ({ launch }) => {
   const app = await launch()
 
-  await app.gear.click()
+  await app.openPreferences.click()
   await expect(app.page.locator('#preferences legend')).toHaveText(['編集', '表示'])
 
   // The order in the panel is the order the keyboard walks them in, so one
@@ -88,7 +88,7 @@ test('flips the suggestions toggle from the keyboard, and remembers it', async (
   const app = await launch({ state: { quickSuggestions: true } })
   const suggestions = app.page.locator('#pref-quick-suggestions')
 
-  await app.gear.click()
+  await app.openPreferences.click()
   await expect(suggestions).toBeChecked()
 
   // It is still a checkbox, whatever it is painted as: Tab reaches it and
@@ -107,7 +107,7 @@ test('draws that toggle as a switch the width of two controls', async ({ launch 
   const app = await launch({ colorScheme: 'light', state: { quickSuggestions: false } })
   const suggestions = app.page.locator('#pref-quick-suggestions')
 
-  await app.gear.click()
+  await app.openPreferences.click()
   // The track is the silhouette of the select and the number field beside it,
   // widened: same height, same corner, same border.
   const box = (await suggestions.boundingBox())!
@@ -153,7 +153,7 @@ test('draws that toggle as a switch the width of two controls', async ({ launch 
 test('switches to the dark look and remembers it', async ({ launch }) => {
   const app = await launch({ colorScheme: 'light' })
 
-  await app.gear.click()
+  await app.openPreferences.click()
   await app.page.locator('#pref-theme').selectOption('dark')
   await expect(app.page.locator('html')).toHaveAttribute('data-theme', 'dark')
   await app.expectSaved((state) => state.theme === 'dark')
@@ -174,7 +174,7 @@ test('applies the font size and pulls out-of-range values back in', async ({ lau
   const app = await launch()
   const fontSize = app.page.locator('#pref-font-size')
 
-  await app.gear.click()
+  await app.openPreferences.click()
   await fontSize.fill('40')
   await fontSize.blur()
   await expect(app.page.locator('.cm-editor')).toHaveCSS('font-size', '40px')
@@ -189,7 +189,7 @@ test('applies the font size and pulls out-of-range values back in', async ({ lau
 test('applies the font weight and remembers it', async ({ launch }) => {
   const app = await launch()
 
-  await app.gear.click()
+  await app.openPreferences.click()
   await app.page.locator('#pref-font-weight').selectOption('700')
   // The theme puts the weight on the scroller; the text takes it by inheritance.
   await expect(app.editor).toHaveCSS('font-weight', '700')
@@ -200,7 +200,7 @@ test('pulls an out-of-range tab width back in', async ({ launch }) => {
   const app = await launch()
   const tabSize = app.page.locator('#pref-tab-size')
 
-  await app.gear.click()
+  await app.openPreferences.click()
   await tabSize.fill('0')
   await tabSize.blur()
   await expect(tabSize).toHaveValue('1')
@@ -211,7 +211,7 @@ test('switches indenting between spaces and tabs', async ({ launch }) => {
   const app = await launch({ state: { tabSize: 2 } })
   const indentStyle = app.page.locator('#pref-indent-style')
 
-  await app.gear.click()
+  await app.openPreferences.click()
   await expect(indentStyle).toHaveValue('spaces')
   await indentStyle.selectOption('tabs')
   await app.expectSaved((state) => state.indentStyle === 'tabs')
@@ -226,7 +226,7 @@ test('switches indenting between spaces and tabs', async ({ launch }) => {
 test('offers the fonts the backend reports', async ({ launch }) => {
   const app = await launch({ fonts: ['BIZ UDGothic', 'Consolas'] })
 
-  await app.gear.click()
+  await app.openPreferences.click()
   await expect(app.page.locator('#font-list option')).toHaveCount(2)
   await expect(app.page.locator('#font-list option').first()).toHaveAttribute('value', 'BIZ UDGothic')
 })
@@ -234,7 +234,7 @@ test('offers the fonts the backend reports', async ({ launch }) => {
 test('turns Vim mode on, and the editor stops taking plain typing', async ({ launch }) => {
   const app = await launch()
 
-  await app.gear.click()
+  await app.openPreferences.click()
   await app.page.locator('#pref-mode').selectOption('vim')
   await app.expectSaved((state) => state.editorMode === 'vim')
   await app.page.keyboard.press('Escape')
@@ -261,7 +261,7 @@ test('covers the search bar, which closes it like the rest of the backdrop', asy
 
   await app.press('f')
   await expect(app.searchField).toBeVisible()
-  await app.gear.click()
+  await app.openPreferences.click()
   await expect(app.preferences).toBeVisible()
 
   // CodeMirror stacks its own panels above the page; the panel is a modal
@@ -280,7 +280,7 @@ test('covers the search bar, which closes it like the rest of the backdrop', asy
 test('dims the window with the palette alone, not the browser\'s own backdrop', async ({ launch }) => {
   const app = await launch({ colorScheme: 'light' })
 
-  await app.gear.click()
+  await app.openPreferences.click()
   await expect(app.preferences).toHaveCSS('background-color', 'rgba(0, 0, 0, 0.35)')
   // Browsers paint ::backdrop themselves, and it would sit under that colour
   // and deepen it by a different amount on each engine.
@@ -296,7 +296,7 @@ test('marks the spaces and tabs in the draft, and nothing else', async ({ launch
 
   await expect(app.whitespaceMarks).toHaveCount(0)
 
-  await app.gear.click()
+  await app.openPreferences.click()
   await expect(showWhitespace).not.toBeChecked()
   await showWhitespace.check()
   await app.expectSaved((state) => state.showWhitespace)
@@ -316,7 +316,7 @@ test('marks the spaces and tabs in the draft, and nothing else', async ({ launch
   const nested = await app.page.locator('.cm-highlightTab').evaluate((span) => span.childElementCount)
   expect(nested).toBe(0)
 
-  await app.gear.click()
+  await app.openPreferences.click()
   await showWhitespace.uncheck()
   await expect(app.whitespaceMarks).toHaveCount(0)
   await app.expectSaved((state) => !state.showWhitespace)
@@ -338,7 +338,7 @@ test('paints the whitespace marks from the palette, in both themes', async ({ la
   await expect(tab).toHaveCSS('background-color', 'rgba(31, 35, 40, 0.26)')
   await expect(tab).toHaveCSS('mask-image', /url\("data:image\/svg\+xml/)
 
-  await app.gear.click()
+  await app.openPreferences.click()
   await app.page.locator('#pref-theme').selectOption('dark')
   await expect(space).toHaveCSS('background-image', /rgba\(216, 216, 216, 0\.26\)/)
   await expect(tab).toHaveCSS('background-color', 'rgba(216, 216, 216, 0.26)')
@@ -353,7 +353,7 @@ test('rules every line that is inside an indented block, and no other', async ({
 
   await expect(app.indentGuides).toHaveCount(0)
 
-  await app.gear.click()
+  await app.openPreferences.click()
   await expect(showIndentGuides).not.toBeChecked()
   await showIndentGuides.check()
   await app.expectSaved((state) => state.showIndentGuides)
@@ -365,7 +365,7 @@ test('rules every line that is inside an indented block, and no other', async ({
   // with nothing indented below it, takes none.
   expect(await app.indentGuideLevels()).toEqual(['1', '2', '1', '1'])
 
-  await app.gear.click()
+  await app.openPreferences.click()
   await showIndentGuides.uncheck()
   await expect(app.indentGuides).toHaveCount(0)
   await app.expectSaved((state) => !state.showIndentGuides)
@@ -381,7 +381,7 @@ test('counts a level as the tab width, and recounts when that changes', async ({
 
   // The same four and eight columns of indentation are twice as many levels at
   // a tab width of 2, and the blank line inside the block follows them.
-  await app.gear.click()
+  await app.openPreferences.click()
   await app.page.locator('#pref-tab-size').fill('2')
   await app.page.keyboard.press('Escape')
 
@@ -395,7 +395,7 @@ test('paints the indentation rules from the palette, in both themes', async ({ l
 
   await expect(guides).toHaveCSS('background-image', /rgba\(31, 35, 40, 0\.14\)/)
 
-  await app.gear.click()
+  await app.openPreferences.click()
   await app.page.locator('#pref-theme').selectOption('dark')
   await expect(guides).toHaveCSS('background-image', /rgba\(216, 216, 216, 0\.14\)/)
 })
@@ -409,7 +409,7 @@ test('keeps the panel inside its width at the narrowest the window goes', async 
   // opens at.
   await app.page.setViewportSize({ width: windowMinimum().width, height: windowMinimum().height })
 
-  await app.gear.click()
+  await app.openPreferences.click()
   // What is asked for is that nothing is laid out past the panel's content
   // edge, which is the whole of what a horizontal bar would have been for.
   // Not that the panel measures no wider than itself: WebKit puts about 11px
@@ -449,7 +449,7 @@ test('lays a bar over the panel when the window is too short to hold it', async 
   // insets, whatever else is on screen.
   await app.page.setViewportSize({ width: 600, height: 300 })
 
-  await app.gear.click()
+  await app.openPreferences.click()
   const panel = app.preferences.locator('.panel')
   const bar = app.scrollbar('preferences')
 
@@ -479,7 +479,7 @@ test('numbers the lines of the draft, and counts them the way the pane bar does'
 
   await expect(app.lineNumbers).toHaveCount(0)
 
-  await app.gear.click()
+  await app.openPreferences.click()
   await expect(showLineNumbers).not.toBeChecked()
   await showLineNumbers.check()
   await app.expectSaved((state) => state.showLineNumbers)
@@ -492,7 +492,7 @@ test('numbers the lines of the draft, and counts them the way the pane bar does'
   await app.typeInEditor('\nd')
   await expect(app.lineNumberCells).toHaveText(['1', '2', '3', '4'])
 
-  await app.gear.click()
+  await app.openPreferences.click()
   await showLineNumbers.uncheck()
   await expect(app.lineNumbers).toHaveCount(0)
   await app.expectSaved((state) => !state.showLineNumbers)
@@ -544,7 +544,7 @@ test('draws the column as a margin rather than a panel, in both themes', async (
   await expect(app.lineNumberCells.first()).toHaveCSS('padding-right', '4px')
   await expect(app.lineNumberCells.first()).toHaveCSS('padding-left', '12px')
 
-  await app.gear.click()
+  await app.openPreferences.click()
   await app.page.locator('#pref-theme').selectOption('dark')
   await expect(gutters).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
   // The dark block redefines --whitespace and nothing else; the column follows
@@ -559,7 +559,7 @@ test('sizes the numbers with the draft', async ({ launch }) => {
   // a number stays on the line it counts at any size.
   await expect(app.lineNumbers).toHaveCSS('font-size', '24px')
 
-  await app.gear.click()
+  await app.openPreferences.click()
   await app.page.locator('#pref-font-size').fill('40')
   await app.page.keyboard.press('Escape')
   await expect(app.lineNumbers).toHaveCSS('font-size', '40px')
