@@ -7,8 +7,9 @@
 // on either side (line by line, see linediff.ts) and keeps the two level.
 // Opening the compare pane and closing either side rebuild the editor from the
 // one form into the other, carrying the surviving text, its caret and every
-// setting across. The history is not carried: a pane opened is where undo
-// stops. A pane closed is where it stops for the pane that goes on, but one
+// setting across. Opening carries the draft's history into the left pane, so
+// undo there goes on into what was typed before; the right pane starts with
+// none. A pane closed is where undo stops for the pane that goes on, but one
 // more undo there puts the closed pane back, with its text, caret and history.
 
 import { autocompletion, closeBrackets, closeBracketsKeymap, completeAnyWord, completionKeymap } from '@codemirror/autocomplete'
@@ -294,17 +295,18 @@ export class Editor {
   }
 
   /**
-   * Opens the compare pane: the draft becomes the left pane, and the right one
-   * starts out as a copy of it, caret included. The keyboard goes to the new
-   * pane, which is where the text to compare against is about to be put.
+   * Opens the compare pane: the draft becomes the left pane, history and all,
+   * and the right one starts out as a copy of it, caret included, with no
+   * history. The keyboard goes to the new pane, which is where the text to
+   * compare against is about to be put.
    */
   openCompare(): void {
     if (this.merge) return
     const { state } = this.single!
     this.closedPane = null
     this.teardown()
-    const start: PaneStart = { doc: state.doc, selection: state.selection }
-    this.buildMerge(start, start)
+    const copy: PaneStart = { doc: state.doc, selection: state.selection }
+    this.buildMerge({ ...copy, history: state.field(historyField) }, copy)
     this.activeSide = 'b'
     this.merge!.b.focus()
   }

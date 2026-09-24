@@ -277,6 +277,23 @@ test('closes the left pane and goes on with the right, as the draft', async ({ l
   await app.expectSaved((state) => !state.compare && state.text === 'a\nc\nd\ne' && state.compareText === '')
 })
 
+test('carries the draft\'s history into the left pane, and starts the right one with none', async ({ launch }) => {
+  const app = await launch()
+
+  await app.typeInEditor('開く前')
+  await app.compareButton.click()
+  await expect(app.editorB).toBeFocused()
+  // The copy has no history of its own to undo.
+  await app.press('KeyZ')
+  await expect(app.editorB).toHaveText('開く前')
+
+  await app.editorA.click()
+  await app.press('KeyZ')
+  await expect(app.editorA).toHaveText('')
+  await expect(app.editorB).toHaveText('開く前')
+  await expect(app.page.locator('html')).toHaveAttribute('data-layout', 'compare')
+})
+
 test('undo puts a closed pane back, with the history it had', async ({ launch }) => {
   const app = await launch({ state: { compare: true, text: 'left', compareText: 'right' } })
 
