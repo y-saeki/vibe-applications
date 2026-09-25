@@ -8,7 +8,7 @@ macOS / Windows 対応。
 - 20 言語のシンタックスハイライト、正規表現対応の検索・置換
 - 2 つのテキストを左右に並べて差分を見れる [diffpad モード](#diffpad)
 
-<img width="2240" height="1688" alt="CleanShot 2026-09-23 at 18 36 10@2x" src="https://github.com/user-attachments/assets/994e6c0a-7289-4fdc-8336-7770d8fba631" />
+<img width="2236" height="1510" alt="CleanShot 2026-09-25 at 10 58 20@2x" src="https://github.com/user-attachments/assets/196ddaae-6809-4e17-9182-6a6c9c1638cc" />
 
 ## 動作環境
 
@@ -59,23 +59,22 @@ xattr -dr com.apple.quarantine /Applications/draftpad.app
 ウィンドウ上部のバー左端のドロップダウンから、文章全体のシンタックスハイライトに使用する言語を選択できます。  
 Markdown のフェンスコードブロック(```js など)を使用した場合、ブロック内のみ指定言語でハイライトされます。
 
-### <a id="diffpad" />diffpad モード
+### diffpad モード <a id="diffpad" />
 
-<img width="2896" height="1804" alt="CleanShot 2026-09-23 at 18 32 07@2x" src="https://github.com/user-attachments/assets/698b2757-6da2-4437-84dc-e9c73382fae5" />
+<img width="2236" height="1510" alt="CleanShot 2026-09-25 at 11 11 08@2x" src="https://github.com/user-attachments/assets/d2c3142a-bcf4-49b1-aa77-b2fe4a3fd018" />
 
 ウィンドウ右上の `+-` ボタンを押下すると、2ペインで差分表示を行う diffpad モードになります。  
 ローカルで気軽に diff を見たい時や、 diff を見ながらテキスト編集したい時に便利です。
 
 diffpad モードを終了するには、不要になったペインの右上にある `×` ボタンを押下してください。  
-もしくは、不要になったペインにキャレットを置いた状態で `⌘W` / `Ctrl+W` を押下しても同様です。  
-誤って閉じたペインは、`⌘Z` / `Ctrl+Z` で編集履歴ごと元に戻せます。
+もしくは、不要になったペインにキャレットを置いた状態で `⌘W` / `Ctrl+W` を押下しても同様です。
 
 ## 制限事項
 
 - 自動アップデートはありません。更新するときは新しいバージョンを同じ手順で入れ直してください
 - 配布物はコード署名・公証をしていません
 - ウィンドウ位置は記憶しません
-- 非常に大きい、または内容の大きく異なる 2 つのテキストでは、diffの計算を途中で切り上げ、大まかな色付けになることがあります
+- 非常に大きいまたは内容の大きく異なる 2 つのテキストの diff は、計算を途中で切り上げ、大まかな色付けになることがあります
 
 ## 開発者向け情報
 
