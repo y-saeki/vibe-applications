@@ -26,7 +26,6 @@ pub struct State {
     /// marked as well as the line.
     pub diff_mode: String,
     pub language: String,
-    pub editor_mode: String,
     pub theme: String,
     pub font_size: u32,
     pub font_family: String,
@@ -34,7 +33,6 @@ pub struct State {
     pub tab_size: u32,
     /// "spaces" or "tabs": what indenting puts in.
     pub indent_style: String,
-    pub quick_suggestions: bool,
     /// Whether the spaces and tabs in the draft carry a mark.
     pub show_whitespace: bool,
     /// Whether each level of indentation carries a rule.
@@ -56,14 +54,12 @@ impl Default for State {
             compare: false,
             diff_mode: "char".into(),
             language: "markdown".into(),
-            editor_mode: "normal".into(),
             theme: "system".into(),
             font_size: 13,
             font_family: String::new(),
             font_weight: 400,
             tab_size: 4,
             indent_style: "spaces".into(),
-            quick_suggestions: true,
             show_whitespace: false,
             show_indent_guides: false,
             show_line_numbers: false,
@@ -174,7 +170,6 @@ mod tests {
         assert_eq!(state.font_weight, 400);
         assert_eq!(state.tab_size, 4);
         assert_eq!(state.indent_style, "spaces");
-        assert!(state.quick_suggestions);
         assert!(!state.show_whitespace);
         assert!(!state.show_indent_guides);
         assert!(!state.show_line_numbers);
@@ -193,14 +188,12 @@ mod tests {
             compare: true,
             diff_mode: "line".into(),
             language: "rust".into(),
-            editor_mode: "vim".into(),
             theme: "dark".into(),
             font_size: 24,
             font_family: "BIZ UDGothic".into(),
             font_weight: 300,
             tab_size: 2,
             indent_style: "tabs".into(),
-            quick_suggestions: false,
             show_whitespace: true,
             show_indent_guides: true,
             show_line_numbers: true,
@@ -219,14 +212,12 @@ mod tests {
         assert!(read.compare);
         assert_eq!(read.diff_mode, "line");
         assert_eq!(read.language, "rust");
-        assert_eq!(read.editor_mode, "vim");
         assert_eq!(read.theme, "dark");
         assert_eq!(read.font_size, 24);
         assert_eq!(read.font_family, "BIZ UDGothic");
         assert_eq!(read.font_weight, 300);
         assert_eq!(read.tab_size, 2);
         assert_eq!(read.indent_style, "tabs");
-        assert!(!read.quick_suggestions);
         assert!(read.show_whitespace);
         assert!(read.show_indent_guides);
         assert!(read.show_line_numbers);

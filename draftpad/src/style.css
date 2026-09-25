@@ -566,7 +566,7 @@ option {
 /* ---- Editor ------------------------------------------------------------ */
 
 /* The editor is a column: the pane heads (each pane's bar), then the panes,
-   which carry their own panels (the search panel, the Vim status line) at
+   which carry their own panel (the search panel) at
    their feet. The heads are a row of one cell per pane. */
 #editor {
   display: flex;
@@ -783,13 +783,6 @@ option {
 
 #editor .cm-lineNumbers .cm-gutterElement {
   padding: 0 var(--space-1) 0 var(--space-3);
-}
-
-/* The Vim status line keeps the editor font, at the pane bar's size. */
-#editor .cm-vim-panel {
-  font-family: inherit;
-  font-size: var(--font-size-caption);
-  padding: var(--space-1) var(--space-3);
 }
 
 /* CodeMirror's own theme sizes the search panel and the go-to-line dialog

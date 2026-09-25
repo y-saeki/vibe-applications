@@ -11,7 +11,6 @@ import {
   FONT_SIZE_MIN,
   TAB_SIZE_MAX,
   TAB_SIZE_MIN,
-  type EditorMode,
   type IndentStyle,
   type SettingsKey,
   type SettingsPatch,
@@ -74,7 +73,8 @@ function bindCheckbox(store: Store, element: HTMLInputElement, key: KeyOf<boolea
 }
 
 export class Preferences {
-  private readonly mode: HTMLSelectElement
+  /** The panel's first control, where the caret goes when it opens. */
+  private readonly first: HTMLSelectElement
   private readonly fontList: HTMLDataListElement
   /** One per control, in the order the panel holds them. */
   private readonly syncs: Sync[]
@@ -86,7 +86,7 @@ export class Preferences {
     options: PreferencesOptions,
   ) {
     const q = <T extends Element>(selector: string) => root.querySelector(selector) as T
-    this.mode = q('#pref-mode')
+    this.first = q('#pref-indent-style')
     this.fontList = q('#font-list')
     q<HTMLElement>('#pref-version').textContent = `draftpad ${options.version}`
     // The panel scrolls once the window is too short to hold it. Its bar goes
@@ -99,10 +99,8 @@ export class Preferences {
     fontFamily.addEventListener('change', () => store.set({ fontFamily: fontFamily.value.trim() }))
 
     this.syncs = [
-      bindSelect(store, this.mode, 'editorMode', (value) => value as EditorMode),
-      bindSelect(store, q('#pref-indent-style'), 'indentStyle', (value) => value as IndentStyle),
+      bindSelect(store, this.first, 'indentStyle', (value) => value as IndentStyle),
       bindNumber(store, q('#pref-tab-size'), 'tabSize', TAB_SIZE_MIN, TAB_SIZE_MAX),
-      bindCheckbox(store, q('#pref-quick-suggestions'), 'quickSuggestions'),
       bindSelect(store, q('#pref-theme'), 'theme', (value) => value as Theme),
       // Left alone while it has the keyboard, so that what is being typed is
       // not overwritten by what was there before.
@@ -145,7 +143,7 @@ export class Preferences {
 
   /** Puts the caret back in the panel, for when the window regains it. */
   focus(): void {
-    this.mode.focus()
+    this.first.focus()
   }
 
   close(): void {

@@ -17,12 +17,12 @@ test('paints the toggle in both states without tripping the policy', async ({ la
   await expect(app.preferences).toBeVisible()
   const knob = () =>
     app.page.evaluate(
-      () => getComputedStyle(document.querySelector('#pref-quick-suggestions')!, '::before').backgroundImage,
+      () => getComputedStyle(document.querySelector('#pref-show-whitespace')!, '::before').backgroundImage,
     )
-  const suggestions = app.page.locator('#pref-quick-suggestions')
-  await suggestions.uncheck()
+  const toggle = app.page.locator('#pref-show-whitespace')
+  await toggle.uncheck()
   expect(await knob()).toMatch(/url\("data:image\/svg\+xml/)
-  await suggestions.check()
+  await toggle.check()
   expect(await knob()).toMatch(/url\("data:image\/svg\+xml/)
 
   expect(app.cspViolations).toEqual([])

@@ -241,14 +241,12 @@ async function main(): Promise<void> {
       paneBars.setDiffMode(store.state.diffMode)
       ed.setDiffMode(store.state.diffMode)
     },
-    editorMode: () => void ed.setVim(store.state.editorMode === 'vim'),
     theme: () => theme.set(store.state.theme),
     fontSize: applyFont,
     fontFamily: applyFont,
     fontWeight: applyFont,
     tabSize: applyTab,
     indentStyle: applyTab,
-    quickSuggestions: () => ed.setQuickSuggestions(store.state.quickSuggestions),
     showWhitespace: () => ed.setShowWhitespace(store.state.showWhitespace),
     showIndentGuides: () => ed.setShowIndentGuides(store.state.showIndentGuides),
     showLineNumbers: () => ed.setShowLineNumbers(store.state.showLineNumbers),

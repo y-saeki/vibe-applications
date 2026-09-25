@@ -43,10 +43,8 @@ test('gathers the settings into the two groups, in that order', async ({ launch 
   // The order in the panel is the order the keyboard walks them in, so one
   // check covers both.
   const ids = [
-    '#pref-mode',
     '#pref-indent-style',
     '#pref-tab-size',
-    '#pref-quick-suggestions',
     '#pref-theme',
     '#pref-font-family',
     '#pref-font-weight',
@@ -55,7 +53,7 @@ test('gathers the settings into the two groups, in that order', async ({ launch 
     '#pref-show-indent-guides',
     '#pref-show-line-numbers',
   ]
-  await app.page.locator('#pref-mode').focus()
+  await app.page.locator('#pref-indent-style').focus()
   for (const id of ids) {
     await expect(app.page.locator(id)).toBeFocused()
     await app.page.keyboard.press('Tab')
@@ -67,7 +65,7 @@ test('gathers the settings into the two groups, in that order', async ({ launch 
       (selector) => document.querySelector(selector)!.closest('.pref-group')!.querySelector('legend')!.textContent,
       id,
     )
-  expect(await groupOf('#pref-quick-suggestions')).toBe('編集')
+  expect(await groupOf('#pref-tab-size')).toBe('編集')
   expect(await groupOf('#pref-theme')).toBe('表示')
   expect(await groupOf('#pref-show-whitespace')).toBe('表示')
   expect(await groupOf('#pref-show-indent-guides')).toBe('表示')
@@ -84,40 +82,40 @@ test('gathers the settings into the two groups, in that order', async ({ launch 
   await expect(groups.last()).toHaveCSS('border-top-width', '0px')
 })
 
-test('flips the suggestions toggle from the keyboard, and remembers it', async ({ launch }) => {
-  const app = await launch({ state: { quickSuggestions: true } })
-  const suggestions = app.page.locator('#pref-quick-suggestions')
+test('flips a toggle from the keyboard, and remembers it', async ({ launch }) => {
+  const app = await launch({ state: { showWhitespace: true } })
+  const toggle = app.page.locator('#pref-show-whitespace')
 
   await app.openPreferences.click()
-  await expect(suggestions).toBeChecked()
+  await expect(toggle).toBeChecked()
 
   // It is still a checkbox, whatever it is painted as: Tab reaches it and
   // Space is what works it.
-  await suggestions.focus()
+  await toggle.focus()
   await app.page.keyboard.press('Space')
-  await expect(suggestions).not.toBeChecked()
-  await app.expectSaved((state) => state.quickSuggestions === false)
+  await expect(toggle).not.toBeChecked()
+  await app.expectSaved((state) => state.showWhitespace === false)
 
   await app.page.keyboard.press('Space')
-  await expect(suggestions).toBeChecked()
-  await app.expectSaved((state) => state.quickSuggestions === true)
+  await expect(toggle).toBeChecked()
+  await app.expectSaved((state) => state.showWhitespace === true)
 })
 
-test('draws that toggle as a switch the width of two controls', async ({ launch }) => {
-  const app = await launch({ colorScheme: 'light', state: { quickSuggestions: false } })
-  const suggestions = app.page.locator('#pref-quick-suggestions')
+test('draws a toggle as a switch the width of two controls', async ({ launch }) => {
+  const app = await launch({ colorScheme: 'light', state: { showWhitespace: false } })
+  const toggle = app.page.locator('#pref-show-whitespace')
 
   await app.openPreferences.click()
   // The track is the silhouette of the select and the number field beside it,
   // widened: same height, same corner, same border.
-  const box = (await suggestions.boundingBox())!
+  const box = (await toggle.boundingBox())!
   expect(box.width).toBe(48)
   expect(box.height).toBe(28)
-  await expect(suggestions).toHaveCSS('border-radius', '6px')
+  await expect(toggle).toHaveCSS('border-radius', '6px')
 
   // Pressing anywhere on the track works it, not just the knob.
-  await suggestions.click({ position: { x: 44, y: 24 } })
-  await expect(suggestions).toBeChecked()
+  await toggle.click({ position: { x: 44, y: 24 } })
+  await expect(toggle).toBeChecked()
 
   // The knob is what moves and what the accent rides on; the track does not
   // change under it. The knob slides rather than jumping, so these are polled:
@@ -127,27 +125,27 @@ test('draws that toggle as a switch the width of two controls', async ({ launch 
       .poll(() =>
         app.page.evaluate(
           (name) =>
-            getComputedStyle(document.querySelector('#pref-quick-suggestions')!, '::before').getPropertyValue(name),
+            getComputedStyle(document.querySelector('#pref-show-whitespace')!, '::before').getPropertyValue(name),
           property,
         ),
       )
   await knob('translate').toBe('20px')
   await knob('background-color').toBe('rgb(43, 108, 176)')
-  await expect(suggestions).toHaveCSS('background-color', 'rgb(238, 241, 244)')
+  await expect(toggle).toHaveCSS('background-color', 'rgb(238, 241, 244)')
 
-  await suggestions.uncheck()
+  await toggle.uncheck()
   await knob('translate').toBe('none')
   // Off, the knob is a white face the border keeps apart from the track.
   await knob('background-color').toBe('rgb(255, 255, 255)')
   await knob('border-top-color').toBe('rgb(208, 215, 222)')
-  await expect(suggestions).toHaveCSS('background-color', 'rgb(238, 241, 244)')
+  await expect(toggle).toHaveCSS('background-color', 'rgb(238, 241, 244)')
 
   // Dark has no white face to set the knob apart, so lightness does it instead
   // and the outline goes away rather than darkening an already dark knob.
   await app.page.locator('#pref-theme').selectOption('dark')
   await knob('background-color').toBe('rgb(51, 51, 51)')
   await knob('border-top-color').toBe('rgba(0, 0, 0, 0)')
-  await expect(suggestions).toHaveCSS('background-color', 'rgb(28, 28, 28)')
+  await expect(toggle).toHaveCSS('background-color', 'rgb(28, 28, 28)')
 })
 
 test('switches to the dark look and remembers it', async ({ launch }) => {
@@ -229,31 +227,6 @@ test('offers the fonts the backend reports', async ({ launch }) => {
   await app.openPreferences.click()
   await expect(app.page.locator('#font-list option')).toHaveCount(2)
   await expect(app.page.locator('#font-list option').first()).toHaveAttribute('value', 'BIZ UDGothic')
-})
-
-test('turns Vim mode on, and the editor stops taking plain typing', async ({ launch }) => {
-  const app = await launch()
-
-  await app.openPreferences.click()
-  await app.page.locator('#pref-mode').selectOption('vim')
-  await app.expectSaved((state) => state.editorMode === 'vim')
-  await app.page.keyboard.press('Escape')
-  await expect(app.editor).toBeFocused()
-
-  // Normal mode: a letter is a command, so nothing reaches the draft.
-  await app.page.keyboard.press('j')
-  await expect(app.chars).toHaveText('0 文字')
-
-  // "i" switches to insert mode, and it is text again.
-  await app.page.keyboard.press('i')
-  await app.typeInEditor('書けた')
-  await app.expectSaved((state) => state.text === '書けた')
-})
-
-test('starts in Vim mode when that is what was saved', async ({ launch }) => {
-  const app = await launch({ state: { editorMode: 'vim' } })
-
-  await expect(app.page.locator('.cm-scroller')).toHaveClass(/cm-vimMode/)
 })
 
 test('covers the search bar, which closes it like the rest of the backdrop', async ({ launch }) => {

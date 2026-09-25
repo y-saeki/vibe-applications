@@ -40,26 +40,6 @@ const darkEditorTheme = EditorView.theme(
     '&.cm-focused .cm-matchingBracket, &.cm-focused .cm-nonmatchingBracket': {
       backgroundColor: 'var(--editor-bracket)',
     },
-    '.cm-tooltip': {
-      border: '1px solid var(--border)',
-      borderRadius: '6px',
-      backgroundColor: 'var(--control-bg)',
-      color: 'var(--fg)',
-    },
-    '.cm-tooltip .cm-tooltip-arrow:before': {
-      borderTopColor: 'transparent',
-      borderBottomColor: 'transparent',
-    },
-    '.cm-tooltip .cm-tooltip-arrow:after': {
-      borderTopColor: 'var(--control-bg)',
-      borderBottomColor: 'var(--control-bg)',
-    },
-    '.cm-tooltip-autocomplete': {
-      '& > ul > li[aria-selected]': {
-        backgroundColor: 'var(--control-active)',
-        color: 'var(--fg)',
-      },
-    },
   },
   { dark: true },
 )

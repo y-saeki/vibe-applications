@@ -95,7 +95,7 @@
         </div>
       </div>
       <!-- The pane, or the two panes, which src/editor.ts builds here, each
-           with its own panels (search and replace, the Vim status line). -->
+           with its own panel for search and replace. -->
       <div id="panes"></div>
     </main>
 
@@ -111,13 +111,6 @@
         <fieldset class="pref-group">
           <legend>編集</legend>
           <div class="form-row">
-            <label for="pref-mode">モード</label>
-            <select id="pref-mode">
-              <option value="normal">Normal</option>
-              <option value="vim">Vim</option>
-            </select>
-          </div>
-          <div class="form-row">
             <label for="pref-indent-style">インデント</label>
             <select id="pref-indent-style">
               <option value="spaces">スペース</option>
@@ -127,10 +120,6 @@
           <div class="form-row">
             <label for="pref-tab-size">インデント幅</label>
             <input id="pref-tab-size" type="number" min="1" max="10" step="1" />
-          </div>
-          <div class="form-row">
-            <label for="pref-quick-suggestions">入力候補を表示</label>
-            <input id="pref-quick-suggestions" type="checkbox" />
           </div>
         </fieldset>
         <fieldset class="pref-group">
