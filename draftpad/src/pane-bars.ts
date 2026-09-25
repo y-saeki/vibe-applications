@@ -1,6 +1,6 @@
 // The bar above each pane: the language selector, the character and line
 // counts, and the button that opens the compare pane or closes this one. The
-// right pane's bar holds the diff unit selector and the +N / −N figures in
+// right pane's bar holds the diff mode selector and the +N / −N figures in
 // place of the language selector, which serves both panes from the left one.
 //
 // The two bars are in the page from the start; the right one is hidden while

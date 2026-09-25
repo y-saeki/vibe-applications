@@ -104,6 +104,55 @@ test('marks the lines of a chunk on both sides, and the characters only in char 
   await app.expectSaved((state) => state.diffMode === 'line')
 })
 
+test('paints nothing in preview but still counts, and paints again when it is left', async ({ launch }) => {
+  const app = await launch({ colorScheme: 'light', state: { ...TWO_PANES, diffMode: 'preview' } })
+
+  await expect(app.diffModeSelect).toHaveValue('preview')
+  // No gap opposite a line only one side has: the two texts start level and
+  // run on as they are.
+  await expect(app.editorA.locator('.cm-line')).toHaveText(['a', 'b', 'c', 'd'])
+  await expect(app.editorB.locator('.cm-line')).toHaveText(['a', 'c', 'd', 'e'])
+  const [topA, topB] = await Promise.all(
+    (['a', 'b'] as const).map((side) => app.pane(side).locator('.cm-line').last().evaluate((line) => line.getBoundingClientRect().top)),
+  )
+  expect(topA).toBe(topB)
+  for (const side of ['a', 'b'] as const) {
+    await expect(app.changedText(side)).toHaveCount(0)
+    for (const line of await app.changedLines(side).all()) {
+      await expect(line).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
+      await expect(line).toHaveCSS('box-shadow', 'none')
+    }
+  }
+  // The figures are those of the diff, not of the one chunk the texts are held in.
+  await expect(app.diffAdded).toHaveText('+1')
+  await expect(app.diffRemoved).toHaveText('−1')
+
+  // An edit does not bring the marks back, and the figures follow it.
+  await app.editorB.locator('.cm-line').first().click()
+  await app.page.keyboard.press('End')
+  await app.typeInPane('b', '!')
+  await expect(app.changedLines('b').first()).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
+  await expect(app.diffAdded).toHaveText('+2')
+  await expect(app.diffRemoved).toHaveText('−2')
+
+  await app.diffModeSelect.selectOption('line')
+  await expect(app.changedLines('a').first()).toHaveCSS('background-color', 'rgb(255, 235, 233)')
+  await expect(app.gaps('a').first()).toHaveCSS('background-image', /repeating-linear-gradient/)
+  await expect(app.diffAdded).toHaveText('+2')
+  await app.expectSaved((state) => state.diffMode === 'line')
+
+  // The panes were built again around the same texts, histories included.
+  await app.editorB.click()
+  await app.press('KeyZ')
+  await expect(app.editorB.locator('.cm-line')).toHaveText(['a', 'c', 'd', 'e'])
+
+  await app.diffModeSelect.selectOption('preview')
+  await expect(app.changedLines('a').first()).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
+  await expect(app.diffAdded).toHaveText('+1')
+  await expect(app.diffRemoved).toHaveText('−1')
+  await app.expectSaved((state) => state.diffMode === 'preview')
+})
+
 test('paints the two sides in their own colors, with a stripe at the edge of a line', async ({ launch }) => {
   const app = await launch({ colorScheme: 'light', state: { compare: true, text: 'old', compareText: 'new' } })
 
@@ -382,6 +431,30 @@ test('opens the search panel in the pane with the caret, and in that one only', 
   await app.press('KeyF')
   await expect(app.searchPanelOf('a')).toBeVisible()
   await expect(app.searchPanelOf('b')).toHaveCount(0)
+})
+
+test('keeps the search panel as it was when the diff mode changes', async ({ launch }) => {
+  const app = await launch({ state: TWO_PANES })
+  const panel = app.searchPanelOf('b')
+
+  await app.editorB.click()
+  await app.press('KeyF')
+  await app.typeInSearch('c')
+  await panel.getByLabel('大文字小文字を区別').check()
+
+  // Into preview and out again, the merge view is built anew; between line and
+  // char it is not. Either way the panel stays open with what it held, and the
+  // keyboard stays on the selector.
+  for (const mode of ['preview', 'char', 'line', 'preview']) {
+    await app.diffModeSelect.focus()
+    await app.diffModeSelect.selectOption(mode)
+    await expect(app.diffModeSelect).toHaveValue(mode)
+    await expect(panel).toBeVisible()
+    await expect(app.searchPanelOf('a')).toHaveCount(0)
+    await expect(panel.getByPlaceholder('検索')).toHaveValue('c')
+    await expect(panel.getByLabel('大文字小文字を区別')).toBeChecked()
+    await expect(app.diffModeSelect).toBeFocused()
+  }
 })
 
 test('shares the search toggles between the panes', async ({ launch }) => {

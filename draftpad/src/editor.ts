@@ -15,15 +15,15 @@
 import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete'
 import { defaultKeymap, history, historyField, historyKeymap, indentWithTab, redo as redoCommand, redoDepth, undo as undoCommand, undoDepth } from '@codemirror/commands'
 import { bracketMatching, defaultHighlightStyle, indentOnInput, indentUnit, syntaxHighlighting } from '@codemirror/language'
-import { getChunks, MergeView } from '@codemirror/merge'
-import { getSearchQuery, highlightSelectionMatches, openSearchPanel, search, searchKeymap, SearchQuery, setSearchQuery } from '@codemirror/search'
+import { Chunk, getChunks, MergeView } from '@codemirror/merge'
+import { getSearchQuery, highlightSelectionMatches, openSearchPanel, search, searchKeymap, searchPanelOpen, SearchQuery, setSearchQuery } from '@codemirror/search'
 import { Compartment, type EditorSelection, EditorState, type Extension, type Text } from '@codemirror/state'
 import { drawSelection, dropCursor, EditorView, keymap, type KeyBinding, lineNumbers } from '@codemirror/view'
 
 import { darkTheme } from './dark-theme'
 import { indentGuides } from './indent-guides'
 import { languageExtension } from './languages'
-import { installLineDiff } from './linediff'
+import { installLineDiff, wholeTexts } from './linediff'
 import { overlayScrollbar, type OverlayScrollbar } from './overlay-scrollbar'
 import { searchPanelExtras } from './search-panel'
 import type { DiffMode, IndentStyle, State } from './state'
@@ -93,6 +93,7 @@ interface ClosedPane {
  * the chunks together.
  */
 const DIFF_TIMEOUT_MS = 500
+const DIFF_CONFIG = { timeout: DIFF_TIMEOUT_MS }
 
 const phrases = EditorState.phrases.of({
   Find: '検索',
@@ -381,14 +382,54 @@ export class Editor {
       // view's own gutter would take a column out of it.
       gutter: false,
       highlightChanges: this.diffMode === 'char',
-      diffConfig: { timeout: DIFF_TIMEOUT_MS },
+      diffConfig: this.diffMode === 'preview' ? wholeTexts(DIFF_CONFIG) : DIFF_CONFIG,
     })
     this.merge = merge
+    // In preview the one chunk is still marked; style.css leaves it unpainted.
+    merge.dom.classList.toggle('diff-preview', this.diffMode === 'preview')
     // The merge view is what scrolls; the two panes inside it grow with their
     // text, so the bar watches the element that holds them.
     const editors = merge.dom.querySelector<HTMLElement>('.cm-mergeViewEditors') ?? undefined
     this.scrollbar = overlayScrollbar(merge.dom, this.options.host, editors)
     this.options.onDiffChanged(this.diffStat())
+  }
+
+  /**
+   * Builds the merge view again from the settings as they stand, each pane
+   * keeping its text, caret, history and search panel, and the view its
+   * scroll position and whatever had the keyboard.
+   */
+  private rebuildMerge(): void {
+    const merge = this.merge!
+    const sides = ['a', 'b'] as const
+    const start = (state: EditorState): PaneStart => ({ doc: state.doc, selection: state.selection, history: state.field(historyField) })
+    const a = start(merge.a.state)
+    const b = start(merge.b.state)
+    // The query of each open panel, words and flags alike; null where none is open.
+    const searches = sides.map((side) => {
+      const { state } = this.paneView(side)!
+      return searchPanelOpen(state) ? getSearchQuery(state) : null
+    })
+    const focused = this.hasFocus
+    const active = document.activeElement
+    const searchFocus = sides.find((side) => active !== null && this.paneView(side)!.dom.querySelector('.cm-search')?.contains(active))
+    const { scrollTop } = merge.dom
+    this.teardown()
+    this.buildMerge(a, b)
+    sides.forEach((side, i) => {
+      const query = searches[i]
+      if (!query) return
+      const view = this.paneView(side)!
+      openSearchPanel(view)
+      // Opening takes the selected text as the query when there is one; the
+      // panel's own query goes back in over it.
+      view.dispatch({ effects: setSearchQuery.of(query) })
+    })
+    this.merge!.dom.scrollTop = scrollTop
+    // A panel takes the keyboard as it opens, so it goes back to where it was.
+    if (focused) this.activeView.focus()
+    else if (searchFocus) this.paneView(searchFocus)!.dom.querySelector<HTMLElement>('.cm-search [main-field]')?.focus()
+    else if (active instanceof HTMLElement && active.isConnected) active.focus()
   }
 
   private teardown(): void {
@@ -476,14 +517,19 @@ export class Editor {
     })
   }
 
-  /** Lines added on the right and taken out on the left, summed over the chunks. */
+  /**
+   * Lines added on the right and taken out on the left, summed over the chunks.
+   * In preview the merge view holds the two texts as one chunk, so the figures
+   * come from the diff it would have computed.
+   */
   private diffStat(): DiffStat {
     if (!this.merge) return { added: 0, removed: 0 }
     const docA = this.merge.a.state.doc
     const docB = this.merge.b.state.doc
+    const chunks = this.diffMode === 'preview' ? Chunk.build(docA, docB, DIFF_CONFIG) : this.merge.chunks
     let added = 0
     let removed = 0
-    for (const chunk of this.merge.chunks) {
+    for (const chunk of chunks) {
       removed += linesBetween(docA, chunk.fromA, chunk.toA)
       added += linesBetween(docB, chunk.fromB, chunk.toB)
     }
@@ -564,10 +610,20 @@ export class Editor {
 
   // ---- settings, which reach every pane ------------------------------------
 
-  /** Whole lines only, or the changed characters within them as well. */
+  /**
+   * Whole lines only, the characters within them as well, or nothing at all.
+   *
+   * Between the two that mark, the merge view only changes what it paints.
+   * Into or out of preview the chunks themselves change, which the merge view
+   * recomputes on an edit alone, so it is built again around the same two
+   * panes.
+   */
   setDiffMode(mode: DiffMode): void {
+    const rebuild = (mode === 'preview') !== (this.diffMode === 'preview')
     this.diffMode = mode
-    this.merge?.reconfigure({ highlightChanges: mode === 'char' })
+    if (!this.merge) return
+    if (rebuild) this.rebuildMerge()
+    else this.merge.reconfigure({ highlightChanges: mode === 'char' })
   }
 
   async setLanguage(id: string): Promise<void> {

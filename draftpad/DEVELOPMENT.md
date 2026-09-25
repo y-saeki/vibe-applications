@@ -475,9 +475,18 @@ exported なクラスの静的メソッドから、必要になった時点で�
 似た 2 つのテキストなら大きくても数 ms から数十 ms です。
 
 `MergeView` は chunk に含まれる行を両側で `.cm-changedLine` として塗り、`highlightChanges` が有効なら行の中で
-異なる範囲を `.cm-changedText` として重ねて塗ります。README の「行単位」「文字単位」はこのオプションのオフ / オン
+異なる範囲を `.cm-changedText` として重ねて塗ります。右ペインのバーの「行単位」「文字単位」はこのオプションのオフ / オン
 そのものです(`Editor.setDiffMode`)。差分の計算自体は両方のモードで同じなので、切り替えに計算コストはありません。
-設定は `state.json` の `diffMode` に `"line"` / `"char"` で残ります。文字単位の印は、`presentableDiff` が異なる文字の
+
+「プレビュー」はテキスト上に差分を何も見せないモードで、塗りも斜線も出しません。`+N` / `−N` は他のモードと同じ値を出します。chunk を 1 つも作らないと、
+`MergeView` は chunk の間の行を揃えようとして 2 つのテキストの同じ文字位置を並べ、スクロールに合わせて空きを挟みます。
+そこで `linediff.ts` の `wholeTexts` で印を付けた `diffConfig` を渡し、差し替えた `Chunk.build` が両方の全文を 1 つの
+chunk として返します。揃うのは先頭だけになり、その chunk の塗りと短い方のペインの下の spacer は `style.css` が
+`.diff-preview` の下で消します。`MergeView` は chunk を編集のときにしか計算し直さないため、プレビューに入るとき・
+出るときは `MergeView` を作り直します(`Editor.rebuildMerge`。本文・キャレット・履歴・検索パネル(開閉と検索語・置換語・
+トグル)・スクロール位置・キーボードの位置は引き継ぎます)。
+
+設定は `state.json` の `diffMode` に `"line"` / `"char"` / `"preview"` で残ります。文字単位の印は、`presentableDiff` が異なる文字の
 前後を単語の境界まで(前後 8 文字まで)広げます。パッケージの挙動で、設定はありません。
 
 `MergeView` の既定は `diffConfig: { scanLimit: 500 }` で、差分の深さで精密な計算を打ち切ります。これだと 200 行のうち
@@ -488,6 +497,7 @@ exported なクラスの静的メソッドから、必要になった時点で�
 
 右ペインのバーの `+N` / `−N` は、chunk ごとに右側の行数と左側の行数を数えて足したものです(`Editor` の `diffStat`)。
 両側で変わった行は、左で 1 行減って右で 1 行増えた、と数えます(git の numstat と同じ)。chunk の数ではありません。
+プレビューでは `MergeView` の chunk が全文 1 つなので、`Chunk.build` を通常の `diffConfig` で呼び直した結果から数えます。
 `MergeView` には差分が更新されたことを知らせる口が無いので、左ペインの `updateListener` で `getChunks(state)` の
 配列が入れ替わったかを見ています(両ペインに同じ配列が配られるので、片方で十分です)。
 
@@ -510,7 +520,7 @@ exported なクラスの静的メソッドから、必要になった時点で�
 
 ### `state.json` のフィールド
 
-`compare`(2 ペインか)、`compareText`(右ペインの本文。1 ペインのときは空)、`diffMode`(`"line"` / `"char"`)の
+`compare`(2 ペインか)、`compareText`(右ペインの本文。1 ペインのときは空)、`diffMode`(`"line"` / `"char"` / `"preview"`)の
 3 つが増えています。`text` はこれまでどおり下書きで、2 ペインのときは左ペインです。左を閉じて右が残った場合は、
 閉じた時点で右の本文が `text` になります。比較ペインが無かったころのファイルは、3 つとも既定値で読まれて
 1 ペインで開きます。
@@ -974,7 +984,7 @@ draftpad/
     state.ts              永続化する状態と保存のデバウンス
     commands.ts           コマンド表(メニュー・ショートカット共用)
     preferences.ts        環境設定パネル
-    pane-bars.ts          各ペインの上のバー(言語・差異の単位・文字数と行数・+N / −N・開閉ボタン)
+    pane-bars.ts          各ペインの上のバー(言語・差異の表示・文字数と行数・+N / −N・開閉ボタン)
     titlebar.ts           タイトルバー(常に手前に表示・環境設定、Windows ではウィンドウのボタン)
     theme.ts              ライト / ダークの解決
     overlay-scrollbar.ts  本文に重ねて描く縦スクロールバー

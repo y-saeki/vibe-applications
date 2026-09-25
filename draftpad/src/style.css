@@ -709,6 +709,18 @@ option {
   background: repeating-linear-gradient(-45deg, var(--border) 0 1px, transparent 1px var(--space-2));
 }
 
+/* Preview shows no difference: the merge view takes each text as one chunk
+   (see src/linediff.ts), which is left unpainted, and so is the space at the
+   foot of the shorter pane. */
+#panes .diff-preview .cm-changedLine {
+  background-color: transparent;
+  box-shadow: none;
+}
+
+#panes .diff-preview .cm-mergeSpacer {
+  background: none;
+}
+
 #editor .cm-content {
   padding: var(--space-2) 0;
 }
