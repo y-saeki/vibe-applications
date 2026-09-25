@@ -12,20 +12,22 @@
 // none. A pane closed is where undo stops for the pane that goes on, but one
 // more undo there puts the closed pane back, with its text, caret and history.
 
-import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete'
-import { defaultKeymap, history, historyField, historyKeymap, indentWithTab, redo as redoCommand, redoDepth, undo as undoCommand, undoDepth } from '@codemirror/commands'
+import { closeBrackets } from '@codemirror/autocomplete'
+import { history, historyField, redo as redoCommand, redoDepth, undo as undoCommand, undoDepth } from '@codemirror/commands'
 import { bracketMatching, defaultHighlightStyle, indentOnInput, indentUnit, syntaxHighlighting } from '@codemirror/language'
 import { Chunk, getChunks, MergeView } from '@codemirror/merge'
-import { getSearchQuery, highlightSelectionMatches, openSearchPanel, search, searchKeymap, searchPanelOpen, SearchQuery, setSearchQuery } from '@codemirror/search'
+import { getSearchQuery, highlightSelectionMatches, openSearchPanel, search, searchPanelOpen, SearchQuery, setSearchQuery } from '@codemirror/search'
 import { Compartment, type EditorSelection, EditorState, type Extension, type Text } from '@codemirror/state'
 import { drawSelection, dropCursor, EditorView, keymap, type KeyBinding, lineNumbers } from '@codemirror/view'
 
 import { darkTheme } from './dark-theme'
+import { editorKeymap } from './editor-keymap'
 import { indentGuides } from './indent-guides'
 import { languageExtension } from './languages'
 import { installLineDiff, wholeTexts } from './linediff'
 import { overlayScrollbar, type OverlayScrollbar } from './overlay-scrollbar'
 import { searchPanelExtras } from './search-panel'
+import type { Bindings } from './shortcuts'
 import type { DiffMode, IndentStyle, State } from './state'
 import { whitespaceMarks } from './whitespace'
 
@@ -62,6 +64,8 @@ export interface EditorOptions {
   onDiffChanged: (stat: DiffStat) => void
   /** Called once undo has put a closed pane back, so that there are two again. */
   onPaneRestored: () => void
+  /** The keys the editor's own commands start on; see src/shortcuts.ts. */
+  keyBindings: Bindings
 }
 
 /** What a pane is built with: its text, and optionally where the caret is and the history behind it. */
@@ -114,19 +118,6 @@ const phrases = EditorState.phrases.of({
   'Go to line': '行へ移動',
   go: '移動',
 })
-
-// Multiple selections stay off (EditorState.allowMultipleSelections), so a
-// selection holding several ranges collapses to its main one. That makes
-// searchKeymap's Mod-Shift-l — select every match of the selection — do
-// nothing, so it goes along with the panel's "all" button that style.css
-// hides. Mod-d keeps the half that still works: selecting the word under the
-// cursor.
-const searchBindings = searchKeymap.filter((binding) => binding.key !== 'Mod-Shift-l')
-
-// historyKeymap binds redo to Mod-y everywhere and to Ctrl-Shift-z on Linux
-// only, so Windows needs this one; on macOS it repeats the Cmd-Shift-z binding
-// historyKeymap already has.
-const redoKeymap: KeyBinding[] = [{ key: 'Mod-Shift-z', run: redoCommand, preventDefault: true }]
 
 // The weight goes on the scroller with the family: CodeMirror's own theme
 // leaves font-weight alone, so the content inherits it, while the bold the
@@ -193,7 +184,7 @@ function linesBetween(doc: Text, from: number, to: number): number {
 }
 
 /** The settings that live in a compartment each, by name. */
-type Slot = 'language' | 'colors' | 'font' | 'tab' | 'whitespace' | 'indentGuides' | 'lineNumbers'
+type Slot = 'language' | 'colors' | 'font' | 'tab' | 'whitespace' | 'indentGuides' | 'lineNumbers' | 'keys'
 
 export class Editor {
   private single: EditorView | null = null
@@ -213,6 +204,7 @@ export class Editor {
     whitespace: new Compartment(),
     indentGuides: new Compartment(),
     lineNumbers: new Compartment(),
+    keys: new Compartment(),
   }
   /** What each compartment holds, so that a pane built later starts out the same. */
   private readonly current: Record<Slot, Extension>
@@ -248,6 +240,7 @@ export class Editor {
       whitespace: whitespaceExtension(initial.showWhitespace),
       indentGuides: indentGuideExtension(initial.showIndentGuides),
       lineNumbers: lineNumberExtension(initial.showLineNumbers),
+      keys: keymap.of(editorKeymap(options.keyBindings, this.restoreKey)),
     }
     this.searchOptions = { caseSensitive: initial.searchCaseSensitive, regexp: initial.searchRegexp }
     this.diffMode = initial.diffMode
@@ -459,6 +452,7 @@ export class Editor {
       c.whitespace.of(v.whitespace),
       c.indentGuides.of(v.indentGuides),
       c.lineNumbers.of(v.lineNumbers),
+      c.keys.of(v.keys),
       history(),
       past === undefined ? [] : historyField.init(() => past),
       drawSelection(),
@@ -477,7 +471,6 @@ export class Editor {
       EditorView.lineWrapping,
       EditorView.contentAttributes.of({ spellcheck: 'false', autocorrect: 'off', autocapitalize: 'off' }),
       phrases,
-      keymap.of([...closeBracketsKeymap, ...searchBindings, ...redoKeymap, this.restoreKey, ...historyKeymap, ...defaultKeymap, indentWithTab]),
       EditorView.updateListener.of((update) => {
         if (update.docChanged) this.options.onDocChanged(side)
         if (update.focusChanged && update.view.hasFocus) this.activeSide = side
@@ -656,6 +649,11 @@ export class Editor {
   /** Whether the draft carries a column of line numbers beside it. */
   setShowLineNumbers(show: boolean): void {
     this.reconfigure('lineNumbers', lineNumberExtension(show))
+  }
+
+  /** The keys the editor's own commands are on, as the preferences panel last left them. */
+  setKeyBindings(bindings: Bindings): void {
+    this.reconfigure('keys', keymap.of(editorKeymap(bindings, this.restoreKey)))
   }
 
   private reconfigure(slot: Slot, extension: Extension): void {

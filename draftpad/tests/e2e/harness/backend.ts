@@ -28,6 +28,7 @@ export interface State {
   searchRegexp: boolean
   windowWidth: number | null
   windowHeight: number | null
+  shortcuts: Record<string, string[]>
 }
 
 /** What a test asks the fake backend to start from. */
@@ -85,6 +86,7 @@ const DEFAULT_STATE: State = {
   searchRegexp: false,
   windowWidth: null,
   windowHeight: null,
+  shortcuts: {},
 }
 
 const harness = window.__draftpad
@@ -122,6 +124,10 @@ function handle(cmd: string, args: unknown): unknown {
     // The native menu itself is outside the webview; what the page decides
     // before asking for it is not.
     case 'show_context_menu':
+      return null
+    // The menu bar's accelerators, which the page moves on macOS. What the
+    // menu then does with a key is outside the webview.
+    case 'set_menu_shortcuts':
       return null
     // The window API the app reaches for, all of it plain IPC.
     case 'plugin:window|show':

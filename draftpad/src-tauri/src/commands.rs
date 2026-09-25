@@ -1,6 +1,7 @@
 //! Commands invoked from the webview (`invoke(...)` in `src/state.ts`,
-//! `src/preferences.ts` and `src/context-menu.ts`).
+//! `src/preferences.ts`, `src/context-menu.ts` and `src/main.ts`).
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 use serde::Serialize;
@@ -95,4 +96,18 @@ pub fn show_context_menu(window: Window, state: ContextState) {
     if let Err(err) = menu::show_context(&window, &state) {
         eprintln!("draftpad: failed to open the context menu: {err}");
     }
+}
+
+/// Moves the menu bar's accelerators to the keys the preferences panel gave
+/// those commands: an accelerator in muda's spelling for each item by id, or
+/// `None` for an item left without a key. macOS only; there is no menu bar
+/// anywhere else, and the page does not call this there.
+///
+/// Synchronous so that it runs on the main thread, where the menu lives.
+#[tauri::command]
+pub fn set_menu_shortcuts(app: AppHandle, shortcuts: HashMap<String, Option<String>>) {
+    #[cfg(target_os = "macos")]
+    menu::set_shortcuts(&app, &shortcuts);
+    #[cfg(not(target_os = "macos"))]
+    let _ = (app, shortcuts);
 }

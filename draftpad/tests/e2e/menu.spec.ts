@@ -106,3 +106,62 @@ test('no in-app shortcut handler competes with the menu bar', async ({ launch })
   await app.page.keyboard.press('Meta+Backslash')
   await expect(app.page.locator('html')).toHaveAttribute('data-layout', 'single')
 })
+
+// The menu bar's accelerators are the macOS path for the app's own commands,
+// so the page moves them to whatever keys the panel has given those commands.
+test('puts the menu bar on the keys the panel gave, from the start', async ({ launch }) => {
+  const app = await launch({ ...MAC, state: { shortcuts: { find: ['Shift+Mod+F'], quit: [] } } })
+
+  const calls = (await app.calls()).filter((call) => call.cmd === 'set_menu_shortcuts')
+  expect(calls[0]?.args).toEqual({
+    shortcuts: {
+      preferences: 'CmdOrCtrl+Comma',
+      paste_plain: 'CmdOrCtrl+Shift+V',
+      find: 'CmdOrCtrl+Shift+F',
+      open_compare: 'CmdOrCtrl+Backslash',
+      close: 'CmdOrCtrl+W',
+      quit: null,
+    },
+  })
+})
+
+// A key the menu bar holds is answered there and never reaches the page, so
+// while the panel waits for one the menu bar holds none.
+test('takes every key off the menu bar while the panel waits for one', async ({ launch }) => {
+  const app = await launch(MAC)
+  const menuKeys = async (): Promise<Record<string, string | null>> => {
+    const last = (await app.calls()).filter((call) => call.cmd === 'set_menu_shortcuts').at(-1)
+    return (last?.args as { shortcuts: Record<string, string | null> }).shortcuts
+  }
+
+  await app.openShortcuts()
+  await app.shortcutRow('find').locator('.key-button').click()
+  await expect.poll(async () => Object.values(await menuKeys()).every((key) => key === null)).toBe(true)
+
+  await app.page.keyboard.press('Meta+Shift+KeyE')
+  await expect(app.shortcutRow('find').locator('.key-button')).toHaveText('⇧⌘E')
+  await expect.poll(async () => (await menuKeys()).find).toBe('CmdOrCtrl+Shift+E')
+  expect((await menuKeys()).quit).toBe('CmdOrCtrl+Q')
+})
+
+test('gives the menu bar its keys back when the panel stops waiting some other way', async ({ launch }) => {
+  const app = await launch(MAC)
+  const menuKeys = async (): Promise<Record<string, string | null>> => {
+    const last = (await app.calls()).filter((call) => call.cmd === 'set_menu_shortcuts').at(-1)
+    return (last?.args as { shortcuts: Record<string, string | null> }).shortcuts
+  }
+
+  await app.openShortcuts()
+  await app.shortcutRow('find').locator('.key-button').click()
+  await expect.poll(async () => (await menuKeys()).quit).toBe(null)
+  // Another row's × while the key is still awaited.
+  await app.shortcutRow('delete_line').getByRole('button', { name: '⇧⌘K を外す' }).click()
+  await expect.poll(async () => (await menuKeys()).quit).toBe('CmdOrCtrl+Q')
+
+  await app.shortcutRow('find').locator('.key-button').click()
+  await expect.poll(async () => (await menuKeys()).quit).toBe(null)
+  // The panel closing, with the key still awaited.
+  await app.preferences.click({ position: { x: 4, y: 4 } })
+  await expect(app.preferences).toBeHidden()
+  await expect.poll(async () => (await menuKeys()).quit).toBe('CmdOrCtrl+Q')
+})

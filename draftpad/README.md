@@ -7,6 +7,7 @@ macOS / Windows 対応。
 - 起動は速く、閉じると終了します。常駐しません
 - 20 言語のシンタックスハイライト、正規表現対応の検索・置換
 - 2 つのテキストを左右に並べて差分を見れる [diffpad モード](#diffpad)
+- キーボードショートカットは環境設定から変更できます
 
 <img width="2236" height="1510" alt="CleanShot 2026-09-25 at 10 58 20@2x" src="https://github.com/user-attachments/assets/196ddaae-6809-4e17-9182-6a6c9c1638cc" />
 

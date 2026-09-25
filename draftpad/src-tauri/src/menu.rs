@@ -20,13 +20,21 @@
 //! "閉じる" (Cmd+W) is forwarded as well: what it closes is decided in the
 //! page — the pane with the caret while the compare pane is open, otherwise
 //! the window.
+//!
+//! The accelerators written here are the defaults. The page moves them to
+//! whatever keys the preferences panel has given those commands
+//! ([`set_shortcuts`]), once it has started and again after every change.
+//! The predefined items keep theirs: muda gives them no way to change it.
 
 use serde::Deserialize;
 use tauri::menu::{ContextMenu, MenuBuilder, MenuItemBuilder};
 use tauri::{AppHandle, Emitter, Manager, Window};
 
 #[cfg(target_os = "macos")]
-use tauri::menu::{AboutMetadata, SubmenuBuilder};
+use std::collections::HashMap;
+
+#[cfg(target_os = "macos")]
+use tauri::menu::{AboutMetadata, MenuItem, SubmenuBuilder};
 
 // Wording the menu bar and the right-click menu share, in one place so that
 // they cannot drift apart. The predefined items need it spelled out too: muda
@@ -123,12 +131,51 @@ pub fn show_context(window: &Window, state: &ContextState) -> tauri::Result<()> 
     menu.popup(window.clone())
 }
 
+/// The menu bar's items whose key the preferences panel can move, by id —
+/// the same ids `src/shortcuts.ts` lists them under.
+#[cfg(target_os = "macos")]
+pub struct Shortcuts(HashMap<&'static str, MenuItem<tauri::Wry>>);
+
+/// The ids of [`Shortcuts`].
+#[cfg(target_os = "macos")]
+const SHORTCUT_IDS: [&str; 6] = [
+    "preferences",
+    "quit",
+    "paste_plain",
+    "find",
+    "open_compare",
+    "close",
+];
+
+/// Puts each item [`Shortcuts`] holds on the accelerator the page sent for
+/// it, or on none. An id the page did not send is left as it is, and one this
+/// side does not know is ignored.
+#[cfg(target_os = "macos")]
+pub fn set_shortcuts(app: &AppHandle, shortcuts: &HashMap<String, Option<String>>) {
+    let Some(items) = app.try_state::<Shortcuts>() else {
+        return;
+    };
+    for (id, accelerator) in shortcuts {
+        let Some(item) = items.0.get(id.as_str()) else {
+            continue;
+        };
+        if let Err(err) = item.set_accelerator(accelerator.as_deref()) {
+            eprintln!("draftpad: failed to set the key of menu item {id}: {err}");
+        }
+    }
+}
+
 #[cfg(target_os = "macos")]
 pub fn install(app: &AppHandle) -> tauri::Result<()> {
-    let item = |id: &str, text: &str, accelerator: &str| {
-        MenuItemBuilder::with_id(id, text)
+    let mut shortcuts = HashMap::new();
+    let mut item = |id: &str, text: &str, accelerator: &str| {
+        let built = MenuItemBuilder::with_id(id, text)
             .accelerator(accelerator)
-            .build(app)
+            .build(app)?;
+        if let Some(known) = SHORTCUT_IDS.iter().find(|known| **known == id) {
+            shortcuts.insert(*known, built.clone());
+        }
+        Ok::<_, tauri::Error>(built)
     };
 
     let about = AboutMetadata {
@@ -190,5 +237,6 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
         .items(&[&app_menu, &edit, &view])
         .build()?;
     app.set_menu(menu)?;
+    app.manage(Shortcuts(shortcuts));
     Ok(())
 }

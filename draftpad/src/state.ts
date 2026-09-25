@@ -39,6 +39,11 @@ export interface State {
   searchRegexp: boolean
   windowWidth: number | null
   windowHeight: number | null
+  /**
+   * The keys of every shortcut the user has moved, by id; a shortcut left
+   * alone has no entry. See src/shortcuts.ts.
+   */
+  shortcuts: Record<string, string[]>
 }
 
 export interface Loaded {

@@ -2,6 +2,7 @@
 //! and every user setting, stored as one `state.json` in the platform
 //! app-data directory.
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -44,6 +45,10 @@ pub struct State {
     pub search_regexp: bool,
     pub window_width: Option<f64>,
     pub window_height: Option<f64>,
+    /// The keys of every keyboard shortcut the user has moved, by id; one
+    /// left alone has no entry. `src/shortcuts.ts` owns what the ids and the
+    /// keys mean, and checks both when it reads them.
+    pub shortcuts: BTreeMap<String, Vec<String>>,
 }
 
 impl Default for State {
@@ -68,6 +73,7 @@ impl Default for State {
             search_regexp: false,
             window_width: None,
             window_height: None,
+            shortcuts: BTreeMap::new(),
         }
     }
 }
@@ -177,6 +183,7 @@ mod tests {
         assert!(!state.search_case_sensitive);
         assert!(!state.search_regexp);
         assert_eq!(state.window_width, None);
+        assert!(state.shortcuts.is_empty());
     }
 
     #[test]
@@ -202,6 +209,10 @@ mod tests {
             search_regexp: true,
             window_width: Some(800.0),
             window_height: Some(600.0),
+            shortcuts: BTreeMap::from([
+                ("find".to_string(), vec!["Shift+Mod+F".to_string()]),
+                ("open_compare".to_string(), Vec::new()),
+            ]),
         };
 
         save(&dir.state(), &written).expect("the state is written");
@@ -226,6 +237,9 @@ mod tests {
         assert!(read.search_regexp);
         assert_eq!(read.window_width, Some(800.0));
         assert_eq!(read.window_height, Some(600.0));
+        // A shortcut moved to another key, and one taken off every key: the
+        // empty list is kept, since it is what says the key was removed.
+        assert_eq!(read.shortcuts, written.shortcuts);
     }
 
     #[test]
@@ -247,6 +261,7 @@ mod tests {
         assert!(raw.contains("\"compareText\": \"右\""));
         assert!(raw.contains("\"compare\": true"));
         assert!(raw.contains("\"diffMode\""));
+        assert!(raw.contains("\"shortcuts\""));
     }
 
     #[test]
@@ -268,6 +283,8 @@ mod tests {
         assert!(!state.show_whitespace);
         assert!(!state.show_indent_guides);
         assert!(!state.show_line_numbers);
+        // Written before shortcuts could be moved: every one is on its default.
+        assert!(state.shortcuts.is_empty());
     }
 
     #[test]

@@ -1,12 +1,13 @@
 // The single command table. Menu items (macOS) and keyboard shortcuts
 // (Windows) resolve to entries in this list. Ids match the menu item ids in
-// src-tauri/src/menu.rs.
+// src-tauri/src/menu.rs, and the ids in src/shortcuts.ts, which says which key
+// each one is on.
+
+import type { Bindings } from './shortcuts'
 
 export interface Command {
   id: string
   title: string
-  /** Shortcut in "Ctrl+Mod+F" form; "Mod" is Cmd on macOS and Ctrl elsewhere. */
-  keys?: string
   run: () => void | Promise<void>
 }
 
@@ -23,71 +24,39 @@ export interface CommandActions {
   pastePlain: () => Promise<void>
 }
 
-/** The order `comboFromEvent` writes the modifiers in, and `indexByKeys` sorts them into. */
-const MODIFIER_ORDER = ['Ctrl', 'Alt', 'Shift', 'Mod']
-
-const FUNCTION_KEY = /^F\d{1,2}$/
-
-export function createCommands(actions: CommandActions, platform: string): Command[] {
-  const isMac = platform === 'macos'
+export function createCommands(actions: CommandActions): Command[] {
   const commands: Command[] = [
-    { id: 'preferences', title: '環境設定…', keys: 'Mod+,', run: actions.openPreferences },
-    // Undo and redo carry no `keys`: CodeMirror's own keymap already binds them
+    { id: 'preferences', title: '環境設定…', run: actions.openPreferences },
+    // Undo and redo have no key here: CodeMirror's own keymap already binds them
     // inside the editor, and a window-wide shortcut would take Ctrl+Z away from
-    // the text fields in the preferences panel.
+    // the text fields in the preferences panel. The menu bar forwards them.
     { id: 'undo', title: '元に戻す', run: actions.undo },
     { id: 'redo', title: 'やり直す', run: actions.redo },
     // draftpad only ever holds plain text, so Cmd/Ctrl+V already pastes without
     // formatting. This is the shortcut other editors give that, bound so the
     // habit pastes here too instead of doing nothing.
-    { id: 'paste_plain', title: 'プレーンテキストとして貼り付け', keys: 'Mod+Shift+V', run: actions.pastePlain },
-    { id: 'find', title: '検索・置換', keys: 'Mod+F', run: actions.openSearch },
+    { id: 'paste_plain', title: 'プレーンテキストとして貼り付け', run: actions.pastePlain },
+    { id: 'find', title: '検索・置換', run: actions.openSearch },
     // The key VS Code splits its editor with. It only ever opens the pane;
     // closing one is what Mod+W means once there are two.
-    { id: 'open_compare', title: 'テキストを比較する', keys: 'Mod+\\', run: actions.openCompare },
-    { id: 'toggle_fullscreen', title: 'フルスクリーンを切り替え', keys: isMac ? 'Ctrl+Mod+F' : 'F11', run: actions.toggleFullscreen },
+    { id: 'open_compare', title: 'テキストを比較する', run: actions.openCompare },
+    { id: 'toggle_fullscreen', title: 'フルスクリーンを切り替え', run: actions.toggleFullscreen },
     // Closes the innermost thing that can be closed: the pane with the caret
     // while there are two, otherwise the window, which is the app.
-    { id: 'close', title: '閉じる', keys: 'Mod+W', run: actions.close },
-    { id: 'quit', title: '終了', keys: 'Mod+Q', run: actions.quit },
+    { id: 'close', title: '閉じる', run: actions.close },
+    { id: 'quit', title: '終了', run: actions.quit },
   ]
   return commands
 }
 
 /**
- * Turns a keydown event into the "Ctrl+Mod+F" form used by `Command.keys`.
- * Returns null for plain typing so the caller can bail out fast.
+ * The command each key is on, from the keys src/shortcuts.ts resolved. Keys on
+ * the editor's own commands are not in it: those are CodeMirror's to answer.
  */
-export function comboFromEvent(event: KeyboardEvent, platform: string): string | null {
-  const isMac = platform === 'macos'
-  const mod = isMac ? event.metaKey : event.ctrlKey
-  const ctrl = isMac ? event.ctrlKey : false
-  const key = normalizeKey(event)
-  if (!key) return null
-  if (!mod && !FUNCTION_KEY.test(key)) return null
-  const held: Record<string, boolean> = { Ctrl: ctrl, Alt: event.altKey, Shift: event.shiftKey, Mod: mod }
-  return [...MODIFIER_ORDER.filter((name) => held[name]), key].join('+')
-}
-
-function normalizeKey(event: KeyboardEvent): string | null {
-  const { key } = event
-  if (key.length === 1) return key.toUpperCase()
-  if (FUNCTION_KEY.test(key)) return key
-  return null
-}
-
-/**
- * Indexes commands by their keys, with the modifiers put in the order
- * `comboFromEvent` produces, so that its lookups are exact.
- */
-export function indexByKeys(commands: readonly Command[]): Map<string, Command> {
+export function indexByKeys(commands: readonly Command[], bindings: Bindings): Map<string, Command> {
   const index = new Map<string, Command>()
   for (const command of commands) {
-    if (!command.keys) continue
-    const parts = command.keys.split('+')
-    const key = parts.pop()!
-    const mods = MODIFIER_ORDER.filter((mod) => parts.includes(mod))
-    index.set([...mods, key.length === 1 ? key.toUpperCase() : key].join('+'), command)
+    for (const combo of bindings.get(command.id) ?? []) index.set(combo, command)
   }
   return index
 }

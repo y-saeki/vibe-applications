@@ -48,12 +48,13 @@ const LIMITS = {
   families: FAMILIES,
   /** Everything else measured in pixels: control metrics and layout. */
   otherLengths: { budget: 26, accepts: (px) => px % 4 === 0, wants: 'a multiple of 4px' },
-  /** The palette, including the two shadows, the eight masked and drawn marks,
+  /** The palette, including the two shadows, the nine masked and drawn marks,
       the six colors of the compare pane's marks, the two of the Windows title
-      bar's close button, the two counts
+      bar's close button, the three of the shortcut tab's warning and refusal,
+      the two counts
       src/indent-guides.ts fills in while it draws, and the two fractions
       src/overlay-scrollbar.ts sets on each bar. */
-  palette: 50,
+  palette: 54,
   /** Hairlines, focus rings and optical nudges stay where they are used. */
   literalPx: 2,
 }

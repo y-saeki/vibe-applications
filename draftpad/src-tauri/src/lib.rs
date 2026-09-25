@@ -53,6 +53,7 @@ pub fn run() {
             commands::list_fonts,
             commands::quit_app,
             commands::show_context_menu,
+            commands::set_menu_shortcuts,
         ])
         .setup(|app| {
             let window = app

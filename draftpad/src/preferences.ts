@@ -4,6 +4,7 @@
 import { invoke } from '@tauri-apps/api/core'
 
 import { overlayScrollbar } from './overlay-scrollbar'
+import { ShortcutList } from './shortcut-list'
 
 import {
   clamp,
@@ -22,8 +23,13 @@ import {
 export interface PreferencesOptions {
   version: string
   defaultFontFamily: string
+  platform: string
   onClose: () => void
+  /** Told when the shortcut tab starts and stops waiting for a key; see src/shortcut-list.ts. */
+  onRecordingChange: (recording: boolean) => void
 }
+
+type Tab = 'general' | 'shortcuts'
 
 /** Writes the store's value back into one control. */
 type Sync = (state: Readonly<State>) => void
@@ -73,8 +79,13 @@ function bindCheckbox(store: Store, element: HTMLInputElement, key: KeyOf<boolea
 }
 
 export class Preferences {
-  /** The panel's first control, where the caret goes when it opens. */
+  /** The general tab's first control, where the caret goes when it opens on that tab. */
   private readonly first: HTMLSelectElement
+  private readonly filter: HTMLInputElement
+  private readonly shortcuts: ShortcutList
+  private readonly tabs: Record<Tab, { button: HTMLButtonElement; panel: HTMLElement }>
+  /** The tab the panel opens on: the one it was last left on. */
+  private tab: Tab = 'general'
   private readonly fontList: HTMLDataListElement
   /** One per control, in the order the panel holds them. */
   private readonly syncs: Sync[]
@@ -89,10 +100,12 @@ export class Preferences {
     this.first = q('#pref-indent-style')
     this.fontList = q('#font-list')
     q<HTMLElement>('#pref-version').textContent = `draftpad ${options.version}`
-    // The panel scrolls once the window is too short to hold it. Its bar goes
-    // inside the dialog: it is in the top layer, and nothing outside it is
-    // drawn over it.
-    overlayScrollbar(q<HTMLElement>('.panel'), root)
+    // The panel's body scrolls once the window is too short to hold it; the
+    // heading and the tabs above it stay. Its bar goes inside the dialog: it is
+    // in the top layer, and nothing outside it is drawn over it. The body is
+    // as tall as the window allows whatever it holds, so the bar also watches
+    // what is inside it, which changes with the tab and the filter.
+    overlayScrollbar(q<HTMLElement>('.panel-body'), root, q<HTMLElement>('.panel-content'))
 
     const fontFamily = q<HTMLInputElement>('#pref-font-family')
     fontFamily.placeholder = options.defaultFontFamily
@@ -114,6 +127,42 @@ export class Preferences {
       bindCheckbox(store, q('#pref-show-line-numbers'), 'showLineNumbers'),
     ]
 
+    this.filter = q('#shortcut-filter')
+    this.shortcuts = new ShortcutList(q('#shortcut-list'), this.filter, q('#shortcut-count'), q('#shortcut-reset-all'), store, {
+      platform: options.platform,
+      onRecordingChange: options.onRecordingChange,
+    })
+    this.tabs = {
+      general: { button: q('#pref-tab-general'), panel: q('#pref-general') },
+      shortcuts: { button: q('#pref-tab-shortcuts'), panel: q('#pref-shortcuts') },
+    }
+    for (const tab of ['general', 'shortcuts'] as const) {
+      const { button } = this.tabs[tab]
+      button.addEventListener('click', () => this.showTab(tab))
+      // The tab pattern: one stop for the pair, and the arrows move between them.
+      button.addEventListener('keydown', (event) => {
+        if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
+        event.preventDefault()
+        const other = tab === 'general' ? 'shortcuts' : 'general'
+        this.showTab(other)
+        this.tabs[other].button.focus()
+      })
+    }
+    // A key being waited for is the list's, whatever it is — including the
+    // ones the window acts on (src/main.ts listens after this) and Escape,
+    // which would otherwise close the dialog.
+    window.addEventListener(
+      'keydown',
+      (event) => {
+        if (!this.isOpen || !this.shortcuts.handleKey(event)) return
+        event.stopImmediatePropagation()
+      },
+      true,
+    )
+    root.addEventListener('cancel', (event) => {
+      if (this.shortcuts.isRecording) event.preventDefault()
+    })
+
     q<HTMLButtonElement>('#preferences-close').addEventListener('click', () => this.close())
     // The dialog fills the window and draws the dim itself, so anything outside
     // the panel is a click on it rather than on a child.
@@ -122,7 +171,10 @@ export class Preferences {
     })
     // Escape closes the dialog without going through close(), so the hand-back
     // hangs off the event every path ends at.
-    root.addEventListener('close', () => options.onClose())
+    root.addEventListener('close', () => {
+      this.shortcuts.reset()
+      options.onClose()
+    })
     store.subscribe(() => {
       if (this.isOpen) this.sync()
     })
@@ -133,6 +185,7 @@ export class Preferences {
   }
 
   open(): void {
+    this.showTab(this.tab)
     this.sync()
     // Modal rather than plain open(): the top layer puts the panel over the
     // editor's own chrome, and the rest of the window stops taking input.
@@ -143,7 +196,20 @@ export class Preferences {
 
   /** Puts the caret back in the panel, for when the window regains it. */
   focus(): void {
-    this.first.focus()
+    if (this.tab === 'general') this.first.focus()
+    else this.filter.focus()
+  }
+
+  private showTab(tab: Tab): void {
+    this.tab = tab
+    for (const [name, { button, panel }] of Object.entries(this.tabs)) {
+      const selected = name === tab
+      button.setAttribute('aria-selected', String(selected))
+      button.tabIndex = selected ? 0 : -1
+      panel.hidden = !selected
+    }
+    this.root.dataset.tab = tab
+    if (tab === 'shortcuts') this.shortcuts.render()
   }
 
   close(): void {
@@ -152,6 +218,7 @@ export class Preferences {
 
   private sync(): void {
     for (const sync of this.syncs) sync(this.store.state)
+    if (this.tab === 'shortcuts') this.shortcuts.render()
   }
 
   private async loadFonts(): Promise<void> {
