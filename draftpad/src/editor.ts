@@ -16,7 +16,7 @@ import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete'
 import { defaultKeymap, history, historyField, historyKeymap, indentWithTab, redo as redoCommand, redoDepth, undo as undoCommand, undoDepth } from '@codemirror/commands'
 import { bracketMatching, defaultHighlightStyle, indentOnInput, indentUnit, syntaxHighlighting } from '@codemirror/language'
 import { Chunk, getChunks, MergeView } from '@codemirror/merge'
-import { getSearchQuery, highlightSelectionMatches, openSearchPanel, search, searchKeymap, SearchQuery, setSearchQuery } from '@codemirror/search'
+import { getSearchQuery, highlightSelectionMatches, openSearchPanel, search, searchKeymap, searchPanelOpen, SearchQuery, setSearchQuery } from '@codemirror/search'
 import { Compartment, type EditorSelection, EditorState, type Extension, type Text } from '@codemirror/state'
 import { drawSelection, dropCursor, EditorView, keymap, type KeyBinding, lineNumbers } from '@codemirror/view'
 
@@ -396,20 +396,40 @@ export class Editor {
 
   /**
    * Builds the merge view again from the settings as they stand, each pane
-   * keeping its text, caret and history, and the view its scroll position and
-   * the pane with the keyboard.
+   * keeping its text, caret, history and search panel, and the view its
+   * scroll position and whatever had the keyboard.
    */
   private rebuildMerge(): void {
     const merge = this.merge!
+    const sides = ['a', 'b'] as const
     const start = (state: EditorState): PaneStart => ({ doc: state.doc, selection: state.selection, history: state.field(historyField) })
     const a = start(merge.a.state)
     const b = start(merge.b.state)
+    // The query of each open panel, words and flags alike; null where none is open.
+    const searches = sides.map((side) => {
+      const { state } = this.paneView(side)!
+      return searchPanelOpen(state) ? getSearchQuery(state) : null
+    })
     const focused = this.hasFocus
+    const active = document.activeElement
+    const searchFocus = sides.find((side) => active !== null && this.paneView(side)!.dom.querySelector('.cm-search')?.contains(active))
     const { scrollTop } = merge.dom
     this.teardown()
     this.buildMerge(a, b)
+    sides.forEach((side, i) => {
+      const query = searches[i]
+      if (!query) return
+      const view = this.paneView(side)!
+      openSearchPanel(view)
+      // Opening takes the selected text as the query when there is one; the
+      // panel's own query goes back in over it.
+      view.dispatch({ effects: setSearchQuery.of(query) })
+    })
     this.merge!.dom.scrollTop = scrollTop
+    // A panel takes the keyboard as it opens, so it goes back to where it was.
     if (focused) this.activeView.focus()
+    else if (searchFocus) this.paneView(searchFocus)!.dom.querySelector<HTMLElement>('.cm-search [main-field]')?.focus()
+    else if (active instanceof HTMLElement && active.isConnected) active.focus()
   }
 
   private teardown(): void {

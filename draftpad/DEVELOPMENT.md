@@ -483,8 +483,8 @@ exported なクラスの静的メソッドから、必要になった時点で�
 そこで `linediff.ts` の `wholeTexts` で印を付けた `diffConfig` を渡し、差し替えた `Chunk.build` が両方の全文を 1 つの
 chunk として返します。揃うのは先頭だけになり、その chunk の塗りと短い方のペインの下の spacer は `style.css` が
 `.diff-preview` の下で消します。`MergeView` は chunk を編集のときにしか計算し直さないため、プレビューに入るとき・
-出るときは `MergeView` を作り直します(`Editor.rebuildMerge`。本文・キャレット・履歴・スクロール位置・キーボードの
-あるペインは引き継ぎ、検索パネルは閉じます)。
+出るときは `MergeView` を作り直します(`Editor.rebuildMerge`。本文・キャレット・履歴・検索パネル(開閉と検索語・置換語・
+トグル)・スクロール位置・キーボードの位置は引き継ぎます)。
 
 設定は `state.json` の `diffMode` に `"line"` / `"char"` / `"preview"` で残ります。文字単位の印は、`presentableDiff` が異なる文字の
 前後を単語の境界まで(前後 8 文字まで)広げます。パッケージの挙動で、設定はありません。

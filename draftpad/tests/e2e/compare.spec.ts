@@ -433,6 +433,30 @@ test('opens the search panel in the pane with the caret, and in that one only', 
   await expect(app.searchPanelOf('b')).toHaveCount(0)
 })
 
+test('keeps the search panel as it was when the diff mode changes', async ({ launch }) => {
+  const app = await launch({ state: TWO_PANES })
+  const panel = app.searchPanelOf('b')
+
+  await app.editorB.click()
+  await app.press('KeyF')
+  await app.typeInSearch('c')
+  await panel.getByLabel('大文字小文字を区別').check()
+
+  // Into preview and out again, the merge view is built anew; between line and
+  // char it is not. Either way the panel stays open with what it held, and the
+  // keyboard stays on the selector.
+  for (const mode of ['preview', 'char', 'line', 'preview']) {
+    await app.diffModeSelect.focus()
+    await app.diffModeSelect.selectOption(mode)
+    await expect(app.diffModeSelect).toHaveValue(mode)
+    await expect(panel).toBeVisible()
+    await expect(app.searchPanelOf('a')).toHaveCount(0)
+    await expect(panel.getByPlaceholder('検索')).toHaveValue('c')
+    await expect(panel.getByLabel('大文字小文字を区別')).toBeChecked()
+    await expect(app.diffModeSelect).toBeFocused()
+  }
+})
+
 test('shares the search toggles between the panes', async ({ launch }) => {
   const app = await launch({ state: TWO_PANES })
   const caseIn = (side: Side) => app.searchPanelOf(side).getByLabel('大文字小文字を区別')
