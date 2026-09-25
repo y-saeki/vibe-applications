@@ -38,7 +38,7 @@ test('gathers the settings into the two groups, in that order', async ({ launch 
   const app = await launch()
 
   await app.openPreferences.click()
-  await expect(app.page.locator('#preferences legend')).toHaveText(['編集', '表示'])
+  await expect(app.page.locator('#pref-general legend')).toHaveText(['編集', '表示'])
 
   // The order in the panel is the order the keyboard walks them in, so one
   // check covers both.
@@ -74,7 +74,7 @@ test('gathers the settings into the two groups, in that order', async ({ launch 
   // One rule between the two, and it hangs off the group above: a fieldset's
   // block-start border is the one its legend notches and sits on, so a
   // border-top would be drawn straight through the heading.
-  const groups = app.page.locator('#preferences .pref-group')
+  const groups = app.page.locator('#pref-general .pref-group')
   await expect(groups).toHaveCount(2)
   await expect(groups.first()).toHaveCSS('border-bottom-width', '1px')
   await expect(groups.first()).toHaveCSS('border-top-width', '0px')
@@ -374,12 +374,14 @@ test('paints the indentation rules from the palette, in both themes', async ({ l
 })
 
 test('keeps the panel inside its width at the narrowest the window goes', async ({ launch }) => {
-  const app = await launch()
+  // Two of the longest keys Windows writes out on one shortcut, so that the
+  // widest row the tab can hold is drawn.
+  const app = await launch({ state: { shortcuts: { preferences: ['Alt+Shift+Mod+,', 'Alt+Shift+Mod+F12'] } } })
   // Hiding the platform's scrollbars takes the horizontal one with it — that
   // cannot be asked for on one axis alone — and draftpad draws no horizontal
   // bar of its own. Nothing here needs one: the label column is fixed and the
   // field beside it takes what is left, down to the narrowest window the app
-  // opens at.
+  // opens at; on the shortcut tab, the names wrap and so do the keys.
   await app.page.setViewportSize({ width: windowMinimum().width, height: windowMinimum().height })
 
   await app.openPreferences.click()
@@ -387,33 +389,44 @@ test('keeps the panel inside its width at the narrowest the window goes', async 
   // edge, which is the whole of what a horizontal bar would have been for.
   // Not that the panel measures no wider than itself: WebKit puts about 11px
   // of scrollable width over the theme row's native select with no box of any
-  // kind in it, which `.panel` clips rather than scrolls (see style.css).
+  // kind in it, which `.panel-body` clips rather than scrolls (see style.css).
+  //
+  // The content edge is the panel's, less the inset every part keeps from
+  // it. The body and the shortcut tab's foot are the two boxes that run to
+  // the panel's edge themselves — the one so that its bar is drawn there, the
+  // other for its rule — so they are measured by what is inside them.
   //
   // Everything measured comes back together, so that a failure names what
   // stuck out instead of leaving the next reader to measure by hand. `own`
   // and the panel's three widths do not decide it; they are there to read.
-  const { box, ...overflow } = await app.preferences.locator('.panel').evaluate((element: HTMLElement) => {
-    const inside =
-      element.getBoundingClientRect().left +
-      element.clientLeft +
-      element.clientWidth -
-      Number.parseFloat(getComputedStyle(element).paddingRight)
-    return {
-      spilling: [...element.querySelectorAll('*')]
-        .map((child) => ({
-          what:
-            child.tagName.toLowerCase() +
-            (child.id ? `#${child.id}` : '') +
-            (typeof child.className === 'string' && child.className ? `.${child.className.trim().split(/\s+/).join('.')}` : ''),
-          past: Math.round(child.getBoundingClientRect().right - inside),
-          own: child.scrollWidth - child.clientWidth,
-          wide: Math.round(child.getBoundingClientRect().width),
-        }))
-        .filter((child) => child.past > 0),
-      box: { scroll: element.scrollWidth, client: element.clientWidth, offset: element.offsetWidth },
-    }
-  })
+  const measure = () =>
+    app.preferences.locator('.panel').evaluate((element: HTMLElement) => {
+      const inset = Number.parseFloat(getComputedStyle(element.querySelector('.panel-body')!).paddingRight)
+      const inside = element.getBoundingClientRect().left + element.clientLeft + element.clientWidth - inset
+      return {
+        spilling: [...element.querySelectorAll('*')]
+          .filter((child) => !child.matches('.panel-body, .shortcut-foot') && child.getClientRects().length > 0)
+          .map((child) => ({
+            what:
+              child.tagName.toLowerCase() +
+              (child.id ? `#${child.id}` : '') +
+              (typeof child.className === 'string' && child.className ? `.${child.className.trim().split(/\s+/).join('.')}` : ''),
+            past: Math.round(child.getBoundingClientRect().right - inside),
+            own: child.scrollWidth - child.clientWidth,
+            wide: Math.round(child.getBoundingClientRect().width),
+          }))
+          .filter((child) => child.past > 0),
+        box: { scroll: element.scrollWidth, client: element.clientWidth, offset: element.offsetWidth },
+      }
+    })
+
+  const { box, ...overflow } = await measure()
   expect(overflow, `panel ${JSON.stringify(box)}`).toEqual({ spilling: [] })
+
+  await app.preferences.locator('#pref-tab-shortcuts').click()
+  await expect(app.shortcutRow('preferences').locator('.key-button')).toHaveCount(2)
+  const { box: shortcutBox, ...shortcutOverflow } = await measure()
+  expect(shortcutOverflow, `panel ${JSON.stringify(shortcutBox)}`).toEqual({ spilling: [] })
 })
 
 test('lays a bar over the panel when the window is too short to hold it', async ({ launch }) => {
@@ -423,19 +436,22 @@ test('lays a bar over the panel when the window is too short to hold it', async 
   await app.page.setViewportSize({ width: 600, height: 300 })
 
   await app.openPreferences.click()
-  const panel = app.preferences.locator('.panel')
+  // The heading and the tabs stay; what scrolls is the body under them, which
+  // runs to the panel's edge.
+  const body = app.preferences.locator('.panel-body')
   const bar = app.scrollbar('preferences')
 
-  const box = await panel.evaluate((element: HTMLElement) => ({
+  const box = await body.evaluate((element: HTMLElement) => ({
     overflows: element.scrollHeight > element.clientHeight,
-    // Its own border, and no column taken out for a scrollbar beside it.
+    // No column taken out for a scrollbar beside it.
     taken: element.offsetWidth - element.clientWidth,
-    right: element.getBoundingClientRect().right,
+    right: element.closest('.panel')!.getBoundingClientRect().right,
   }))
   expect(box.overflows).toBe(true)
-  expect(box.taken).toBe(2)
+  expect(box.taken).toBe(0)
+  await expect(app.preferences.locator('.pref-tabs')).toBeInViewport()
 
-  await panel.evaluate((element: HTMLElement) => {
+  await body.evaluate((element: HTMLElement) => {
     element.scrollTop = 40
   })
   await expect(bar).toHaveAttribute('data-shown', '')
@@ -536,4 +552,222 @@ test('sizes the numbers with the draft', async ({ launch }) => {
   await app.page.locator('#pref-font-size').fill('40')
   await app.page.keyboard.press('Escape')
   await expect(app.lineNumbers).toHaveCSS('font-size', '40px')
+})
+
+// ---- the shortcut tab ------------------------------------------------------
+
+test('lists every shortcut, the ones that cannot be changed under headings marked 変更不可', async ({ launch }) => {
+  const app = await launch()
+
+  await app.openShortcuts()
+  await expect(app.preferences.locator('#pref-shortcuts legend')).toHaveText([
+    'アプリ',
+    '編集',
+    '選択・移動',
+    '検索',
+    'その他',
+    '基本の編集変更不可',
+    'カーソル移動変更不可',
+    'ウィンドウ変更不可',
+  ])
+  await expect(app.shortcutRow('find').locator('.key-button')).toHaveText(['Ctrl+F'])
+  await expect(app.shortcutRow('find_next').locator('.key-button')).toHaveText(['Ctrl+G', 'F3'])
+  // A fixed key is read, not worked: no control on its row.
+  const copy = app.preferences.locator('.shortcut-row.fixed', { hasText: 'コピー' })
+  await expect(copy.locator('kbd')).toHaveText(['Ctrl+C'])
+  await expect(copy.locator('button')).toHaveCount(0)
+  // Nothing has been moved, so there is nothing to count and nothing to put back.
+  await expect(app.preferences.locator('#shortcut-count')).toHaveText('')
+  await expect(app.preferences.locator('#shortcut-reset-all')).toBeDisabled()
+})
+
+test('writes the keys the macOS way on macOS, and lists what only macOS has', async ({ launch }) => {
+  const app = await launch({ platform: 'macos' })
+
+  await app.openShortcuts()
+  await expect(app.shortcutRow('paste_plain').locator('.key-button')).toHaveText(['⇧⌘V'])
+  // Full screen is an item AppKit draws, which keeps its own key.
+  await expect(app.shortcutRow('toggle_fullscreen')).toHaveCount(0)
+  await expect(app.preferences.locator('.shortcut-row.fixed', { hasText: 'フルスクリーンを切り替え' }).locator('kbd')).toHaveText(['⌃⌘F'])
+  await expect(app.preferences.locator('#pref-shortcuts legend', { hasText: 'macOS のテキスト操作' })).toBeVisible()
+})
+
+test('switches tabs with the arrow keys, and opens again on the tab it was left on', async ({ launch }) => {
+  const app = await launch()
+
+  await app.openPreferences.click()
+  await app.preferences.locator('#pref-tab-general').focus()
+  await app.page.keyboard.press('ArrowRight')
+  await expect(app.preferences.locator('#pref-tab-shortcuts')).toHaveAttribute('aria-selected', 'true')
+  await expect(app.preferences.locator('#pref-general')).toBeHidden()
+  await expect(app.preferences.locator('#shortcut-filter')).toBeVisible()
+
+  await app.page.keyboard.press('Escape')
+  await expect(app.preferences).toBeHidden()
+  await app.openPreferences.click()
+  await expect(app.preferences.locator('#pref-shortcuts')).toBeVisible()
+  await expect(app.preferences.locator('#shortcut-filter')).toBeFocused()
+})
+
+test('moves a shortcut to the key pressed after clicking it', async ({ launch }) => {
+  const app = await launch()
+  const find = app.shortcutRow('find')
+
+  await app.openShortcuts()
+  await find.locator('.key-button').click()
+  await expect(find.locator('.key-button')).toHaveText('キーを入力…')
+  await app.page.keyboard.press('Control+Shift+KeyF')
+  await expect(find.locator('.key-button')).toHaveText('Ctrl+Shift+F')
+  await expect(find.locator('.modified-mark')).toHaveText('変更済み')
+  await expect(app.preferences.locator('#shortcut-count')).toHaveText('1 件を変更済み')
+  // Only what was changed is kept, so a key draftpad moves later still reaches
+  // every shortcut the user left alone.
+  await app.expectSaved((state) => JSON.stringify(state.shortcuts) === JSON.stringify({ find: ['Shift+Mod+F'] }))
+})
+
+test('takes a key the window would act on while it waits, and Escape without closing the panel', async ({ launch }) => {
+  const app = await launch()
+  const find = app.shortcutRow('find')
+
+  await app.openShortcuts()
+  await find.locator('.key-button').click()
+  // Ctrl+W closes the window everywhere else.
+  await app.page.keyboard.press('Control+KeyW')
+  await expect(find.locator('.shortcut-message')).toBeVisible()
+  expect(await app.commands()).not.toContain('quit_app')
+  await find.getByRole('button', { name: 'キャンセル' }).click()
+
+  await find.locator('.key-button').click()
+  await app.page.keyboard.press('Escape')
+  await expect(find.locator('.key-button')).toHaveText('Ctrl+F')
+  await expect(app.preferences).toBeVisible()
+})
+
+test('refuses a key that is typing, and one that cannot be changed', async ({ launch }) => {
+  const app = await launch()
+  const find = app.shortcutRow('find')
+
+  await app.openShortcuts()
+  await find.locator('.key-button').click()
+  await app.page.keyboard.press('Shift+KeyK')
+  await expect(find.locator('.shortcut-message')).toHaveText('Ctrl か Alt を含む組み合わせか、ファンクションキーを押してください。')
+
+  await find.locator('.key-button').click()
+  await app.page.keyboard.press('Control+KeyC')
+  await expect(find.locator('.shortcut-message')).toHaveText('Ctrl+C は「コピー」に使われているため、割り当てられません。')
+  await expect(find.locator('.key-button')).toHaveText('Ctrl+F')
+})
+
+test('asks before taking a key from another shortcut, and leaves it alone on キャンセル', async ({ launch }) => {
+  const app = await launch()
+  const find = app.shortcutRow('find')
+  const deleteLine = app.shortcutRow('delete_line')
+
+  await app.openShortcuts()
+  await find.locator('.key-button').click()
+  await app.page.keyboard.press('Control+Shift+KeyK')
+  await expect(find.locator('.shortcut-message')).toContainText(
+    'Ctrl+Shift+K は「行を削除」に割り当て済みです。置き換えると、「行を削除」は未設定になります。',
+  )
+  await find.getByRole('button', { name: 'キャンセル' }).click()
+  await expect(find.locator('.shortcut-message')).toHaveCount(0)
+  await expect(deleteLine.locator('.key-button')).toHaveText('Ctrl+Shift+K')
+
+  await find.locator('.key-button').click()
+  await app.page.keyboard.press('Control+Shift+KeyK')
+  await find.getByRole('button', { name: '置き換える' }).click()
+  await expect(find.locator('.key-button')).toHaveText('Ctrl+Shift+K')
+  await expect(deleteLine.locator('.key-button')).toHaveText('未設定')
+  await app.expectSaved(
+    (state) => JSON.stringify(state.shortcuts) === JSON.stringify({ delete_line: [], find: ['Shift+Mod+K'] }),
+  )
+})
+
+test('says which keys the other shortcut keeps when it has more than one', async ({ launch }) => {
+  const app = await launch()
+  const find = app.shortcutRow('find')
+
+  await app.openShortcuts()
+  await find.locator('.key-button').click()
+  await app.page.keyboard.press('F3')
+  await expect(find.locator('.shortcut-message')).toContainText(
+    'F3 は「次を検索」に割り当て済みです。置き換えると、「次を検索」からは F3 が外れます。',
+  )
+})
+
+test('takes a key off with ×, and puts the defaults back with ↺', async ({ launch }) => {
+  const app = await launch()
+  const find = app.shortcutRow('find')
+
+  await app.openShortcuts()
+  await expect(find.locator('.reset-button')).toHaveCount(0)
+  await find.getByRole('button', { name: 'Ctrl+F を外す' }).click()
+  await expect(find.locator('.key-button')).toHaveText('未設定')
+  await app.expectSaved((state) => JSON.stringify(state.shortcuts) === JSON.stringify({ find: [] }))
+
+  // The empty slot takes a key the same way a key does.
+  await find.locator('.key-button').click()
+  await app.page.keyboard.press('Control+KeyJ')
+  await expect(find.locator('.key-button')).toHaveText('Ctrl+J')
+
+  await find.getByRole('button', { name: '検索・置換 を初期設定に戻す' }).click()
+  await expect(find.locator('.key-button')).toHaveText('Ctrl+F')
+  await expect(find.locator('.reset-button')).toHaveCount(0)
+  await app.expectSaved((state) => JSON.stringify(state.shortcuts) === '{}')
+})
+
+// Resetting one shortcut must not hand out a key that another has since been
+// given: that is how two shortcuts would end up on one key.
+test('asks before ↺ takes a default back from the shortcut that has it now', async ({ launch }) => {
+  const app = await launch({ state: { shortcuts: { find: [], delete_line: ['Mod+F'] } } })
+  const find = app.shortcutRow('find')
+
+  await app.openShortcuts()
+  await find.getByRole('button', { name: '検索・置換 を初期設定に戻す' }).click()
+  await expect(find.locator('.shortcut-message')).toContainText(
+    'Ctrl+F は「行を削除」に割り当て済みです。初期設定に戻すと、「行を削除」は未設定になります。',
+  )
+  await find.getByRole('button', { name: '初期設定に戻す', exact: true }).click()
+  await expect(find.locator('.key-button')).toHaveText('Ctrl+F')
+  await expect(app.shortcutRow('delete_line').locator('.key-button')).toHaveText('未設定')
+  await app.expectSaved((state) => JSON.stringify(state.shortcuts) === JSON.stringify({ delete_line: [] }))
+})
+
+test('puts every shortcut back on the second press of すべて初期設定に戻す', async ({ launch }) => {
+  const app = await launch({ state: { shortcuts: { find: ['Shift+Mod+F'], quit: [] } } })
+  const resetAll = app.preferences.locator('#shortcut-reset-all')
+
+  await app.openShortcuts()
+  await expect(app.preferences.locator('#shortcut-count')).toHaveText('2 件を変更済み')
+  await resetAll.click()
+  await expect(resetAll).toHaveText('もう一度押すと戻します')
+  await expect(app.shortcutRow('find').locator('.key-button')).toHaveText('Ctrl+Shift+F')
+
+  await resetAll.click()
+  await expect(app.shortcutRow('find').locator('.key-button')).toHaveText('Ctrl+F')
+  await expect(app.shortcutRow('quit').locator('.key-button')).toHaveText('Ctrl+Q')
+  await expect(app.preferences.locator('#shortcut-count')).toHaveText('')
+  await expect(resetAll).toBeDisabled()
+  await expect(resetAll).toHaveText('すべて初期設定に戻す')
+  await app.expectSaved((state) => JSON.stringify(state.shortcuts) === '{}')
+})
+
+test('filters the list by name and by key', async ({ launch }) => {
+  const app = await launch()
+  const filter = app.preferences.locator('#shortcut-filter')
+
+  await app.openShortcuts()
+  await filter.fill('インデント')
+  await expect(app.preferences.locator('.shortcut-row .shortcut-name')).toHaveText([
+    'インデントを増やす',
+    'インデントを減らす',
+    'インデントを整える',
+    'インデント・インデント解除',
+  ])
+
+  await filter.fill('ctrl+shift+v')
+  await expect(app.preferences.locator('.shortcut-row .shortcut-name')).toHaveText(['プレーンテキストとして貼り付け'])
+
+  await filter.fill('存在しない')
+  await expect(app.preferences.locator('.shortcut-empty')).toHaveText('一致するショートカットはありません。')
 })

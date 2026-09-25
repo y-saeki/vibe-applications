@@ -106,73 +106,94 @@
           <h1 id="preferences-title">環境設定</h1>
           <button type="button" id="preferences-close" class="icon-button" aria-label="閉じる"></button>
         </div>
-        <!-- Two groups, not ten rows in a column: which of them a control
-             belongs to is what tells the reader where to look. The order here
-             is the tab order. -->
-        <fieldset class="pref-group">
-          <legend>編集</legend>
-          <div class="form-row">
-            <label for="pref-indent-style">インデント</label>
-            <select id="pref-indent-style">
-              <option value="spaces">スペース</option>
-              <option value="tabs">タブ</option>
-            </select>
+        <div class="pref-tabs" role="tablist" aria-label="環境設定の種類">
+          <button type="button" role="tab" id="pref-tab-general" aria-controls="pref-general" aria-selected="true">一般</button>
+          <button type="button" role="tab" id="pref-tab-shortcuts" aria-controls="pref-shortcuts" aria-selected="false" tabindex="-1">ショートカット</button>
+        </div>
+        <div class="shortcut-filter shortcuts-only">
+          <input id="shortcut-filter" type="search" placeholder="コマンド名・キーで絞り込み" aria-label="ショートカットを絞り込む" autocomplete="off" spellcheck="false" />
+        </div>
+        <div class="panel-body">
+          <div class="panel-content">
+            <div id="pref-general" role="tabpanel" aria-labelledby="pref-tab-general">
+              <!-- Two groups, not ten rows in a column: which of them a control
+                   belongs to is what tells the reader where to look. The order here
+                   is the tab order. -->
+              <fieldset class="pref-group">
+                <legend>編集</legend>
+                <div class="form-row">
+                  <label for="pref-indent-style">インデント</label>
+                  <select id="pref-indent-style">
+                    <option value="spaces">スペース</option>
+                    <option value="tabs">タブ</option>
+                  </select>
+                </div>
+                <div class="form-row">
+                  <label for="pref-tab-size">インデント幅</label>
+                  <input id="pref-tab-size" type="number" min="1" max="10" step="1" />
+                </div>
+              </fieldset>
+              <fieldset class="pref-group">
+                <legend>表示</legend>
+                <div class="form-row">
+                  <label for="pref-theme">テーマ</label>
+                  <select id="pref-theme">
+                    <option value="system">システムに合わせる</option>
+                    <option value="light">ライト</option>
+                    <option value="dark">ダーク</option>
+                  </select>
+                </div>
+                <div class="form-row">
+                  <label for="pref-font-family">フォント</label>
+                  <input id="pref-font-family" type="text" list="font-list" autocomplete="off" spellcheck="false" />
+                  <datalist id="font-list"></datalist>
+                </div>
+                <div class="form-row">
+                  <label for="pref-font-weight">フォントの太さ</label>
+                  <select id="pref-font-weight">
+                    <option value="100">100</option>
+                    <option value="200">200</option>
+                    <option value="300">300</option>
+                    <option value="400">400</option>
+                    <option value="500">500</option>
+                    <option value="600">600</option>
+                    <option value="700">700</option>
+                    <option value="800">800</option>
+                    <option value="900">900</option>
+                  </select>
+                </div>
+                <div class="form-row">
+                  <label for="pref-font-size">フォントサイズ</label>
+                  <span class="form-control-with-unit">
+                    <input id="pref-font-size" type="number" min="10" max="100" step="1" />
+                    <span>px</span>
+                  </span>
+                </div>
+                <div class="form-row">
+                  <label for="pref-show-whitespace">空白文字を表示</label>
+                  <input id="pref-show-whitespace" type="checkbox" />
+                </div>
+                <div class="form-row">
+                  <label for="pref-show-indent-guides">インデントガイドを表示</label>
+                  <input id="pref-show-indent-guides" type="checkbox" />
+                </div>
+                <div class="form-row">
+                  <label for="pref-show-line-numbers">行番号を表示</label>
+                  <input id="pref-show-line-numbers" type="checkbox" />
+                </div>
+              </fieldset>
+              <div class="panel-footer" id="pref-version"></div>
+            </div>
+            <!-- Filled in by src/shortcut-list.ts. -->
+            <div id="pref-shortcuts" role="tabpanel" aria-labelledby="pref-tab-shortcuts" hidden>
+              <div id="shortcut-list"></div>
+            </div>
           </div>
-          <div class="form-row">
-            <label for="pref-tab-size">インデント幅</label>
-            <input id="pref-tab-size" type="number" min="1" max="10" step="1" />
-          </div>
-        </fieldset>
-        <fieldset class="pref-group">
-          <legend>表示</legend>
-          <div class="form-row">
-            <label for="pref-theme">テーマ</label>
-            <select id="pref-theme">
-              <option value="system">システムに合わせる</option>
-              <option value="light">ライト</option>
-              <option value="dark">ダーク</option>
-            </select>
-          </div>
-          <div class="form-row">
-            <label for="pref-font-family">フォント</label>
-            <input id="pref-font-family" type="text" list="font-list" autocomplete="off" spellcheck="false" />
-            <datalist id="font-list"></datalist>
-          </div>
-          <div class="form-row">
-            <label for="pref-font-weight">フォントの太さ</label>
-            <select id="pref-font-weight">
-              <option value="100">100</option>
-              <option value="200">200</option>
-              <option value="300">300</option>
-              <option value="400">400</option>
-              <option value="500">500</option>
-              <option value="600">600</option>
-              <option value="700">700</option>
-              <option value="800">800</option>
-              <option value="900">900</option>
-            </select>
-          </div>
-          <div class="form-row">
-            <label for="pref-font-size">フォントサイズ</label>
-            <span class="form-control-with-unit">
-              <input id="pref-font-size" type="number" min="10" max="100" step="1" />
-              <span>px</span>
-            </span>
-          </div>
-          <div class="form-row">
-            <label for="pref-show-whitespace">空白文字を表示</label>
-            <input id="pref-show-whitespace" type="checkbox" />
-          </div>
-          <div class="form-row">
-            <label for="pref-show-indent-guides">インデントガイドを表示</label>
-            <input id="pref-show-indent-guides" type="checkbox" />
-          </div>
-          <div class="form-row">
-            <label for="pref-show-line-numbers">行番号を表示</label>
-            <input id="pref-show-line-numbers" type="checkbox" />
-          </div>
-        </fieldset>
-        <div class="panel-footer" id="pref-version"></div>
+        </div>
+        <div class="shortcut-foot shortcuts-only">
+          <span id="shortcut-count"></span>
+          <button type="button" id="shortcut-reset-all" class="text-button">すべて初期設定に戻す</button>
+        </div>
       </div>
     </dialog>
 

@@ -1,5 +1,6 @@
 // Keyboard shortcuts are handled inside the app on Windows, where there is no
-// menu bar. `src/commands.ts` is the single table both paths resolve against.
+// menu bar. `src/commands.ts` is the single table both paths resolve against,
+// and `src/shortcuts.ts` says which key each command is on.
 
 import { expect, test } from './fixtures'
 
@@ -201,4 +202,65 @@ test('a window resize is remembered, in logical pixels', async ({ launch }) => {
 
   await app.page.evaluate(() => window.dispatchEvent(new Event('resize')))
   await app.expectSaved((state) => state.windowWidth === 500 && state.windowHeight === 375)
+})
+
+// ---- keys moved in the preferences panel ----------------------------------
+
+test('a moved shortcut answers its new key, and no longer its old one', async ({ launch }) => {
+  const app = await launch({ platform: 'windows', state: { shortcuts: { find: ['Shift+Mod+F'] } } })
+
+  await app.press('KeyF')
+  await expect(app.searchPanel).toBeHidden()
+  await app.page.keyboard.press('Control+Shift+KeyF')
+  await expect(app.searchPanel).toBeVisible()
+})
+
+test('a shortcut taken off every key does nothing', async ({ launch }) => {
+  const app = await launch({ platform: 'windows', state: { shortcuts: { preferences: [] } } })
+
+  await app.press('Comma')
+  await expect(app.preferences).toBeHidden()
+})
+
+test('a key moved in the panel works as soon as the panel closes', async ({ launch }) => {
+  const app = await launch({ platform: 'windows' })
+
+  await app.typeInEditor('比べる')
+  await app.openShortcuts()
+  await app.shortcutRow('open_compare').locator('.key-button').click()
+  await app.page.keyboard.press('F2')
+  await expect(app.shortcutRow('open_compare').locator('.key-button')).toHaveText('F2')
+  await app.page.keyboard.press('Escape')
+  await expect(app.preferences).toBeHidden()
+
+  await app.page.keyboard.press('F2')
+  await expect(app.page.locator('html')).toHaveAttribute('data-layout', 'compare')
+})
+
+test("an editor command follows its new key, in the editor's own keymap", async ({ launch }) => {
+  const app = await launch({ platform: 'windows', state: { shortcuts: { delete_line: ['Alt+D'] } } })
+
+  await app.typeInEditor('残す行\n消す行\n残る行')
+  await app.page.keyboard.press('ArrowUp')
+  await app.page.keyboard.press('Control+Shift+KeyK')
+  await expect(app.editor).toHaveText('残す行消す行残る行')
+  await app.page.keyboard.press('Alt+KeyD')
+  await app.expectSaved((state) => state.text === '残す行\n残る行')
+})
+
+// state.json is a file anyone can edit. What the panel could never have
+// written is dropped instead of trusted: a fixed key, a key given twice, an id
+// that is not a shortcut, a value that is not a list.
+test('ignores keys the file could not have got from the panel', async ({ launch }) => {
+  const shortcuts = { find: ['Mod+C', 'Mod+J', 'Mod+J'], nothing: ['Mod+K'], quit: 'Mod+E' } as unknown as Record<string, string[]>
+  const app = await launch({ platform: 'windows', clipboard: '', state: { shortcuts } })
+
+  await app.press('KeyJ')
+  await expect(app.searchPanel).toBeVisible()
+  await app.editor.click()
+  await app.searchPanel.getByRole('button', { name: '閉じる' }).click()
+  await app.press('KeyC')
+  await expect(app.searchPanel).toBeHidden()
+  await app.press('KeyQ')
+  await expect.poll(() => app.commands()).toContain('quit_app')
 })

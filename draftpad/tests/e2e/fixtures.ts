@@ -232,7 +232,19 @@ export class App {
     await this.page.keyboard.type(text)
   }
 
-  /** "Mod" from src/commands.ts: Cmd on macOS, Ctrl elsewhere. */
+  /** One changeable shortcut's row on the preferences panel's shortcut tab, by the id src/shortcuts.ts gives it. */
+  shortcutRow(id: string): Locator {
+    return this.preferences.locator(`.shortcut-row[data-id="${id}"]`)
+  }
+
+  /** Opens the preferences panel on its shortcut tab. */
+  async openShortcuts(): Promise<void> {
+    await this.openPreferences.click()
+    await this.preferences.locator('#pref-tab-shortcuts').click()
+    await expect(this.preferences.locator('#pref-shortcuts')).toBeVisible()
+  }
+
+  /** "Mod" from src/keys.ts: Cmd on macOS, Ctrl elsewhere. */
   get mod(): 'Meta' | 'Control' {
     return this.platform === 'macos' ? 'Meta' : 'Control'
   }

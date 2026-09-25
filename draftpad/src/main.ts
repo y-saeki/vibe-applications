@@ -5,12 +5,14 @@ import { listen } from '@tauri-apps/api/event'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { readText } from '@tauri-apps/plugin-clipboard-manager'
 
-import { comboFromEvent, createCommands, indexByKeys } from './commands'
+import { createCommands, indexByKeys } from './commands'
 import { installContextMenu } from './context-menu'
 import { Editor, type Side } from './editor'
 import { defaultFontFamily } from './fonts'
+import { combosFromEvent, toAccelerator } from './keys'
 import { PaneBars } from './pane-bars'
 import { Preferences } from './preferences'
+import { resolveBindings } from './shortcuts'
 import { loadState, nearestFontWeight, Store, type StateKey } from './state'
 import { ThemeController } from './theme'
 import { TitleBar } from './titlebar'
@@ -59,6 +61,14 @@ async function main(): Promise<void> {
   }
 
   const store = new Store(state)
+  // Which key every shortcut is on. Read afresh whenever the preferences
+  // panel moves one; see src/shortcuts.ts.
+  let bindings = resolveBindings(state.shortcuts, platform)
+  // The menu bar's accelerators, which are the macOS path for the app's own
+  // commands. They follow `bindings`, except while the shortcut tab is waiting
+  // for a key: a key the menu bar holds never reaches the page, so the menu
+  // lets go of all of them until the key has been taken.
+  let syncMenu = (_recording: boolean): void => {}
   const appWindow = getCurrentWindow()
   const fontFamily = defaultFontFamily(platform)
 
@@ -67,7 +77,9 @@ async function main(): Promise<void> {
   const preferences = new Preferences(byId<HTMLDialogElement>('preferences'), store, {
     version,
     defaultFontFamily: fontFamily,
+    platform,
     onClose: () => editor?.focus(),
+    onRecordingChange: (recording) => syncMenu(recording),
   })
   const openPreferences = (): void => preferences.open()
   // While the preferences panel is open it holds the keyboard, and whatever
@@ -140,6 +152,7 @@ async function main(): Promise<void> {
     // Undo brings a closed pane back from inside the editor, where the key
     // lands, so the rest of the page catches up from here.
     onPaneRestored: () => afterPaneRestored(),
+    keyBindings: bindings,
   })
   const ed = editor
   store.setTextProvider(() => ({ text: ed.text('a'), compareText: ed.text('b') }))
@@ -191,43 +204,41 @@ async function main(): Promise<void> {
     refreshCounts('b')
   }
 
-  const commands = createCommands(
-    {
-      openPreferences,
-      // The preferences panel owns the keyboard while it is open, so the
-      // editor's history stays out of the way.
-      undo: unlessPreferencesOpen(() => ed.undo()),
-      redo: unlessPreferencesOpen(() => ed.redo()),
-      quit,
-      // The innermost thing that can be closed: the pane with the caret while
-      // there are two, otherwise the window, which is the app.
-      close: () => (ed.compare ? closePane(ed.activePane) : quit()),
-      openCompare: () => openCompare(),
-      toggleFullscreen: async () => appWindow.setFullscreen(!(await appWindow.isFullscreen())),
-      // Guarded like undo and redo: the panel would open behind the
-      // preferences panel, which is taking the keyboard.
-      openSearch: unlessPreferencesOpen(() => ed.openSearch()),
-      // The editor is the only place this writes into: while the search panel
-      // or the preferences panel holds the keyboard, dropping the clipboard
-      // into the draft behind them is not what the key press asked for.
-      pastePlain: async () => {
-        if (!ed.hasFocus) return
-        let text: string
-        try {
-          text = await readText()
-        } catch (err) {
-          // A clipboard that is empty, or that holds something other than
-          // text, comes back as an error on every platform. There is nothing
-          // to paste either way, so this only leaves a trace behind.
-          console.error('draftpad: reading the clipboard failed', err)
-          return
-        }
-        if (text) ed.insertText(text)
-      },
+  const commands = createCommands({
+    openPreferences,
+    // The preferences panel owns the keyboard while it is open, so the
+    // editor's history stays out of the way.
+    undo: unlessPreferencesOpen(() => ed.undo()),
+    redo: unlessPreferencesOpen(() => ed.redo()),
+    quit,
+    // The innermost thing that can be closed: the pane with the caret while
+    // there are two, otherwise the window, which is the app.
+    close: () => (ed.compare ? closePane(ed.activePane) : quit()),
+    openCompare: () => openCompare(),
+    toggleFullscreen: async () => appWindow.setFullscreen(!(await appWindow.isFullscreen())),
+    // Guarded like undo and redo: the panel would open behind the
+    // preferences panel, which is taking the keyboard.
+    openSearch: unlessPreferencesOpen(() => ed.openSearch()),
+    // The editor is the only place this writes into: while the search panel
+    // or the preferences panel holds the keyboard, dropping the clipboard
+    // into the draft behind them is not what the key press asked for.
+    pastePlain: async () => {
+      if (!ed.hasFocus) return
+      let text: string
+      try {
+        text = await readText()
+      } catch (err) {
+        // A clipboard that is empty, or that holds something other than
+        // text, comes back as an error on every platform. There is nothing
+        // to paste either way, so this only leaves a trace behind.
+        console.error('draftpad: reading the clipboard failed', err)
+        return
+      }
+      if (text) ed.insertText(text)
     },
-    platform,
-  )
+  })
   const commandById = new Map(commands.map((command) => [command.id, command]))
+  let byKeys = indexByKeys(commands, bindings)
 
   // ---- reacting to settings ----------------------------------------------
   const applyFont = (): void => ed.setFont(store.state.fontSize, store.state.fontFamily, store.state.fontWeight)
@@ -250,6 +261,12 @@ async function main(): Promise<void> {
     showWhitespace: () => ed.setShowWhitespace(store.state.showWhitespace),
     showIndentGuides: () => ed.setShowIndentGuides(store.state.showIndentGuides),
     showLineNumbers: () => ed.setShowLineNumbers(store.state.showLineNumbers),
+    shortcuts: () => {
+      bindings = resolveBindings(store.state.shortcuts, platform)
+      ed.setKeyBindings(bindings)
+      byKeys = indexByKeys(commands, bindings)
+      syncMenu(false)
+    },
     alwaysOnTop: () => {
       titleBar.setAlwaysOnTop(store.state.alwaysOnTop)
       void appWindow.setAlwaysOnTop(store.state.alwaysOnTop)
@@ -279,13 +296,28 @@ async function main(): Promise<void> {
   await listen<string>('menu', (event) => {
     void commandById.get(event.payload)?.run()
   })
-  if (!isMac) {
-    const byKeys = indexByKeys(commands)
+  if (isMac) {
+    // One key per item: an accelerator holds no more. A command left with none
+    // stays in the menu, without a key.
+    syncMenu = (recording) => {
+      const shortcuts: Record<string, string | null> = {}
+      for (const command of commands) {
+        const keys = bindings.get(command.id)
+        if (keys === undefined) continue
+        shortcuts[command.id] = !recording && keys[0] ? toAccelerator(keys[0]) : null
+      }
+      invoke('set_menu_shortcuts', { shortcuts }).catch((err: unknown) => {
+        console.error('draftpad: failed to update the menu shortcuts', err)
+      })
+    }
+    syncMenu(false)
+  } else {
     window.addEventListener(
       'keydown',
       (event) => {
-        const combo = comboFromEvent(event, platform)
-        const command = combo ? byKeys.get(combo) : undefined
+        const command = combosFromEvent(event, platform)
+          .map((combo) => byKeys.get(combo))
+          .find((found) => found !== undefined)
         if (!command) return
         event.preventDefault()
         event.stopPropagation()
