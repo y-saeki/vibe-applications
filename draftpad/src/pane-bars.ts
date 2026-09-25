@@ -24,7 +24,6 @@ export class PaneBars {
   private readonly lines: Record<Side, HTMLElement>
   private readonly added: HTMLElement
   private readonly removed: HTMLElement
-  private readonly stat: HTMLElement
   private readonly openCompare: HTMLButtonElement
   private readonly closeA: HTMLButtonElement
   /** The right pane's head, which comes and goes with the pane. */
@@ -43,7 +42,6 @@ export class PaneBars {
     this.lines = { a: q('#status-lines .count-figure'), b: q('#status-lines-b .count-figure') }
     this.added = q('#status-diff .diff-added')
     this.removed = q('#status-diff .diff-removed')
-    this.stat = q('#status-diff')
     this.openCompare = q('#open-compare')
     this.closeA = q('#close-a')
     this.right = q('#pane-head-b')
@@ -70,10 +68,8 @@ export class PaneBars {
     this.language.value = id
   }
 
-  /** Selects the mode; in preview, where nothing is marked, the +N / −N figures go too. */
   setDiffMode(mode: DiffMode): void {
     this.diffMode.value = mode
-    this.stat.hidden = mode === 'preview'
   }
 
   /** Writes the lines the right pane adds and takes out, as +N and −N. */

@@ -593,10 +593,9 @@ option {
 /* The author sheet's display beats the `[hidden] { display: none }` the
    browser ships, so the switch is spelled out. The right pane's head is
    hidden this way while there is one pane, and so is whichever of the left
-   pane's two buttons is not in use, and the +N / −N figures in preview. */
+   pane's two buttons is not in use. */
 .pane-head[hidden],
-.icon-button[hidden],
-.diff-stat[hidden] {
+.icon-button[hidden] {
   display: none;
 }
 

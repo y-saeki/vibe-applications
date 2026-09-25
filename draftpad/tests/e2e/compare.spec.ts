@@ -104,7 +104,7 @@ test('marks the lines of a chunk on both sides, and the characters only in char 
   await app.expectSaved((state) => state.diffMode === 'line')
 })
 
-test('paints nothing in preview, and paints again when it is left', async ({ launch }) => {
+test('paints nothing in preview but still counts, and paints again when it is left', async ({ launch }) => {
   const app = await launch({ colorScheme: 'light', state: { ...TWO_PANES, diffMode: 'preview' } })
 
   await expect(app.diffModeSelect).toHaveValue('preview')
@@ -123,16 +123,22 @@ test('paints nothing in preview, and paints again when it is left', async ({ lau
       await expect(line).toHaveCSS('box-shadow', 'none')
     }
   }
-  await expect(app.diffAdded).toBeHidden()
+  // The figures are those of the diff, not of the one chunk the texts are held in.
+  await expect(app.diffAdded).toHaveText('+1')
+  await expect(app.diffRemoved).toHaveText('−1')
 
-  // An edit does not bring the marks back.
+  // An edit does not bring the marks back, and the figures follow it.
+  await app.editorB.locator('.cm-line').first().click()
+  await app.page.keyboard.press('End')
   await app.typeInPane('b', '!')
   await expect(app.changedLines('b').first()).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
+  await expect(app.diffAdded).toHaveText('+2')
+  await expect(app.diffRemoved).toHaveText('−2')
 
   await app.diffModeSelect.selectOption('line')
   await expect(app.changedLines('a').first()).toHaveCSS('background-color', 'rgb(255, 235, 233)')
   await expect(app.gaps('a').first()).toHaveCSS('background-image', /repeating-linear-gradient/)
-  await expect(app.diffAdded).toBeVisible()
+  await expect(app.diffAdded).toHaveText('+2')
   await app.expectSaved((state) => state.diffMode === 'line')
 
   // The panes were built again around the same texts, histories included.
@@ -142,7 +148,8 @@ test('paints nothing in preview, and paints again when it is left', async ({ lau
 
   await app.diffModeSelect.selectOption('preview')
   await expect(app.changedLines('a').first()).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
-  await expect(app.diffAdded).toBeHidden()
+  await expect(app.diffAdded).toHaveText('+1')
+  await expect(app.diffRemoved).toHaveText('−1')
   await app.expectSaved((state) => state.diffMode === 'preview')
 })
 

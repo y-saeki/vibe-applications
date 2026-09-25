@@ -15,7 +15,7 @@
 import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete'
 import { defaultKeymap, history, historyField, historyKeymap, indentWithTab, redo as redoCommand, redoDepth, undo as undoCommand, undoDepth } from '@codemirror/commands'
 import { bracketMatching, defaultHighlightStyle, indentOnInput, indentUnit, syntaxHighlighting } from '@codemirror/language'
-import { getChunks, MergeView } from '@codemirror/merge'
+import { Chunk, getChunks, MergeView } from '@codemirror/merge'
 import { getSearchQuery, highlightSelectionMatches, openSearchPanel, search, searchKeymap, SearchQuery, setSearchQuery } from '@codemirror/search'
 import { Compartment, type EditorSelection, EditorState, type Extension, type Text } from '@codemirror/state'
 import { drawSelection, dropCursor, EditorView, keymap, type KeyBinding, lineNumbers } from '@codemirror/view'
@@ -497,14 +497,19 @@ export class Editor {
     })
   }
 
-  /** Lines added on the right and taken out on the left, summed over the chunks. */
+  /**
+   * Lines added on the right and taken out on the left, summed over the chunks.
+   * In preview the merge view holds the two texts as one chunk, so the figures
+   * come from the diff it would have computed.
+   */
   private diffStat(): DiffStat {
     if (!this.merge) return { added: 0, removed: 0 }
     const docA = this.merge.a.state.doc
     const docB = this.merge.b.state.doc
+    const chunks = this.diffMode === 'preview' ? Chunk.build(docA, docB, DIFF_CONFIG) : this.merge.chunks
     let added = 0
     let removed = 0
-    for (const chunk of this.merge.chunks) {
+    for (const chunk of chunks) {
       removed += linesBetween(docA, chunk.fromA, chunk.toA)
       added += linesBetween(docB, chunk.fromB, chunk.toB)
     }
