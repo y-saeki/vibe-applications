@@ -22,8 +22,8 @@ pub struct State {
     pub compare_text: String,
     /// Whether the compare pane is open, so the window holds two panes.
     pub compare: bool,
-    /// "line" or "char": whether the characters within a changed line are
-    /// marked as well as the line.
+    /// "line", "char" or "preview": whether the characters within a changed
+    /// line are marked as well as the line, or nothing is marked at all.
     pub diff_mode: String,
     pub language: String,
     pub theme: String,

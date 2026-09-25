@@ -5,8 +5,11 @@
 import { invoke } from '@tauri-apps/api/core'
 
 export type Theme = 'system' | 'light' | 'dark'
-/** How a differing chunk is marked: whole lines only, or the characters within them too. */
-export type DiffMode = 'line' | 'char'
+/**
+ * How a differing chunk is marked: whole lines only, or the characters within
+ * them too. `preview` marks nothing, and the two texts are shown as they are.
+ */
+export type DiffMode = 'line' | 'char' | 'preview'
 /** What the Tab key and automatic indentation put in: spaces up to the tab width, or tab characters. */
 export type IndentStyle = 'spaces' | 'tabs'
 

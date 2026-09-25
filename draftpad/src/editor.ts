@@ -23,7 +23,7 @@ import { drawSelection, dropCursor, EditorView, keymap, type KeyBinding, lineNum
 import { darkTheme } from './dark-theme'
 import { indentGuides } from './indent-guides'
 import { languageExtension } from './languages'
-import { installLineDiff } from './linediff'
+import { installLineDiff, wholeTexts } from './linediff'
 import { overlayScrollbar, type OverlayScrollbar } from './overlay-scrollbar'
 import { searchPanelExtras } from './search-panel'
 import type { DiffMode, IndentStyle, State } from './state'
@@ -93,6 +93,7 @@ interface ClosedPane {
  * the chunks together.
  */
 const DIFF_TIMEOUT_MS = 500
+const DIFF_CONFIG = { timeout: DIFF_TIMEOUT_MS }
 
 const phrases = EditorState.phrases.of({
   Find: '検索',
@@ -381,14 +382,34 @@ export class Editor {
       // view's own gutter would take a column out of it.
       gutter: false,
       highlightChanges: this.diffMode === 'char',
-      diffConfig: { timeout: DIFF_TIMEOUT_MS },
+      diffConfig: this.diffMode === 'preview' ? wholeTexts(DIFF_CONFIG) : DIFF_CONFIG,
     })
     this.merge = merge
+    // In preview the one chunk is still marked; style.css leaves it unpainted.
+    merge.dom.classList.toggle('diff-preview', this.diffMode === 'preview')
     // The merge view is what scrolls; the two panes inside it grow with their
     // text, so the bar watches the element that holds them.
     const editors = merge.dom.querySelector<HTMLElement>('.cm-mergeViewEditors') ?? undefined
     this.scrollbar = overlayScrollbar(merge.dom, this.options.host, editors)
     this.options.onDiffChanged(this.diffStat())
+  }
+
+  /**
+   * Builds the merge view again from the settings as they stand, each pane
+   * keeping its text, caret and history, and the view its scroll position and
+   * the pane with the keyboard.
+   */
+  private rebuildMerge(): void {
+    const merge = this.merge!
+    const start = (state: EditorState): PaneStart => ({ doc: state.doc, selection: state.selection, history: state.field(historyField) })
+    const a = start(merge.a.state)
+    const b = start(merge.b.state)
+    const focused = this.hasFocus
+    const { scrollTop } = merge.dom
+    this.teardown()
+    this.buildMerge(a, b)
+    this.merge!.dom.scrollTop = scrollTop
+    if (focused) this.activeView.focus()
   }
 
   private teardown(): void {
@@ -564,10 +585,20 @@ export class Editor {
 
   // ---- settings, which reach every pane ------------------------------------
 
-  /** Whole lines only, or the changed characters within them as well. */
+  /**
+   * Whole lines only, the characters within them as well, or nothing at all.
+   *
+   * Between the two that mark, the merge view only changes what it paints.
+   * Into or out of preview the chunks themselves change, which the merge view
+   * recomputes on an edit alone, so it is built again around the same two
+   * panes.
+   */
   setDiffMode(mode: DiffMode): void {
+    const rebuild = (mode === 'preview') !== (this.diffMode === 'preview')
     this.diffMode = mode
-    this.merge?.reconfigure({ highlightChanges: mode === 'char' })
+    if (!this.merge) return
+    if (rebuild) this.rebuildMerge()
+    else this.merge.reconfigure({ highlightChanges: mode === 'char' })
   }
 
   async setLanguage(id: string): Promise<void> {

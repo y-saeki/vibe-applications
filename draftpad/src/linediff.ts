@@ -28,6 +28,24 @@ const original = {
 
 let installed = false
 
+/** The diff settings under which the merge view is to take each text whole. */
+const whole = new WeakSet<DiffConfig>()
+
+/**
+ * Diff settings under which a merge view takes the two texts as one chunk,
+ * whatever they hold, for a preview that shows no difference. No chunks at all
+ * would not do: the merge view holds the lines between chunks level, and with
+ * nothing to go by it would line up equal offsets into the two texts, opening
+ * gaps as the view scrolls. One chunk leaves only the two tops level. The
+ * merge view hands its settings to every computation, so a view built with
+ * these stays that way through its edits.
+ */
+export function wholeTexts(conf: DiffConfig): DiffConfig {
+  const out = { ...conf }
+  whole.add(out)
+  return out
+}
+
 /**
  * Makes every merge view compute its chunks line by line. Idempotent.
  *
@@ -39,7 +57,10 @@ let installed = false
 export function installLineDiff(): void {
   if (installed) return
   installed = true
-  Chunk.build = (a, b, conf) => buildLineChunks(a, b, conf) ?? original.build(a, b, conf)
+  Chunk.build = (a, b, conf) => {
+    if (conf && whole.has(conf)) return [new Chunk([], 0, a.length + 1, 0, b.length + 1)]
+    return buildLineChunks(a, b, conf) ?? original.build(a, b, conf)
+  }
   Chunk.updateA = (_chunks, a, b, _changes, conf) => Chunk.build(a, b, conf)
   Chunk.updateB = (_chunks, a, b, _changes, conf) => Chunk.build(a, b, conf)
 }

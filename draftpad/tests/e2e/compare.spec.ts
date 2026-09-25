@@ -104,6 +104,48 @@ test('marks the lines of a chunk on both sides, and the characters only in char 
   await app.expectSaved((state) => state.diffMode === 'line')
 })
 
+test('paints nothing in preview, and paints again when it is left', async ({ launch }) => {
+  const app = await launch({ colorScheme: 'light', state: { ...TWO_PANES, diffMode: 'preview' } })
+
+  await expect(app.diffModeSelect).toHaveValue('preview')
+  // No gap opposite a line only one side has: the two texts start level and
+  // run on as they are.
+  await expect(app.editorA.locator('.cm-line')).toHaveText(['a', 'b', 'c', 'd'])
+  await expect(app.editorB.locator('.cm-line')).toHaveText(['a', 'c', 'd', 'e'])
+  const [topA, topB] = await Promise.all(
+    (['a', 'b'] as const).map((side) => app.pane(side).locator('.cm-line').last().evaluate((line) => line.getBoundingClientRect().top)),
+  )
+  expect(topA).toBe(topB)
+  for (const side of ['a', 'b'] as const) {
+    await expect(app.changedText(side)).toHaveCount(0)
+    for (const line of await app.changedLines(side).all()) {
+      await expect(line).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
+      await expect(line).toHaveCSS('box-shadow', 'none')
+    }
+  }
+  await expect(app.diffAdded).toBeHidden()
+
+  // An edit does not bring the marks back.
+  await app.typeInPane('b', '!')
+  await expect(app.changedLines('b').first()).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
+
+  await app.diffModeSelect.selectOption('line')
+  await expect(app.changedLines('a').first()).toHaveCSS('background-color', 'rgb(255, 235, 233)')
+  await expect(app.gaps('a').first()).toHaveCSS('background-image', /repeating-linear-gradient/)
+  await expect(app.diffAdded).toBeVisible()
+  await app.expectSaved((state) => state.diffMode === 'line')
+
+  // The panes were built again around the same texts, histories included.
+  await app.editorB.click()
+  await app.press('KeyZ')
+  await expect(app.editorB.locator('.cm-line')).toHaveText(['a', 'c', 'd', 'e'])
+
+  await app.diffModeSelect.selectOption('preview')
+  await expect(app.changedLines('a').first()).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
+  await expect(app.diffAdded).toBeHidden()
+  await app.expectSaved((state) => state.diffMode === 'preview')
+})
+
 test('paints the two sides in their own colors, with a stripe at the edge of a line', async ({ launch }) => {
   const app = await launch({ colorScheme: 'light', state: { compare: true, text: 'old', compareText: 'new' } })
 
