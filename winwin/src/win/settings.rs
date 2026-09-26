@@ -17,8 +17,8 @@ use windows::Win32::Graphics::Gdi::{
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Controls::{
-    BST_CHECKED, BST_UNCHECKED, EM_SETSEL, HKM_GETHOTKEY, HKM_SETHOTKEY, HOTKEY_CLASS,
-    WC_COMBOBOXW, WC_LISTBOXW,
+    BST_CHECKED, BST_UNCHECKED, HKM_GETHOTKEY, HKM_SETHOTKEY, HOTKEY_CLASS, WC_COMBOBOXW,
+    WC_LISTBOXW,
 };
 use windows::Win32::UI::HiDpi::{
     AdjustWindowRectExForDpi, GetDpiForMonitor, MDT_EFFECTIVE_DPI, SystemParametersInfoForDpi,
@@ -52,20 +52,17 @@ const ID_DUPLICATE: i32 = 102;
 const ID_DELETE: i32 = 103;
 const ID_UP: i32 = 104;
 const ID_DOWN: i32 = 105;
-const ID_NAME: i32 = 110;
 const ID_WIN: i32 = 111;
 const ID_HOTKEY: i32 = 112;
 const ID_ANCHOR: i32 = 113;
 const ID_WIDTH: i32 = 114;
 const ID_HEIGHT: i32 = 115;
-const ID_OFFSET_X: i32 = 116;
-const ID_OFFSET_Y: i32 = 117;
 const ID_AUTOSTART: i32 = 120;
 
 /// The client area at 96 DPI; everything below is laid out in these units
 /// and scaled to the monitor's DPI.
 const CLIENT: (i32, i32) = (720, 458);
-const PREVIEW: [i32; 4] = [372, 282, 336, 104];
+const PREVIEW: [i32; 4] = [372, 186, 336, 216];
 
 #[derive(Clone, Copy)]
 struct Controls {
@@ -74,30 +71,18 @@ struct Controls {
     delete: HWND,
     up: HWND,
     down: HWND,
-    name: HWND,
     win: HWND,
     hotkey: HWND,
     anchor: HWND,
     width: HWND,
     height: HWND,
-    offset_x: HWND,
-    offset_y: HWND,
     autostart: HWND,
 }
 
 impl Controls {
     /// The fields that belong to the selected shortcut.
-    fn form(&self) -> [HWND; 8] {
-        [
-            self.name,
-            self.win,
-            self.hotkey,
-            self.anchor,
-            self.width,
-            self.height,
-            self.offset_x,
-            self.offset_y,
-        ]
+    fn form(&self) -> [HWND; 5] {
+        [self.win, self.hotkey, self.anchor, self.width, self.height]
     }
 }
 
@@ -358,43 +343,36 @@ fn create(owner: HWND, config: &Config, path: &Path) -> windows::core::Result<()
         [135, 376, 117, 28],
     )?;
 
-    child(stat, "名前", 0, none, -1, label(12))?;
-    let name = child(edit, "", text_box, edge, ID_NAME, [372, 12, 336, 24])?;
-    child(stat, "ショートカット", 0, none, -1, label(44))?;
+    child(stat, "ショートカット", 0, none, -1, label(12))?;
     let win = child(
         button,
         "Win +",
         tab | BS_AUTOCHECKBOX as u32,
         none,
         ID_WIN,
-        [372, 44, 60, 24],
+        [372, 12, 60, 24],
     )?;
-    let hotkey = child(HOTKEY_CLASS, "", tab, edge, ID_HOTKEY, [436, 44, 272, 24])?;
-    child(stat, "基準位置", 0, none, -1, label(76))?;
+    let hotkey = child(HOTKEY_CLASS, "", tab, edge, ID_HOTKEY, [436, 12, 272, 24])?;
+    child(stat, "基準位置", 0, none, -1, label(44))?;
     let anchor = child(
         WC_COMBOBOXW,
         "",
         tab | WS_VSCROLL.0 | CBS_DROPDOWNLIST as u32,
         none,
         ID_ANCHOR,
-        [372, 76, 160, 300],
+        [372, 44, 160, 300],
     )?;
-    child(stat, "幅", 0, none, -1, label(108))?;
-    let width = child(edit, "", text_box, edge, ID_WIDTH, [372, 108, 120, 24])?;
-    child(stat, "高さ", 0, none, -1, label(140))?;
-    let height = child(edit, "", text_box, edge, ID_HEIGHT, [372, 140, 120, 24])?;
-    child(stat, "横のずらし幅", 0, none, -1, label(172))?;
-    let offset_x = child(edit, "", text_box, edge, ID_OFFSET_X, [372, 172, 120, 24])?;
-    child(stat, "縦のずらし幅", 0, none, -1, label(204))?;
-    let offset_y = child(edit, "", text_box, edge, ID_OFFSET_Y, [372, 204, 120, 24])?;
+    child(stat, "幅", 0, none, -1, label(76))?;
+    let width = child(edit, "", text_box, edge, ID_WIDTH, [372, 76, 120, 24])?;
+    child(stat, "高さ", 0, none, -1, label(108))?;
+    let height = child(edit, "", text_box, edge, ID_HEIGHT, [372, 108, 120, 24])?;
     child(
         stat,
-        "画面(タスクバーを除く)に対する割合 50% か、ピクセル 800px で指定します。\
-         ずらし幅は右・下方向が正です。",
+        "画面(タスクバーを除く)に対する割合 50% か、ピクセル 800px で指定します。",
         0,
         none,
         -1,
-        [372, 236, 336, 40],
+        [372, 140, 336, 40],
     )?;
     child(stat, "プレビュー", 0, none, -1, label(PREVIEW[1]))?;
 
@@ -438,14 +416,11 @@ fn create(owner: HWND, config: &Config, path: &Path) -> windows::core::Result<()
         delete,
         up,
         down,
-        name,
         win,
         hotkey,
         anchor,
         width,
         height,
-        offset_x,
-        offset_y,
         autostart: autostart_box,
     };
     let rows: Vec<Draft> = config.shortcuts.iter().map(Draft::from_shortcut).collect();
@@ -548,7 +523,6 @@ fn select(index: Option<usize>) {
     FILLING.set(true);
     let blank = Draft::new();
     let d = row.as_ref().unwrap_or(&blank);
-    set_text(c.name, if row.is_some() { &d.name } else { "" });
     set_checked(c.win, d.modifiers & MOD_WIN != 0);
     send(
         c.hotkey,
@@ -560,8 +534,6 @@ fn select(index: Option<usize>) {
     send(c.anchor, CB_SETCURSEL, anchor, 0);
     set_text(c.width, &d.width);
     set_text(c.height, &d.height);
-    set_text(c.offset_x, &d.offset_x);
-    set_text(c.offset_y, &d.offset_y);
     FILLING.set(false);
 
     let enabled = row.is_some();
@@ -584,7 +556,6 @@ fn read_form(c: &Controls) -> Draft {
     }
     let anchor = send(c.anchor, CB_GETCURSEL, 0, 0);
     Draft {
-        name: text_of(c.name),
         modifiers,
         vk,
         anchor: Anchor::ALL
@@ -593,8 +564,6 @@ fn read_form(c: &Controls) -> Draft {
             .unwrap_or(Anchor::Center),
         width: text_of(c.width),
         height: text_of(c.height),
-        offset_x: text_of(c.offset_x),
-        offset_y: text_of(c.offset_y),
     }
 }
 
@@ -647,9 +616,8 @@ fn insert_row(row: Draft) {
     );
     select(Some(index));
     unsafe {
-        let _ = SetFocus(Some(c.name));
+        let _ = SetFocus(Some(c.hotkey));
     }
-    send(c.name, EM_SETSEL, 0, -1);
 }
 
 fn delete_row() {
@@ -705,7 +673,7 @@ fn save() {
             Ok(s) => config.shortcuts.push(s),
             Err(e) => {
                 select(Some(i));
-                error_box(Some(hwnd), &format!("「{}」: {e}", row.name.trim()));
+                error_box(Some(hwnd), &format!("{}\n{e}", row.list_text()));
                 return;
             }
         }
@@ -833,7 +801,7 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                 }
                 (ID_ADD, BN_CLICKED) => insert_row(Draft::new()),
                 (ID_DUPLICATE, BN_CLICKED) => {
-                    let row = with_state(|s| s.current.map(|i| s.rows[i].duplicate())).flatten();
+                    let row = with_state(|s| s.current.map(|i| s.rows[i].clone())).flatten();
                     if let Some(row) = row {
                         insert_row(row);
                     }
@@ -841,10 +809,7 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                 (ID_DELETE, BN_CLICKED) => delete_row(),
                 (ID_UP, BN_CLICKED) => move_row(true),
                 (ID_DOWN, BN_CLICKED) => move_row(false),
-                (
-                    ID_NAME | ID_WIDTH | ID_HEIGHT | ID_OFFSET_X | ID_OFFSET_Y | ID_HOTKEY,
-                    EN_CHANGE,
-                )
+                (ID_WIDTH | ID_HEIGHT | ID_HOTKEY, EN_CHANGE)
                 | (ID_WIN, BN_CLICKED)
                 | (ID_ANCHOR, CBN_SELCHANGE) => on_form_changed(),
                 (id, BN_CLICKED) if id == IDOK.0 => save(),

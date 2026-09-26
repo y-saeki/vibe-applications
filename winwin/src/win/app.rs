@@ -244,7 +244,7 @@ fn register_hotkeys() {
             let id = i as i32 + 1;
             let modifiers = HOT_KEY_MODIFIERS(b.keys.modifiers) | MOD_NOREPEAT;
             if unsafe { RegisterHotKey(Some(app.hwnd), id, modifiers, b.keys.vk) }.is_err() {
-                failed.push(format!("{} ({})", b.names.join("・"), b.keys));
+                failed.push(b.keys.to_string());
             }
         }
         app.registered = app.bindings.len() as i32;

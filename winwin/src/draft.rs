@@ -10,53 +10,34 @@ use crate::layout::{Anchor, Length, Placement};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Draft {
-    pub name: String,
     /// MOD_* flags and a virtual-key code; `vk` is 0 until a key is chosen.
     pub modifiers: u32,
     pub vk: u32,
     pub anchor: Anchor,
     pub width: String,
     pub height: String,
-    pub offset_x: String,
-    pub offset_y: String,
 }
 
 impl Draft {
     /// What 追加 starts from.
     pub fn new() -> Draft {
         Draft {
-            name: "新しい配置".into(),
             modifiers: 0,
             vk: 0,
             anchor: Anchor::Center,
             width: "50%".into(),
             height: "50%".into(),
-            offset_x: Length::ZERO.to_string(),
-            offset_y: Length::ZERO.to_string(),
         }
     }
 
     pub fn from_shortcut(s: &Shortcut) -> Draft {
         let p = &s.placement;
         Draft {
-            name: s.name.clone(),
             modifiers: s.keys.modifiers,
             vk: s.keys.vk,
             anchor: p.anchor,
             width: p.width.to_string(),
             height: p.height.to_string(),
-            offset_x: p.offset_x.to_string(),
-            offset_y: p.offset_y.to_string(),
-        }
-    }
-
-    /// A copy to go right after the original. It keeps the shortcut, so
-    /// that pressing it again moves on to the copy; the user can change
-    /// either.
-    pub fn duplicate(&self) -> Draft {
-        Draft {
-            name: format!("{} のコピー", self.name),
-            ..self.clone()
         }
     }
 
@@ -67,28 +48,22 @@ impl Draft {
             anchor: self.anchor,
             width: field("幅", &self.width)?,
             height: field("高さ", &self.height)?,
-            offset_x: field("横のずらし幅", &self.offset_x)?,
-            offset_y: field("縦のずらし幅", &self.offset_y)?,
         })
     }
 
     pub fn to_shortcut(&self) -> Result<Shortcut, String> {
-        let name = self.name.trim();
-        if name.is_empty() {
-            return Err("名前を入力してください".into());
-        }
         if self.vk == 0 {
             return Err("ショートカットを入力してください".into());
         }
         let keys = Hotkey::new(self.modifiers, self.vk).map_err(|e| e.to_string())?;
         Ok(Shortcut {
-            name: name.into(),
             keys,
             placement: self.placement()?,
         })
     }
 
-    /// The line in the list of shortcuts.
+    /// The line in the list of shortcuts: the keys first, so that entries
+    /// sharing them read alike, then where they put the window.
     pub fn list_text(&self) -> String {
         let keys = if self.vk == 0 {
             "(未設定)".to_string()
@@ -99,7 +74,12 @@ impl Draft {
             }
             .to_string()
         };
-        format!("{}    {keys}", self.name)
+        format!(
+            "{keys}    {} {} × {}",
+            self.anchor.label(),
+            self.width.trim(),
+            self.height.trim()
+        )
     }
 }
 
@@ -205,28 +185,15 @@ mod tests {
         assert!(e.starts_with("高さ:"), "{e}");
 
         d = Draft::from_shortcut(&Config::defaults().shortcuts[0]);
-        d.name = " ".into();
-        assert_eq!(d.to_shortcut().unwrap_err(), "名前を入力してください");
-
-        d = Draft::from_shortcut(&Config::defaults().shortcuts[0]);
         d.modifiers = MOD_SHIFT;
         assert!(d.to_shortcut().unwrap_err().contains("Ctrl・Alt・Win"));
     }
 
     #[test]
-    fn a_duplicate_keeps_the_placement_and_the_shortcut() {
-        let original = Draft::from_shortcut(&Config::defaults().shortcuts[0]);
-        let copy = original.duplicate();
-        assert_eq!(copy.name, "左半分 のコピー");
-        assert_eq!((copy.modifiers, copy.vk), (original.modifiers, original.vk));
-        assert_eq!(copy.placement(), original.placement());
-    }
-
-    #[test]
-    fn list_lines_show_the_shortcut() {
+    fn list_lines_show_the_shortcut_and_the_placement() {
         let d = Draft::from_shortcut(&Config::defaults().shortcuts[0]);
-        assert_eq!(d.list_text(), "左半分    Ctrl+Alt+Left");
-        assert_eq!(Draft::new().list_text(), "新しい配置    (未設定)");
+        assert_eq!(d.list_text(), "Ctrl+Alt+Left    左 50% × 100%");
+        assert_eq!(Draft::new().list_text(), "(未設定)    中央 50% × 50%");
     }
 
     #[test]

@@ -18,8 +18,6 @@ pub enum Length {
 }
 
 impl Length {
-    pub const ZERO: Length = Length::Pixels(0.0);
-
     /// `span` is the work area's extent on this axis in physical pixels and
     /// `scale` the monitor's display scaling (1.0 at 96 DPI).
     fn resolve(self, span: f64, scale: f64) -> f64 {
@@ -33,10 +31,6 @@ impl Length {
         match self {
             Length::Percent(v) | Length::Pixels(v) => v,
         }
-    }
-
-    pub fn is_zero(&self) -> bool {
-        self.value() == 0.0
     }
 }
 
@@ -185,34 +179,24 @@ impl Rect {
     }
 }
 
-fn default_zero() -> Length {
-    Length::ZERO
-}
-
 /// A window's size and position relative to the work area of the monitor it
-/// is on. The offsets move it right and down from where the anchor puts it.
+/// is on.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Placement {
     pub anchor: Anchor,
     pub width: Length,
     pub height: Length,
-    #[serde(default = "default_zero", skip_serializing_if = "Length::is_zero")]
-    pub offset_x: Length,
-    #[serde(default = "default_zero", skip_serializing_if = "Length::is_zero")]
-    pub offset_y: Length,
 }
 
 /// Places a span of `size` inside `[start, start + span]` and returns its two
-/// edges, unrounded. The span never leaves the area: it is shrunk to fit and
-/// then pushed back inside.
-fn place(start: f64, span: f64, size: f64, align: Align, offset: f64) -> (f64, f64) {
+/// edges, unrounded. The span never leaves the area: it is shrunk to fit.
+fn place(start: f64, span: f64, size: f64, align: Align) -> (f64, f64) {
     let size = size.clamp(1.0_f64.min(span), span);
     let lead = match align {
         Align::Start => start,
         Align::Middle => start + (span - size) / 2.0,
         Align::End => start + span - size,
-    } + offset;
-    let lead = lead.clamp(start, start + span - size);
+    };
     (lead, lead + size)
 }
 
@@ -227,14 +211,12 @@ impl Placement {
             ww,
             self.width.resolve(ww, scale),
             self.anchor.horizontal(),
-            self.offset_x.resolve(ww, scale),
         );
         let (top, bottom) = place(
             f64::from(work.top),
             wh,
             self.height.resolve(wh, scale),
             self.anchor.vertical(),
-            self.offset_y.resolve(wh, scale),
         );
         Rect {
             left: left.round() as i32,
@@ -261,8 +243,6 @@ mod tests {
             anchor,
             width: width.parse().unwrap(),
             height: height.parse().unwrap(),
-            offset_x: Length::ZERO,
-            offset_y: Length::ZERO,
         }
     }
 
@@ -342,26 +322,8 @@ mod tests {
     }
 
     #[test]
-    fn offsets_move_right_and_down() {
-        let mut second_quarter = p(Anchor::Left, "25%", "100%");
-        second_quarter.offset_x = Length::Percent(25.0);
-        assert_eq!(second_quarter.resolve(FHD, 1.0), r(480, 0, 960, 1040));
-
-        let mut inset = p(Anchor::BottomRight, "800px", "400px");
-        inset.offset_x = Length::Pixels(-20.0);
-        inset.offset_y = Length::Pixels(-20.0);
-        assert_eq!(inset.resolve(FHD, 2.0), r(280, 200, 1880, 1000));
-    }
-
-    #[test]
     fn never_leaves_the_work_area() {
         assert_eq!(p(Anchor::Center, "3000px", "150%").resolve(FHD, 1.0), FHD);
-        let mut pushed = p(Anchor::Right, "50%", "100%");
-        pushed.offset_x = Length::Pixels(500.0);
-        assert_eq!(pushed.resolve(FHD, 1.0), r(960, 0, 1920, 1040));
-        let mut pulled = p(Anchor::Left, "50%", "100%");
-        pulled.offset_x = Length::Percent(-10.0);
-        assert_eq!(pulled.resolve(FHD, 1.0), r(0, 0, 960, 1040));
         assert_eq!(p(Anchor::Center, "0px", "-5%").resolve(FHD, 1.0).width(), 1);
     }
 }
