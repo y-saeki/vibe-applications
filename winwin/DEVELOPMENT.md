@@ -207,7 +207,7 @@ WinUI のコントロールは、値を設定し直しただけでも変更イ�
 | インストール先 | ユーザー単位(`%LOCALAPPDATA%\winwin`)。管理者権限を求めません。前回のインストール先があればそちらを既定にします |
 | 旧バージョンがあるとき | 確認せずに上書きします(draftpad が既定で選ぶ「上書きする」と同じ) |
 | 起動中の winwin | 確認ダイアログを出さずに終了させます。インストーラ・アンインストーラのどちらも |
-| 同梱するもの | `winwin.exe` と Windows App Runtime のファイル一式(`payload.ps1` が `target/release` から一覧を作る) |
+| 同梱するもの | `winwin.exe` と Windows App Runtime のファイル一式(`payload.ps1` が `target/release` から一覧を作る)。`windows-reactor-setup` が一緒に置く WebView2 用の `Microsoft.Web.WebView2.Core.dll` は使わないので入れません。`payload.ps1` は各ファイルの大きさを CI のログに出します |
 | インストール後 | ログの画面で止まらず、完了画面まで自動で進みます |
 | 完了画面 | 「winwin を起動する」と「デスクトップにショートカットを作成する」。後者は上書きインストールのときだけ外した状態で出します |
 | スタートメニュー | `winwin` のショートカットを置きます |

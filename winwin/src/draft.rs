@@ -76,8 +76,18 @@ impl Draft {
         Some((screen, window))
     }
 
-    /// The line in the list of shortcuts: the keys first, so that entries
-    /// sharing them read alike, then where they put the window.
+    /// Where the row puts a window, in words: 左 1/2 × 1.
+    pub fn placement_text(&self) -> String {
+        format!(
+            "{} {} × {}",
+            self.anchor.label(),
+            self.width.trim(),
+            self.height.trim()
+        )
+    }
+
+    /// The row in one line, as errors name it: the keys first, then where
+    /// they put the window.
     pub fn list_text(&self) -> String {
         let keys = if self.vk == 0 {
             "(未設定)".to_string()
@@ -88,12 +98,7 @@ impl Draft {
             }
             .to_string()
         };
-        format!(
-            "{keys}    {} {} × {}",
-            self.anchor.label(),
-            self.width.trim(),
-            self.height.trim()
-        )
+        format!("{keys}    {}", self.placement_text())
     }
 }
 
@@ -294,6 +299,7 @@ mod tests {
     #[test]
     fn list_lines_show_the_shortcut_and_the_placement() {
         let d = Draft::from_shortcut(&Config::defaults().shortcuts[0]);
+        assert_eq!(d.placement_text(), "左 1/2 × 1");
         assert_eq!(d.list_text(), "Ctrl+Alt+Left    左 1/2 × 1");
         assert_eq!(Draft::new().list_text(), "(未設定)    中央 1/2 × 1/2");
     }

@@ -17,7 +17,11 @@ $exe = Join-Path $root 'winwin.exe'
 if (-not (Test-Path $exe)) { throw "no winwin.exe in $root" }
 # The rest of the folder is Cargo's own.
 $cargo = @('build', 'deps', 'examples', 'incremental', '.fingerprint')
-$files = Get-ChildItem -LiteralPath $root -File | Where-Object { $_.Extension -in '.dll', '.pri' }
+# windows-reactor-setup also stages the WebView2 projection, which only the
+# WebView2 control loads; winwin has none.
+$unused = @('Microsoft.Web.WebView2.Core.dll')
+$files = Get-ChildItem -LiteralPath $root -File |
+    Where-Object { ($_.Extension -in '.dll', '.pri') -and ($_.Name -notin $unused) }
 $dirs = Get-ChildItem -LiteralPath $root -Directory | Where-Object { $_.Name -notin $cargo }
 if (-not ($files | Where-Object Name -eq 'Microsoft.WindowsAppRuntime.dll')) {
     throw "the Windows App Runtime is not staged in $root"
@@ -31,3 +35,11 @@ $lines += $files | ForEach-Object { "  Delete `"`$INSTDIR\$($_.Name)`"" }
 $lines += $dirs | ForEach-Object { "  RMDir /r `"`$INSTDIR\$($_.Name)`"" }
 $lines += '!macroend'
 Set-Content -LiteralPath $Out -Value $lines -Encoding utf8
+
+# What each part weighs, for whoever wonders why the installer is the size it is.
+$sizes = @(Get-Item -LiteralPath $exe) + $files | ForEach-Object { [pscustomobject]@{ Name = $_.Name; KB = [math]::Round($_.Length / 1KB) } }
+$sizes += $dirs | ForEach-Object {
+    $bytes = (Get-ChildItem -LiteralPath $_.FullName -Recurse -File | Measure-Object Length -Sum).Sum
+    [pscustomobject]@{ Name = "$($_.Name)\"; KB = [math]::Round($bytes / 1KB) }
+}
+$sizes | Sort-Object KB -Descending | Format-Table -AutoSize | Out-String | Write-Host

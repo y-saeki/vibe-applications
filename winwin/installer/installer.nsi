@@ -20,6 +20,9 @@ Unicode true
 ManifestDPIAware true
 RequestExecutionLevel user
 SetCompressor /SOLID lzma
+; Most of the installer is the Windows App Runtime; a dictionary larger than
+; the default 8 MB lets LZMA find more of its repetition.
+SetCompressorDictSize 64
 
 !ifndef VERSION
   !error "pass /DVERSION=<version>"

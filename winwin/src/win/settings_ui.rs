@@ -26,8 +26,9 @@ use crate::draft::{Draft, Editor};
 use crate::hotkey::{self, Recorder};
 use crate::layout::{Anchor, Rect};
 
-/// The client area in DIPs.
-const CLIENT: (f64, f64) = (820.0, 560.0);
+/// The client area in DIPs, which is also as small as the window goes: the
+/// fields and the whole preview fit in it.
+const CLIENT: (f64, f64) = (900.0, 640.0);
 /// The picture of a placement at the left of each line in the list, and the
 /// larger one under the fields.
 const THUMBNAIL: (f64, f64) = (40.0, 24.0);
@@ -244,10 +245,15 @@ impl Component for Settings {
             .is_closable(true)
             .on_closed(context.message(Msg::DismissError))
             .grid_row(0)
-            .margin(Thickness::new(0.0, 0.0, 0.0, 16.0));
+            .margin(Thickness::new(
+                0.0,
+                0.0,
+                0.0,
+                if self.error.is_some() { 16.0 } else { 0.0 },
+            ));
 
         let body = Grid::new()
-            .columns([GridLength::Pixel(340.0), GridLength::STAR])
+            .columns([GridLength::Pixel(420.0), GridLength::STAR])
             .column_spacing(24.0)
             .grid_row(1)
             .children((self.list(input, context), self.form(input, context)));
@@ -345,7 +351,7 @@ impl Settings {
                 StackPanel::new().spacing(16.0).width(400.0).children((
                     TextBlock::new()
                         .text(
-                            "設定するキーの組み合わせを押してください。                             Ctrl・Alt・Win のいずれかを含める必要があります。",
+                            "設定するキーの組み合わせを押してください。\nCtrl・Alt・Win のいずれかを含める必要があります。",
                         )
                         .text_wrapping(TextWrapping::Wrap),
                     Border::new()
@@ -401,19 +407,24 @@ impl Settings {
     /// buttons that change the list.
     fn list(&self, input: &Input, context: &mut ViewContext<Self>) -> View {
         let items = self.editor.rows().map(|(id, row)| {
+            // The keys at the left; where they put the window, in words and
+            // as a picture, at the right.
             let line = Grid::new()
-                .columns([GridLength::Auto, GridLength::STAR])
+                .columns([GridLength::STAR, GridLength::Auto, GridLength::Auto])
                 .column_spacing(12.0)
                 .margin(Thickness::xy(0.0, 6.0))
                 .children((
                     Border::new()
                         .vertical_alignment(VerticalAlignment::Center)
-                        .content(picture(row, input.work, THUMBNAIL, Anchor::Center)),
+                        .content(shortcut_view(row)),
                     TextBlock::new()
-                        .text(row.list_text())
-                        .text_trimming(TextTrimming::CharacterEllipsis)
+                        .text(row.placement_text())
                         .vertical_alignment(VerticalAlignment::Center)
                         .grid_column(1),
+                    Border::new()
+                        .vertical_alignment(VerticalAlignment::Center)
+                        .grid_column(2)
+                        .content(picture(row, input.work, THUMBNAIL, Anchor::Center)),
                 ));
             (id, ListViewItem::new().content(line))
         });
@@ -476,21 +487,11 @@ impl Settings {
         let enabled = self.editor.selected().is_some();
         let d = self.editor.selected().unwrap_or(&blank);
 
-        let caps = hotkey::keycaps(d.modifiers, d.vk);
-        let current: View = if d.vk == 0 {
-            TextBlock::new()
-                .text("未設定")
-                .opacity(0.6)
-                .vertical_alignment(VerticalAlignment::Center)
-                .into()
-        } else {
-            keycaps(caps, false)
-        };
         let shortcut = StackPanel::new()
             .orientation(Orientation::Horizontal)
             .spacing(12.0)
             .children((
-                current,
+                shortcut_view(d),
                 Button::new()
                     .is_enabled(enabled)
                     .on_click(context.message(Msg::Record))
@@ -542,15 +543,21 @@ impl Settings {
             field("ショートカット", shortcut),
             field("基準位置", anchor),
             size,
-            TextBlock::new()
-                .text(
-                    "幅と高さは、画面(タスクバーを除く)に対する比率で指定します。\
-                         例: 1/2(半分)、2/3、0.75、1(全体)",
-                )
-                .text_wrapping(TextWrapping::Wrap)
-                .opacity(0.7),
             field("プレビュー", preview),
         ))
+    }
+}
+
+/// A row's shortcut as keycaps, or 未設定.
+fn shortcut_view(d: &Draft) -> View {
+    if d.vk == 0 {
+        TextBlock::new()
+            .text("未設定")
+            .opacity(0.6)
+            .vertical_alignment(VerticalAlignment::Center)
+            .into()
+    } else {
+        keycaps(hotkey::keycaps(d.modifiers, d.vk), false)
     }
 }
 
