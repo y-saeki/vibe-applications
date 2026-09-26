@@ -103,8 +103,8 @@ mod tests {
         let left = &bindings[0];
         assert_eq!(left.keys.to_string(), "Ctrl+Alt+Left");
         assert!(left.cycles());
-        assert_eq!(left.placements[0].width.value(), 50.0);
-        assert_eq!(left.placements[1].width.value(), 200.0 / 3.0);
+        assert_eq!(left.placements[0].width.to_string(), "1/2");
+        assert_eq!(left.placements[1].width.to_string(), "2/3");
         // The others keep their order behind it.
         assert_eq!(bindings[1].keys.to_string(), "Ctrl+Alt+Right");
     }

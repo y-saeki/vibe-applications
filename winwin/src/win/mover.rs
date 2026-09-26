@@ -5,7 +5,6 @@ use windows::Win32::Graphics::Dwm::{DWMWA_EXTENDED_FRAME_BOUNDS, DwmGetWindowAtt
 use windows::Win32::Graphics::Gdi::{
     GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromWindow,
 };
-use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
 use windows::Win32::UI::WindowsAndMessaging::{
     GA_ROOT, GetAncestor, GetClassNameW, GetForegroundWindow, GetShellWindow, GetWindowRect,
     IsHungAppWindow, IsIconic, IsWindowVisible, IsZoomed, SW_RESTORE, SWP_NOACTIVATE,
@@ -126,9 +125,7 @@ pub fn place_foreground(placement: &Placement) -> Result<(), MoveError> {
     if !unsafe { GetMonitorInfoW(monitor, &mut info) }.as_bool() {
         return Ok(());
     }
-    let (mut dpi_x, mut dpi_y) = (96, 96);
-    let _ = unsafe { GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &mut dpi_x, &mut dpi_y) };
-    let target = placement.resolve(to_rect(info.rcWork), f64::from(dpi_x) / 96.0);
+    let target = placement.resolve(to_rect(info.rcWork));
 
     set_frame(hwnd, target)?;
     // The invisible borders can change with the size (a window that reached

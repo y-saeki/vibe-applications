@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::hotkey::Hotkey;
-use crate::layout::{Anchor, Length, Placement};
+use crate::layout::{Anchor, Placement};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Shortcut {
@@ -57,44 +57,63 @@ impl fmt::Display for ConfigError {
     }
 }
 
-fn shortcut(keys: &str, anchor: Anchor, width: f64, height: f64) -> Shortcut {
+fn shortcut(keys: &str, anchor: Anchor, width: &str, height: &str) -> Shortcut {
+    let valid = "default shortcuts are valid";
     Shortcut {
-        keys: keys.parse().expect("default shortcuts are valid"),
+        keys: keys.parse().expect(valid),
         placement: Placement {
             anchor,
-            width: Length::Percent(width),
-            height: Length::Percent(height),
+            width: width.parse().expect(valid),
+            height: height.parse().expect(valid),
         },
     }
+}
+
+/// Whether a width or height in the file is written in percent, as versions
+/// before ratios wrote them.
+fn has_percent(text: &str) -> bool {
+    let Ok(table) = text.parse::<toml::Table>() else {
+        return false;
+    };
+    let Some(toml::Value::Array(shortcuts)) = table.get("shortcut") else {
+        return false;
+    };
+    shortcuts
+        .iter()
+        .filter_map(toml::Value::as_table)
+        .flat_map(|s| [s.get("width"), s.get("height")])
+        .flatten()
+        .filter_map(toml::Value::as_str)
+        .any(|v| v.trim().ends_with('%'))
 }
 
 impl Config {
     /// What a first run starts with.
     pub fn defaults() -> Config {
-        const THIRD: f64 = 100.0 / 3.0;
         Config {
             shortcuts: vec![
-                shortcut("Ctrl+Alt+Left", Anchor::Left, 50.0, 100.0),
-                shortcut("Ctrl+Alt+Right", Anchor::Right, 50.0, 100.0),
-                shortcut("Ctrl+Alt+Up", Anchor::Top, 100.0, 50.0),
-                shortcut("Ctrl+Alt+Down", Anchor::Bottom, 100.0, 50.0),
-                shortcut("Ctrl+Alt+Enter", Anchor::Center, 100.0, 100.0),
-                shortcut("Ctrl+Alt+C", Anchor::Center, 60.0, 80.0),
-                shortcut("Ctrl+Alt+U", Anchor::TopLeft, 50.0, 50.0),
-                shortcut("Ctrl+Alt+I", Anchor::TopRight, 50.0, 50.0),
-                shortcut("Ctrl+Alt+J", Anchor::BottomLeft, 50.0, 50.0),
-                shortcut("Ctrl+Alt+K", Anchor::BottomRight, 50.0, 50.0),
-                shortcut("Ctrl+Alt+D", Anchor::Left, THIRD, 100.0),
-                shortcut("Ctrl+Alt+F", Anchor::Center, THIRD, 100.0),
-                shortcut("Ctrl+Alt+G", Anchor::Right, THIRD, 100.0),
-                shortcut("Ctrl+Alt+E", Anchor::Left, 2.0 * THIRD, 100.0),
-                shortcut("Ctrl+Alt+T", Anchor::Right, 2.0 * THIRD, 100.0),
+                shortcut("Ctrl+Alt+Left", Anchor::Left, "1/2", "1"),
+                shortcut("Ctrl+Alt+Right", Anchor::Right, "1/2", "1"),
+                shortcut("Ctrl+Alt+Up", Anchor::Top, "1", "1/2"),
+                shortcut("Ctrl+Alt+Down", Anchor::Bottom, "1", "1/2"),
+                shortcut("Ctrl+Alt+Enter", Anchor::Center, "1", "1"),
+                shortcut("Ctrl+Alt+C", Anchor::Center, "3/5", "4/5"),
+                shortcut("Ctrl+Alt+U", Anchor::TopLeft, "1/2", "1/2"),
+                shortcut("Ctrl+Alt+I", Anchor::TopRight, "1/2", "1/2"),
+                shortcut("Ctrl+Alt+J", Anchor::BottomLeft, "1/2", "1/2"),
+                shortcut("Ctrl+Alt+K", Anchor::BottomRight, "1/2", "1/2"),
+                shortcut("Ctrl+Alt+D", Anchor::Left, "1/3", "1"),
+                shortcut("Ctrl+Alt+F", Anchor::Center, "1/3", "1"),
+                shortcut("Ctrl+Alt+G", Anchor::Right, "1/3", "1"),
+                shortcut("Ctrl+Alt+E", Anchor::Left, "2/3", "1"),
+                shortcut("Ctrl+Alt+T", Anchor::Right, "2/3", "1"),
             ],
         }
     }
 
     /// Entries may share a shortcut; pressing it steps through them (see
-    /// cycle.rs). Fields this version does not know, such as the `name` and
+    /// cycle.rs). Widths and heights in percent, as earlier versions wrote
+    /// them, are read as ratios. Fields this version does not know, such as the `name` and
     /// `offset_x`/`offset_y` of earlier versions, are ignored.
     pub fn parse(text: &str, path: &Path) -> Result<Config, ConfigError> {
         toml::from_str(text).map_err(|e| ConfigError::Parse(path.into(), e.to_string()))
@@ -105,10 +124,20 @@ impl Config {
     }
 
     /// Reads the file, or writes the defaults there first when there is none,
-    /// so that a first run leaves a file to find.
+    /// so that a first run leaves a file to find. A file that measures in
+    /// percent is written back in ratios once it has been read.
     pub fn load_or_create(path: &Path) -> Result<Config, ConfigError> {
         match fs::read_to_string(path) {
-            Ok(text) => Config::parse(&text, path),
+            Ok(text) => {
+                let config = Config::parse(&text, path)?;
+                if !has_percent(&text) {
+                    return Ok(config);
+                }
+                // Read back what was written, so that 33.333% is 1/3 in
+                // memory as it now is in the file.
+                config.save(path)?;
+                Config::parse(&config.to_toml(), path)
+            }
             Err(e) if e.kind() == io::ErrorKind::NotFound => {
                 let config = Config::defaults();
                 config.save(path)?;
@@ -134,6 +163,7 @@ impl Config {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::layout::Ratio;
 
     fn parse(text: &str) -> Result<Config, ConfigError> {
         Config::parse(text, Path::new("config.toml"))
@@ -142,16 +172,9 @@ mod tests {
     #[test]
     fn defaults_are_valid_and_round_trip() {
         let config = Config::defaults();
-        let reread = parse(&config.to_toml()).unwrap();
-        assert_eq!(reread.shortcuts.len(), config.shortcuts.len());
-        for (a, b) in reread.shortcuts.iter().zip(&config.shortcuts) {
-            assert_eq!(a.keys, b.keys);
-            assert_eq!(a.placement.anchor, b.placement.anchor);
-            // Written with three decimals, so a third comes back a hair off.
-            let close = |x: Length, y: Length| (x.value() - y.value()).abs() < 0.001;
-            assert!(close(a.placement.width, b.placement.width));
-            assert!(close(a.placement.height, b.placement.height));
-        }
+        let text = config.to_toml();
+        assert!(text.contains(r#"width = "2/3""#), "{text}");
+        assert_eq!(parse(&text).unwrap(), config);
     }
 
     #[test]
@@ -161,16 +184,46 @@ mod tests {
             [[shortcut]]
             keys = "win+alt+1"
             anchor = "bottom-right"
-            width = "1280px"
-            height = "70%"
+            width = " 2 / 3 "
+            height = "0.7"
             "#,
         )
         .unwrap();
         let s = &config.shortcuts[0];
         assert_eq!(s.keys.to_string(), "Win+Alt+1");
         assert_eq!(s.placement.anchor, Anchor::BottomRight);
-        assert_eq!(s.placement.width, Length::Pixels(1280.0));
-        assert_eq!(s.placement.height, Length::Percent(70.0));
+        assert_eq!(s.placement.width, "2/3".parse().unwrap());
+        assert_eq!(s.placement.height, Ratio::new(0.7).unwrap());
+    }
+
+    #[test]
+    fn reads_percent_from_earlier_versions_as_ratios() {
+        let config = parse(
+            r#"
+            [[shortcut]]
+            keys = "Ctrl+Alt+E"
+            anchor = "left"
+            width = "66.667%"
+            height = "100%"
+            "#,
+        )
+        .unwrap();
+        let p = &config.shortcuts[0].placement;
+        assert_eq!(
+            (p.width.to_string(), p.height.to_string()),
+            ("2/3".into(), "1".into())
+        );
+    }
+
+    #[test]
+    fn refuses_pixels_and_sizes_outside_the_screen() {
+        for width in ["800px", "800", "150%", "3/2", "0", "-1/2"] {
+            let text = format!(
+                "[[shortcut]]\nkeys = \"Ctrl+Alt+L\"\nanchor = \"left\"\nwidth = \"{width}\"\nheight = \"1\"\n"
+            );
+            let e = parse(&text).unwrap_err().to_string();
+            assert!(e.contains(width), "{width}: {e}");
+        }
     }
 
     #[test]
@@ -205,8 +258,8 @@ mod tests {
             [[shortcut]]
             keys = "Ctrl+Alt+Nope"
             anchor = "left"
-            width = "50%"
-            height = "100%"
+            width = "1/2"
+            height = "1"
         "#;
         let e = parse(bad_keys).unwrap_err().to_string();
         assert!(e.contains("Nope"), "{e}");
@@ -223,14 +276,14 @@ mod tests {
             [[shortcut]]
             keys = "Ctrl+Shift+Left"
             anchor = "left"
-            width = "50%"
-            height = "100%"
+            width = "1/2"
+            height = "1"
 
             [[shortcut]]
             keys = "Ctrl+Shift+Left"
             anchor = "left"
-            width = "66.667%"
-            height = "100%"
+            width = "2/3"
+            height = "1"
         "#;
         let config = parse(text).unwrap();
         let widths: Vec<String> = config
@@ -238,7 +291,7 @@ mod tests {
             .iter()
             .map(|s| s.placement.width.to_string())
             .collect();
-        assert_eq!(widths, ["50%", "66.667%"]);
+        assert_eq!(widths, ["1/2", "2/3"]);
         assert_eq!(parse(&config.to_toml()).unwrap(), config);
     }
 
@@ -257,6 +310,27 @@ mod tests {
         changed.save(&path).unwrap();
         assert_eq!(Config::load_or_create(&path).unwrap().shortcuts.len(), 1);
         assert!(!path.with_extension("toml.tmp").exists());
+
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn rewrites_a_file_in_percent_as_ratios() {
+        let dir = std::env::temp_dir().join(format!("winwin-test-pct-{}", std::process::id()));
+        let path = dir.join("config.toml");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+
+        let ratios = "[[shortcut]]\nkeys = \"Ctrl+Alt+L\"\nanchor = \"left\"\n# mine\nwidth = \"1/2\"\nheight = \"1\"\n";
+        fs::write(&path, ratios).unwrap();
+        Config::load_or_create(&path).unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), ratios, "left alone");
+
+        fs::write(&path, ratios.replace("1/2", "33.333%")).unwrap();
+        let config = Config::load_or_create(&path).unwrap();
+        let text = fs::read_to_string(&path).unwrap();
+        assert!(text.contains(r#"width = "1/3""#), "{text}");
+        assert_eq!(parse(&text).unwrap(), config);
 
         fs::remove_dir_all(&dir).unwrap();
     }
