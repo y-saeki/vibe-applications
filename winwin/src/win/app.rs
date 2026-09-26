@@ -9,9 +9,6 @@ use windows::Win32::Foundation::{
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::System::Threading::CreateMutexW;
-use windows::Win32::UI::Controls::{
-    ICC_HOTKEY_CLASS, ICC_STANDARD_CLASSES, INITCOMMONCONTROLSEX, InitCommonControlsEx,
-};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetAsyncKeyState, HOT_KEY_MODIFIERS, MOD_NOREPEAT, RegisterHotKey, UnregisterHotKey,
     VIRTUAL_KEY, VK_CONTROL, VK_LWIN, VK_MENU, VK_RWIN, VK_SHIFT,
@@ -65,6 +62,8 @@ struct App {
     taskbar_created: u32,
     /// How many hotkey ids are registered, from 1 up.
     registered: i32,
+    /// The settings window, while it is open.
+    settings: Option<settings::Child>,
     /// Whether the user has already been told that elevated windows cannot
     /// be moved; once per run is enough.
     told_access_denied: bool,
@@ -93,13 +92,6 @@ pub fn run() {
         return;
     }
 
-    unsafe {
-        let _ = InitCommonControlsEx(&INITCOMMONCONTROLSEX {
-            dwSize: size_of::<INITCOMMONCONTROLSEX>() as u32,
-            dwICC: ICC_STANDARD_CLASSES | ICC_HOTKEY_CLASS,
-        });
-    }
-
     let hwnd = match create_main_window() {
         Ok(hwnd) => hwnd,
         Err(e) => {
@@ -124,6 +116,7 @@ pub fn run() {
             icon: icon::create(dpi),
             taskbar_created: unsafe { RegisterWindowMessageW(w!("TaskbarCreated")) },
             registered: 0,
+            settings: None,
             told_access_denied: false,
         })
     });
@@ -141,9 +134,6 @@ pub fn run() {
 
     let mut msg = MSG::default();
     while unsafe { GetMessageW(&mut msg, None, 0, 0) }.as_bool() {
-        if settings::is_dialog_message(&msg) {
-            continue;
-        }
         unsafe {
             let _ = TranslateMessage(&msg);
             DispatchMessageW(&msg);
@@ -324,24 +314,41 @@ fn stop_cycle() {
 }
 
 fn open_settings() {
-    let Some((hwnd, config, path)) =
-        with_app(|app| (app.hwnd, app.config.clone(), app.path.clone()))
-    else {
+    let Some((hwnd, open)) = with_app(|app| {
+        if let Some(child) = &app.settings {
+            child.bring_forward();
+        }
+        (app.hwnd, app.settings.is_some())
+    }) else {
         return;
     };
-    // The shortcut field has to see key combinations that are registered as
-    // shortcuts, so they are released for as long as the window is open.
-    if settings::open(hwnd, &config, &path) {
-        unregister_hotkeys();
+    if open {
+        return;
+    }
+    // Shortcuts are released for as long as the window is open, so that
+    // pressing one while editing does not move the settings window about.
+    unregister_hotkeys();
+    match settings::open(hwnd) {
+        Ok(child) => {
+            with_app(|app| app.settings = Some(child));
+        }
+        Err(e) => {
+            error_box(None, &format!("設定を開けませんでした。\n{e}"));
+            register_hotkeys();
+        }
     }
 }
 
 /// The settings window has closed, saved or not. The file is the truth
 /// either way, so it is read again rather than handed over.
 fn on_settings_closed() {
-    let Some(path) = with_app(|app| app.path.clone()) else {
+    let Some((path, child)) = with_app(|app| (app.path.clone(), app.settings.take())) else {
         return;
     };
+    let Some(child) = child else {
+        return;
+    };
+    child.release();
     match Config::load_or_create(&path) {
         Ok(config) => {
             with_app(|app| {
@@ -417,7 +424,9 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
             LRESULT(0)
         }
         WM_DESTROY => {
-            settings::close();
+            if let Some(child) = with_app(|app| app.settings.take()).flatten() {
+                child.terminate();
+            }
             unregister_hotkeys();
             remove_tray_icon();
             if let Some(icon) = with_app(|app| app.icon) {

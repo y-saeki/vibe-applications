@@ -78,6 +78,26 @@ pub fn key_name(vk: u32) -> String {
     }
 }
 
+/// The keys the settings window offers for a shortcut, in the order its list
+/// shows them: letters and digits, then the keys that move around, then the
+/// function keys, the numeric keypad and the punctuation keys.
+pub fn choosable_keys() -> Vec<u32> {
+    let mut keys: Vec<u32> = (0x41..=0x5A).chain(0x30..=0x39).collect();
+    keys.extend([
+        0x25, 0x26, 0x27, 0x28, // Left, Up, Right, Down
+        0x0D, 0x20, 0x24, 0x23, 0x21, 0x22, // Enter, Space, Home, End, PageUp, PageDown
+        0x2D, 0x2E, 0x08, 0x09, 0x1B, // Insert, Delete, Backspace, Tab, Escape
+    ]);
+    keys.extend(0x70..=0x87); // F1-F24
+    keys.extend(0x60..=0x69); // Num0-Num9
+    for (_, vk) in KEY_NAMES {
+        if !keys.contains(vk) {
+            keys.push(*vk);
+        }
+    }
+    keys
+}
+
 fn parse_key(name: &str) -> Option<u32> {
     let upper = name.to_ascii_uppercase();
     let bytes = upper.as_bytes();
@@ -232,6 +252,21 @@ mod tests {
             }
             let h = Hotkey::new(MOD_CONTROL | MOD_ALT, vk).unwrap();
             assert_eq!(h.to_string().parse::<Hotkey>(), Ok(h), "vk 0x{vk:02X}");
+        }
+    }
+
+    #[test]
+    fn every_choosable_key_makes_a_shortcut_once() {
+        let keys = choosable_keys();
+        assert_eq!(&keys[..3], &[0x41, 0x42, 0x43]);
+        for (i, &vk) in keys.iter().enumerate() {
+            assert!(!keys[..i].contains(&vk), "0x{vk:02X} twice");
+            assert!(Hotkey::new(MOD_CONTROL, vk).is_ok(), "0x{vk:02X}");
+            // Only codes that have a name: a hex code means nothing in a list.
+            assert!(!key_name(vk).starts_with("0x"), "0x{vk:02X}");
+        }
+        for (_, vk) in KEY_NAMES {
+            assert!(keys.contains(vk), "0x{vk:02X} is missing");
         }
     }
 

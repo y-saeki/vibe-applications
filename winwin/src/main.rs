@@ -13,7 +13,7 @@ mod win;
 
 #[cfg(windows)]
 fn main() {
-    win::app::run();
+    win::main();
 }
 
 // The platform-independent modules are built and tested anywhere; the

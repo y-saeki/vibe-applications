@@ -1,959 +1,149 @@
-//! The settings window: a list of shortcuts on the left, the selected one's
-//! fields on the right.
+//! Opening the settings window from the resident part.
 //!
-//! Every edit goes into a [`Draft`] straight away; nothing is checked until
-//! 保存, which turns the drafts into a config, writes it and closes. The
-//! resident part reads the file again when the window closes.
+//! The window (settings_ui.rs) runs in a process of its own, `winwin.exe
+//! --settings`: WinUI ends its message loop when its last window closes and
+//! cannot start again in the same process, while the resident part lives
+//! on. The resident part only starts that process, brings its window
+//! forward when asked to open it again, and hears when it ends.
 
-use std::cell::{Cell, RefCell};
-use std::path::{Path, PathBuf};
+use std::ffi::c_void;
 
-use windows::Win32::Foundation::{COLORREF, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
-use windows::Win32::Graphics::Gdi::{
-    BeginPaint, COLOR_BTNFACE, COLOR_GRAYTEXT, COLOR_HIGHLIGHT, COLOR_HIGHLIGHTTEXT, COLOR_WINDOW,
-    COLOR_WINDOWTEXT, CreateFontIndirectW, DT_END_ELLIPSIS, DT_NOPREFIX, DT_SINGLELINE, DT_VCENTER,
-    DeleteObject, DrawFocusRect, DrawTextW, EndPaint, FillRect, FrameRect, GetMonitorInfoW,
-    GetSysColor, GetSysColorBrush, HBRUSH, HDC, HFONT, InvalidateRect, MONITOR_DEFAULTTONEAREST,
-    MONITORINFO, MonitorFromPoint, MonitorFromWindow, PAINTSTRUCT, SelectObject, SetBkMode,
-    SetTextColor, TRANSPARENT,
+use windows::Win32::Foundation::{CloseHandle, HANDLE, HWND, LPARAM, WPARAM};
+use windows::Win32::System::Threading::{
+    CREATE_NO_WINDOW, CreateProcessW, INFINITE, PROCESS_INFORMATION, RegisterWaitForSingleObject,
+    STARTUPINFOW, TerminateProcess, UnregisterWait, WT_EXECUTEONLYONCE,
 };
-use windows::Win32::System::LibraryLoader::GetModuleHandleW;
-use windows::Win32::UI::Controls::{
-    BST_CHECKED, BST_UNCHECKED, DRAWITEMSTRUCT, HKM_GETHOTKEY, HKM_SETHOTKEY, HOTKEY_CLASS,
-    MEASUREITEMSTRUCT, ODS_FOCUS, ODS_SELECTED, WC_COMBOBOXW, WC_LISTBOXW,
-};
-use windows::Win32::UI::HiDpi::{
-    AdjustWindowRectExForDpi, GetDpiForMonitor, MDT_EFFECTIVE_DPI, SystemParametersInfoForDpi,
-};
-use windows::Win32::UI::Input::KeyboardAndMouse::{EnableWindow, SetFocus};
 use windows::Win32::UI::WindowsAndMessaging::{
-    BN_CLICKED, BS_AUTOCHECKBOX, BS_DEFPUSHBUTTON, BS_PUSHBUTTON, CB_ADDSTRING, CB_GETCURSEL,
-    CB_SETCURSEL, CBN_SELCHANGE, CBS_DROPDOWNLIST, CreateWindowExW, DefWindowProcW, DestroyWindow,
-    EN_CHANGE, ES_AUTOHSCROLL, GetCursorPos, GetWindowTextLengthW, GetWindowTextW, HMENU, IDCANCEL,
-    IDNO, IDOK, IsDialogMessageW, LB_ADDSTRING, LB_DELETESTRING, LB_GETCURSEL, LB_INSERTSTRING,
-    LB_SETCURSEL, LB_SETITEMHEIGHT, LBN_SELCHANGE, LBS_HASSTRINGS, LBS_NOINTEGRALHEIGHT,
-    LBS_NOTIFY, LBS_OWNERDRAWFIXED, MB_ICONWARNING, MB_YESNO, MSG, NONCLIENTMETRICSW, PostMessageW,
-    RegisterClassExW, SPI_GETNONCLIENTMETRICS, SW_SHOW, SWP_NOACTIVATE, SWP_NOZORDER, SendMessageW,
-    SetForegroundWindow, SetWindowPos, SetWindowTextW, ShowWindow, WINDOW_EX_STYLE, WINDOW_STYLE,
-    WM_CLOSE, WM_COMMAND, WM_DESTROY, WM_DPICHANGED, WM_DRAWITEM, WM_MEASUREITEM, WM_PAINT,
-    WM_SETFONT, WNDCLASSEXW, WS_CAPTION, WS_CHILD, WS_EX_CLIENTEDGE, WS_EX_CONTROLPARENT,
-    WS_MINIMIZEBOX, WS_OVERLAPPED, WS_SYSMENU, WS_TABSTOP, WS_VISIBLE, WS_VSCROLL,
+    AllowSetForegroundWindow, EnumWindows, GW_OWNER, GetWindow, GetWindowThreadProcessId, IsIconic,
+    IsWindowVisible, PostMessageW, SW_RESTORE, SetForegroundWindow, ShowWindow,
 };
-use windows::core::{HSTRING, PCWSTR, w};
+use windows::core::{BOOL, PWSTR};
 
-use super::{APP_NAME, WM_APP_SETTINGS_CLOSED, autostart, error_box, hiword, loword, message_box};
-use crate::config::Config;
-use crate::draft::{self, Draft};
-use crate::hotkey::MOD_WIN;
-use crate::layout::{self, Anchor, Rect};
+use super::WM_APP_SETTINGS_CLOSED;
 
-const CLASS_NAME: PCWSTR = w!("winwin.settings");
+/// The argument that makes winwin.exe the settings window.
+pub const ARG: &str = "--settings";
 
-const ID_LIST: i32 = 100;
-const ID_ADD: i32 = 101;
-const ID_DUPLICATE: i32 = 102;
-const ID_DELETE: i32 = 103;
-const ID_UP: i32 = 104;
-const ID_DOWN: i32 = 105;
-const ID_WIN: i32 = 111;
-const ID_HOTKEY: i32 = 112;
-const ID_ANCHOR: i32 = 113;
-const ID_WIDTH: i32 = 114;
-const ID_HEIGHT: i32 = 115;
-const ID_AUTOSTART: i32 = 120;
-
-/// The client area at 96 DPI; everything below is laid out in these units
-/// and scaled to the monitor's DPI.
-const CLIENT: (i32, i32) = (760, 458);
-const PREVIEW: [i32; 4] = [412, 186, 336, 216];
-/// A line in the list, and the picture of its placement at the line's left.
-const ROW_HEIGHT: i32 = 24;
-const THUMBNAIL: (i32, i32) = (32, 18);
-const ROW_PADDING: i32 = 4;
-
-#[derive(Clone, Copy)]
-struct Controls {
-    list: HWND,
-    duplicate: HWND,
-    delete: HWND,
-    up: HWND,
-    down: HWND,
-    win: HWND,
-    hotkey: HWND,
-    anchor: HWND,
-    width: HWND,
-    height: HWND,
-    autostart: HWND,
+/// A running settings window.
+pub struct Child {
+    process: HANDLE,
+    pid: u32,
+    wait: HANDLE,
 }
 
-impl Controls {
-    /// The fields that belong to the selected shortcut.
-    fn form(&self) -> [HWND; 5] {
-        [self.win, self.hotkey, self.anchor, self.width, self.height]
-    }
-}
-
-struct Settings {
-    hwnd: HWND,
-    owner: HWND,
-    path: PathBuf,
-    c: Controls,
-    /// Every child window and where it goes, in 96-DPI units.
-    layout: Vec<(HWND, [i32; 4])>,
-    font: HFONT,
-    rows: Vec<Draft>,
-    current: Option<usize>,
-    autostart_was: bool,
-    dirty: bool,
-}
-
-thread_local! {
-    static STATE: RefCell<Option<Settings>> = const { RefCell::new(None) };
-    /// Kept apart from STATE so that the message loop can ask for it while
-    /// a handler holds the state.
-    static WINDOW: Cell<Option<HWND>> = const { Cell::new(None) };
-    /// Set while the form is being filled in, so that the change
-    /// notifications that causes are not taken for edits.
-    static FILLING: Cell<bool> = const { Cell::new(false) };
-}
-
-/// Runs `f` on the window's state. As in app.rs, `f` must not call anything
-/// that sends messages to our own windows (setting a control's text does).
-fn with_state<R>(f: impl FnOnce(&mut Settings) -> R) -> Option<R> {
-    STATE.with(|s| s.try_borrow_mut().ok()?.as_mut().map(f))
-}
-
-pub fn is_dialog_message(msg: &MSG) -> bool {
-    match WINDOW.get() {
-        Some(hwnd) => unsafe { IsDialogMessageW(hwnd, msg) }.as_bool(),
-        None => false,
-    }
-}
-
-pub fn close() {
-    if let Some(hwnd) = WINDOW.get() {
-        let _ = unsafe { DestroyWindow(hwnd) };
-    }
-}
-
-fn scale(v: i32, dpi: u32) -> i32 {
-    (i64::from(v) * i64::from(dpi) / 96) as i32
-}
-
-fn send(hwnd: HWND, msg: u32, wparam: usize, lparam: isize) -> isize {
-    unsafe { SendMessageW(hwnd, msg, Some(WPARAM(wparam)), Some(LPARAM(lparam))) }.0
-}
-
-fn text_of(hwnd: HWND) -> String {
-    let len = unsafe { GetWindowTextLengthW(hwnd) }.max(0) as usize;
-    let mut buf = vec![0u16; len + 1];
-    let n = unsafe { GetWindowTextW(hwnd, &mut buf) }.max(0) as usize;
-    String::from_utf16_lossy(&buf[..n])
-}
-
-fn set_text(hwnd: HWND, text: &str) {
-    let _ = unsafe { SetWindowTextW(hwnd, &HSTRING::from(text)) };
-}
-
-fn is_checked(hwnd: HWND) -> bool {
-    send(
-        hwnd,
-        windows::Win32::UI::WindowsAndMessaging::BM_GETCHECK,
-        0,
-        0,
-    ) == BST_CHECKED.0 as isize
-}
-
-fn set_checked(hwnd: HWND, checked: bool) {
-    let state = if checked { BST_CHECKED } else { BST_UNCHECKED };
-    send(
-        hwnd,
-        windows::Win32::UI::WindowsAndMessaging::BM_SETCHECK,
-        state.0 as usize,
-        0,
-    );
-}
-
-/// Opens the window, or brings it forward when it is already open. Returns
-/// whether it was newly opened.
-pub fn open(owner: HWND, config: &Config, path: &Path) -> bool {
-    if let Some(hwnd) = WINDOW.get() {
-        let _ = unsafe { SetForegroundWindow(hwnd) };
-        return false;
-    }
-    match create(owner, config, path) {
-        Ok(()) => true,
-        Err(e) => {
-            error_box(None, &format!("設定を開けませんでした。\n{e}"));
-            false
-        }
-    }
-}
-
-fn register_class() -> windows::core::Result<()> {
-    thread_local! {
-        static REGISTERED: Cell<bool> = const { Cell::new(false) };
-    }
-    if REGISTERED.get() {
-        return Ok(());
-    }
-    let instance = unsafe { GetModuleHandleW(None) }?;
-    let class = WNDCLASSEXW {
-        cbSize: size_of::<WNDCLASSEXW>() as u32,
-        lpfnWndProc: Some(wndproc),
-        hInstance: instance.into(),
-        lpszClassName: CLASS_NAME,
-        hbrBackground: HBRUSH((COLOR_BTNFACE.0 + 1) as isize as _),
-        hCursor: unsafe {
-            windows::Win32::UI::WindowsAndMessaging::LoadCursorW(
-                None,
-                windows::Win32::UI::WindowsAndMessaging::IDC_ARROW,
-            )
-        }?,
+/// Starts the settings window. `owner` gets WM_APP_SETTINGS_CLOSED when it
+/// ends, saved or not.
+pub fn open(owner: HWND) -> Result<Child, String> {
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let mut command: Vec<u16> = format!("\"{}\" {ARG}", exe.display())
+        .encode_utf16()
+        .chain([0])
+        .collect();
+    let startup = STARTUPINFOW {
+        cb: size_of::<STARTUPINFOW>() as u32,
         ..Default::default()
     };
-    unsafe { RegisterClassExW(&class) };
-    REGISTERED.set(true);
-    Ok(())
-}
-
-const STYLE: WINDOW_STYLE =
-    WINDOW_STYLE(WS_OVERLAPPED.0 | WS_CAPTION.0 | WS_SYSMENU.0 | WS_MINIMIZEBOX.0);
-
-fn create(owner: HWND, config: &Config, path: &Path) -> windows::core::Result<()> {
-    register_class()?;
-    let instance = unsafe { GetModuleHandleW(None) }?;
-
-    // Open on the monitor the pointer is on, centered in its work area and
-    // sized for its DPI.
-    let mut cursor = POINT::default();
-    let _ = unsafe { GetCursorPos(&mut cursor) };
-    let monitor = unsafe { MonitorFromPoint(cursor, MONITOR_DEFAULTTONEAREST) };
-    let (mut dpi, mut dpi_y) = (96, 96);
-    let _ = unsafe { GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &mut dpi, &mut dpi_y) };
-    let mut frame = RECT {
-        left: 0,
-        top: 0,
-        right: scale(CLIENT.0, dpi),
-        bottom: scale(CLIENT.1, dpi),
-    };
-    unsafe { AdjustWindowRectExForDpi(&mut frame, STYLE, false, WS_EX_CONTROLPARENT, dpi) }?;
-    let (w, h) = (frame.right - frame.left, frame.bottom - frame.top);
-    let mut info = MONITORINFO {
-        cbSize: size_of::<MONITORINFO>() as u32,
-        ..Default::default()
-    };
-    let _ = unsafe { GetMonitorInfoW(monitor, &mut info) };
-    let work = info.rcWork;
-    let x = work.left + (work.right - work.left - w) / 2;
-    let y = work.top + (work.bottom - work.top - h) / 2;
-
-    let hwnd = unsafe {
-        CreateWindowExW(
-            WS_EX_CONTROLPARENT,
-            CLASS_NAME,
-            &HSTRING::from(format!("{APP_NAME} の設定")),
-            STYLE,
-            x,
-            y,
-            w,
-            h,
+    let mut info = PROCESS_INFORMATION::default();
+    // CREATE_NO_WINDOW keeps a debug build, which is a console program, from
+    // opening a console for it.
+    unsafe {
+        CreateProcessW(
+            None,
+            Some(PWSTR(command.as_mut_ptr())),
             None,
             None,
-            Some(instance.into()),
+            false,
+            CREATE_NO_WINDOW,
             None,
+            None,
+            &startup,
+            &mut info,
         )
-    }?;
-
-    let mut layout = Vec::new();
-    let mut child = |class: PCWSTR,
-                     text: &str,
-                     style: u32,
-                     ex: WINDOW_EX_STYLE,
-                     id: i32,
-                     rect: [i32; 4]|
-     -> windows::core::Result<HWND> {
-        let c = unsafe {
-            CreateWindowExW(
-                ex,
-                class,
-                &HSTRING::from(text),
-                WINDOW_STYLE(WS_CHILD.0 | WS_VISIBLE.0 | style),
-                0,
-                0,
-                0,
-                0,
-                Some(hwnd),
-                Some(HMENU(id as isize as _)),
-                Some(instance.into()),
-                None,
-            )
-        }?;
-        layout.push((c, rect));
-        Ok(c)
-    };
-    let edge = WS_EX_CLIENTEDGE;
-    let none = WINDOW_EX_STYLE::default();
-    let tab = WS_TABSTOP.0;
-    let label = |y: i32| [308, y + 3, 100, 20];
-    let button = w!("BUTTON");
-    let edit = w!("EDIT");
-    let stat = w!("STATIC");
-    let text_box = tab | ES_AUTOHSCROLL as u32;
-
-    let list = child(
-        WC_LISTBOXW,
-        "",
-        tab | WS_VSCROLL.0
-            | (LBS_NOTIFY | LBS_NOINTEGRALHEIGHT | LBS_OWNERDRAWFIXED | LBS_HASSTRINGS) as u32,
-        edge,
-        ID_LIST,
-        [12, 12, 280, 324],
-    )?;
-    child(
-        button,
-        "追加",
-        tab | BS_PUSHBUTTON as u32,
-        none,
-        ID_ADD,
-        [12, 344, 88, 28],
-    )?;
-    let duplicate = child(
-        button,
-        "複製",
-        tab | BS_PUSHBUTTON as u32,
-        none,
-        ID_DUPLICATE,
-        [108, 344, 88, 28],
-    )?;
-    let delete = child(
-        button,
-        "削除",
-        tab | BS_PUSHBUTTON as u32,
-        none,
-        ID_DELETE,
-        [204, 344, 88, 28],
-    )?;
-    let up = child(
-        button,
-        "上へ",
-        tab | BS_PUSHBUTTON as u32,
-        none,
-        ID_UP,
-        [12, 376, 136, 28],
-    )?;
-    let down = child(
-        button,
-        "下へ",
-        tab | BS_PUSHBUTTON as u32,
-        none,
-        ID_DOWN,
-        [156, 376, 136, 28],
-    )?;
-
-    child(stat, "ショートカット", 0, none, -1, label(12))?;
-    let win = child(
-        button,
-        "Win +",
-        tab | BS_AUTOCHECKBOX as u32,
-        none,
-        ID_WIN,
-        [412, 12, 60, 24],
-    )?;
-    let hotkey = child(HOTKEY_CLASS, "", tab, edge, ID_HOTKEY, [476, 12, 272, 24])?;
-    child(stat, "基準位置", 0, none, -1, label(44))?;
-    let anchor = child(
-        WC_COMBOBOXW,
-        "",
-        tab | WS_VSCROLL.0 | CBS_DROPDOWNLIST as u32,
-        none,
-        ID_ANCHOR,
-        [412, 44, 160, 300],
-    )?;
-    child(stat, "幅", 0, none, -1, label(76))?;
-    let width = child(edit, "", text_box, edge, ID_WIDTH, [412, 76, 120, 24])?;
-    child(stat, "高さ", 0, none, -1, label(108))?;
-    let height = child(edit, "", text_box, edge, ID_HEIGHT, [412, 108, 120, 24])?;
-    child(
-        stat,
-        "画面(タスクバーを除く)に対する比率で指定します。例: 1/2(半分)、2/3、0.75、1(全体)",
-        0,
-        none,
-        -1,
-        [412, 140, 336, 40],
-    )?;
-    child(stat, "プレビュー", 0, none, -1, label(PREVIEW[1]))?;
-
-    let autostart_box = child(
-        button,
-        "Windows へのサインイン時に winwin を起動する",
-        tab | BS_AUTOCHECKBOX as u32,
-        none,
-        ID_AUTOSTART,
-        [12, 420, 400, 24],
-    )?;
-    child(
-        button,
-        "保存",
-        tab | BS_DEFPUSHBUTTON as u32,
-        none,
-        IDOK.0,
-        [576, 418, 80, 28],
-    )?;
-    child(
-        button,
-        "キャンセル",
-        tab | BS_PUSHBUTTON as u32,
-        none,
-        IDCANCEL.0,
-        [668, 418, 80, 28],
-    )?;
-
-    for a in Anchor::ALL {
-        send(
-            anchor,
-            CB_ADDSTRING,
-            0,
-            HSTRING::from(a.label()).as_ptr() as isize,
-        );
     }
+    .map_err(|e| e.to_string())?;
+    let _ = unsafe { CloseHandle(info.hThread) };
+    // The click on the tray icon made us the foreground process; pass that on
+    // so the new window comes up in front.
+    let _ = unsafe { AllowSetForegroundWindow(info.dwProcessId) };
 
-    let c = Controls {
-        list,
-        duplicate,
-        delete,
-        up,
-        down,
-        win,
-        hotkey,
-        anchor,
-        width,
-        height,
-        autostart: autostart_box,
-    };
-    let rows: Vec<Draft> = config.shortcuts.iter().map(Draft::from_shortcut).collect();
-    let autostart_was = autostart::is_enabled();
-    STATE.with(|s| {
-        *s.borrow_mut() = Some(Settings {
-            hwnd,
-            owner,
-            path: path.to_path_buf(),
-            c,
-            layout,
-            font: HFONT::default(),
-            rows: rows.clone(),
-            current: None,
-            autostart_was,
-            dirty: false,
-        })
-    });
-    WINDOW.set(Some(hwnd));
-
-    apply_dpi(dpi);
-    for row in &rows {
-        send(
-            list,
-            LB_ADDSTRING,
-            0,
-            HSTRING::from(row.list_text()).as_ptr() as isize,
-        );
-    }
-    set_checked(autostart_box, autostart_was);
-    select(if rows.is_empty() { None } else { Some(0) });
-
-    unsafe {
-        let _ = ShowWindow(hwnd, SW_SHOW);
-        let _ = SetForegroundWindow(hwnd);
-    }
-    Ok(())
-}
-
-/// Lays the children out for `dpi` and gives them the system's message font
-/// at that size.
-fn apply_dpi(dpi: u32) {
-    let mut metrics = NONCLIENTMETRICSW {
-        cbSize: size_of::<NONCLIENTMETRICSW>() as u32,
-        ..Default::default()
-    };
-    let got = unsafe {
-        SystemParametersInfoForDpi(
-            SPI_GETNONCLIENTMETRICS.0,
-            metrics.cbSize,
-            Some((&mut metrics as *mut NONCLIENTMETRICSW).cast()),
-            0,
-            dpi,
+    let mut wait = HANDLE::default();
+    let registered = unsafe {
+        RegisterWaitForSingleObject(
+            &mut wait,
+            info.hProcess,
+            Some(on_exit),
+            Some(owner.0 as *const c_void),
+            INFINITE,
+            WT_EXECUTEONLYONCE,
         )
     };
-    let font = if got.is_ok() {
-        unsafe { CreateFontIndirectW(&metrics.lfMessageFont) }
-    } else {
-        HFONT::default()
-    };
-    let Some((old, layout, list)) = with_state(|s| {
-        (
-            std::mem::replace(&mut s.font, font),
-            s.layout.clone(),
-            s.c.list,
-        )
-    }) else {
-        return;
-    };
-    for (hwnd, [x, y, w, h]) in layout {
+    if let Err(e) = registered {
         unsafe {
-            let _ = SetWindowPos(
-                hwnd,
-                None,
-                scale(x, dpi),
-                scale(y, dpi),
-                scale(w, dpi),
-                scale(h, dpi),
-                SWP_NOZORDER | SWP_NOACTIVATE,
-            );
+            let _ = TerminateProcess(info.hProcess, 1);
+            let _ = CloseHandle(info.hProcess);
         }
-        send(hwnd, WM_SETFONT, font.0 as usize, 1);
+        return Err(e.to_string());
     }
-    // An owner-drawn list measures its lines only when it is created.
-    send(list, LB_SETITEMHEIGHT, 0, scale(ROW_HEIGHT, dpi) as isize);
-    if !old.is_invalid() {
-        let _ = unsafe { DeleteObject(old.into()) };
-    }
+    Ok(Child {
+        process: info.hProcess,
+        pid: info.dwProcessId,
+        wait,
+    })
 }
 
-/// Shows row `index` in the form, or empties and disables the form.
-fn select(index: Option<usize>) {
-    let Some((c, row, len)) = with_state(|s| {
-        s.current = index;
-        (
-            s.c,
-            index.and_then(|i| s.rows.get(i).cloned()),
-            s.rows.len(),
+/// Runs on a thread-pool thread when the process ends.
+unsafe extern "system" fn on_exit(owner: *mut c_void, _timed_out: bool) {
+    let _ = unsafe {
+        PostMessageW(
+            Some(HWND(owner)),
+            WM_APP_SETTINGS_CLOSED,
+            WPARAM(0),
+            LPARAM(0),
         )
-    }) else {
-        return;
     };
-    if let Some(i) = index {
-        send(c.list, LB_SETCURSEL, i, 0);
-    }
-    FILLING.set(true);
-    let blank = Draft::new();
-    let d = row.as_ref().unwrap_or(&blank);
-    set_checked(c.win, d.modifiers & MOD_WIN != 0);
-    send(
-        c.hotkey,
-        HKM_SETHOTKEY,
-        usize::from(draft::to_hotkey_control(d.modifiers, d.vk)),
-        0,
-    );
-    let anchor = Anchor::ALL.iter().position(|a| *a == d.anchor).unwrap_or(0);
-    send(c.anchor, CB_SETCURSEL, anchor, 0);
-    set_text(c.width, &d.width);
-    set_text(c.height, &d.height);
-    FILLING.set(false);
-
-    let enabled = row.is_some();
-    for hwnd in c.form().into_iter().chain([c.duplicate, c.delete]) {
-        let _ = unsafe { EnableWindow(hwnd, enabled) };
-    }
-    let can_move = |up| index.is_some_and(|i| draft::moved(i, len, up).is_some());
-    unsafe {
-        let _ = EnableWindow(c.up, can_move(true));
-        let _ = EnableWindow(c.down, can_move(false));
-    }
-    invalidate_preview();
 }
 
-fn read_form(c: &Controls) -> Draft {
-    let value = send(c.hotkey, HKM_GETHOTKEY, 0, 0) as u16;
-    let (mut modifiers, vk) = draft::from_hotkey_control(value);
-    if is_checked(c.win) {
-        modifiers |= MOD_WIN;
-    }
-    let anchor = send(c.anchor, CB_GETCURSEL, 0, 0);
-    Draft {
-        modifiers,
-        vk,
-        anchor: Anchor::ALL
-            .get(usize::try_from(anchor).unwrap_or(0))
-            .copied()
-            .unwrap_or(Anchor::Center),
-        width: text_of(c.width),
-        height: text_of(c.height),
-    }
-}
-
-/// A field of the selected row changed: store it, and refresh its line in
-/// the list and the preview.
-fn on_form_changed() {
-    if FILLING.get() {
-        return;
-    }
-    let Some(c) = with_state(|s| s.c) else {
-        return;
-    };
-    let row = read_form(&c);
-    let text = row.list_text();
-    let Some(index) = with_state(|s| {
-        let i = s.current?;
-        s.rows[i] = row;
-        s.dirty = true;
-        Some(i)
-    })
-    .flatten() else {
-        return;
-    };
-    send(c.list, LB_DELETESTRING, index, 0);
-    send(
-        c.list,
-        LB_INSERTSTRING,
-        index,
-        HSTRING::from(text).as_ptr() as isize,
-    );
-    send(c.list, LB_SETCURSEL, index, 0);
-    invalidate_preview();
-}
-
-fn insert_row(row: Draft) {
-    let text = row.list_text();
-    let Some((c, index)) = with_state(|s| {
-        let i = s.current.map_or(s.rows.len(), |i| i + 1);
-        s.rows.insert(i, row);
-        s.dirty = true;
-        (s.c, i)
-    }) else {
-        return;
-    };
-    send(
-        c.list,
-        LB_INSERTSTRING,
-        index,
-        HSTRING::from(text).as_ptr() as isize,
-    );
-    select(Some(index));
-    unsafe {
-        let _ = SetFocus(Some(c.hotkey));
-    }
-}
-
-fn delete_row() {
-    let Some((c, removed, remaining)) = with_state(|s| {
-        let i = s.current?;
-        s.rows.remove(i);
-        s.dirty = true;
-        Some((s.c, i, s.rows.len()))
-    })
-    .flatten() else {
-        return;
-    };
-    send(c.list, LB_DELETESTRING, removed, 0);
-    select(if remaining == 0 {
-        None
-    } else {
-        Some(removed.min(remaining - 1))
-    });
-}
-
-/// Moves the selected row one place up or down, which is also its turn
-/// among the rows that share its shortcut.
-fn move_row(up: bool) {
-    let Some((c, from, to, text)) = with_state(|s| {
-        let from = s.current?;
-        let to = draft::moved(from, s.rows.len(), up)?;
-        s.rows.swap(from, to);
-        s.dirty = true;
-        Some((s.c, from, to, s.rows[to].list_text()))
-    })
-    .flatten() else {
-        return;
-    };
-    send(c.list, LB_DELETESTRING, from, 0);
-    send(
-        c.list,
-        LB_INSERTSTRING,
-        to,
-        HSTRING::from(text).as_ptr() as isize,
-    );
-    select(Some(to));
-}
-
-fn save() {
-    let Some((hwnd, c, rows, path, autostart_was)) =
-        with_state(|s| (s.hwnd, s.c, s.rows.clone(), s.path.clone(), s.autostart_was))
-    else {
-        return;
-    };
-    let mut config = Config::default();
-    for (i, row) in rows.iter().enumerate() {
-        match row.to_shortcut() {
-            Ok(s) => config.shortcuts.push(s),
-            Err(e) => {
-                select(Some(i));
-                error_box(Some(hwnd), &format!("{}\n{e}", row.list_text()));
-                return;
+impl Child {
+    /// Brings the window forward, restoring it if it was minimized.
+    pub fn bring_forward(&self) {
+        unsafe extern "system" fn find(hwnd: HWND, found: LPARAM) -> BOOL {
+            // SAFETY: `found` points at the (pid, window) pair below.
+            let found = unsafe { &mut *(found.0 as *mut (u32, HWND)) };
+            let mut pid = 0;
+            unsafe { GetWindowThreadProcessId(hwnd, Some(&mut pid)) };
+            let top_level = unsafe { GetWindow(hwnd, GW_OWNER) }.is_err();
+            if pid == found.0 && top_level && unsafe { IsWindowVisible(hwnd) }.as_bool() {
+                found.1 = hwnd;
+                return false.into();
             }
+            true.into()
         }
-    }
-    if let Err(e) = config.save(&path) {
-        error_box(Some(hwnd), &e.to_string());
-        return;
-    }
-    let autostart = is_checked(c.autostart);
-    if autostart != autostart_was
-        && let Err(e) = autostart::set_enabled(autostart)
-    {
-        error_box(Some(hwnd), &e);
-    }
-    let _ = unsafe { DestroyWindow(hwnd) };
-}
-
-fn cancel() {
-    let Some((hwnd, c, dirty, autostart_was)) =
-        with_state(|s| (s.hwnd, s.c, s.dirty, s.autostart_was))
-    else {
-        return;
-    };
-    let changed = dirty || is_checked(c.autostart) != autostart_was;
-    if changed
-        && message_box(
-            Some(hwnd),
-            "変更を保存せずに閉じますか?",
-            MB_YESNO | MB_ICONWARNING,
-        ) == IDNO.0
-    {
-        return;
-    }
-    let _ = unsafe { DestroyWindow(hwnd) };
-}
-
-fn preview_rect(dpi: u32) -> RECT {
-    let [x, y, w, h] = PREVIEW;
-    RECT {
-        left: scale(x, dpi),
-        top: scale(y, dpi),
-        right: scale(x + w, dpi),
-        bottom: scale(y + h, dpi),
-    }
-}
-
-fn invalidate_preview() {
-    let Some(hwnd) = WINDOW.get() else {
-        return;
-    };
-    let dpi = unsafe { windows::Win32::UI::HiDpi::GetDpiForWindow(hwnd) };
-    let rect = preview_rect(dpi);
-    let _ = unsafe { InvalidateRect(Some(hwnd), Some(&rect), true) };
-}
-
-/// The size of the work area of the monitor `hwnd` is on, which previews
-/// are drawn to the shape of.
-fn work_size(hwnd: HWND) -> Option<(i32, i32)> {
-    let monitor = unsafe { MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST) };
-    let mut info = MONITORINFO {
-        cbSize: size_of::<MONITORINFO>() as u32,
-        ..Default::default()
-    };
-    unsafe { GetMonitorInfoW(monitor, &mut info) }
-        .as_bool()
-        .then(|| {
-            let w = info.rcWork;
-            (w.right - w.left, w.bottom - w.top)
-        })
-}
-
-fn to_rect(r: Rect) -> RECT {
-    RECT {
-        left: r.left,
-        top: r.top,
-        right: r.right,
-        bottom: r.bottom,
-    }
-}
-
-/// Draws a screen of `size` inside `bounds` and, on it, where `row` would
-/// put a window. A row whose fields do not make a placement yet gets the
-/// screen alone.
-fn draw_screen(hdc: HDC, size: (i32, i32), bounds: RECT, anchor: Anchor, row: Option<&Draft>) {
-    let bounds = Rect {
-        left: bounds.left,
-        top: bounds.top,
-        right: bounds.right,
-        bottom: bounds.bottom,
-    };
-    let Some(screen) = layout::miniature(size, bounds, anchor) else {
-        return;
-    };
-    let screen_rect = to_rect(screen);
-    unsafe {
-        FillRect(hdc, &screen_rect, GetSysColorBrush(COLOR_WINDOW));
-    }
-    if let Some(placement) = row.and_then(|r| r.placement().ok()) {
-        let window = to_rect(placement.resolve(screen));
+        let mut found = (self.pid, HWND::default());
+        let _ = unsafe { EnumWindows(Some(find), LPARAM(&mut found as *mut _ as isize)) };
+        let hwnd = found.1;
+        if hwnd.is_invalid() {
+            return;
+        }
         unsafe {
-            FillRect(hdc, &window, GetSysColorBrush(COLOR_HIGHLIGHT));
+            if IsIconic(hwnd).as_bool() {
+                let _ = ShowWindow(hwnd, SW_RESTORE);
+            }
+            let _ = SetForegroundWindow(hwnd);
         }
     }
-    unsafe {
-        FrameRect(hdc, &screen_rect, GetSysColorBrush(COLOR_GRAYTEXT));
-    }
-}
 
-/// Draws the work area of the monitor the window is on, scaled into the
-/// preview box, and where the selected shortcut would put a window on it.
-fn paint(hwnd: HWND) {
-    let row = with_state(|s| s.current.and_then(|i| s.rows.get(i).cloned())).flatten();
-    let mut ps = PAINTSTRUCT::default();
-    let hdc = unsafe { BeginPaint(hwnd, &mut ps) };
-    let dpi = unsafe { windows::Win32::UI::HiDpi::GetDpiForWindow(hwnd) };
-    if let Some(size) = work_size(hwnd) {
-        draw_screen(hdc, size, preview_rect(dpi), Anchor::TopLeft, row.as_ref());
-    }
-    let _ = unsafe { EndPaint(hwnd, &ps) };
-}
-
-/// Draws one line of the list: a picture of its placement, then its text.
-fn draw_row(hwnd: HWND, item: &DRAWITEMSTRUCT) {
-    let (row, font) = with_state(|s| {
-        let row = usize::try_from(item.itemID)
-            .ok()
-            .and_then(|i| s.rows.get(i).cloned());
-        (row, s.font)
-    })
-    .unwrap_or((None, HFONT::default()));
-    let hdc = item.hDC;
-    let r = item.rcItem;
-    let (background, text) = if item.itemState.0 & ODS_SELECTED.0 != 0 {
-        (COLOR_HIGHLIGHT, COLOR_HIGHLIGHTTEXT)
-    } else {
-        (COLOR_WINDOW, COLOR_WINDOWTEXT)
-    };
-    unsafe {
-        FillRect(hdc, &r, GetSysColorBrush(background));
-    }
-
-    // An empty list still draws its focus rectangle, with no row to show.
-    if let Some(row) = &row {
-        let dpi = unsafe { windows::Win32::UI::HiDpi::GetDpiForWindow(hwnd) };
-        let pad = scale(ROW_PADDING, dpi);
-        let (tw, th) = (scale(THUMBNAIL.0, dpi), scale(THUMBNAIL.1, dpi));
-        let top = r.top + (r.bottom - r.top - th) / 2;
-        let thumbnail = RECT {
-            left: r.left + pad,
-            top,
-            right: r.left + pad + tw,
-            bottom: top + th,
-        };
-        let size = work_size(hwnd).unwrap_or((tw, th));
-        draw_screen(hdc, size, thumbnail, Anchor::Center, Some(row));
-
-        let mut label: Vec<u16> = row.list_text().encode_utf16().collect();
-        let mut area = RECT {
-            left: thumbnail.right + pad * 2,
-            right: r.right - pad,
-            ..r
-        };
+    /// Lets go of a process that has ended.
+    pub fn release(self) {
         unsafe {
-            let old_font = (!font.is_invalid()).then(|| SelectObject(hdc, font.into()));
-            SetBkMode(hdc, TRANSPARENT);
-            SetTextColor(hdc, COLORREF(GetSysColor(text)));
-            DrawTextW(
-                hdc,
-                &mut label,
-                &mut area,
-                DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS | DT_NOPREFIX,
-            );
-            if let Some(old) = old_font {
-                SelectObject(hdc, old);
-            }
+            let _ = UnregisterWait(self.wait);
+            let _ = CloseHandle(self.process);
         }
     }
-    if item.itemState.0 & ODS_FOCUS.0 != 0 {
-        let _ = unsafe { DrawFocusRect(hdc, &r) };
-    }
-}
 
-extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
-    match msg {
-        WM_COMMAND => {
-            let id = loword(wparam.0) as i32;
-            let code = hiword(wparam.0);
-            match (id, code) {
-                (ID_LIST, LBN_SELCHANGE) => {
-                    let Some(c) = with_state(|s| s.c) else {
-                        return LRESULT(0);
-                    };
-                    let sel = send(c.list, LB_GETCURSEL, 0, 0);
-                    select(usize::try_from(sel).ok());
-                }
-                (ID_ADD, BN_CLICKED) => insert_row(Draft::new()),
-                (ID_DUPLICATE, BN_CLICKED) => {
-                    let row = with_state(|s| s.current.map(|i| s.rows[i].clone())).flatten();
-                    if let Some(row) = row {
-                        insert_row(row);
-                    }
-                }
-                (ID_DELETE, BN_CLICKED) => delete_row(),
-                (ID_UP, BN_CLICKED) => move_row(true),
-                (ID_DOWN, BN_CLICKED) => move_row(false),
-                (ID_WIDTH | ID_HEIGHT | ID_HOTKEY, EN_CHANGE)
-                | (ID_WIN, BN_CLICKED)
-                | (ID_ANCHOR, CBN_SELCHANGE) => on_form_changed(),
-                (id, BN_CLICKED) if id == IDOK.0 => save(),
-                (id, BN_CLICKED) if id == IDCANCEL.0 => cancel(),
-                _ => {}
-            }
-            LRESULT(0)
-        }
-        WM_CLOSE => {
-            cancel();
-            LRESULT(0)
-        }
-        WM_PAINT => {
-            paint(hwnd);
-            LRESULT(0)
-        }
-        WM_MEASUREITEM => {
-            // SAFETY: WM_MEASUREITEM carries the struct to fill in.
-            let item = unsafe { &mut *(lparam.0 as *mut MEASUREITEMSTRUCT) };
-            let dpi = unsafe { windows::Win32::UI::HiDpi::GetDpiForWindow(hwnd) };
-            item.itemHeight = scale(ROW_HEIGHT, dpi) as u32;
-            LRESULT(1)
-        }
-        WM_DRAWITEM => {
-            // SAFETY: WM_DRAWITEM carries the struct describing the item.
-            let item = unsafe { &*(lparam.0 as *const DRAWITEMSTRUCT) };
-            draw_row(hwnd, item);
-            LRESULT(1)
-        }
-        WM_DPICHANGED => {
-            apply_dpi(loword(wparam.0));
-            // SAFETY: WM_DPICHANGED carries the suggested window rectangle.
-            let r = unsafe { *(lparam.0 as *const RECT) };
-            unsafe {
-                let _ = SetWindowPos(
-                    hwnd,
-                    None,
-                    r.left,
-                    r.top,
-                    r.right - r.left,
-                    r.bottom - r.top,
-                    SWP_NOZORDER | SWP_NOACTIVATE,
-                );
-                let _ = InvalidateRect(Some(hwnd), None, true);
-            }
-            LRESULT(0)
-        }
-        WM_DESTROY => {
-            WINDOW.set(None);
-            let state = STATE.with(|s| s.borrow_mut().take());
-            if let Some(s) = state {
-                if !s.font.is_invalid() {
-                    let _ = unsafe { DeleteObject(s.font.into()) };
-                }
-                let _ = unsafe {
-                    PostMessageW(Some(s.owner), WM_APP_SETTINGS_CLOSED, WPARAM(0), LPARAM(0))
-                };
-            }
-            LRESULT(0)
-        }
-        _ => unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) },
+    /// Ends the window without saving, as quitting winwin (or the installer
+    /// closing it) always has.
+    pub fn terminate(self) {
+        let _ = unsafe { TerminateProcess(self.process, 0) };
+        self.release();
     }
 }

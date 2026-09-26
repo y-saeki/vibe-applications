@@ -4,7 +4,11 @@
 ;
 ; Built by CI after `cargo build --release`:
 ;
-;   makensis /INPUTCHARSET UTF8 /DVERSION=<version> /DEXE=<path to winwin.exe> /DOUTFILE=<setup.exe> installer.nsi
+;   pwsh payload.ps1 -Dir ../target/release -Out payload.nsh
+;   makensis /INPUTCHARSET UTF8 /DVERSION=<version> /DPAYLOAD=payload.nsh /DOUTFILE=<setup.exe> installer.nsi
+;
+; payload.nsh lists winwin.exe and the Windows App Runtime files beside it,
+; which the settings window (WinUI 3) needs.
 ;
 ; It follows what draftpad's installer does (draftpad/src-tauri/installer.nsi,
 ; see draftpad/DEVELOPMENT.md): a per-user install without elevation, a
@@ -20,9 +24,10 @@ SetCompressor /SOLID lzma
 !ifndef VERSION
   !error "pass /DVERSION=<version>"
 !endif
-!ifndef EXE
-  !error "pass /DEXE=<path to winwin.exe>"
+!ifndef PAYLOAD
+  !error "pass /DPAYLOAD=<payload.nsh written by payload.ps1>"
 !endif
+!include "${PAYLOAD}"
 !ifndef OUTFILE
   !define OUTFILE "winwin_${VERSION}_x64-setup.exe"
 !endif
@@ -83,7 +88,8 @@ Var Upgrading
 ; Asks a running winwin to quit, the way its own tray menu does, and waits
 ; for it to go so that its executable can be replaced or removed. No
 ; confirmation, as in draftpad's installer: the tray icon would not tell the
-; user much anyway, and an open settings window is discarded.
+; user much anyway, and an open settings window (a second winwin.exe, which
+; the resident one ends as it quits) is discarded.
 !macro CloseRunningWinwin un
   Function ${un}CloseRunningWinwin
     StrCpy $1 0
@@ -139,7 +145,7 @@ Section "Install"
   Call CloseRunningWinwin
 
   SetOutPath "$INSTDIR"
-  File "/oname=winwin.exe" "${EXE}"
+  !insertmacro INSTALL_PAYLOAD
   WriteUninstaller "$INSTDIR\uninstall.exe"
 
   CreateShortcut "$SMPROGRAMS\${PRODUCT}.lnk" "$INSTDIR\winwin.exe"
@@ -160,7 +166,7 @@ SectionEnd
 Section "Uninstall"
   Call un.CloseRunningWinwin
 
-  Delete "$INSTDIR\winwin.exe"
+  !insertmacro UNINSTALL_PAYLOAD
   Delete "$INSTDIR\uninstall.exe"
   RMDir "$INSTDIR"
   Delete "$SMPROGRAMS\${PRODUCT}.lnk"

@@ -1,10 +1,11 @@
 //! Everything that talks to Win32.
 
-pub mod app;
+mod app;
 mod autostart;
 mod icon;
 mod mover;
 mod settings;
+mod settings_ui;
 
 use std::path::PathBuf;
 
@@ -13,6 +14,15 @@ use windows::Win32::UI::WindowsAndMessaging::{MB_ICONERROR, MB_OK, MESSAGEBOX_ST
 use windows::core::HSTRING;
 
 pub const APP_NAME: &str = "winwin";
+
+/// The resident part, or with `--settings` the settings window.
+pub fn main() {
+    if std::env::args().nth(1).as_deref() == Some(settings::ARG) {
+        settings_ui::run();
+    } else {
+        app::run();
+    }
+}
 
 /// Messages the main window takes from the rest of the application.
 pub const WM_APP_TRAY: u32 = windows::Win32::UI::WindowsAndMessaging::WM_APP + 1;
@@ -51,8 +61,4 @@ pub fn copy_to_field(field: &mut [u16], text: &str) {
 
 pub fn loword(v: usize) -> u32 {
     (v & 0xFFFF) as u32
-}
-
-pub fn hiword(v: usize) -> u32 {
-    ((v >> 16) & 0xFFFF) as u32
 }

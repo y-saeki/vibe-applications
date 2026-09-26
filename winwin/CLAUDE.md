@@ -16,12 +16,13 @@ tests. `src/win/` passes values between those modules and Win32 and should stay 
 
 ## The state borrow rule
 
-`with_app` (`src/win/app.rs`) and `with_state` (`src/win/settings.rs`) lend the window
-state out of a `RefCell`. Inside their closures, never call anything that sends a message
-to one of winwin's own windows: a message box, `SetWindowTextW` on a control,
-`SetWindowPos` on the settings window. The window procedure re-enters, the borrow fails,
-and the work is silently dropped. Copy what you need out of the closure and make the call
-after it.
+`with_app` (`src/win/app.rs`) lends the resident part's state out of a `RefCell`. Inside
+its closure, never call anything that sends a message to one of winwin's own windows, such
+as a message box. The window procedure re-enters, the borrow fails, and the work is
+silently dropped. Copy what you need out of the closure and make the call after it.
+
+The settings window (`src/win/settings_ui.rs`) is a `windows-reactor` component running in
+its own process; its state lives in the component and changes only in `update`.
 
 ## Keeping the tests in step
 

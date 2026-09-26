@@ -2,17 +2,23 @@
 
 winwin をビルド・変更するための情報です。使い方やインストール方法は [README.md](./README.md) を参照してください。
 
-Rust と [`windows`](https://crates.io/crates/windows) クレート(Win32 API のバインディング)で書いた、単一の exe です。
-GUI フレームワークは使わず、設定画面も Win32 の標準コントロールで組んでいます。配布対象は Windows (x64) だけで、
-GitHub Actions の `windows-latest` でビルドし、[NSIS](https://nsis.sourceforge.io/) でインストーラを作ります。
+Rust で書いた単一の exe です。常駐部分は [`windows`](https://crates.io/crates/windows) クレート(Win32 API の
+バインディング)だけで組み、設定画面は [`windows-reactor`](https://crates.io/crates/windows-reactor)(Rust から WinUI 3 を
+使う Microsoft のクレート)で組んでいます。WinUI 3 を動かす Windows App Runtime は exe と同じフォルダに置いて配布します
+(self-contained)。配布対象は Windows (x64) だけで、GitHub Actions の `windows-latest` でビルドし、
+[NSIS](https://nsis.sourceforge.io/) でインストーラを作ります。
 
 ## 開発に必要なもの
 
 | ツール | 備考 |
 |---|---|
-| [Rust](https://rustup.rs/)(stable) | `rustup` でインストール |
+| [Rust](https://rustup.rs/)(stable、1.95 以降) | `rustup` でインストール。`windows-reactor` が 1.95 以降を求めます |
 | Windows: Visual Studio Build Tools | 「C++ によるデスクトップ開発」を選択。Rust は MSVC ツールチェーンを既定にする |
 | [NSIS](https://nsis.sourceforge.io/) 3 | インストーラを作るときだけ。`makensis` が使えればよく、Linux のパッケージでも構いません |
+| [PowerShell](https://learn.microsoft.com/powershell/) 7(`pwsh`) | インストーラを作るときだけ。同梱するファイルの一覧を書き出します |
+
+Windows でのビルドは、初回に Windows App Runtime のパッケージを nuget.org からダウンロードします(`build.rs` が呼ぶ
+`windows-reactor-setup`。`%LOCALAPPDATA%\windows-reactor-setup` にキャッシュされます)。
 
 Windows 以外でも、Win32 に触れない部分(設定ファイル・配置の計算・ショートカットの表記・設定画面の編集中データ)は
 そのままビルド・テストできます。Win32 側の型検査は `x86_64-pc-windows-msvc` ターゲットで行えます(リンクはできません)。
@@ -26,15 +32,18 @@ cargo clippy --target x86_64-pc-windows-msvc --all-targets -- -D warnings
 
 ```sh
 cd winwin
-cargo run              # デバッグビルドで起動(コンソールが開き、終了はトレイメニューから)
-cargo build --release  # 配布用ビルド: target/release/winwin.exe
+cargo run                   # デバッグビルドで起動(コンソールが開き、終了はトレイメニューから)
+cargo run -- --settings     # 設定画面だけを起動
+cargo build --release       # 配布用ビルド: target/release/winwin.exe と、横に置かれる Windows App Runtime
 ```
 
-インストーラ(`installer/installer.nsi`)は、リリースビルドの exe を渡して作ります。
+インストーラ(`installer/installer.nsi`)は、リリースビルドのあとに同梱するファイルの一覧(`payload.nsh`)を書き出してから
+作ります。一覧は exe と、`target/release` に置かれた Windows App Runtime のファイルです。
 
 ```sh
 cd winwin/installer
-makensis /INPUTCHARSET UTF8 /DVERSION=0.1.0 /DEXE=../target/release/winwin.exe /DOUTFILE=../target/release/winwin_0.1.0_x64-setup.exe installer.nsi
+pwsh payload.ps1 -Dir ../target/release -Out payload.nsh
+makensis /INPUTCHARSET UTF8 /DVERSION=0.6.0 /DPAYLOAD=payload.nsh /DOUTFILE=../target/release/winwin_0.6.0_x64-setup.exe installer.nsi
 ```
 
 デバッグビルドはコンソールサブシステムで、リリースビルドだけがコンソールを持たない GUI サブシステムです
@@ -60,20 +69,23 @@ CI(`.github/workflows/winwin.yml`)は `windows-latest` でこの 3 つとリリ�
 
 ```
 winwin/
-├── build.rs            # アプリケーションマニフェストの埋め込み
+├── build.rs            # Windows App Runtime の配置とアプリケーションマニフェストの埋め込み
+├── winwin.manifest     # DPI 対応などの宣言。build.rs が Windows App Runtime のマニフェストと合わせて埋め込む
 ├── installer/
-│   └── installer.nsi   # Windows インストーラ(NSIS)
+│   ├── installer.nsi   # Windows インストーラ(NSIS)
+│   └── payload.ps1     # インストーラに入れるファイルの一覧(payload.nsh)を書き出す
 └── src/
     ├── main.rs
     ├── config.rs       # 設定ファイルの型・読み書き・初期値
     ├── layout.rs       # 配置(基準位置・幅・高さ)から矩形を求める計算と、プレビュー用に縮めた画面
     ├── hotkey.rs       # ショートカットの表記("Ctrl+Alt+Left")と RegisterHotKey の値の相互変換
     ├── cycle.rs        # 同じショートカットを持つ項目のまとめ方と、押すたびに進む順番
-    ├── draft.rs        # 設定画面で編集中の 1 行。保存時にここで検証する
+    ├── draft.rs        # 設定画面で編集中の一覧(Editor)と 1 行(Draft)。保存時にここで検証する
     └── win/            # Win32 に触れる部分。Windows でだけビルドされる
         ├── app.rs      # 常駐部分: 隠しウィンドウ、メッセージループ、ホットキー、通知領域アイコン
         ├── mover.rs    # 前面ウィンドウの移動
-        ├── settings.rs # 設定画面
+        ├── settings.rs # 設定画面のプロセスの起動・前面化・終了の検知(常駐側)
+        ├── settings_ui.rs # 設定画面(WinUI 3。`--settings` で起動したプロセスで動く)
         ├── autostart.rs# サインイン時の自動起動(レジストリの Run キー)
         └── icon.rs     # 通知領域アイコンの描画
 ```
@@ -144,33 +156,41 @@ Windows 10 以降のウィンドウは、見えている枠の外側に透明な
 
 ### DPI
 
-`build.rs` が [`embed-manifest`](https://crates.io/crates/embed-manifest) でマニフェストを埋め込み、
-Per-Monitor (v2) の DPI 対応と Common Controls v6 を宣言しています。外部ツール(`rc.exe` など)なしで埋め込めるので、
-クロスコンパイルでも同じ exe になります。座標はすべて物理ピクセルで、ピクセル指定の長さはウィンドウがあるモニターの
-DPI で拡大します。設定画面は 96 DPI の座標で組み、開いたモニターの DPI で拡大し、`WM_DPICHANGED` で組み直します。
+`winwin.manifest` で Per-Monitor (v2) の DPI 対応と Common Controls v6(メッセージボックス用)を宣言しています。
+`build.rs` は `windows-reactor-setup` が作る Windows App Runtime のマニフェスト(WinUI のクラスの登録)に、
+リンカの `/MANIFESTINPUT` でこれを足して埋め込みます。座標はすべて物理ピクセルで、ピクセル指定の長さはウィンドウがある
+モニターの DPI で拡大します。設定画面の拡大縮小は WinUI に任せています。
 
 ### 設定画面
 
-開いている間はショートカットをすべて解除します。ショートカット欄(標準の hotkey コントロール)は、登録済みの
-組み合わせを押されても受け取れないためです。閉じると、保存したかどうかにかかわらず設定ファイルを読み直して
-登録し直します。
+設定画面は WinUI 3 で、`winwin.exe --settings` として別のプロセスで動きます(`settings_ui.rs`)。`windows-reactor` は
+最後のウィンドウが閉じるとメッセージループを終え、同じプロセスで WinUI を立ち上げ直すことはできないためです。常駐側
+(`settings.rs`)はプロセスを起動し、`RegisterWaitForSingleObject` で終了を待って `WM_APP_SETTINGS_CLOSED` を受け取ります。
+WinUI の DLL は設定画面のプロセスでしか読み込まれないので、常駐中のメモリは増えません。
 
-hotkey コントロールには Windows キーを表すフラグがないので、Win だけは横のチェックボックスで指定します。
-矢印キーなど、テンキーと同じ仮想キーを持つキーは `HOTKEYF_EXT` を付けて渡さないとテンキー側の名前で表示されます
-(`draft.rs` の `to_hotkey_control`)。
+設定画面を開いている間はショートカットをすべて解除し、閉じると(保存したかどうかにかかわらず)設定ファイルを読み直して
+登録し直します。開いている間にもう一度開こうとすると、そのプロセスのウィンドウを前面に出します。winwin を終了するとき
+(インストーラが閉じるときも)は、開いている設定画面を保存せずに終わらせます。
 
-一覧はオーナードローのリストボックス(`LBS_OWNERDRAWFIXED`)で、各行の左に配置の図を描き、右に `Draft::list_text` の
-文字列を書きます。図と右側のプレビューは、どちらも設定画面があるモニターの作業領域を `layout.rs` の `miniature` で
-縮め、そこへ配置を当てはめて描きます。固定高のオーナードローは作成時にしか行の高さを測らないので、DPI が変わったら
-`LB_SETITEMHEIGHT` で設定し直します。
+`windows-reactor` 0.100 にはキー入力のイベントがないので、ショートカットは修飾キーのトグルボタンとキーの一覧
+(`hotkey.rs` の `choosable_keys`)で選びます。設定ファイルに一覧にないキー(`0xA6` など)が書かれていれば、その行では
+一覧の末尾に足して出します(`Draft::key_choices`)。
+
+ウィンドウの閉じるボタンも、未保存の変更があれば確認を出します。`windows-reactor` はウィンドウの HWND を渡さないので、
+スレッドのウィンドウからクラス名 `WinUIDesktopWin32WindowClass` のものを探してサブクラス化し、`WM_CLOSE` をコンポーネントへの
+メッセージ(キャンセルと同じ)に置き換えています。見つからなければ、閉じるボタンは確認なしで閉じます。
+
+一覧の各行の図と右側のプレビューは、どちらも設定画面を開いたモニターの作業領域を `layout.rs` の `miniature` で縮め、
+そこへ配置を当てはめて描きます(`Draft::picture`)。
 
 編集中の値は保存を押すまで検証しません。幅の欄が一時的に `5` や空になるのは入力途中では普通のことなので、
-入力のたびに止めずに `Draft` へ文字列のまま入れておき、保存時に `Draft::to_shortcut` がまとめて検証します。
+入力のたびに止めずに `Draft` へ文字列のまま入れておき、保存時に `Editor::build_config` がまとめて検証します。
+WinUI のコントロールは、値を設定し直しただけでも変更イベントを出すので、`Editor::edit` は値が変わったときだけ
+「変更あり」にします。
 
 ### 状態の持ち方
 
-ウィンドウプロシージャから触る状態は `thread_local!` の `RefCell` に置いています(`app.rs` の `with_app`、
-`settings.rs` の `with_state`)。このクロージャの中では、自分のウィンドウにメッセージを送る API(メッセージボックス、
+常駐側のウィンドウプロシージャから触る状態は `thread_local!` の `RefCell` に置いています(`app.rs` の `with_app`)。このクロージャの中では、自分のウィンドウにメッセージを送る API(メッセージボックス、
 コントロールへのテキスト設定など)を呼ばないでください。ウィンドウプロシージャが再入して同じ `RefCell` を借りようとし、
 借用に失敗します(`try_borrow_mut` なので落ちはしませんが、その処理は黙って捨てられます)。値を取り出してから
 クロージャの外で呼ぶのが決まりです。
@@ -185,10 +205,11 @@ hotkey コントロールには Windows キーを表すフラグがないので�
 | インストール先 | ユーザー単位(`%LOCALAPPDATA%\winwin`)。管理者権限を求めません。前回のインストール先があればそちらを既定にします |
 | 旧バージョンがあるとき | 確認せずに上書きします(draftpad が既定で選ぶ「上書きする」と同じ) |
 | 起動中の winwin | 確認ダイアログを出さずに終了させます。インストーラ・アンインストーラのどちらも |
+| 同梱するもの | `winwin.exe` と Windows App Runtime のファイル一式(`payload.ps1` が `target/release` から一覧を作る) |
 | インストール後 | ログの画面で止まらず、完了画面まで自動で進みます |
 | 完了画面 | 「winwin を起動する」と「デスクトップにショートカットを作成する」。後者は上書きインストールのときだけ外した状態で出します |
 | スタートメニュー | `winwin` のショートカットを置きます |
-| アンインストール | 「設定」→「アプリ」に登録します。exe・ショートカットに加えて、自動起動の `Run` の値も消します。`%APPDATA%\winwin` の設定は、消すかどうかを聞きます(既定は残す。サイレント実行では残します) |
+| アンインストール | 「設定」→「アプリ」に登録します。インストールしたファイル(一覧にあるものだけ)・ショートカットに加えて、自動起動の `Run` の値も消します。`%APPDATA%\winwin` の設定は、消すかどうかを聞きます(既定は残す。サイレント実行では残します) |
 
 起動中の winwin は、隠しウィンドウのクラス名 `winwin.main` を `FindWindow` で探し、`WM_CLOSE` を送って終わらせます。
 トレイメニューの「終了」と同じ後始末(通知領域アイコンの削除など)を通るためです。`src/win/app.rs` のクラス名を
@@ -212,31 +233,33 @@ Wine で試すときに 32 ビットの Wine がなければ、`makensis "-XTarg
 
 | モジュール | 確かめていること |
 |---|---|
-| `hotkey.rs` | 表記の読み書き、すべての仮想キーが書いた表記から読み戻せること、ショートカットにできない組み合わせの拒否 |
+| `hotkey.rs` | 表記の読み書き、すべての仮想キーが書いた表記から読み戻せること、ショートカットにできない組み合わせの拒否、設定画面で選べるキーの一覧 |
 | `cycle.rs` | 同じショートカットの項目を設定の順にまとめること、続けて押すと進んで最初に戻ること、離すと最初からになること |
 | `layout.rs` | 比率の読み書き(分数・小数、範囲外の拒否、以前の版の `%`、分数で書き出せる値の判定)、半分・4 分の 1・3 分の 1 の矩形、他のモニター座標、最小 1px、プレビュー用に縮めた画面の縦横比と寄せ方、縮めた画面への配置 |
 | `config.rs` | 初期値の妥当性と読み書きの往復、手書きファイルの読み込み、以前の版の `name`・`offset_x`・`offset_y` を読み捨てること、以前の版の `%` を読んでファイルを比率で書き直すこと、`px` や範囲外の値の拒否、同じショートカットの項目を順番どおりに読むこと、ファイルの作成と上書き |
-| `draft.rs` | 設定画面の 1 行と設定の往復、保存時の検証メッセージ、並べ替え、一覧の表示文字列、hotkey コントロールの値の変換 |
+| `draft.rs` | 設定画面の 1 行と設定の往復、保存時の検証メッセージ、一覧の追加・複製・削除・並べ替えと選択の移り方、値が変わらない編集を変更と数えないこと、一覧の表示文字列、修飾キーの切り替え、キーの選択肢、配置の図の位置 |
 
 届かない範囲もあります。`win/` 以下は CI でビルドと clippy を通すだけで、動作は手で確かめます。
 
 - ショートカットの登録と、押したときに `WM_HOTKEY` が届くこと
 - 修飾キーを離したことの検出(`GetAsyncKeyState` とタイマー)
 - 前面ウィンドウが実際に狙った位置へ動くこと(見えない縁の補正、最大化の解除、管理者権限のウィンドウ)
-- 設定画面の表示・入力・保存、DPI の違うモニターへの移動、一覧の各行に描く配置の図
+- 設定画面(WinUI 3)の表示・入力・保存、閉じるボタンでの確認、DPI の違うモニターへの移動、一覧の各行に描く配置の図
+- 設定画面のプロセスの起動・前面化・終了の検知
 - 通知領域アイコン、メニュー、バルーン通知、Explorer 再起動後の再表示
 - 自動起動のレジストリ
 - インストーラとアンインストーラ(CI は `makensis` が通ることまでを確かめます)
 
 手で確かめるときは、少なくとも次を通してください: 初回起動で設定ファイルができる / 既定のショートカットで左右半分・
 四隅・中央に動く / 最大化中のウィンドウが解除されて動く / 同じショートカットを 3 つの配置に設定し、修飾キーを押したまま 4 回押すと 1→2→3→1 と切り替わり、修飾キーを離して押し直すと 1 つ目に戻る / 設定画面で追加・複製・削除・保存ができ、閉じたあと新しい
-ショートカットが効く / 設定画面の一覧の各行に配置の図が出て、幅などを変えるとその行の図も変わる / 起動中にもう一度起動すると設定画面が開く / トレイメニューの「終了」でアイコンが消えて終了する。
-インストーラを変えたときは: 新規インストール / winwin の起動中に上書きインストール(winwin が終了し、完了画面の
+ショートカットで動く / 設定画面の一覧の各行に配置の図が出て、幅などを変えるとその行の図も変わる / 変更してから閉じるボタンを
+押すと確認が出る / 設定画面を開いたままトレイアイコンをクリックすると、同じ設定画面が前面に出る / 起動中にもう一度起動すると設定画面が開く / トレイメニューの「終了」でアイコンが消えて終了する。
+インストーラを変えたときは: 新規インストール(Windows App Runtime を入れていない環境で設定画面が開く)/ winwin の起動中に上書きインストール(winwin が終了し、完了画面の
 デスクトップショートカットが外れている)/ アンインストールで、ファイル・スタートメニュー・「設定」→「アプリ」の項目・
 自動起動の値が消える。
 
-Windows がない環境では、`x86_64-pc-windows-gnu` ターゲット(mingw-w64 が必要)でビルドした exe を Wine で
-動かすと、上の多くを大まかに確かめられます。ただし Wine の挙動は Windows と同じではないので、最終確認は実機で行ってください。
+Windows がない環境では確かめられません。WinUI 3 は Wine では動かず、`windows-reactor-setup` は MSVC か
+`gnullvm` のリンカを前提にしています。
 
 ## バージョニングとリリース
 
