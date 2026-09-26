@@ -1,5 +1,6 @@
-//! The notification-area icon, drawn at run time at the size the taskbar asks
-//! for, so that there is no resource file to keep in step.
+//! winwin's icon, drawn at run time at the size Windows asks for, so that
+//! there is no resource file to keep in step: in the notification area, and
+//! on the settings window's title bar and taskbar button.
 
 use windows::Win32::Graphics::Gdi::{
     BI_RGB, BITMAPINFO, BITMAPINFOHEADER, CreateBitmap, CreateDIBSection, DIB_RGB_COLORS,
@@ -7,7 +8,8 @@ use windows::Win32::Graphics::Gdi::{
 };
 use windows::Win32::UI::HiDpi::GetSystemMetricsForDpi;
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateIconIndirect, HICON, ICONINFO, IDI_APPLICATION, LoadIconW, SM_CXSMICON,
+    CreateIconIndirect, HICON, ICONINFO, IDI_APPLICATION, LoadIconW, SM_CXICON, SM_CXSMICON,
+    SYSTEM_METRICS_INDEX,
 };
 
 const BACKGROUND: u32 = 0xFF_2F_6F_EB;
@@ -46,8 +48,18 @@ fn pixels(size: usize) -> Vec<u32> {
     out
 }
 
+/// The small icon: the notification area and title bars.
 pub fn create(dpi: u32) -> HICON {
-    let size = unsafe { GetSystemMetricsForDpi(SM_CXSMICON, dpi) }.max(16);
+    create_sized(SM_CXSMICON, dpi, 16)
+}
+
+/// The large icon: taskbar buttons and Alt+Tab.
+pub fn create_large(dpi: u32) -> HICON {
+    create_sized(SM_CXICON, dpi, 32)
+}
+
+fn create_sized(metric: SYSTEM_METRICS_INDEX, dpi: u32, least: i32) -> HICON {
+    let size = unsafe { GetSystemMetricsForDpi(metric, dpi) }.max(least);
     draw(size).unwrap_or_else(|| unsafe { LoadIconW(None, IDI_APPLICATION).unwrap_or_default() })
 }
 

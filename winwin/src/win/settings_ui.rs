@@ -13,14 +13,16 @@ use windows::Win32::Graphics::Gdi::{
     GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromPoint,
 };
 use windows::Win32::System::Threading::GetCurrentThreadId;
+use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::Shell::{DefSubclassProc, SetWindowSubclass};
 use windows::Win32::UI::WindowsAndMessaging::{
-    EnumThreadWindows, GetClassNameW, GetCursorPos, WM_CLOSE,
+    EnumThreadWindows, GetClassNameW, GetCursorPos, ICON_BIG, ICON_SMALL, SendMessageW, WM_CLOSE,
+    WM_SETICON,
 };
 use windows::core::BOOL;
 use windows_reactor::*;
 
-use super::{autostart, config_path, error_box, keyhook};
+use super::{autostart, config_path, error_box, icon, keyhook};
 use crate::config::{Config, Theme};
 use crate::draft::{Draft, Editor};
 use crate::hotkey::{self, Arrow, Keycap, Recorder};
@@ -133,7 +135,7 @@ enum Msg {
 
 thread_local! {
     /// How the window's close button reaches the component (see
-    /// `intercept_close`).
+    /// `adopt_window`).
     static SENDER: RefCell<Option<LocalSender<Msg>>> = const { RefCell::new(None) };
     /// Set once the component has decided to close, so that the close it
     /// asks for is let through.
@@ -251,8 +253,8 @@ impl Component for Settings {
                     ..Default::default()
                 }),
         );
-        context.use_effect("intercept-close", (), || {
-            intercept_close();
+        context.use_effect("adopt-window", (), || {
+            adopt_window();
             None
         });
 
@@ -722,12 +724,14 @@ fn close(context: &ComponentContext<Settings>) {
     let _ = context.window().request_close();
 }
 
-/// Routes the window's close button through [`Msg::Cancel`], so that closing
-/// with unsaved changes asks first, as キャンセル does. Reactor does not
-/// hand out its window, so this finds it among the thread's windows by the
-/// class WinUI 3 gives a desktop window. Should that fail, the close button
-/// simply closes.
-fn intercept_close() {
+/// Does to the window what Reactor has no way to say. It gets winwin's icon,
+/// the one in the notification area, on its title bar and taskbar button.
+/// And its close button goes through [`Msg::Cancel`], so that closing with
+/// unsaved changes asks first, as キャンセル does. Reactor does not hand out
+/// its window, so this finds it among the thread's windows by the class
+/// WinUI 3 gives a desktop window. Should that fail, the window keeps the
+/// default icon and the close button simply closes.
+fn adopt_window() {
     unsafe extern "system" fn find(hwnd: HWND, found: LPARAM) -> BOOL {
         let mut class = [0u16; 64];
         let len = unsafe { GetClassNameW(hwnd, &mut class) }.max(0) as usize;
@@ -745,9 +749,24 @@ fn intercept_close() {
             LPARAM(&mut hwnd as *mut HWND as isize),
         )
     };
-    if !hwnd.is_invalid() {
-        let _ = unsafe { SetWindowSubclass(hwnd, Some(subclass), 1, 0) };
+    if hwnd.is_invalid() {
+        return;
     }
+    let dpi = unsafe { GetDpiForWindow(hwnd) };
+    for (kind, icon) in [
+        (ICON_SMALL, icon::create(dpi)),
+        (ICON_BIG, icon::create_large(dpi)),
+    ] {
+        unsafe {
+            SendMessageW(
+                hwnd,
+                WM_SETICON,
+                Some(WPARAM(kind as usize)),
+                Some(LPARAM(icon.0 as isize)),
+            )
+        };
+    }
+    let _ = unsafe { SetWindowSubclass(hwnd, Some(subclass), 1, 0) };
 }
 
 unsafe extern "system" fn subclass(
