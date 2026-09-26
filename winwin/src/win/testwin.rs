@@ -27,17 +27,17 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, GWL_EXSTYLE, GetClientRect, GetCursorPos,
-    GetWindowLongPtrW, GetWindowRect, HTBOTTOM, HTBOTTOMLEFT, HTBOTTOMRIGHT, HTCAPTION, HTLEFT,
-    HTRIGHT, HTTOP, HTTOPLEFT, HTTOPRIGHT, HWND_TOP, KillTimer, LWA_ALPHA, MINMAXINFO,
-    RegisterClassExW, SW_SHOWNA, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
-    SetLayeredWindowAttributes, SetTimer, SetWindowLongPtrW, SetWindowPos, ShowWindow,
-    WINDOW_EX_STYLE, WM_CLOSE, WM_ERASEBKGND, WM_GETMINMAXINFO, WM_HOTKEY, WM_NCACTIVATE,
-    WM_NCCALCSIZE, WM_NCHITTEST, WM_NCPAINT, WM_TIMER, WNDCLASSEXW, WS_EX_LAYERED, WS_POPUP,
-    WS_THICKFRAME,
+    GetWindowLongPtrW, GetWindowRect, HICON, HTBOTTOM, HTBOTTOMLEFT, HTBOTTOMRIGHT, HTCAPTION,
+    HTLEFT, HTRIGHT, HTTOP, HTTOPLEFT, HTTOPRIGHT, HWND_TOP, ICON_BIG, ICON_SMALL, KillTimer,
+    LWA_ALPHA, MINMAXINFO, RegisterClassExW, SW_SHOWNA, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+    SendMessageW, SetLayeredWindowAttributes, SetTimer, SetWindowLongPtrW, SetWindowPos,
+    ShowWindow, WINDOW_EX_STYLE, WM_CLOSE, WM_ERASEBKGND, WM_GETMINMAXINFO, WM_HOTKEY,
+    WM_NCACTIVATE, WM_NCCALCSIZE, WM_NCHITTEST, WM_NCPAINT, WM_SETICON, WM_TIMER, WNDCLASSEXW,
+    WS_EX_LAYERED, WS_POPUP, WS_THICKFRAME,
 };
 use windows::core::{HSTRING, PCWSTR};
 
-use super::{modifiers_held, mover};
+use super::{icon, modifiers_held, mover};
 use crate::config::Config;
 use crate::cycle::{self, Binding, Cycle};
 use crate::layout::{Anchor, Placement, Ratio, Rect};
@@ -80,6 +80,7 @@ thread_local! {
     /// How the window paints itself: see-through to the glass behind it, or
     /// a plain color.
     static GLASS: Cell<bool> = const { Cell::new(false) };
+    static ICONS: Cell<Option<(HICON, HICON)>> = const { Cell::new(None) };
 }
 
 /// As `with_app` in app.rs: never call anything that sends a message to the
@@ -111,6 +112,7 @@ pub fn open(on_close: impl Fn() + 'static) -> Result<(), String> {
         })
     });
     dress(hwnd);
+    set_icon(hwnd);
     if let Some(work) = pointer_work_area() {
         let r = FIRST_PLACEMENT.resolve(work);
         let _ = unsafe {
@@ -126,6 +128,9 @@ pub fn open(on_close: impl Fn() + 'static) -> Result<(), String> {
         };
     }
     let _ = unsafe { ShowWindow(hwnd, SW_SHOWNA) };
+    // Shown without being activated, it would start out as inactive, gray
+    // rather than glass (see WM_NCACTIVATE below).
+    unsafe { SendMessageW(hwnd, WM_NCACTIVATE, Some(WPARAM(1)), Some(LPARAM(0))) };
     Ok(())
 }
 
@@ -200,6 +205,27 @@ fn create() -> windows::core::Result<HWND> {
             Some(instance.into()),
             None,
         )
+    }
+}
+
+/// winwin's icon, as the settings window has it, rather than the default one
+/// in Alt+Tab and on the taskbar. Drawn once per process and kept.
+fn set_icon(hwnd: HWND) {
+    let (small, large) = ICONS.get().unwrap_or_else(|| {
+        let dpi = unsafe { GetDpiForWindow(hwnd) };
+        let icons = (icon::create(dpi), icon::create_large(dpi));
+        ICONS.set(Some(icons));
+        icons
+    });
+    for (kind, icon) in [(ICON_SMALL, small), (ICON_BIG, large)] {
+        unsafe {
+            SendMessageW(
+                hwnd,
+                WM_SETICON,
+                Some(WPARAM(kind as usize)),
+                Some(LPARAM(icon.0 as isize)),
+            )
+        };
     }
 }
 
