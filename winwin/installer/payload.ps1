@@ -22,7 +22,12 @@ $cargo = @('build', 'deps', 'examples', 'incremental', '.fingerprint')
 $unused = @('Microsoft.Web.WebView2.Core.dll')
 $files = Get-ChildItem -LiteralPath $root -File |
     Where-Object { ($_.Extension -in '.dll', '.pri') -and ($_.Name -notin $unused) }
-$dirs = Get-ChildItem -LiteralPath $root -Directory | Where-Object { $_.Name -notin $cargo }
+# WinUI's messages come in a folder per language. winwin speaks Japanese, and
+# en-US is what Windows falls back to; the other 90-odd folders only add weight.
+$languages = @('ja-JP', 'en-US')
+$dirs = Get-ChildItem -LiteralPath $root -Directory |
+    Where-Object { $_.Name -notin $cargo } |
+    Where-Object { $_.Name -notmatch '^[a-z]{2,3}(-[A-Za-z]+)+$' -or $_.Name -in $languages }
 if (-not ($files | Where-Object Name -eq 'Microsoft.WindowsAppRuntime.dll')) {
     throw "the Windows App Runtime is not staged in $root"
 }
