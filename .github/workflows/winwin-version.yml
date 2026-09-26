@@ -1,0 +1,98 @@
+name: winwin version
+
+# Raising the version is a manual step, and forgetting it fails quietly: the
+# release job skips a tag that already exists, so the change never reaches
+# anyone and nothing says so. This check turns that into a red pull request.
+#
+# It is a workflow of its own because it listens for label changes, and adding
+# those to winwin.yml would re-run the Windows build every time a label moves.
+#
+# There is deliberately no paths filter. A check that is skipped never reports,
+# and a required check that never reports blocks the pull request for good, so
+# the job runs everywhere and decides for itself whether it has anything to say.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+concurrency:
+  group: winwin-version-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    name: version bump
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      BASE_REF: ${{ github.base_ref }}
+      # A pull request that is not meant to ship carries this label instead of
+      # a bump, so that skipping the release is a decision rather than an
+      # oversight.
+      NO_RELEASE: ${{ contains(github.event.pull_request.labels.*.name, 'no-release') }}
+    steps:
+      - name: Find out whether this pull request touches winwin
+        id: scope
+        run: |
+          files="$(gh pr diff --name-only "${PR_NUMBER}")"
+          if printf '%s\n' "${files}" | grep -q '^winwin/'; then
+            echo "touched=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "touched=false" >> "${GITHUB_OUTPUT}"
+            echo "::notice::no file under winwin/ changed, so there is nothing to release."
+          fi
+      - if: steps.scope.outputs.touched == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      # Cargo.toml decides the release; Cargo.lock repeats it, and a lock that
+      # disagrees fails `cargo build --locked` in winwin.yml anyway, so it is
+      # caught here with a clearer message.
+      - name: Check that Cargo.toml and Cargo.lock agree
+        if: steps.scope.outputs.touched == 'true'
+        run: |
+          cd winwin
+          toml="$(awk '/^\[package\]/{p=1;next} /^\[/{p=0} p && /^version *=/{gsub(/[" ]/,"");sub(/^version=/,"");print;exit}' Cargo.toml)"
+          lock="$(awk '/^name = "winwin"$/{getline;gsub(/[" ]/,"");sub(/^version=/,"");print;exit}' Cargo.lock)"
+          if [ -z "${toml}" ] || [ -z "${lock}" ]; then
+            echo "::error::could not read the version out of winwin/Cargo.toml or winwin/Cargo.lock"
+            exit 1
+          fi
+          if [ "${toml}" != "${lock}" ]; then
+            echo "::error::winwin/Cargo.lock says ${lock}, but winwin/Cargo.toml says ${toml}. Run \`cargo update -p winwin\`."
+            exit 1
+          fi
+          echo "VERSION=${toml}" >> "${GITHUB_ENV}"
+      # Against the tip of the base branch rather than the sha the pull request
+      # started from: a version another pull request has already merged is just
+      # as unreleasable as an unchanged one. A base branch without winwin means
+      # this is its first release, which any version is ahead of.
+      - name: Check that the version is ahead of the base branch
+        if: steps.scope.outputs.touched == 'true'
+        run: |
+          git fetch --depth=1 origin "${BASE_REF}"
+          if ! git cat-file -e FETCH_HEAD:winwin/Cargo.toml 2>/dev/null; then
+            echo "::notice::winwin is new on ${BASE_REF}; ${VERSION} will be its first release."
+            exit 0
+          fi
+          base="$(git show FETCH_HEAD:winwin/Cargo.toml | awk '/^\[package\]/{p=1;next} /^\[/{p=0} p && /^version *=/{gsub(/[" ]/,"");sub(/^version=/,"");print;exit}')"
+          if [ "${VERSION}" = "${base}" ]; then
+            if [ "${NO_RELEASE}" = "true" ]; then
+              echo "::notice::winwin stays at ${VERSION}; the no-release label says that is deliberate."
+              exit 0
+            fi
+            echo "::error::winwin is still ${VERSION}, the same as ${BASE_REF}, so merging this would publish nothing. Raise the version in winwin/Cargo.toml (and \`cargo update -p winwin\`), or label this pull request no-release."
+            exit 1
+          fi
+          newest="$(printf '%s\n%s\n' "${base}" "${VERSION}" | sort -V | tail -1)"
+          if [ "${newest}" != "${VERSION}" ]; then
+            echo "::error::winwin is ${VERSION} here but already ${base} on ${BASE_REF}."
+            exit 1
+          fi
+          echo "::notice::winwin goes from ${base} to ${VERSION}."
