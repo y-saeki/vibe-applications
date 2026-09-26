@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use windows::Win32::Foundation::{
     ERROR_ALREADY_EXISTS, GetLastError, HWND, LPARAM, LRESULT, POINT, WPARAM,
 };
-use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+use windows::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress, LoadLibraryW};
 use windows::Win32::System::Threading::CreateMutexW;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetAsyncKeyState, HOT_KEY_MODIFIERS, MOD_NOREPEAT, RegisterHotKey, UnregisterHotKey,
@@ -25,7 +25,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     TPM_RETURNCMD, TPM_RIGHTBUTTON, TrackPopupMenu, TranslateMessage, WINDOW_EX_STYLE,
     WM_CONTEXTMENU, WM_DESTROY, WM_HOTKEY, WM_TIMER, WNDCLASSEXW, WS_OVERLAPPED,
 };
-use windows::core::{HSTRING, PCWSTR, w};
+use windows::core::{HSTRING, PCSTR, PCWSTR, w};
 
 use super::{
     APP_NAME, WM_APP_OPEN_SETTINGS, WM_APP_SETTINGS_CLOSED, WM_APP_TRAY, config_path,
@@ -361,7 +361,36 @@ fn on_settings_closed() {
     register_hotkeys();
 }
 
+/// Lets the tray menu follow Windows' dark mode, as the menus of Explorer
+/// and most other applications do. Windows offers this only through two
+/// undocumented uxtheme.dll exports, known by ordinal: 135 is
+/// SetPreferredAppMode (AllowDarkModeForApp on 1809, where the 1 means the
+/// same), 136 FlushMenuThemes. Should a Windows update drop them, the menu is
+/// simply light.
+fn follow_dark_mode() {
+    unsafe {
+        let Ok(uxtheme) = LoadLibraryW(w!("uxtheme.dll")) else {
+            return;
+        };
+        if let Some(f) = GetProcAddress(uxtheme, PCSTR(135 as *const u8)) {
+            // SAFETY: ordinal 135 takes one int (1: AllowDark) on every
+            // Windows version that has it.
+            let set_preferred_app_mode: unsafe extern "system" fn(i32) -> i32 =
+                std::mem::transmute(f);
+            set_preferred_app_mode(1);
+        }
+        if let Some(f) = GetProcAddress(uxtheme, PCSTR(136 as *const u8)) {
+            // SAFETY: ordinal 136 takes nothing and returns nothing.
+            let flush_menu_themes: unsafe extern "system" fn() = std::mem::transmute(f);
+            flush_menu_themes();
+        }
+    }
+}
+
 fn show_menu(hwnd: HWND) {
+    // Every time, so that a switch between light and dark since the last
+    // menu is picked up.
+    follow_dark_mode();
     let Ok(menu) = (unsafe { CreatePopupMenu() }) else {
         return;
     };

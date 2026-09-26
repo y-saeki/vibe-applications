@@ -3,6 +3,7 @@
 mod app;
 mod autostart;
 mod icon;
+mod keyhook;
 mod mover;
 mod settings;
 mod settings_ui;

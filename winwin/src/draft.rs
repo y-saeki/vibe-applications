@@ -5,7 +5,7 @@
 //! Nothing here touches Win32, so it is tested on every platform.
 
 use crate::config::{Config, Shortcut};
-use crate::hotkey::{self, Hotkey, MOD_ALT, MOD_CONTROL};
+use crate::hotkey::Hotkey;
 use crate::layout::{self, Anchor, Placement, Ratio, Rect};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -19,11 +19,10 @@ pub struct Draft {
 }
 
 impl Draft {
-    /// What 追加 starts from: Ctrl+Alt, which every built-in shortcut uses,
-    /// with the key still to choose.
+    /// What 追加 starts from.
     pub fn new() -> Draft {
         Draft {
-            modifiers: MOD_CONTROL | MOD_ALT,
+            modifiers: 0,
             vk: 0,
             anchor: Anchor::Center,
             width: "1/2".into(),
@@ -54,32 +53,13 @@ impl Draft {
 
     pub fn to_shortcut(&self) -> Result<Shortcut, String> {
         if self.vk == 0 {
-            return Err("キーを選んでください".into());
+            return Err("ショートカットを設定してください".into());
         }
         let keys = Hotkey::new(self.modifiers, self.vk).map_err(|e| e.to_string())?;
         Ok(Shortcut {
             keys,
             placement: self.placement()?,
         })
-    }
-
-    /// Turns one MOD_* flag on or off.
-    pub fn set_modifier(&mut self, modifier: u32, on: bool) {
-        if on {
-            self.modifiers |= modifier;
-        } else {
-            self.modifiers &= !modifier;
-        }
-    }
-
-    /// The keys to offer for this row: the usual ones, and the row's own key
-    /// at the end when the config file names one that is not among them.
-    pub fn key_choices(&self) -> Vec<u32> {
-        let mut keys = hotkey::choosable_keys();
-        if self.vk != 0 && !keys.contains(&self.vk) {
-            keys.push(self.vk);
-        }
-        keys
     }
 
     /// A screen of `size` shrunk into `bounds`, and where on it this row puts
@@ -269,7 +249,7 @@ pub fn moved(index: usize, len: usize, up: bool) -> Option<usize> {
 mod tests {
     use super::*;
     use crate::config::Config;
-    use crate::hotkey::{MOD_SHIFT, MOD_WIN};
+    use crate::hotkey::{MOD_ALT, MOD_CONTROL, MOD_SHIFT};
 
     #[test]
     fn a_saved_shortcut_comes_back_unchanged() {
@@ -285,7 +265,11 @@ mod tests {
     #[test]
     fn a_new_entry_needs_a_shortcut_before_it_saves() {
         let mut d = Draft::new();
-        assert_eq!(d.to_shortcut().unwrap_err(), "キーを選んでください");
+        assert_eq!(
+            d.to_shortcut().unwrap_err(),
+            "ショートカットを設定してください"
+        );
+        d.modifiers = MOD_CONTROL | MOD_ALT;
         d.vk = 0x41;
         assert_eq!(d.to_shortcut().unwrap().keys.to_string(), "Ctrl+Alt+A");
     }
@@ -398,7 +382,10 @@ mod tests {
         e.select(0);
         let error = e.build_config().unwrap_err();
         assert_eq!(e.current(), Some(1));
-        assert_eq!(error, "(未設定)    中央 1/2 × 1/2: キーを選んでください");
+        assert_eq!(
+            error,
+            "(未設定)    中央 1/2 × 1/2: ショートカットを設定してください"
+        );
     }
 
     #[test]
@@ -408,29 +395,6 @@ mod tests {
         assert_eq!(moved(0, 3, true), None);
         assert_eq!(moved(2, 3, false), None);
         assert_eq!(moved(3, 3, true), None);
-    }
-
-    #[test]
-    fn modifiers_turn_on_and_off() {
-        let mut d = Draft::new();
-        assert_eq!(d.modifiers, MOD_CONTROL | MOD_ALT);
-        d.set_modifier(MOD_WIN, true);
-        d.set_modifier(MOD_ALT, false);
-        d.set_modifier(MOD_ALT, false);
-        assert_eq!(d.modifiers, MOD_CONTROL | MOD_WIN);
-    }
-
-    #[test]
-    fn a_key_from_the_file_is_offered_too() {
-        let mut d = Draft::new();
-        assert_eq!(d.key_choices(), hotkey::choosable_keys());
-        d.vk = 0x25;
-        assert_eq!(d.key_choices(), hotkey::choosable_keys());
-        // Browser Back: a key no one picks from a list, but a file may name.
-        d.vk = 0xA6;
-        let keys = d.key_choices();
-        assert_eq!(keys.last(), Some(&0xA6));
-        assert_eq!(keys.len(), hotkey::choosable_keys().len() + 1);
     }
 
     #[test]

@@ -20,10 +20,10 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use windows::core::BOOL;
 use windows_reactor::*;
 
-use super::{autostart, config_path, error_box};
+use super::{autostart, config_path, error_box, keyhook};
 use crate::config::Config;
 use crate::draft::{Draft, Editor};
-use crate::hotkey::{self, MOD_ALT, MOD_CONTROL, MOD_SHIFT, MOD_WIN};
+use crate::hotkey::{self, Recorder};
 use crate::layout::{Anchor, Rect};
 
 /// The client area in DIPs.
@@ -37,13 +37,6 @@ const PREVIEW: (f64, f64) = (360.0, 200.0);
 const SUBPIXEL: f64 = 4.0;
 
 const WINUI_WINDOW_CLASS: &str = "WinUIDesktopWin32WindowClass";
-
-const MODIFIERS: [(u32, &str); 4] = [
-    (MOD_CONTROL, "Ctrl"),
-    (MOD_ALT, "Alt"),
-    (MOD_SHIFT, "Shift"),
-    (MOD_WIN, "Win"),
-];
 
 /// Runs the settings window until it closes.
 pub fn run() {
@@ -100,6 +93,8 @@ struct Settings {
     error: Option<String>,
     /// The 変更を破棄しますか dialog is open.
     confirming: bool,
+    /// The ショートカットを設定 dialog is open, with what it has recorded.
+    recording: Option<Recorder>,
 }
 
 #[derive(Clone)]
@@ -111,8 +106,13 @@ enum Msg {
     Move {
         up: bool,
     },
-    Modifier(u32, bool),
-    Key(Option<usize>),
+    /// 変更 beside the shortcut: opens the dialog that records one.
+    Record,
+    /// A key went down or up while recording.
+    Key(u32, bool),
+    RecordReset,
+    RecordClear,
+    RecordClosed(ContentDialogResult),
     Anchor(Option<usize>),
     Width(String),
     Height(String),
@@ -145,6 +145,7 @@ impl Component for Settings {
             autostart_was: input.autostart,
             error: None,
             confirming: false,
+            recording: None,
         }
     }
 
@@ -156,22 +157,51 @@ impl Component for Settings {
             Msg::Duplicate => self.editor.duplicate(),
             Msg::Delete => self.editor.delete(),
             Msg::Move { up } => self.editor.move_selected(up),
-            Msg::Modifier(m, on) => self.editor.edit(|d| d.set_modifier(m, on)),
-            Msg::Key(Some(i)) => self.editor.edit(|d| {
-                if let Some(&vk) = d.key_choices().get(i) {
-                    d.vk = vk;
+            Msg::Record => self.start_recording(context),
+            Msg::Key(vk, down) => {
+                if let Some(r) = &mut self.recording {
+                    if down {
+                        r.key_down(vk);
+                    } else {
+                        r.key_up(vk);
+                    }
                 }
-            }),
+            }
+            Msg::RecordReset => {
+                if let (Some(r), Some(d)) = (&mut self.recording, self.editor.selected()) {
+                    *r = Recorder::showing(d.modifiers, d.vk);
+                }
+            }
+            Msg::RecordClear => {
+                if let Some(r) = &mut self.recording {
+                    *r = Recorder::default();
+                }
+            }
+            Msg::RecordClosed(result) => {
+                keyhook::stop();
+                let recorded = self.recording.take().and_then(|r| r.result());
+                if result == ContentDialogResult::Primary
+                    && let Some(Ok(keys)) = recorded
+                {
+                    self.editor.edit(|d| {
+                        d.modifiers = keys.modifiers;
+                        d.vk = keys.vk;
+                    });
+                }
+            }
             Msg::Anchor(Some(i)) => self.editor.edit(|d| {
                 if let Some(&a) = Anchor::ALL.get(i) {
                     d.anchor = a;
                 }
             }),
-            Msg::Key(None) | Msg::Anchor(None) => {}
+            Msg::Anchor(None) => {}
             Msg::Width(text) => self.editor.edit(|d| d.width = text),
             Msg::Height(text) => self.editor.edit(|d| d.height = text),
             Msg::Autostart(on) => self.autostart = on,
             Msg::Save => self.save(context),
+            // The close button while the recording dialog is open: WinUI
+            // shows one dialog at a time, and that one has its own キャンセル.
+            Msg::Cancel if self.recording.is_some() => {}
             Msg::Cancel => {
                 if self.is_changed() {
                     self.confirming = true;
@@ -260,11 +290,88 @@ impl Component for Settings {
         Grid::new()
             .rows([GridLength::Auto, GridLength::STAR, GridLength::Auto])
             .margin(Thickness::uniform(24.0))
-            .children((error, body, footer, confirm))
+            .children((error, body, footer, confirm, self.recorder(context)))
     }
 }
 
 impl Settings {
+    fn start_recording(&mut self, context: &ComponentContext<Self>) {
+        let Some(d) = self.editor.selected() else {
+            return;
+        };
+        let sender = context.sender();
+        if let Err(e) = keyhook::start(move |vk, down| {
+            sender.send(Msg::Key(vk, down));
+        }) {
+            self.error = Some(format!("キー入力を受け取れませんでした。{e}"));
+            return;
+        }
+        self.recording = Some(Recorder::showing(d.modifiers, d.vk));
+    }
+
+    /// The dialog that records a shortcut: it shows the keys as they are
+    /// pressed, and saves only a combination that can be a shortcut.
+    fn recorder(&self, context: &mut ViewContext<Self>) -> View {
+        let r = self.recording.unwrap_or_default();
+        let result = r.result();
+        let caps = hotkey::keycaps(r.modifiers, r.vk);
+        let keys: View = if caps.is_empty() {
+            TextBlock::new()
+                .text("キーを押してください")
+                .opacity(0.6)
+                .horizontal_alignment(HorizontalAlignment::Center)
+                .vertical_alignment(VerticalAlignment::Center)
+                .into()
+        } else {
+            keycaps(caps, true)
+        };
+        let problem = match &result {
+            Some(Err(e)) => e.to_string(),
+            _ => String::new(),
+        };
+        let link = |label: &str, msg: Msg| {
+            HyperlinkButton::new()
+                .on_click(context.message(msg))
+                .content(label.to_string())
+        };
+        ContentDialog::new()
+            .is_open(self.recording.is_some())
+            .title("ショートカットを設定")
+            .primary_button_text("保存")
+            .close_button_text("キャンセル")
+            .is_primary_button_enabled(matches!(result, Some(Ok(_))))
+            .on_closed(context.callback(Msg::RecordClosed))
+            .content(
+                StackPanel::new().spacing(16.0).width(400.0).children((
+                    TextBlock::new()
+                        .text(
+                            "設定するキーの組み合わせを押してください。                             Ctrl・Alt・Win のいずれかを含める必要があります。",
+                        )
+                        .text_wrapping(TextWrapping::Wrap),
+                    Border::new()
+                        .background(ThemeBrush::CardBackground)
+                        .border_brush(ThemeBrush::CardStroke)
+                        .border_thickness(Thickness::uniform(1.0))
+                        .corner_radius(CornerRadius::uniform(8.0))
+                        .padding(Thickness::uniform(24.0))
+                        .min_height(112.0)
+                        .content(keys),
+                    TextBlock::new()
+                        .text(problem)
+                        .foreground(ThemeBrush::SystemCritical)
+                        .horizontal_alignment(HorizontalAlignment::Center),
+                    StackPanel::new()
+                        .orientation(Orientation::Horizontal)
+                        .spacing(24.0)
+                        .horizontal_alignment(HorizontalAlignment::Center)
+                        .children((
+                            link("リセット", Msg::RecordReset),
+                            link("クリア", Msg::RecordClear),
+                        )),
+                )),
+            )
+    }
+
     fn is_changed(&self) -> bool {
         self.editor.is_dirty() || self.autostart != self.autostart_was
     }
@@ -369,35 +476,30 @@ impl Settings {
         let enabled = self.editor.selected().is_some();
         let d = self.editor.selected().unwrap_or(&blank);
 
-        let modifiers = MODIFIERS.map(|(m, label)| {
-            ToggleButton::new()
-                .is_enabled(enabled)
-                .is_checked(d.modifiers & m != 0)
-                .min_width(56.0)
-                .on_is_checked_changed(context.callback(move |on| Msg::Modifier(m, on)))
-                .content(label)
-        });
-        let keys = d.key_choices();
-        let key = ComboBox::new()
-            .is_enabled(enabled)
-            .placeholder_text("キー")
-            .items_source(keys.iter().map(|&vk| hotkey::key_name(vk)))
-            .selected_index(keys.iter().position(|&vk| vk == d.vk))
-            .min_width(120.0)
-            .on_selection_changed(context.callback(Msg::Key));
+        let caps = hotkey::keycaps(d.modifiers, d.vk);
+        let current: View = if d.vk == 0 {
+            TextBlock::new()
+                .text("未設定")
+                .opacity(0.6)
+                .vertical_alignment(VerticalAlignment::Center)
+                .into()
+        } else {
+            keycaps(caps, false)
+        };
         let shortcut = StackPanel::new()
             .orientation(Orientation::Horizontal)
-            .spacing(4.0)
+            .spacing(12.0)
             .children((
-                StackPanel::new()
-                    .orientation(Orientation::Horizontal)
-                    .spacing(4.0)
-                    .children(modifiers),
-                TextBlock::new()
-                    .text("+")
-                    .vertical_alignment(VerticalAlignment::Center)
-                    .margin(Thickness::xy(4.0, 0.0)),
-                key,
+                current,
+                Button::new()
+                    .is_enabled(enabled)
+                    .on_click(context.message(Msg::Record))
+                    .content(
+                        StackPanel::new()
+                            .orientation(Orientation::Horizontal)
+                            .spacing(8.0)
+                            .children((FontIcon::new().glyph("\u{E70F}"), "変更")),
+                    ),
             ));
 
         let anchor = ComboBox::new()
@@ -450,6 +552,44 @@ impl Settings {
             field("プレビュー", preview),
         ))
     }
+}
+
+/// Keys drawn as keycaps in a row. `large` is the recording dialog's: accent
+/// colored and big enough to read at a glance.
+fn keycaps(caps: Vec<String>, large: bool) -> View {
+    let caps = caps.into_iter().enumerate().map(|(i, label)| {
+        let cap: View = if large {
+            Button::new()
+                .style(ButtonStyle::Accent)
+                .min_width(64.0)
+                .height(56.0)
+                .content(TextBlock::new().text(label).font_size(18.0))
+        } else {
+            Border::new()
+                .background(ThemeBrush::CardBackground)
+                .border_brush(ThemeBrush::CardStroke)
+                .border_thickness(Thickness::uniform(1.0))
+                .corner_radius(CornerRadius::uniform(4.0))
+                .padding(Thickness::xy(10.0, 4.0))
+                .min_width(32.0)
+                .content(
+                    TextBlock::new()
+                        .text(label)
+                        .horizontal_alignment(HorizontalAlignment::Center),
+                )
+        };
+        (i, cap)
+    });
+    StackPanel::new()
+        .orientation(Orientation::Horizontal)
+        .spacing(if large { 12.0 } else { 6.0 })
+        .horizontal_alignment(if large {
+            HorizontalAlignment::Center
+        } else {
+            HorizontalAlignment::Left
+        })
+        .vertical_alignment(VerticalAlignment::Center)
+        .keyed_children(caps)
 }
 
 /// A label above a control.

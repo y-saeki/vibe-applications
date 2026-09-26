@@ -78,24 +78,91 @@ pub fn key_name(vk: u32) -> String {
     }
 }
 
-/// The keys the settings window offers for a shortcut, in the order its list
-/// shows them: letters and digits, then the keys that move around, then the
-/// function keys, the numeric keypad and the punctuation keys.
-pub fn choosable_keys() -> Vec<u32> {
-    let mut keys: Vec<u32> = (0x41..=0x5A).chain(0x30..=0x39).collect();
-    keys.extend([
-        0x25, 0x26, 0x27, 0x28, // Left, Up, Right, Down
-        0x0D, 0x20, 0x24, 0x23, 0x21, 0x22, // Enter, Space, Home, End, PageUp, PageDown
-        0x2D, 0x2E, 0x08, 0x09, 0x1B, // Insert, Delete, Backspace, Tab, Escape
-    ]);
-    keys.extend(0x70..=0x87); // F1-F24
-    keys.extend(0x60..=0x69); // Num0-Num9
-    for (_, vk) in KEY_NAMES {
-        if !keys.contains(vk) {
-            keys.push(*vk);
+/// The MOD_* flag a modifier key stands for, left and right alike.
+pub fn modifier_of(vk: u32) -> Option<u32> {
+    match vk {
+        0x10 | 0xA0 | 0xA1 => Some(MOD_SHIFT),
+        0x11 | 0xA2 | 0xA3 => Some(MOD_CONTROL),
+        0x12 | 0xA4 | 0xA5 => Some(MOD_ALT),
+        0x5B | 0x5C => Some(MOD_WIN),
+        _ => None,
+    }
+}
+
+/// The keys of a combination as the settings window draws them, one cap
+/// each: the modifiers in the order they are written, then the key. The key
+/// is left out while it is 0.
+pub fn keycaps(modifiers: u32, vk: u32) -> Vec<String> {
+    let mut caps: Vec<String> = [
+        (MOD_WIN, "Win"),
+        (MOD_CONTROL, "Ctrl"),
+        (MOD_ALT, "Alt"),
+        (MOD_SHIFT, "Shift"),
+    ]
+    .into_iter()
+    .filter(|(m, _)| modifiers & m != 0)
+    .map(|(_, name)| name.to_string())
+    .collect();
+    if vk != 0 {
+        let arrow = match vk {
+            0x25 => Some("←"),
+            0x26 => Some("↑"),
+            0x27 => Some("→"),
+            0x28 => Some("↓"),
+            _ => None,
+        };
+        caps.push(arrow.map_or_else(|| key_name(vk), str::to_string));
+    }
+    caps
+}
+
+/// Follows the keys pressed while the settings window records a shortcut.
+/// Pressing a key that is not a modifier records it with the modifiers held
+/// at that moment; pressing a modifier starts over with just the modifiers
+/// held. Letting go changes what is held, not what was recorded.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Recorder {
+    held: u32,
+    /// What was recorded, as modifiers and a key (0 for none yet).
+    pub modifiers: u32,
+    pub vk: u32,
+}
+
+impl Recorder {
+    /// Starts out showing `modifiers` and `vk`, with nothing held.
+    pub fn showing(modifiers: u32, vk: u32) -> Recorder {
+        Recorder {
+            held: 0,
+            modifiers,
+            vk,
         }
     }
-    keys
+
+    pub fn key_down(&mut self, vk: u32) {
+        match modifier_of(vk) {
+            Some(m) => {
+                self.held |= m;
+                self.modifiers = self.held;
+                self.vk = 0;
+            }
+            None => {
+                self.modifiers = self.held;
+                self.vk = vk;
+            }
+        }
+    }
+
+    pub fn key_up(&mut self, vk: u32) {
+        if let Some(m) = modifier_of(vk) {
+            self.held &= !m;
+        }
+    }
+
+    /// What was recorded as a shortcut, or why it cannot be one. `None`
+    /// while no key other than modifiers has been pressed.
+    pub fn result(&self) -> Option<Result<Hotkey, HotkeyError>> {
+        (self.vk != 0).then(|| Hotkey::new(self.modifiers, self.vk))
+    }
 }
 
 fn parse_key(name: &str) -> Option<u32> {
@@ -256,18 +323,57 @@ mod tests {
     }
 
     #[test]
-    fn every_choosable_key_makes_a_shortcut_once() {
-        let keys = choosable_keys();
-        assert_eq!(&keys[..3], &[0x41, 0x42, 0x43]);
-        for (i, &vk) in keys.iter().enumerate() {
-            assert!(!keys[..i].contains(&vk), "0x{vk:02X} twice");
-            assert!(Hotkey::new(MOD_CONTROL, vk).is_ok(), "0x{vk:02X}");
-            // Only codes that have a name: a hex code means nothing in a list.
-            assert!(!key_name(vk).starts_with("0x"), "0x{vk:02X}");
-        }
-        for (_, vk) in KEY_NAMES {
-            assert!(keys.contains(vk), "0x{vk:02X} is missing");
-        }
+    fn records_the_modifiers_held_with_a_key() {
+        let mut r = Recorder::default();
+        assert_eq!(r.result(), None);
+        r.key_down(0xA2); // left Ctrl
+        r.key_down(0xA1); // right Shift
+        assert_eq!((r.modifiers, r.vk), (MOD_CONTROL | MOD_SHIFT, 0));
+        assert_eq!(r.result(), None);
+        r.key_down(0x25);
+        assert_eq!(r.result(), Some(Ok(hk("Ctrl+Shift+Left"))));
+        // Held keys repeat; that records the same thing again.
+        r.key_down(0x25);
+        r.key_up(0x25);
+        r.key_up(0xA1);
+        assert_eq!(r.result(), Some(Ok(hk("Ctrl+Shift+Left"))));
+        // Ctrl is still down: the next key goes with it alone.
+        r.key_down(0x4B);
+        assert_eq!(r.result(), Some(Ok(hk("Ctrl+K"))));
+    }
+
+    #[test]
+    fn a_modifier_starts_the_recording_over() {
+        let mut r = Recorder::default();
+        r.key_down(0x5B);
+        r.key_down(0x41);
+        r.key_up(0x41);
+        r.key_up(0x5B);
+        r.key_down(0xA4); // left Alt
+        assert_eq!((r.modifiers, r.vk), (MOD_ALT, 0));
+        assert_eq!(r.result(), None);
+    }
+
+    #[test]
+    fn says_why_a_recorded_combination_cannot_be_used() {
+        let mut r = Recorder::default();
+        r.key_down(0x10);
+        r.key_down(0x41);
+        assert_eq!(r.result(), Some(Err(HotkeyError::NeedsModifier)));
+    }
+
+    #[test]
+    fn keycaps_follow_the_written_order() {
+        assert_eq!(
+            keycaps(MOD_SHIFT | MOD_CONTROL | MOD_WIN, 0x25),
+            ["Win", "Ctrl", "Shift", "←"]
+        );
+        assert_eq!(
+            keycaps(MOD_CONTROL | MOD_ALT, 0x0D),
+            ["Ctrl", "Alt", "Enter"]
+        );
+        assert_eq!(keycaps(MOD_ALT, 0), ["Alt"]);
+        assert!(keycaps(0, 0).is_empty());
     }
 
     #[test]
