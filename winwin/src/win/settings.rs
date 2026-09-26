@@ -50,6 +50,8 @@ const ID_LIST: i32 = 100;
 const ID_ADD: i32 = 101;
 const ID_DUPLICATE: i32 = 102;
 const ID_DELETE: i32 = 103;
+const ID_UP: i32 = 104;
+const ID_DOWN: i32 = 105;
 const ID_NAME: i32 = 110;
 const ID_WIN: i32 = 111;
 const ID_HOTKEY: i32 = 112;
@@ -70,6 +72,8 @@ struct Controls {
     list: HWND,
     duplicate: HWND,
     delete: HWND,
+    up: HWND,
+    down: HWND,
     name: HWND,
     win: HWND,
     hotkey: HWND,
@@ -311,7 +315,7 @@ fn create(owner: HWND, config: &Config, path: &Path) -> windows::core::Result<()
         tab | WS_VSCROLL.0 | LBS_NOTIFY as u32 | LBS_NOINTEGRALHEIGHT as u32,
         edge,
         ID_LIST,
-        [12, 12, 240, 356],
+        [12, 12, 240, 324],
     )?;
     child(
         button,
@@ -319,7 +323,7 @@ fn create(owner: HWND, config: &Config, path: &Path) -> windows::core::Result<()
         tab | BS_PUSHBUTTON as u32,
         none,
         ID_ADD,
-        [12, 376, 76, 28],
+        [12, 344, 76, 28],
     )?;
     let duplicate = child(
         button,
@@ -327,7 +331,7 @@ fn create(owner: HWND, config: &Config, path: &Path) -> windows::core::Result<()
         tab | BS_PUSHBUTTON as u32,
         none,
         ID_DUPLICATE,
-        [94, 376, 76, 28],
+        [94, 344, 76, 28],
     )?;
     let delete = child(
         button,
@@ -335,7 +339,23 @@ fn create(owner: HWND, config: &Config, path: &Path) -> windows::core::Result<()
         tab | BS_PUSHBUTTON as u32,
         none,
         ID_DELETE,
-        [176, 376, 76, 28],
+        [176, 344, 76, 28],
+    )?;
+    let up = child(
+        button,
+        "上へ",
+        tab | BS_PUSHBUTTON as u32,
+        none,
+        ID_UP,
+        [12, 376, 117, 28],
+    )?;
+    let down = child(
+        button,
+        "下へ",
+        tab | BS_PUSHBUTTON as u32,
+        none,
+        ID_DOWN,
+        [135, 376, 117, 28],
     )?;
 
     child(stat, "名前", 0, none, -1, label(12))?;
@@ -416,6 +436,8 @@ fn create(owner: HWND, config: &Config, path: &Path) -> windows::core::Result<()
         list,
         duplicate,
         delete,
+        up,
+        down,
         name,
         win,
         hotkey,
@@ -510,9 +532,13 @@ fn apply_dpi(dpi: u32) {
 
 /// Shows row `index` in the form, or empties and disables the form.
 fn select(index: Option<usize>) {
-    let Some((c, row)) = with_state(|s| {
+    let Some((c, row, len)) = with_state(|s| {
         s.current = index;
-        (s.c, index.and_then(|i| s.rows.get(i).cloned()))
+        (
+            s.c,
+            index.and_then(|i| s.rows.get(i).cloned()),
+            s.rows.len(),
+        )
     }) else {
         return;
     };
@@ -541,6 +567,11 @@ fn select(index: Option<usize>) {
     let enabled = row.is_some();
     for hwnd in c.form().into_iter().chain([c.duplicate, c.delete]) {
         let _ = unsafe { EnableWindow(hwnd, enabled) };
+    }
+    let can_move = |up| index.is_some_and(|i| draft::moved(i, len, up).is_some());
+    unsafe {
+        let _ = EnableWindow(c.up, can_move(true));
+        let _ = EnableWindow(c.down, can_move(false));
     }
     invalidate_preview();
 }
@@ -637,6 +668,29 @@ fn delete_row() {
     } else {
         Some(removed.min(remaining - 1))
     });
+}
+
+/// Moves the selected row one place up or down, which is also its turn
+/// among the rows that share its shortcut.
+fn move_row(up: bool) {
+    let Some((c, from, to, text)) = with_state(|s| {
+        let from = s.current?;
+        let to = draft::moved(from, s.rows.len(), up)?;
+        s.rows.swap(from, to);
+        s.dirty = true;
+        Some((s.c, from, to, s.rows[to].list_text()))
+    })
+    .flatten() else {
+        return;
+    };
+    send(c.list, LB_DELETESTRING, from, 0);
+    send(
+        c.list,
+        LB_INSERTSTRING,
+        to,
+        HSTRING::from(text).as_ptr() as isize,
+    );
+    select(Some(to));
 }
 
 fn save() {
@@ -785,6 +839,8 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                     }
                 }
                 (ID_DELETE, BN_CLICKED) => delete_row(),
+                (ID_UP, BN_CLICKED) => move_row(true),
+                (ID_DOWN, BN_CLICKED) => move_row(false),
                 (
                     ID_NAME | ID_WIDTH | ID_HEIGHT | ID_OFFSET_X | ID_OFFSET_Y | ID_HOTKEY,
                     EN_CHANGE,
