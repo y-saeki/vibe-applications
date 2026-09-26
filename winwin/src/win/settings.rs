@@ -14,13 +14,13 @@ use windows::Win32::System::Threading::{
     STARTUPINFOW, TerminateProcess, UnregisterWait, WT_EXECUTEONLYONCE,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    AllowSetForegroundWindow, EnumWindows, GW_OWNER, GWL_EXSTYLE, GetWindow, GetWindowLongPtrW,
+    AllowSetForegroundWindow, EnumWindows, GW_OWNER, GetClassNameW, GetWindow,
     GetWindowThreadProcessId, IsIconic, IsWindowVisible, PostMessageW, SW_RESTORE,
-    SetForegroundWindow, ShowWindow, WS_EX_TOOLWINDOW,
+    SetForegroundWindow, ShowWindow,
 };
 use windows::core::{BOOL, PWSTR};
 
-use super::WM_APP_SETTINGS_CLOSED;
+use super::{WM_APP_SETTINGS_CLOSED, testwin};
 
 /// The argument that makes winwin.exe the settings window.
 pub const ARG: &str = "--settings";
@@ -113,11 +113,12 @@ impl Child {
             let mut pid = 0;
             unsafe { GetWindowThreadProcessId(hwnd, Some(&mut pid)) };
             let top_level = unsafe { GetWindow(hwnd, GW_OWNER) }.is_err();
-            // The test window (testwin.rs) is a tool window of the same
-            // process; it is not the one to bring forward.
-            let tool =
-                unsafe { GetWindowLongPtrW(hwnd, GWL_EXSTYLE) } as u32 & WS_EX_TOOLWINDOW.0 != 0;
-            if pid == found.0 && top_level && !tool && unsafe { IsWindowVisible(hwnd) }.as_bool() {
+            // The test window (testwin.rs) belongs to the same process; it
+            // is not the one to bring forward.
+            let mut class = [0u16; 64];
+            let len = unsafe { GetClassNameW(hwnd, &mut class) }.max(0) as usize;
+            let test = String::from_utf16_lossy(&class[..len]) == testwin::CLASS_NAME;
+            if pid == found.0 && top_level && !test && unsafe { IsWindowVisible(hwnd) }.as_bool() {
                 found.1 = hwnd;
                 return false.into();
             }

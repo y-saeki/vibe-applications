@@ -11,16 +11,15 @@ use std::cell::{Cell, RefCell};
 
 use windows::Win32::Foundation::{COLORREF, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Dwm::{
-    DWMSBT_TRANSIENTWINDOW, DWMWA_SYSTEMBACKDROP_TYPE, DWMWA_USE_IMMERSIVE_DARK_MODE,
+    DWMSBT_TRANSIENTWINDOW, DWMWA_BORDER_COLOR, DWMWA_COLOR_NONE, DWMWA_SYSTEMBACKDROP_TYPE,
     DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND, DWMWINDOWATTRIBUTE, DwmExtendFrameIntoClientArea,
     DwmSetWindowAttribute,
 };
 use windows::Win32::Graphics::Gdi::{
     BLACK_BRUSH, CreateSolidBrush, DeleteObject, FillRect, GetMonitorInfoW, GetStockObject, HBRUSH,
-    HDC, InvalidateRect, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromPoint,
+    HDC, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromPoint,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
-use windows::Win32::System::Registry::{HKEY_CURRENT_USER, RRF_RT_REG_DWORD, RegGetValueW};
 use windows::Win32::UI::Controls::MARGINS;
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
@@ -31,18 +30,20 @@ use windows::Win32::UI::WindowsAndMessaging::{
     GetWindowLongPtrW, GetWindowRect, HTBOTTOM, HTBOTTOMLEFT, HTBOTTOMRIGHT, HTCAPTION, HTLEFT,
     HTRIGHT, HTTOP, HTTOPLEFT, HTTOPRIGHT, HWND_TOP, KillTimer, LWA_ALPHA, MINMAXINFO,
     RegisterClassExW, SW_SHOWNA, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
-    SetLayeredWindowAttributes, SetTimer, SetWindowLongPtrW, SetWindowPos, ShowWindow, WM_CLOSE,
-    WM_ERASEBKGND, WM_GETMINMAXINFO, WM_HOTKEY, WM_NCCALCSIZE, WM_NCHITTEST, WM_TIMER, WNDCLASSEXW,
-    WS_EX_LAYERED, WS_EX_TOOLWINDOW, WS_POPUP, WS_THICKFRAME,
+    SetLayeredWindowAttributes, SetTimer, SetWindowLongPtrW, SetWindowPos, ShowWindow,
+    WINDOW_EX_STYLE, WM_CLOSE, WM_ERASEBKGND, WM_GETMINMAXINFO, WM_HOTKEY, WM_NCACTIVATE,
+    WM_NCCALCSIZE, WM_NCHITTEST, WM_NCPAINT, WM_TIMER, WNDCLASSEXW, WS_EX_LAYERED, WS_POPUP,
+    WS_THICKFRAME,
 };
-use windows::core::{HSTRING, w};
+use windows::core::{HSTRING, PCWSTR};
 
 use super::{modifiers_held, mover};
-use crate::config::{Config, Theme};
+use crate::config::Config;
 use crate::cycle::{self, Binding, Cycle};
 use crate::layout::{Anchor, Placement, Ratio, Rect};
 
-const CLASS_NAME: windows::core::PCWSTR = w!("winwin.test");
+/// settings.rs tells this window from the settings window by it.
+pub const CLASS_NAME: &str = "winwin.test";
 const TITLE: &str = "winwin テスト用ウィンドウ";
 /// As in the resident part (app.rs): watches for a cycling shortcut's
 /// modifiers to be let go.
@@ -77,9 +78,8 @@ thread_local! {
     /// window decides.
     static ON_CLOSE: RefCell<Option<Box<dyn Fn()>>> = const { RefCell::new(None) };
     /// How the window paints itself: see-through to the glass behind it, or
-    /// a plain color, dark or light.
+    /// a plain color.
     static GLASS: Cell<bool> = const { Cell::new(false) };
-    static DARK: Cell<bool> = const { Cell::new(false) };
 }
 
 /// As `with_app` in app.rs: never call anything that sends a message to the
@@ -95,12 +95,11 @@ pub fn is_open() -> bool {
 /// Opens the window in the middle of the monitor the pointer is on, without
 /// taking the focus from the settings window. `on_close` hears when it is
 /// asked to close; [`close`] closes it.
-pub fn open(theme: Theme, on_close: impl Fn() + 'static) -> Result<(), String> {
+pub fn open(on_close: impl Fn() + 'static) -> Result<(), String> {
     if is_open() {
         return Ok(());
     }
     let hwnd = create().map_err(|e| e.to_string())?;
-    GLASS.set(false);
     ON_CLOSE.with(|c| *c.borrow_mut() = Some(Box::new(on_close)));
     WINDOW.with(|w| {
         *w.borrow_mut() = Some(TestWindow {
@@ -111,7 +110,7 @@ pub fn open(theme: Theme, on_close: impl Fn() + 'static) -> Result<(), String> {
             failed: Vec::new(),
         })
     });
-    dress(hwnd, theme);
+    dress(hwnd);
     if let Some(work) = pointer_work_area() {
         let r = FIRST_PLACEMENT.resolve(work);
         let _ = unsafe {
@@ -170,33 +169,26 @@ pub fn set_shortcuts(config: &Config) -> Vec<String> {
     with_window(|w| w.failed.clone()).unwrap_or_default()
 }
 
-/// Follows the settings window's theme.
-pub fn set_theme(theme: Theme) {
-    if let Some(hwnd) = with_window(|w| w.hwnd) {
-        dress(hwnd, theme);
-    }
-}
-
 fn create() -> windows::core::Result<HWND> {
     let instance = unsafe { GetModuleHandleW(None) }?;
+    let class_name = HSTRING::from(CLASS_NAME);
     let class = WNDCLASSEXW {
         cbSize: size_of::<WNDCLASSEXW>() as u32,
         lpfnWndProc: Some(wndproc),
         hInstance: instance.into(),
-        lpszClassName: CLASS_NAME,
+        lpszClassName: PCWSTR(class_name.as_ptr()),
         ..Default::default()
     };
     // Fails harmlessly when the window is opened a second time.
     unsafe { RegisterClassExW(&class) };
-    // A tool window stays off the taskbar and Alt+Tab, and the resident
-    // part does not take it for the settings window when bringing that
-    // forward (settings.rs). WS_THICKFRAME gives it the frame the glass,
-    // the shadow and the rounded corners are drawn on; WM_NCCALCSIZE then
-    // hands all of it to the client area.
+    // An ordinary window rather than a tool window, which would show on
+    // every virtual desktop. WS_THICKFRAME gives it the frame the glass, the
+    // shadow and the rounded corners are drawn on; WM_NCCALCSIZE then hands
+    // all of it to the client area.
     unsafe {
         CreateWindowExW(
-            WS_EX_TOOLWINDOW,
-            CLASS_NAME,
+            WINDOW_EX_STYLE::default(),
+            &class_name,
             &HSTRING::from(TITLE),
             WS_POPUP | WS_THICKFRAME,
             0,
@@ -224,18 +216,13 @@ fn set_attribute<T>(hwnd: HWND, attribute: DWMWINDOWATTRIBUTE, value: &T) -> boo
 }
 
 /// Frosted glass over the whole window where Windows offers it (Windows 11
-/// 22H2 and later), otherwise a see-through plain color; dark or light as
-/// `theme` says.
-fn dress(hwnd: HWND, theme: Theme) {
-    let dark = match theme {
-        Theme::System => system_is_dark(),
-        Theme::Light => false,
-        Theme::Dark => true,
-    };
-    DARK.set(dark);
-    set_attribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &i32::from(dark));
+/// 22H2 and later), otherwise a see-through plain color. Light in the dark
+/// theme too: the dark glass reads as a dull gray. No border: Windows' own
+/// is drawn in a light color that looks out of place on it.
+fn dress(hwnd: HWND) {
     set_attribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, &DWMWCP_ROUND);
-    if !GLASS.get() && set_attribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE, &DWMSBT_TRANSIENTWINDOW) {
+    set_attribute(hwnd, DWMWA_BORDER_COLOR, &DWMWA_COLOR_NONE);
+    let glass = set_attribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE, &DWMSBT_TRANSIENTWINDOW) && {
         // The glass shows through wherever the client area is painted
         // black.
         let whole = MARGINS {
@@ -244,34 +231,16 @@ fn dress(hwnd: HWND, theme: Theme) {
             cyTopHeight: -1,
             cyBottomHeight: -1,
         };
-        GLASS.set(unsafe { DwmExtendFrameIntoClientArea(hwnd, &whole) }.is_ok());
-    }
-    if !GLASS.get() {
+        unsafe { DwmExtendFrameIntoClientArea(hwnd, &whole) }.is_ok()
+    };
+    GLASS.set(glass);
+    if !glass {
         unsafe {
             let style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
             SetWindowLongPtrW(hwnd, GWL_EXSTYLE, style | WS_EX_LAYERED.0 as isize);
             let _ = SetLayeredWindowAttributes(hwnd, COLORREF(0), PLAIN_ALPHA, LWA_ALPHA);
         }
     }
-    let _ = unsafe { InvalidateRect(Some(hwnd), None, true) };
-}
-
-/// Whether Windows is set to dark for applications.
-fn system_is_dark() -> bool {
-    let mut light = 1u32;
-    let mut size = size_of::<u32>() as u32;
-    let status = unsafe {
-        RegGetValueW(
-            HKEY_CURRENT_USER,
-            w!("Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize"),
-            w!("AppsUseLightTheme"),
-            RRF_RT_REG_DWORD,
-            None,
-            Some((&mut light as *mut u32).cast()),
-            Some(&mut size),
-        )
-    };
-    status.is_ok() && light == 0
 }
 
 fn pointer_work_area() -> Option<Rect> {
@@ -380,14 +349,9 @@ fn paint_background(hwnd: HWND, hdc: HDC) {
         let _ = unsafe { FillRect(hdc, &r, HBRUSH(GetStockObject(BLACK_BRUSH).0)) };
         return;
     }
-    // The base background of Windows' own dark and light windows.
-    let color = if DARK.get() {
-        COLORREF(0x0020_2020)
-    } else {
-        COLORREF(0x00F3_F3F3)
-    };
+    // The base background of Windows' own light windows.
     unsafe {
-        let brush = CreateSolidBrush(color);
+        let brush = CreateSolidBrush(COLORREF(0x00F3_F3F3));
         let _ = FillRect(hdc, &r, brush);
         let _ = DeleteObject(brush.into());
     }
@@ -399,6 +363,13 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
         // beyond the one Windows draws around the glass.
         WM_NCCALCSIZE if wparam.0 != 0 => LRESULT(0),
         WM_NCHITTEST => LRESULT(hit_test(hwnd, lparam) as isize),
+        // Windows draws the glass only while it takes the window to be
+        // active, and otherwise a flat gray; so it is always told active.
+        // An lParam of -1 keeps it from painting the classic frame over the
+        // client area as it does so.
+        WM_NCACTIVATE => unsafe { DefWindowProcW(hwnd, msg, WPARAM(1), LPARAM(-1)) },
+        // There is no frame to paint.
+        WM_NCPAINT => LRESULT(0),
         // Whatever size a placement asks for, down to a pixel.
         WM_GETMINMAXINFO => {
             // SAFETY: lParam points at the MINMAXINFO to fill in.

@@ -16,7 +16,8 @@ use windows::Win32::System::Threading::GetCurrentThreadId;
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::Shell::{DefSubclassProc, SetWindowSubclass};
 use windows::Win32::UI::WindowsAndMessaging::{
-    EnumThreadWindows, GetClassNameW, GetCursorPos, ICON_BIG, ICON_SMALL, SendMessageW, WM_CLOSE,
+    EnumThreadWindows, GetClassNameW, GetCursorPos, HWND_NOTOPMOST, HWND_TOPMOST, ICON_BIG,
+    ICON_SMALL, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SendMessageW, SetWindowPos, WM_CLOSE,
     WM_SETICON,
 };
 use windows::core::BOOL;
@@ -148,6 +149,8 @@ thread_local! {
     /// Set once the component has decided to close, so that the close it
     /// asks for is let through.
     static CLOSING: Cell<bool> = const { Cell::new(false) };
+    /// The settings window, once `adopt_window` has found it.
+    static WINDOW: Cell<Option<HWND>> = const { Cell::new(None) };
 }
 
 impl Component for Settings {
@@ -223,9 +226,6 @@ impl Component for Settings {
             Msg::Theme(i) => {
                 if let Some(&theme) = i.and_then(|i| Theme::ALL.get(i)) {
                     self.theme = theme;
-                    if self.testing {
-                        testwin::set_theme(theme);
-                    }
                 }
             }
             Msg::Save => self.save(context),
@@ -248,16 +248,20 @@ impl Component for Settings {
             Msg::DismissError => self.error = None,
             Msg::Test(true) => {
                 let sender = context.sender();
-                let opened = testwin::open(self.theme, move || {
+                let opened = testwin::open(move || {
                     sender.send(Msg::Test(false));
                 });
                 self.testing = opened.is_ok();
+                // Kept above the test window, which a shortcut may stretch
+                // over the whole screen, so that it can always be closed.
+                set_topmost(self.testing);
                 self.test_problem = opened
                     .err()
                     .map(|e| format!("テスト用ウィンドウを開けませんでした。{e}"));
             }
             Msg::Test(false) => {
                 testwin::close();
+                set_topmost(false);
                 self.testing = false;
                 self.test_problem = None;
             }
@@ -635,25 +639,21 @@ impl Settings {
     }
 
     /// Under the list, as it tries every shortcut in it: the button that
-    /// opens and closes the test window, and a line on what it does or what
-    /// stands in its way.
+    /// opens and closes the test window, and what stands in its way, if
+    /// anything.
     fn test_section(&self, context: &mut ViewContext<Self>) -> View {
         let (label, glyph) = if self.testing {
             ("テスト用ウィンドウを閉じる", "\u{E711}")
         } else {
             ("テスト用ウィンドウを開く", "\u{E8A7}")
         };
-        let note = match &self.test_problem {
+        let problem: View = match &self.test_problem {
             Some(problem) => TextBlock::new()
                 .text(problem.clone())
-                .foreground(ThemeBrush::SystemCritical),
-            None => TextBlock::new()
-                .text(if self.testing {
-                    "ショートカットを押すと、保存前の設定でテスト用ウィンドウが動きます。"
-                } else {
-                    "保存する前に、ショートカットの動きを試せます。"
-                })
-                .opacity(0.7),
+                .foreground(ThemeBrush::SystemCritical)
+                .text_wrapping(TextWrapping::Wrap)
+                .into(),
+            None => View::empty(),
         };
         StackPanel::new()
             .spacing(8.0)
@@ -668,7 +668,7 @@ impl Settings {
                             .spacing(8.0)
                             .children((FontIcon::new().glyph(glyph), label)),
                     ),
-                note.text_wrapping(TextWrapping::Wrap),
+                problem,
             ))
     }
 }
@@ -839,6 +839,7 @@ fn adopt_window() {
     if hwnd.is_invalid() {
         return;
     }
+    WINDOW.set(Some(hwnd));
     let dpi = unsafe { GetDpiForWindow(hwnd) };
     for (kind, icon) in [
         (ICON_SMALL, icon::create(dpi)),
@@ -854,6 +855,25 @@ fn adopt_window() {
         };
     }
     let _ = unsafe { SetWindowSubclass(hwnd, Some(subclass), 1, 0) };
+}
+
+/// Keeps the settings window above every other window, or lets it go back
+/// among them.
+fn set_topmost(on: bool) {
+    let Some(hwnd) = WINDOW.get() else {
+        return;
+    };
+    let _ = unsafe {
+        SetWindowPos(
+            hwnd,
+            Some(if on { HWND_TOPMOST } else { HWND_NOTOPMOST }),
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+        )
+    };
 }
 
 unsafe extern "system" fn subclass(
