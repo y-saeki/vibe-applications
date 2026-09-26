@@ -4,6 +4,7 @@
 #![cfg_attr(not(windows), allow(dead_code))]
 
 mod config;
+mod cycle;
 mod draft;
 mod hotkey;
 mod layout;

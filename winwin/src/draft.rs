@@ -50,13 +50,12 @@ impl Draft {
         }
     }
 
-    /// A copy that can be saved next to the original: the shortcut is left
-    /// for the user to choose, since two entries cannot share one.
+    /// A copy to go right after the original. It keeps the shortcut, so
+    /// that pressing it again moves on to the copy; the user can change
+    /// either.
     pub fn duplicate(&self) -> Draft {
         Draft {
             name: format!("{} のコピー", self.name),
-            modifiers: 0,
-            vk: 0,
             ..self.clone()
         }
     }
@@ -101,6 +100,20 @@ impl Draft {
             .to_string()
         };
         format!("{}    {keys}", self.name)
+    }
+}
+
+/// Where row `index` of `len` lands when moved one place up or down, or
+/// `None` when it is already at that end. Rows that share a shortcut take
+/// turns in list order, so this is how that order is changed.
+pub fn moved(index: usize, len: usize, up: bool) -> Option<usize> {
+    if index >= len {
+        return None;
+    }
+    if up {
+        index.checked_sub(1)
+    } else {
+        Some(index + 1).filter(|&i| i < len)
     }
 }
 
@@ -201,11 +214,11 @@ mod tests {
     }
 
     #[test]
-    fn a_duplicate_keeps_the_placement_but_not_the_shortcut() {
+    fn a_duplicate_keeps_the_placement_and_the_shortcut() {
         let original = Draft::from_shortcut(&Config::defaults().shortcuts[0]);
         let copy = original.duplicate();
         assert_eq!(copy.name, "左半分 のコピー");
-        assert_eq!(copy.vk, 0);
+        assert_eq!((copy.modifiers, copy.vk), (original.modifiers, original.vk));
         assert_eq!(copy.placement(), original.placement());
     }
 
@@ -214,6 +227,15 @@ mod tests {
         let d = Draft::from_shortcut(&Config::defaults().shortcuts[0]);
         assert_eq!(d.list_text(), "左半分    Ctrl+Alt+Left");
         assert_eq!(Draft::new().list_text(), "新しい配置    (未設定)");
+    }
+
+    #[test]
+    fn rows_move_within_the_list() {
+        assert_eq!(moved(1, 3, true), Some(0));
+        assert_eq!(moved(1, 3, false), Some(2));
+        assert_eq!(moved(0, 3, true), None);
+        assert_eq!(moved(2, 3, false), None);
+        assert_eq!(moved(3, 3, true), None);
     }
 
     #[test]

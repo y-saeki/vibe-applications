@@ -2,7 +2,6 @@
 //!
 //! Nothing here touches Win32, so it is tested on every platform.
 
-use std::collections::HashMap;
 use std::fmt;
 use std::fs;
 use std::io;
@@ -106,21 +105,15 @@ impl Config {
         }
     }
 
-    /// Everything a config must satisfy beyond parsing: one action per
-    /// shortcut, and a name to show for each.
+    /// Everything a config must satisfy beyond parsing: a name to show for
+    /// each entry. Entries may share a shortcut; pressing it steps through
+    /// them (see cycle.rs).
     pub fn validate(&self) -> Result<(), ConfigError> {
-        let mut seen: HashMap<Hotkey, &str> = HashMap::new();
         for s in &self.shortcuts {
             if s.name.trim().is_empty() {
                 return Err(ConfigError::Invalid(format!(
                     "{} に名前がありません",
                     s.keys
-                )));
-            }
-            if let Some(other) = seen.insert(s.keys, &s.name) {
-                return Err(ConfigError::Invalid(format!(
-                    "「{other}」と「{}」が同じショートカット {} を使っています",
-                    s.name, s.keys
                 )));
             }
         }
@@ -245,11 +238,27 @@ mod tests {
     }
 
     #[test]
-    fn rejects_a_shortcut_used_twice() {
-        let mut config = Config::defaults();
-        config.shortcuts[1].keys = config.shortcuts[0].keys;
-        let e = config.validate().unwrap_err().to_string();
-        assert!(e.contains("左半分") && e.contains("右半分"), "{e}");
+    fn accepts_a_shortcut_used_twice_and_keeps_the_order() {
+        let text = r#"
+            [[shortcut]]
+            name = "左半分"
+            keys = "Ctrl+Shift+Left"
+            anchor = "left"
+            width = "50%"
+            height = "100%"
+
+            [[shortcut]]
+            name = "左 2/3"
+            keys = "Ctrl+Shift+Left"
+            anchor = "left"
+            width = "66.667%"
+            height = "100%"
+        "#;
+        let config = parse(text).unwrap();
+        let names: Vec<&str> = config.shortcuts.iter().map(|s| s.name.as_str()).collect();
+        assert_eq!(names, ["左半分", "左 2/3"]);
+        let reread = parse(&config.to_toml()).unwrap();
+        assert_eq!(reread.shortcuts[1].name, "左 2/3");
     }
 
     #[test]
