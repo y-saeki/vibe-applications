@@ -6,7 +6,7 @@
 
 use crate::config::Shortcut;
 use crate::hotkey::{self, Hotkey};
-use crate::layout::{Anchor, Length, Placement};
+use crate::layout::{Anchor, Placement, Ratio};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Draft {
@@ -25,8 +25,8 @@ impl Draft {
             modifiers: 0,
             vk: 0,
             anchor: Anchor::Center,
-            width: "50%".into(),
-            height: "50%".into(),
+            width: "1/2".into(),
+            height: "1/2".into(),
         }
     }
 
@@ -43,7 +43,7 @@ impl Draft {
 
     pub fn placement(&self) -> Result<Placement, String> {
         let field =
-            |label: &str, text: &str| text.parse::<Length>().map_err(|e| format!("{label}: {e}"));
+            |label: &str, text: &str| text.parse::<Ratio>().map_err(|e| format!("{label}: {e}"));
         Ok(Placement {
             anchor: self.anchor,
             width: field("幅", &self.width)?,
@@ -161,7 +161,8 @@ mod tests {
             assert_eq!(Draft::from_shortcut(&s).to_shortcut().unwrap().keys, s.keys);
             let placement = Draft::from_shortcut(&s).to_shortcut().unwrap().placement;
             assert_eq!(placement.anchor, s.placement.anchor);
-            assert!((placement.width.value() - s.placement.width.value()).abs() < 0.001);
+            assert_eq!(placement.width, s.placement.width);
+            assert_eq!(placement.height, s.placement.height);
         }
     }
 
@@ -184,6 +185,11 @@ mod tests {
         let e = d.to_shortcut().unwrap_err();
         assert!(e.starts_with("高さ:"), "{e}");
 
+        // The file still reads percent from earlier versions; the window
+        // takes only ratios.
+        d.height = "50%".into();
+        assert!(d.to_shortcut().unwrap_err().starts_with("高さ:"));
+
         d = Draft::from_shortcut(&Config::defaults().shortcuts[0]);
         d.modifiers = MOD_SHIFT;
         assert!(d.to_shortcut().unwrap_err().contains("Ctrl・Alt・Win"));
@@ -192,8 +198,8 @@ mod tests {
     #[test]
     fn list_lines_show_the_shortcut_and_the_placement() {
         let d = Draft::from_shortcut(&Config::defaults().shortcuts[0]);
-        assert_eq!(d.list_text(), "Ctrl+Alt+Left    左 50% × 100%");
-        assert_eq!(Draft::new().list_text(), "(未設定)    中央 50% × 50%");
+        assert_eq!(d.list_text(), "Ctrl+Alt+Left    左 1/2 × 1");
+        assert_eq!(Draft::new().list_text(), "(未設定)    中央 1/2 × 1/2");
     }
 
     #[test]

@@ -368,7 +368,7 @@ fn create(owner: HWND, config: &Config, path: &Path) -> windows::core::Result<()
     let height = child(edit, "", text_box, edge, ID_HEIGHT, [372, 108, 120, 24])?;
     child(
         stat,
-        "画面(タスクバーを除く)に対する割合 50% か、ピクセル 800px で指定します。",
+        "画面(タスクバーを除く)に対する比率で指定します。例: 1/2(半分)、2/3、0.75、1(全体)",
         0,
         none,
         -1,
@@ -758,15 +758,13 @@ fn paint(hwnd: HWND) {
             FillRect(hdc, &screen, GetSysColorBrush(COLOR_WINDOW));
         }
         if let Some(placement) = row.and_then(|r| r.placement().ok()) {
-            let (mut mdpi, mut mdpi_y) = (96, 96);
-            let _ = unsafe { GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &mut mdpi, &mut mdpi_y) };
             let local = Rect {
                 left: 0,
                 top: 0,
                 right: ww,
                 bottom: wh,
             };
-            let r = placement.resolve(local, f64::from(mdpi) / 96.0);
+            let r = placement.resolve(local);
             let map_x = |v: i32| screen.left + (f64::from(v) * k).round() as i32;
             let map_y = |v: i32| screen.top + (f64::from(v) * k).round() as i32;
             let window = RECT {
