@@ -31,7 +31,7 @@ use super::{
     APP_NAME, WM_APP_OPEN_SETTINGS, WM_APP_SETTINGS_CLOSED, WM_APP_TRAY, config_path,
     copy_to_field, error_box, icon, loword, mover, settings,
 };
-use crate::config::Config;
+use crate::config::{Config, Theme};
 use crate::cycle::{self, Binding, Cycle};
 use crate::hotkey::{MOD_ALT, MOD_CONTROL, MOD_SHIFT, MOD_WIN};
 
@@ -361,23 +361,29 @@ fn on_settings_closed() {
     register_hotkeys();
 }
 
-/// Lets the tray menu follow Windows' dark mode, as the menus of Explorer
-/// and most other applications do. Windows offers this only through two
-/// undocumented uxtheme.dll exports, known by ordinal: 135 is
-/// SetPreferredAppMode (AllowDarkModeForApp on 1809, where the 1 means the
-/// same), 136 FlushMenuThemes. Should a Windows update drop them, the menu is
-/// simply light.
-fn follow_dark_mode() {
+/// Makes the tray menu light or dark as the settings say, following Windows
+/// by default as the menus of Explorer and most other applications do.
+/// Windows offers this only through two undocumented uxtheme.dll exports,
+/// known by ordinal: 135 is SetPreferredAppMode (1 follows Windows, 2 forces
+/// dark, 3 forces light; on 1809 it is AllowDarkModeForApp, where any of
+/// them allows dark), 136 FlushMenuThemes. Should a Windows update drop them,
+/// the menu is simply light.
+fn apply_menu_theme(theme: Theme) {
+    let mode = match theme {
+        Theme::System => 1,
+        Theme::Dark => 2,
+        Theme::Light => 3,
+    };
     unsafe {
         let Ok(uxtheme) = LoadLibraryW(w!("uxtheme.dll")) else {
             return;
         };
         if let Some(f) = GetProcAddress(uxtheme, PCSTR(135 as *const u8)) {
-            // SAFETY: ordinal 135 takes one int (1: AllowDark) on every
-            // Windows version that has it.
+            // SAFETY: ordinal 135 takes one int on every Windows version
+            // that has it.
             let set_preferred_app_mode: unsafe extern "system" fn(i32) -> i32 =
                 std::mem::transmute(f);
-            set_preferred_app_mode(1);
+            set_preferred_app_mode(mode);
         }
         if let Some(f) = GetProcAddress(uxtheme, PCSTR(136 as *const u8)) {
             // SAFETY: ordinal 136 takes nothing and returns nothing.
@@ -388,9 +394,11 @@ fn follow_dark_mode() {
 }
 
 fn show_menu(hwnd: HWND) {
-    // Every time, so that a switch between light and dark since the last
-    // menu is picked up.
-    follow_dark_mode();
+    // Every time, so that a change of theme since the last menu is picked
+    // up.
+    if let Some(theme) = with_app(|app| app.config.theme) {
+        apply_menu_theme(theme);
+    }
     let Ok(menu) = (unsafe { CreatePopupMenu() }) else {
         return;
     };

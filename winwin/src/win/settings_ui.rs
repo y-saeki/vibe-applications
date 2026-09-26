@@ -21,7 +21,7 @@ use windows::core::BOOL;
 use windows_reactor::*;
 
 use super::{autostart, config_path, error_box, keyhook};
-use crate::config::Config;
+use crate::config::{Config, Theme};
 use crate::draft::{Draft, Editor};
 use crate::hotkey::{self, Arrow, Keycap, Recorder};
 use crate::layout::{Anchor, Rect};
@@ -54,6 +54,7 @@ pub fn run() {
     let input = Input {
         rows: config.shortcuts.iter().map(Draft::from_shortcut).collect(),
         autostart: autostart::is_enabled(),
+        theme: config.theme,
         work: work_size(),
     };
     if let Err(e) = App::run_component::<Settings>(input) {
@@ -83,6 +84,7 @@ fn work_size() -> (i32, i32) {
 struct Input {
     rows: Vec<Draft>,
     autostart: bool,
+    theme: Theme,
     work: (i32, i32),
 }
 
@@ -90,6 +92,9 @@ struct Settings {
     editor: Editor,
     autostart: bool,
     autostart_was: bool,
+    /// Applied to the window as soon as it is chosen; saved with the rest.
+    theme: Theme,
+    theme_was: Theme,
     /// Shown above everything when 保存 fails.
     error: Option<String>,
     /// The 変更を破棄しますか dialog is open.
@@ -109,8 +114,6 @@ enum Msg {
     },
     /// 変更 beside the shortcut: opens the dialog that records one.
     Record,
-    /// A shortcut in the list was clicked: select its row and record.
-    RecordRow(usize),
     /// A key went down or up while recording.
     Key(u32, bool),
     RecordReset,
@@ -120,6 +123,7 @@ enum Msg {
     Width(String),
     Height(String),
     Autostart(bool),
+    Theme(Option<usize>),
     Save,
     /// キャンセル, or the window's close button.
     Cancel,
@@ -146,6 +150,8 @@ impl Component for Settings {
             editor: Editor::new(input.rows.clone()),
             autostart: input.autostart,
             autostart_was: input.autostart,
+            theme: input.theme,
+            theme_was: input.theme,
             error: None,
             confirming: false,
             recording: None,
@@ -161,10 +167,7 @@ impl Component for Settings {
             Msg::Delete => self.editor.delete(),
             Msg::Move { up } => self.editor.move_selected(up),
             Msg::Record => self.start_recording(context),
-            Msg::RecordRow(i) => {
-                self.editor.select(i);
-                self.start_recording(context);
-            }
+
             Msg::Key(vk, down) => {
                 if let Some(r) = &mut self.recording {
                     if down {
@@ -205,6 +208,11 @@ impl Component for Settings {
             Msg::Width(text) => self.editor.edit(|d| d.width = text),
             Msg::Height(text) => self.editor.edit(|d| d.height = text),
             Msg::Autostart(on) => self.autostart = on,
+            Msg::Theme(i) => {
+                if let Some(&theme) = i.and_then(|i| Theme::ALL.get(i)) {
+                    self.theme = theme;
+                }
+            }
             Msg::Save => self.save(context),
             // The close button while the recording dialog is open: WinUI
             // shows one dialog at a time, and that one has its own キャンセル.
@@ -231,6 +239,11 @@ impl Component for Settings {
         context.window_visuals(
             WindowVisuals::new()
                 .backdrop(WindowBackdrop::Mica)
+                .theme(match self.theme {
+                    Theme::System => WindowTheme::System,
+                    Theme::Light => WindowTheme::Light,
+                    Theme::Dark => WindowTheme::Dark,
+                })
                 .client_size(CLIENT.0, CLIENT.1)
                 .constraints(WindowConstraints {
                     min_width: Some(CLIENT.0),
@@ -269,11 +282,30 @@ impl Component for Settings {
             .grid_row(2)
             .margin(Thickness::new(0.0, 16.0, 0.0, 0.0))
             .children((
-                CheckBox::new()
-                    .is_checked(self.autostart)
-                    .on_is_checked_changed(context.callback(Msg::Autostart))
-                    .vertical_alignment(VerticalAlignment::Center)
-                    .content("Windows へのサインイン時に winwin を起動する"),
+                StackPanel::new()
+                    .orientation(Orientation::Horizontal)
+                    .spacing(24.0)
+                    .children((
+                        CheckBox::new()
+                            .is_checked(self.autostart)
+                            .on_is_checked_changed(context.callback(Msg::Autostart))
+                            .vertical_alignment(VerticalAlignment::Center)
+                            .content("Windows へのサインイン時に winwin を起動する"),
+                        StackPanel::new()
+                            .orientation(Orientation::Horizontal)
+                            .spacing(8.0)
+                            .children((
+                                TextBlock::new()
+                                    .text("表示")
+                                    .vertical_alignment(VerticalAlignment::Center),
+                                ComboBox::new()
+                                    .items_source(Theme::ALL.map(Theme::label))
+                                    .selected_index(
+                                        Theme::ALL.iter().position(|t| *t == self.theme),
+                                    )
+                                    .on_selection_changed(context.callback(Msg::Theme)),
+                            )),
+                    )),
                 StackPanel::new()
                     .orientation(Orientation::Horizontal)
                     .spacing(8.0)
@@ -335,7 +367,7 @@ impl Settings {
                 .vertical_alignment(VerticalAlignment::Center)
                 .into()
         } else {
-            keycaps(caps, Keycaps::Large)
+            keycaps(caps, true)
         };
         let problem = match &result {
             Some(Err(e)) => e.to_string(),
@@ -385,17 +417,20 @@ impl Settings {
     }
 
     fn is_changed(&self) -> bool {
-        self.editor.is_dirty() || self.autostart != self.autostart_was
+        self.editor.is_dirty()
+            || self.autostart != self.autostart_was
+            || self.theme != self.theme_was
     }
 
     fn save(&mut self, context: &ComponentContext<Self>) {
-        let config = match self.editor.build_config() {
+        let mut config = match self.editor.build_config() {
             Ok(config) => config,
             Err(e) => {
                 self.error = Some(e);
                 return;
             }
         };
+        config.theme = self.theme;
         if let Err(e) = config.save(&config_path()) {
             self.error = Some(e.to_string());
             return;
@@ -412,7 +447,7 @@ impl Settings {
     /// The shortcuts, each with a picture of where it puts a window, and the
     /// buttons that change the list.
     fn list(&self, input: &Input, context: &mut ViewContext<Self>) -> View {
-        let items = self.editor.rows().enumerate().map(|(i, (id, row))| {
+        let items = self.editor.rows().map(|(id, row)| {
             // The keys at the left; where they put the window, in words and
             // as a picture, at the right.
             let line = Grid::new()
@@ -422,7 +457,7 @@ impl Settings {
                 .children((
                     Border::new()
                         .vertical_alignment(VerticalAlignment::Center)
-                        .content(shortcut_view(row, context.message(Msg::RecordRow(i)))),
+                        .content(shortcut_view(row)),
                     TextBlock::new()
                         .text(row.placement_text())
                         .vertical_alignment(VerticalAlignment::Center)
@@ -497,7 +532,7 @@ impl Settings {
             .orientation(Orientation::Horizontal)
             .spacing(12.0)
             .children((
-                shortcut_view(d, context.message(Msg::Record)),
+                shortcut_view(d),
                 Button::new()
                     .is_enabled(enabled)
                     .on_click(context.message(Msg::Record))
@@ -554,9 +589,8 @@ impl Settings {
     }
 }
 
-/// A row's shortcut as keycaps, which open the recording dialog when
-/// clicked, or 未設定.
-fn shortcut_view(d: &Draft, on_click: Callback<()>) -> View {
+/// A row's shortcut as keycaps, or 未設定.
+fn shortcut_view(d: &Draft) -> View {
     if d.vk == 0 {
         TextBlock::new()
             .text("未設定")
@@ -564,64 +598,89 @@ fn shortcut_view(d: &Draft, on_click: Callback<()>) -> View {
             .vertical_alignment(VerticalAlignment::Center)
             .into()
     } else {
-        keycaps(hotkey::keycaps(d.modifiers, d.vk), Keycaps::Small(on_click))
+        keycaps(hotkey::keycaps(d.modifiers, d.vk), false)
     }
 }
 
-enum Keycaps {
-    /// In the list and the form: clicking one records the shortcut anew.
-    Small(Callback<()>),
-    /// In the recording dialog: big enough to read at a glance.
-    Large,
-}
-
 /// Keys drawn as keycaps in a row, accent colored as Windows' own settings
-/// draw shortcuts, with the arrow keys as chevrons.
-fn keycaps(caps: Vec<Keycap>, style: Keycaps) -> View {
-    let (text_size, spacing) = match style {
-        Keycaps::Small(_) => (14.0, 4.0),
-        Keycaps::Large => (18.0, 12.0),
+/// draw shortcuts. `large` is the recording dialog's, big enough to read at
+/// a glance. The caps are pictures, not buttons: they do nothing when
+/// clicked.
+fn keycaps(caps: Vec<Keycap>, large: bool) -> View {
+    let (height, min_width, text_size, radius) = if large {
+        (56.0, 64.0, 18.0, 6.0)
+    } else {
+        (32.0, 36.0, 14.0, 4.0)
     };
     let caps = caps.into_iter().enumerate().map(|(i, cap)| {
         let face: View = match cap {
-            Keycap::Arrow(arrow) => Viewbox::new()
-                .width(text_size * 0.8)
-                .height(text_size * 0.8)
-                .slot(ViewboxSlot::Child, FontIcon::new().glyph(chevron(arrow))),
+            Keycap::Arrow(arrow) => chevron(arrow, text_size),
             _ => TextBlock::new()
                 .text(cap.label().unwrap_or_default())
                 .font_size(text_size)
+                .foreground(ON_ACCENT)
+                .horizontal_alignment(HorizontalAlignment::Center)
+                .vertical_alignment(VerticalAlignment::Center)
                 .into(),
         };
-        let button = Button::new().style(ButtonStyle::Accent);
-        let cap = match &style {
-            Keycaps::Small(on_click) => button
-                .min_width(36.0)
-                .on_click(on_click.clone())
-                .content(face),
-            Keycaps::Large => button.min_width(64.0).height(56.0).content(face),
-        };
+        let cap = Border::new()
+            .background(ThemeBrush::Accent)
+            .corner_radius(CornerRadius::uniform(radius))
+            .padding(Thickness::xy(10.0, 0.0))
+            .height(height)
+            .min_width(min_width)
+            .content(face);
         (i, cap)
     });
     StackPanel::new()
         .orientation(Orientation::Horizontal)
-        .spacing(spacing)
-        .horizontal_alignment(match style {
-            Keycaps::Small(_) => HorizontalAlignment::Left,
-            Keycaps::Large => HorizontalAlignment::Center,
+        .spacing(if large { 12.0 } else { 4.0 })
+        .horizontal_alignment(if large {
+            HorizontalAlignment::Center
+        } else {
+            HorizontalAlignment::Left
         })
         .vertical_alignment(VerticalAlignment::Center)
         .keyed_children(caps)
 }
 
-/// The Segoe Fluent Icons chevron pointing the arrow's way.
-fn chevron(arrow: Arrow) -> &'static str {
-    match arrow {
-        Arrow::Left => "\u{E76B}",
-        Arrow::Up => "\u{E70E}",
-        Arrow::Right => "\u{E76C}",
-        Arrow::Down => "\u{E70D}",
-    }
+/// Text on an accent-colored cap. The window's base background is dark in
+/// the dark theme and light in the light one, the opposite of the accent
+/// fill, which is what text on it needs.
+const ON_ACCENT: ThemeBrush = ThemeBrush::SolidBackground;
+
+/// An arrow key's cap face: a chevron as tall as the text on the other caps,
+/// drawn as two strokes so that it takes the same color as that text.
+fn chevron(arrow: Arrow, text_size: f64) -> View {
+    // Half the chevron's length along the way it points, and its reach
+    // across that.
+    let size = text_size * 0.7;
+    let (depth, reach) = (size * 0.25, size * 0.5);
+    let (cx, cy) = (size / 2.0, size / 2.0);
+    // The tip, then the two ends, for a chevron pointing right.
+    let points = [(depth, 0.0), (-depth, -reach), (-depth, reach)];
+    let turn = |(x, y): (f64, f64)| match arrow {
+        Arrow::Right => (cx + x, cy + y),
+        Arrow::Left => (cx - x, cy + y),
+        Arrow::Down => (cx + y, cy + x),
+        Arrow::Up => (cx + y, cy - x),
+    };
+    let [tip, a, b] = points.map(turn);
+    let stroke = |from: (f64, f64)| {
+        Line::new()
+            .x1(from.0)
+            .y1(from.1)
+            .x2(tip.0)
+            .y2(tip.1)
+            .stroke(ON_ACCENT)
+            .stroke_thickness(text_size / 9.0)
+    };
+    Canvas::new()
+        .width(size)
+        .height(size)
+        .horizontal_alignment(HorizontalAlignment::Center)
+        .vertical_alignment(VerticalAlignment::Center)
+        .children((stroke(a), stroke(b)))
 }
 
 /// A label above a control.
