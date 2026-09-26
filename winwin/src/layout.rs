@@ -253,6 +253,27 @@ impl Placement {
     }
 }
 
+/// A work area of `size` drawn as large as it fits inside `bounds` without
+/// changing its shape, aligned there to `anchor`. This is the screen a
+/// placement is previewed on; resolving the placement against it gives the
+/// window. `None` when either has no area.
+pub fn miniature(size: (i32, i32), bounds: Rect, anchor: Anchor) -> Option<Rect> {
+    let (sw, sh) = (f64::from(size.0), f64::from(size.1));
+    let (bw, bh) = (f64::from(bounds.width()), f64::from(bounds.height()));
+    if sw <= 0.0 || sh <= 0.0 || bw <= 0.0 || bh <= 0.0 {
+        return None;
+    }
+    let k = (bw / sw).min(bh / sh);
+    let (left, right) = place(f64::from(bounds.left), bw, sw * k, anchor.horizontal());
+    let (top, bottom) = place(f64::from(bounds.top), bh, sh * k, anchor.vertical());
+    Some(Rect {
+        left: left.round() as i32,
+        top: top.round() as i32,
+        right: right.round() as i32,
+        bottom: bottom.round() as i32,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -356,5 +377,46 @@ mod tests {
     #[test]
     fn keeps_at_least_a_pixel() {
         assert_eq!(p(Anchor::Center, "0.0001", "1").resolve(FHD).width(), 1);
+    }
+
+    #[test]
+    fn miniatures_keep_the_screen_shape() {
+        // A 16:9 screen in a wide box is limited by the height.
+        let wide = r(10, 20, 110, 38);
+        assert_eq!(
+            miniature((1920, 1080), wide, Anchor::TopLeft),
+            Some(r(10, 20, 42, 38))
+        );
+        assert_eq!(
+            miniature((1920, 1080), wide, Anchor::Center),
+            Some(r(44, 20, 76, 38))
+        );
+        // In a tall box, by the width.
+        let tall = r(0, 0, 32, 100);
+        assert_eq!(
+            miniature((1920, 1080), tall, Anchor::TopLeft),
+            Some(r(0, 0, 32, 18))
+        );
+        assert_eq!(
+            miniature((1080, 1920), tall, Anchor::Center),
+            Some(r(0, 22, 32, 78))
+        );
+        assert_eq!(miniature((0, 1080), wide, Anchor::Center), None);
+        assert_eq!(
+            miniature((1920, 1080), r(5, 5, 5, 40), Anchor::Center),
+            None
+        );
+    }
+
+    #[test]
+    fn placements_resolve_on_a_miniature() {
+        let screen = miniature((1920, 1080), r(0, 0, 32, 18), Anchor::TopLeft).unwrap();
+        assert_eq!(p(Anchor::Left, "1/2", "1").resolve(screen), r(0, 0, 16, 18));
+        assert_eq!(
+            p(Anchor::BottomRight, "1/2", "1/2").resolve(screen),
+            r(16, 9, 32, 18)
+        );
+        // However small, the window stays visible.
+        assert_eq!(p(Anchor::Center, "0.01", "1").resolve(screen).width(), 1);
     }
 }
