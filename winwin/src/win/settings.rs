@@ -8,17 +8,19 @@
 use std::cell::{Cell, RefCell};
 use std::path::{Path, PathBuf};
 
-use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
+use windows::Win32::Foundation::{COLORREF, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{
-    BeginPaint, COLOR_BTNFACE, COLOR_GRAYTEXT, COLOR_HIGHLIGHT, COLOR_WINDOW, CreateFontIndirectW,
-    DeleteObject, EndPaint, FillRect, FrameRect, GetMonitorInfoW, GetSysColorBrush, HBRUSH, HFONT,
-    InvalidateRect, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromPoint, MonitorFromWindow,
-    PAINTSTRUCT,
+    BeginPaint, COLOR_BTNFACE, COLOR_GRAYTEXT, COLOR_HIGHLIGHT, COLOR_HIGHLIGHTTEXT, COLOR_WINDOW,
+    COLOR_WINDOWTEXT, CreateFontIndirectW, DT_END_ELLIPSIS, DT_NOPREFIX, DT_SINGLELINE, DT_VCENTER,
+    DeleteObject, DrawFocusRect, DrawTextW, EndPaint, FillRect, FrameRect, GetMonitorInfoW,
+    GetSysColor, GetSysColorBrush, HBRUSH, HDC, HFONT, InvalidateRect, MONITOR_DEFAULTTONEAREST,
+    MONITORINFO, MonitorFromPoint, MonitorFromWindow, PAINTSTRUCT, SelectObject, SetBkMode,
+    SetTextColor, TRANSPARENT,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Controls::{
-    BST_CHECKED, BST_UNCHECKED, HKM_GETHOTKEY, HKM_SETHOTKEY, HOTKEY_CLASS, WC_COMBOBOXW,
-    WC_LISTBOXW,
+    BST_CHECKED, BST_UNCHECKED, DRAWITEMSTRUCT, HKM_GETHOTKEY, HKM_SETHOTKEY, HOTKEY_CLASS,
+    MEASUREITEMSTRUCT, ODS_FOCUS, ODS_SELECTED, WC_COMBOBOXW, WC_LISTBOXW,
 };
 use windows::Win32::UI::HiDpi::{
     AdjustWindowRectExForDpi, GetDpiForMonitor, MDT_EFFECTIVE_DPI, SystemParametersInfoForDpi,
@@ -29,11 +31,12 @@ use windows::Win32::UI::WindowsAndMessaging::{
     CB_SETCURSEL, CBN_SELCHANGE, CBS_DROPDOWNLIST, CreateWindowExW, DefWindowProcW, DestroyWindow,
     EN_CHANGE, ES_AUTOHSCROLL, GetCursorPos, GetWindowTextLengthW, GetWindowTextW, HMENU, IDCANCEL,
     IDNO, IDOK, IsDialogMessageW, LB_ADDSTRING, LB_DELETESTRING, LB_GETCURSEL, LB_INSERTSTRING,
-    LB_SETCURSEL, LBN_SELCHANGE, LBS_NOINTEGRALHEIGHT, LBS_NOTIFY, MB_ICONWARNING, MB_YESNO, MSG,
-    NONCLIENTMETRICSW, PostMessageW, RegisterClassExW, SPI_GETNONCLIENTMETRICS, SW_SHOW,
-    SWP_NOACTIVATE, SWP_NOZORDER, SendMessageW, SetForegroundWindow, SetWindowPos, SetWindowTextW,
-    ShowWindow, WINDOW_EX_STYLE, WINDOW_STYLE, WM_CLOSE, WM_COMMAND, WM_DESTROY, WM_DPICHANGED,
-    WM_PAINT, WM_SETFONT, WNDCLASSEXW, WS_CAPTION, WS_CHILD, WS_EX_CLIENTEDGE, WS_EX_CONTROLPARENT,
+    LB_SETCURSEL, LB_SETITEMHEIGHT, LBN_SELCHANGE, LBS_HASSTRINGS, LBS_NOINTEGRALHEIGHT,
+    LBS_NOTIFY, LBS_OWNERDRAWFIXED, MB_ICONWARNING, MB_YESNO, MSG, NONCLIENTMETRICSW, PostMessageW,
+    RegisterClassExW, SPI_GETNONCLIENTMETRICS, SW_SHOW, SWP_NOACTIVATE, SWP_NOZORDER, SendMessageW,
+    SetForegroundWindow, SetWindowPos, SetWindowTextW, ShowWindow, WINDOW_EX_STYLE, WINDOW_STYLE,
+    WM_CLOSE, WM_COMMAND, WM_DESTROY, WM_DPICHANGED, WM_DRAWITEM, WM_MEASUREITEM, WM_PAINT,
+    WM_SETFONT, WNDCLASSEXW, WS_CAPTION, WS_CHILD, WS_EX_CLIENTEDGE, WS_EX_CONTROLPARENT,
     WS_MINIMIZEBOX, WS_OVERLAPPED, WS_SYSMENU, WS_TABSTOP, WS_VISIBLE, WS_VSCROLL,
 };
 use windows::core::{HSTRING, PCWSTR, w};
@@ -42,7 +45,7 @@ use super::{APP_NAME, WM_APP_SETTINGS_CLOSED, autostart, error_box, hiword, lowo
 use crate::config::Config;
 use crate::draft::{self, Draft};
 use crate::hotkey::MOD_WIN;
-use crate::layout::{Anchor, Rect};
+use crate::layout::{self, Anchor, Rect};
 
 const CLASS_NAME: PCWSTR = w!("winwin.settings");
 
@@ -61,8 +64,12 @@ const ID_AUTOSTART: i32 = 120;
 
 /// The client area at 96 DPI; everything below is laid out in these units
 /// and scaled to the monitor's DPI.
-const CLIENT: (i32, i32) = (720, 458);
-const PREVIEW: [i32; 4] = [372, 186, 336, 216];
+const CLIENT: (i32, i32) = (760, 458);
+const PREVIEW: [i32; 4] = [412, 186, 336, 216];
+/// A line in the list, and the picture of its placement at the line's left.
+const ROW_HEIGHT: i32 = 24;
+const THUMBNAIL: (i32, i32) = (32, 18);
+const ROW_PADDING: i32 = 4;
 
 #[derive(Clone, Copy)]
 struct Controls {
@@ -288,7 +295,7 @@ fn create(owner: HWND, config: &Config, path: &Path) -> windows::core::Result<()
     let edge = WS_EX_CLIENTEDGE;
     let none = WINDOW_EX_STYLE::default();
     let tab = WS_TABSTOP.0;
-    let label = |y: i32| [268, y + 3, 100, 20];
+    let label = |y: i32| [308, y + 3, 100, 20];
     let button = w!("BUTTON");
     let edit = w!("EDIT");
     let stat = w!("STATIC");
@@ -297,10 +304,11 @@ fn create(owner: HWND, config: &Config, path: &Path) -> windows::core::Result<()
     let list = child(
         WC_LISTBOXW,
         "",
-        tab | WS_VSCROLL.0 | LBS_NOTIFY as u32 | LBS_NOINTEGRALHEIGHT as u32,
+        tab | WS_VSCROLL.0
+            | (LBS_NOTIFY | LBS_NOINTEGRALHEIGHT | LBS_OWNERDRAWFIXED | LBS_HASSTRINGS) as u32,
         edge,
         ID_LIST,
-        [12, 12, 240, 324],
+        [12, 12, 280, 324],
     )?;
     child(
         button,
@@ -308,7 +316,7 @@ fn create(owner: HWND, config: &Config, path: &Path) -> windows::core::Result<()
         tab | BS_PUSHBUTTON as u32,
         none,
         ID_ADD,
-        [12, 344, 76, 28],
+        [12, 344, 88, 28],
     )?;
     let duplicate = child(
         button,
@@ -316,7 +324,7 @@ fn create(owner: HWND, config: &Config, path: &Path) -> windows::core::Result<()
         tab | BS_PUSHBUTTON as u32,
         none,
         ID_DUPLICATE,
-        [94, 344, 76, 28],
+        [108, 344, 88, 28],
     )?;
     let delete = child(
         button,
@@ -324,7 +332,7 @@ fn create(owner: HWND, config: &Config, path: &Path) -> windows::core::Result<()
         tab | BS_PUSHBUTTON as u32,
         none,
         ID_DELETE,
-        [176, 344, 76, 28],
+        [204, 344, 88, 28],
     )?;
     let up = child(
         button,
@@ -332,7 +340,7 @@ fn create(owner: HWND, config: &Config, path: &Path) -> windows::core::Result<()
         tab | BS_PUSHBUTTON as u32,
         none,
         ID_UP,
-        [12, 376, 117, 28],
+        [12, 376, 136, 28],
     )?;
     let down = child(
         button,
@@ -340,7 +348,7 @@ fn create(owner: HWND, config: &Config, path: &Path) -> windows::core::Result<()
         tab | BS_PUSHBUTTON as u32,
         none,
         ID_DOWN,
-        [135, 376, 117, 28],
+        [156, 376, 136, 28],
     )?;
 
     child(stat, "ショートカット", 0, none, -1, label(12))?;
@@ -350,9 +358,9 @@ fn create(owner: HWND, config: &Config, path: &Path) -> windows::core::Result<()
         tab | BS_AUTOCHECKBOX as u32,
         none,
         ID_WIN,
-        [372, 12, 60, 24],
+        [412, 12, 60, 24],
     )?;
-    let hotkey = child(HOTKEY_CLASS, "", tab, edge, ID_HOTKEY, [436, 12, 272, 24])?;
+    let hotkey = child(HOTKEY_CLASS, "", tab, edge, ID_HOTKEY, [476, 12, 272, 24])?;
     child(stat, "基準位置", 0, none, -1, label(44))?;
     let anchor = child(
         WC_COMBOBOXW,
@@ -360,19 +368,19 @@ fn create(owner: HWND, config: &Config, path: &Path) -> windows::core::Result<()
         tab | WS_VSCROLL.0 | CBS_DROPDOWNLIST as u32,
         none,
         ID_ANCHOR,
-        [372, 44, 160, 300],
+        [412, 44, 160, 300],
     )?;
     child(stat, "幅", 0, none, -1, label(76))?;
-    let width = child(edit, "", text_box, edge, ID_WIDTH, [372, 76, 120, 24])?;
+    let width = child(edit, "", text_box, edge, ID_WIDTH, [412, 76, 120, 24])?;
     child(stat, "高さ", 0, none, -1, label(108))?;
-    let height = child(edit, "", text_box, edge, ID_HEIGHT, [372, 108, 120, 24])?;
+    let height = child(edit, "", text_box, edge, ID_HEIGHT, [412, 108, 120, 24])?;
     child(
         stat,
         "画面(タスクバーを除く)に対する比率で指定します。例: 1/2(半分)、2/3、0.75、1(全体)",
         0,
         none,
         -1,
-        [372, 140, 336, 40],
+        [412, 140, 336, 40],
     )?;
     child(stat, "プレビュー", 0, none, -1, label(PREVIEW[1]))?;
 
@@ -390,7 +398,7 @@ fn create(owner: HWND, config: &Config, path: &Path) -> windows::core::Result<()
         tab | BS_DEFPUSHBUTTON as u32,
         none,
         IDOK.0,
-        [536, 418, 80, 28],
+        [576, 418, 80, 28],
     )?;
     child(
         button,
@@ -398,7 +406,7 @@ fn create(owner: HWND, config: &Config, path: &Path) -> windows::core::Result<()
         tab | BS_PUSHBUTTON as u32,
         none,
         IDCANCEL.0,
-        [628, 418, 80, 28],
+        [668, 418, 80, 28],
     )?;
 
     for a in Anchor::ALL {
@@ -481,9 +489,13 @@ fn apply_dpi(dpi: u32) {
     } else {
         HFONT::default()
     };
-    let Some((old, layout)) =
-        with_state(|s| (std::mem::replace(&mut s.font, font), s.layout.clone()))
-    else {
+    let Some((old, layout, list)) = with_state(|s| {
+        (
+            std::mem::replace(&mut s.font, font),
+            s.layout.clone(),
+            s.c.list,
+        )
+    }) else {
         return;
     };
     for (hwnd, [x, y, w, h]) in layout {
@@ -500,6 +512,8 @@ fn apply_dpi(dpi: u32) {
         }
         send(hwnd, WM_SETFONT, font.0 as usize, 1);
     }
+    // An owner-drawn list measures its lines only when it is created.
+    send(list, LB_SETITEMHEIGHT, 0, scale(ROW_HEIGHT, dpi) as isize);
     if !old.is_invalid() {
         let _ = unsafe { DeleteObject(old.into()) };
     }
@@ -729,6 +743,59 @@ fn invalidate_preview() {
     let _ = unsafe { InvalidateRect(Some(hwnd), Some(&rect), true) };
 }
 
+/// The size of the work area of the monitor `hwnd` is on, which previews
+/// are drawn to the shape of.
+fn work_size(hwnd: HWND) -> Option<(i32, i32)> {
+    let monitor = unsafe { MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST) };
+    let mut info = MONITORINFO {
+        cbSize: size_of::<MONITORINFO>() as u32,
+        ..Default::default()
+    };
+    unsafe { GetMonitorInfoW(monitor, &mut info) }
+        .as_bool()
+        .then(|| {
+            let w = info.rcWork;
+            (w.right - w.left, w.bottom - w.top)
+        })
+}
+
+fn to_rect(r: Rect) -> RECT {
+    RECT {
+        left: r.left,
+        top: r.top,
+        right: r.right,
+        bottom: r.bottom,
+    }
+}
+
+/// Draws a screen of `size` inside `bounds` and, on it, where `row` would
+/// put a window. A row whose fields do not make a placement yet gets the
+/// screen alone.
+fn draw_screen(hdc: HDC, size: (i32, i32), bounds: RECT, anchor: Anchor, row: Option<&Draft>) {
+    let bounds = Rect {
+        left: bounds.left,
+        top: bounds.top,
+        right: bounds.right,
+        bottom: bounds.bottom,
+    };
+    let Some(screen) = layout::miniature(size, bounds, anchor) else {
+        return;
+    };
+    let screen_rect = to_rect(screen);
+    unsafe {
+        FillRect(hdc, &screen_rect, GetSysColorBrush(COLOR_WINDOW));
+    }
+    if let Some(placement) = row.and_then(|r| r.placement().ok()) {
+        let window = to_rect(placement.resolve(screen));
+        unsafe {
+            FillRect(hdc, &window, GetSysColorBrush(COLOR_HIGHLIGHT));
+        }
+    }
+    unsafe {
+        FrameRect(hdc, &screen_rect, GetSysColorBrush(COLOR_GRAYTEXT));
+    }
+}
+
 /// Draws the work area of the monitor the window is on, scaled into the
 /// preview box, and where the selected shortcut would put a window on it.
 fn paint(hwnd: HWND) {
@@ -736,52 +803,71 @@ fn paint(hwnd: HWND) {
     let mut ps = PAINTSTRUCT::default();
     let hdc = unsafe { BeginPaint(hwnd, &mut ps) };
     let dpi = unsafe { windows::Win32::UI::HiDpi::GetDpiForWindow(hwnd) };
-    let monitor = unsafe { MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST) };
-    let mut info = MONITORINFO {
-        cbSize: size_of::<MONITORINFO>() as u32,
-        ..Default::default()
-    };
-    let has_monitor = unsafe { GetMonitorInfoW(monitor, &mut info) }.as_bool();
-    let work = info.rcWork;
-    let (ww, wh) = (work.right - work.left, work.bottom - work.top);
-    if has_monitor && ww > 0 && wh > 0 {
-        let bounds = preview_rect(dpi);
-        let (bw, bh) = (bounds.right - bounds.left, bounds.bottom - bounds.top);
-        let k = (f64::from(bw) / f64::from(ww)).min(f64::from(bh) / f64::from(wh));
-        let screen = RECT {
-            left: bounds.left,
-            top: bounds.top,
-            right: bounds.left + (f64::from(ww) * k) as i32,
-            bottom: bounds.top + (f64::from(wh) * k) as i32,
-        };
-        unsafe {
-            FillRect(hdc, &screen, GetSysColorBrush(COLOR_WINDOW));
-        }
-        if let Some(placement) = row.and_then(|r| r.placement().ok()) {
-            let local = Rect {
-                left: 0,
-                top: 0,
-                right: ww,
-                bottom: wh,
-            };
-            let r = placement.resolve(local);
-            let map_x = |v: i32| screen.left + (f64::from(v) * k).round() as i32;
-            let map_y = |v: i32| screen.top + (f64::from(v) * k).round() as i32;
-            let window = RECT {
-                left: map_x(r.left),
-                top: map_y(r.top),
-                right: map_x(r.right),
-                bottom: map_y(r.bottom),
-            };
-            unsafe {
-                FillRect(hdc, &window, GetSysColorBrush(COLOR_HIGHLIGHT));
-            }
-        }
-        unsafe {
-            FrameRect(hdc, &screen, GetSysColorBrush(COLOR_GRAYTEXT));
-        }
+    if let Some(size) = work_size(hwnd) {
+        draw_screen(hdc, size, preview_rect(dpi), Anchor::TopLeft, row.as_ref());
     }
     let _ = unsafe { EndPaint(hwnd, &ps) };
+}
+
+/// Draws one line of the list: a picture of its placement, then its text.
+fn draw_row(hwnd: HWND, item: &DRAWITEMSTRUCT) {
+    let (row, font) = with_state(|s| {
+        let row = usize::try_from(item.itemID)
+            .ok()
+            .and_then(|i| s.rows.get(i).cloned());
+        (row, s.font)
+    })
+    .unwrap_or((None, HFONT::default()));
+    let hdc = item.hDC;
+    let r = item.rcItem;
+    let (background, text) = if item.itemState.0 & ODS_SELECTED.0 != 0 {
+        (COLOR_HIGHLIGHT, COLOR_HIGHLIGHTTEXT)
+    } else {
+        (COLOR_WINDOW, COLOR_WINDOWTEXT)
+    };
+    unsafe {
+        FillRect(hdc, &r, GetSysColorBrush(background));
+    }
+
+    // An empty list still draws its focus rectangle, with no row to show.
+    if let Some(row) = &row {
+        let dpi = unsafe { windows::Win32::UI::HiDpi::GetDpiForWindow(hwnd) };
+        let pad = scale(ROW_PADDING, dpi);
+        let (tw, th) = (scale(THUMBNAIL.0, dpi), scale(THUMBNAIL.1, dpi));
+        let top = r.top + (r.bottom - r.top - th) / 2;
+        let thumbnail = RECT {
+            left: r.left + pad,
+            top,
+            right: r.left + pad + tw,
+            bottom: top + th,
+        };
+        let size = work_size(hwnd).unwrap_or((tw, th));
+        draw_screen(hdc, size, thumbnail, Anchor::Center, Some(row));
+
+        let mut label: Vec<u16> = row.list_text().encode_utf16().collect();
+        let mut area = RECT {
+            left: thumbnail.right + pad * 2,
+            right: r.right - pad,
+            ..r
+        };
+        unsafe {
+            let old_font = (!font.is_invalid()).then(|| SelectObject(hdc, font.into()));
+            SetBkMode(hdc, TRANSPARENT);
+            SetTextColor(hdc, COLORREF(GetSysColor(text)));
+            DrawTextW(
+                hdc,
+                &mut label,
+                &mut area,
+                DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS | DT_NOPREFIX,
+            );
+            if let Some(old) = old_font {
+                SelectObject(hdc, old);
+            }
+        }
+    }
+    if item.itemState.0 & ODS_FOCUS.0 != 0 {
+        let _ = unsafe { DrawFocusRect(hdc, &r) };
+    }
 }
 
 extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
@@ -823,6 +909,19 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
         WM_PAINT => {
             paint(hwnd);
             LRESULT(0)
+        }
+        WM_MEASUREITEM => {
+            // SAFETY: WM_MEASUREITEM carries the struct to fill in.
+            let item = unsafe { &mut *(lparam.0 as *mut MEASUREITEMSTRUCT) };
+            let dpi = unsafe { windows::Win32::UI::HiDpi::GetDpiForWindow(hwnd) };
+            item.itemHeight = scale(ROW_HEIGHT, dpi) as u32;
+            LRESULT(1)
+        }
+        WM_DRAWITEM => {
+            // SAFETY: WM_DRAWITEM carries the struct describing the item.
+            let item = unsafe { &*(lparam.0 as *const DRAWITEMSTRUCT) };
+            draw_row(hwnd, item);
+            LRESULT(1)
         }
         WM_DPICHANGED => {
             apply_dpi(loword(wparam.0));
