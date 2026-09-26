@@ -23,7 +23,7 @@ use windows_reactor::*;
 use super::{autostart, config_path, error_box, keyhook};
 use crate::config::Config;
 use crate::draft::{Draft, Editor};
-use crate::hotkey::{self, Recorder};
+use crate::hotkey::{self, Arrow, Keycap, Recorder};
 use crate::layout::{Anchor, Rect};
 
 /// The client area in DIPs, which is also as small as the window goes: the
@@ -109,6 +109,8 @@ enum Msg {
     },
     /// 変更 beside the shortcut: opens the dialog that records one.
     Record,
+    /// A shortcut in the list was clicked: select its row and record.
+    RecordRow(usize),
     /// A key went down or up while recording.
     Key(u32, bool),
     RecordReset,
@@ -159,6 +161,10 @@ impl Component for Settings {
             Msg::Delete => self.editor.delete(),
             Msg::Move { up } => self.editor.move_selected(up),
             Msg::Record => self.start_recording(context),
+            Msg::RecordRow(i) => {
+                self.editor.select(i);
+                self.start_recording(context);
+            }
             Msg::Key(vk, down) => {
                 if let Some(r) = &mut self.recording {
                     if down {
@@ -329,7 +335,7 @@ impl Settings {
                 .vertical_alignment(VerticalAlignment::Center)
                 .into()
         } else {
-            keycaps(caps, true)
+            keycaps(caps, Keycaps::Large)
         };
         let problem = match &result {
             Some(Err(e)) => e.to_string(),
@@ -406,7 +412,7 @@ impl Settings {
     /// The shortcuts, each with a picture of where it puts a window, and the
     /// buttons that change the list.
     fn list(&self, input: &Input, context: &mut ViewContext<Self>) -> View {
-        let items = self.editor.rows().map(|(id, row)| {
+        let items = self.editor.rows().enumerate().map(|(i, (id, row))| {
             // The keys at the left; where they put the window, in words and
             // as a picture, at the right.
             let line = Grid::new()
@@ -416,7 +422,7 @@ impl Settings {
                 .children((
                     Border::new()
                         .vertical_alignment(VerticalAlignment::Center)
-                        .content(shortcut_view(row)),
+                        .content(shortcut_view(row, context.message(Msg::RecordRow(i)))),
                     TextBlock::new()
                         .text(row.placement_text())
                         .vertical_alignment(VerticalAlignment::Center)
@@ -491,7 +497,7 @@ impl Settings {
             .orientation(Orientation::Horizontal)
             .spacing(12.0)
             .children((
-                shortcut_view(d),
+                shortcut_view(d, context.message(Msg::Record)),
                 Button::new()
                     .is_enabled(enabled)
                     .on_click(context.message(Msg::Record))
@@ -548,8 +554,9 @@ impl Settings {
     }
 }
 
-/// A row's shortcut as keycaps, or 未設定.
-fn shortcut_view(d: &Draft) -> View {
+/// A row's shortcut as keycaps, which open the recording dialog when
+/// clicked, or 未設定.
+fn shortcut_view(d: &Draft, on_click: Callback<()>) -> View {
     if d.vk == 0 {
         TextBlock::new()
             .text("未設定")
@@ -557,46 +564,64 @@ fn shortcut_view(d: &Draft) -> View {
             .vertical_alignment(VerticalAlignment::Center)
             .into()
     } else {
-        keycaps(hotkey::keycaps(d.modifiers, d.vk), false)
+        keycaps(hotkey::keycaps(d.modifiers, d.vk), Keycaps::Small(on_click))
     }
 }
 
-/// Keys drawn as keycaps in a row. `large` is the recording dialog's: accent
-/// colored and big enough to read at a glance.
-fn keycaps(caps: Vec<String>, large: bool) -> View {
-    let caps = caps.into_iter().enumerate().map(|(i, label)| {
-        let cap: View = if large {
-            Button::new()
-                .style(ButtonStyle::Accent)
-                .min_width(64.0)
-                .height(56.0)
-                .content(TextBlock::new().text(label).font_size(18.0))
-        } else {
-            Border::new()
-                .background(ThemeBrush::CardBackground)
-                .border_brush(ThemeBrush::CardStroke)
-                .border_thickness(Thickness::uniform(1.0))
-                .corner_radius(CornerRadius::uniform(4.0))
-                .padding(Thickness::xy(10.0, 4.0))
-                .min_width(32.0)
-                .content(
-                    TextBlock::new()
-                        .text(label)
-                        .horizontal_alignment(HorizontalAlignment::Center),
-                )
+enum Keycaps {
+    /// In the list and the form: clicking one records the shortcut anew.
+    Small(Callback<()>),
+    /// In the recording dialog: big enough to read at a glance.
+    Large,
+}
+
+/// Keys drawn as keycaps in a row, accent colored as Windows' own settings
+/// draw shortcuts, with the arrow keys as chevrons.
+fn keycaps(caps: Vec<Keycap>, style: Keycaps) -> View {
+    let (text_size, spacing) = match style {
+        Keycaps::Small(_) => (14.0, 4.0),
+        Keycaps::Large => (18.0, 12.0),
+    };
+    let caps = caps.into_iter().enumerate().map(|(i, cap)| {
+        let face: View = match cap {
+            Keycap::Arrow(arrow) => Viewbox::new()
+                .width(text_size * 0.8)
+                .height(text_size * 0.8)
+                .slot(ViewboxSlot::Child, FontIcon::new().glyph(chevron(arrow))),
+            _ => TextBlock::new()
+                .text(cap.label().unwrap_or_default())
+                .font_size(text_size)
+                .into(),
+        };
+        let button = Button::new().style(ButtonStyle::Accent);
+        let cap = match &style {
+            Keycaps::Small(on_click) => button
+                .min_width(36.0)
+                .on_click(on_click.clone())
+                .content(face),
+            Keycaps::Large => button.min_width(64.0).height(56.0).content(face),
         };
         (i, cap)
     });
     StackPanel::new()
         .orientation(Orientation::Horizontal)
-        .spacing(if large { 12.0 } else { 6.0 })
-        .horizontal_alignment(if large {
-            HorizontalAlignment::Center
-        } else {
-            HorizontalAlignment::Left
+        .spacing(spacing)
+        .horizontal_alignment(match style {
+            Keycaps::Small(_) => HorizontalAlignment::Left,
+            Keycaps::Large => HorizontalAlignment::Center,
         })
         .vertical_alignment(VerticalAlignment::Center)
         .keyed_children(caps)
+}
+
+/// The Segoe Fluent Icons chevron pointing the arrow's way.
+fn chevron(arrow: Arrow) -> &'static str {
+    match arrow {
+        Arrow::Left => "\u{E76B}",
+        Arrow::Up => "\u{E70E}",
+        Arrow::Right => "\u{E76C}",
+        Arrow::Down => "\u{E70D}",
+    }
 }
 
 /// A label above a control.

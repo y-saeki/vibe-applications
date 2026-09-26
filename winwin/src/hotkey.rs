@@ -89,11 +89,39 @@ pub fn modifier_of(vk: u32) -> Option<u32> {
     }
 }
 
+/// One key as the settings window draws it: its name, or for the arrow keys
+/// the direction, which reads better as a chevron than as a word.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Keycap {
+    Name(&'static str),
+    Key(u32),
+    Arrow(Arrow),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Arrow {
+    Left,
+    Up,
+    Right,
+    Down,
+}
+
+impl Keycap {
+    /// The text on the cap, for all but the arrows.
+    pub fn label(self) -> Option<String> {
+        match self {
+            Keycap::Name(name) => Some(name.to_string()),
+            Keycap::Key(vk) => Some(key_name(vk)),
+            Keycap::Arrow(_) => None,
+        }
+    }
+}
+
 /// The keys of a combination as the settings window draws them, one cap
 /// each: the modifiers in the order they are written, then the key. The key
 /// is left out while it is 0.
-pub fn keycaps(modifiers: u32, vk: u32) -> Vec<String> {
-    let mut caps: Vec<String> = [
+pub fn keycaps(modifiers: u32, vk: u32) -> Vec<Keycap> {
+    let mut caps: Vec<Keycap> = [
         (MOD_WIN, "Win"),
         (MOD_CONTROL, "Ctrl"),
         (MOD_ALT, "Alt"),
@@ -101,17 +129,16 @@ pub fn keycaps(modifiers: u32, vk: u32) -> Vec<String> {
     ]
     .into_iter()
     .filter(|(m, _)| modifiers & m != 0)
-    .map(|(_, name)| name.to_string())
+    .map(|(_, name)| Keycap::Name(name))
     .collect();
     if vk != 0 {
-        let arrow = match vk {
-            0x25 => Some("←"),
-            0x26 => Some("↑"),
-            0x27 => Some("→"),
-            0x28 => Some("↓"),
-            _ => None,
-        };
-        caps.push(arrow.map_or_else(|| key_name(vk), str::to_string));
+        caps.push(match vk {
+            0x25 => Keycap::Arrow(Arrow::Left),
+            0x26 => Keycap::Arrow(Arrow::Up),
+            0x27 => Keycap::Arrow(Arrow::Right),
+            0x28 => Keycap::Arrow(Arrow::Down),
+            _ => Keycap::Key(vk),
+        });
     }
     caps
 }
@@ -366,14 +393,21 @@ mod tests {
     fn keycaps_follow_the_written_order() {
         assert_eq!(
             keycaps(MOD_SHIFT | MOD_CONTROL | MOD_WIN, 0x25),
-            ["Win", "Ctrl", "Shift", "←"]
+            [
+                Keycap::Name("Win"),
+                Keycap::Name("Ctrl"),
+                Keycap::Name("Shift"),
+                Keycap::Arrow(Arrow::Left)
+            ]
         );
-        assert_eq!(
-            keycaps(MOD_CONTROL | MOD_ALT, 0x0D),
-            ["Ctrl", "Alt", "Enter"]
-        );
-        assert_eq!(keycaps(MOD_ALT, 0), ["Alt"]);
-        assert!(keycaps(0, 0).is_empty());
+        let labels: Vec<_> = keycaps(MOD_CONTROL | MOD_ALT, 0x0D)
+            .into_iter()
+            .map(|c| c.label().unwrap())
+            .collect();
+        assert_eq!(labels, ["Ctrl", "Alt", "Enter"]);
+        assert_eq!(keycaps(MOD_ALT, 0), [Keycap::Name("Alt")]);
+        assert_eq!(keycaps(0, 0x28), [Keycap::Arrow(Arrow::Down)]);
+        assert_eq!(Keycap::Arrow(Arrow::Up).label(), None);
     }
 
     #[test]
