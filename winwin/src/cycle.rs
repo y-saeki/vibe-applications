@@ -13,7 +13,6 @@ use crate::layout::Placement;
 #[derive(Clone, Debug, PartialEq)]
 pub struct Binding {
     pub keys: Hotkey,
-    pub names: Vec<String>,
     pub placements: Vec<Placement>,
 }
 
@@ -31,12 +30,10 @@ pub fn bindings(config: &Config) -> Vec<Binding> {
     for s in &config.shortcuts {
         match out.iter_mut().find(|b| b.keys == s.keys) {
             Some(b) => {
-                b.names.push(s.name.clone());
                 b.placements.push(s.placement);
             }
             None => out.push(Binding {
                 keys: s.keys,
-                names: vec![s.name.clone()],
                 placements: vec![s.placement],
             }),
         }
@@ -80,11 +77,11 @@ mod tests {
 
     fn config_with_shared_keys() -> Config {
         let mut config = Config::defaults();
-        // 左 2/3 joins 左半分 on Ctrl+Alt+Left.
+        // 左 2/3 (Ctrl+Alt+E) joins 左半分 on Ctrl+Alt+Left.
         let two_thirds = config
             .shortcuts
             .iter()
-            .position(|s| s.name == "左 2/3")
+            .position(|s| s.keys.to_string() == "Ctrl+Alt+E")
             .unwrap();
         config.shortcuts[two_thirds].keys = config.shortcuts[0].keys;
         config
@@ -105,11 +102,11 @@ mod tests {
         assert_eq!(bindings.len(), config.shortcuts.len() - 1);
         let left = &bindings[0];
         assert_eq!(left.keys.to_string(), "Ctrl+Alt+Left");
-        assert_eq!(left.names, ["左半分", "左 2/3"]);
         assert!(left.cycles());
+        assert_eq!(left.placements[0].width.value(), 50.0);
         assert_eq!(left.placements[1].width.value(), 200.0 / 3.0);
         // The others keep their order behind it.
-        assert_eq!(bindings[1].names, ["右半分"]);
+        assert_eq!(bindings[1].keys.to_string(), "Ctrl+Alt+Right");
     }
 
     #[test]

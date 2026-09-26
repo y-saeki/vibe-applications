@@ -14,7 +14,6 @@ use crate::layout::{Anchor, Length, Placement};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Shortcut {
-    pub name: String,
     #[serde(with = "hotkey_string")]
     pub keys: Hotkey,
     #[serde(flatten)]
@@ -47,7 +46,6 @@ pub struct Config {
 pub enum ConfigError {
     Io(PathBuf, io::Error),
     Parse(PathBuf, String),
-    Invalid(String),
 }
 
 impl fmt::Display for ConfigError {
@@ -55,21 +53,17 @@ impl fmt::Display for ConfigError {
         match self {
             ConfigError::Io(path, e) => write!(f, "{}: {e}", path.display()),
             ConfigError::Parse(path, e) => write!(f, "{} を読めません。\n{e}", path.display()),
-            ConfigError::Invalid(e) => f.write_str(e),
         }
     }
 }
 
-fn shortcut(name: &str, keys: &str, anchor: Anchor, width: f64, height: f64) -> Shortcut {
+fn shortcut(keys: &str, anchor: Anchor, width: f64, height: f64) -> Shortcut {
     Shortcut {
-        name: name.into(),
         keys: keys.parse().expect("default shortcuts are valid"),
         placement: Placement {
             anchor,
             width: Length::Percent(width),
             height: Length::Percent(height),
-            offset_x: Length::ZERO,
-            offset_y: Length::ZERO,
         },
     }
 }
@@ -80,51 +74,30 @@ impl Config {
         const THIRD: f64 = 100.0 / 3.0;
         Config {
             shortcuts: vec![
-                shortcut("左半分", "Ctrl+Alt+Left", Anchor::Left, 50.0, 100.0),
-                shortcut("右半分", "Ctrl+Alt+Right", Anchor::Right, 50.0, 100.0),
-                shortcut("上半分", "Ctrl+Alt+Up", Anchor::Top, 100.0, 50.0),
-                shortcut("下半分", "Ctrl+Alt+Down", Anchor::Bottom, 100.0, 50.0),
-                shortcut(
-                    "画面いっぱい",
-                    "Ctrl+Alt+Enter",
-                    Anchor::Center,
-                    100.0,
-                    100.0,
-                ),
-                shortcut("中央", "Ctrl+Alt+C", Anchor::Center, 60.0, 80.0),
-                shortcut("左上", "Ctrl+Alt+U", Anchor::TopLeft, 50.0, 50.0),
-                shortcut("右上", "Ctrl+Alt+I", Anchor::TopRight, 50.0, 50.0),
-                shortcut("左下", "Ctrl+Alt+J", Anchor::BottomLeft, 50.0, 50.0),
-                shortcut("右下", "Ctrl+Alt+K", Anchor::BottomRight, 50.0, 50.0),
-                shortcut("左 1/3", "Ctrl+Alt+D", Anchor::Left, THIRD, 100.0),
-                shortcut("中央 1/3", "Ctrl+Alt+F", Anchor::Center, THIRD, 100.0),
-                shortcut("右 1/3", "Ctrl+Alt+G", Anchor::Right, THIRD, 100.0),
-                shortcut("左 2/3", "Ctrl+Alt+E", Anchor::Left, 2.0 * THIRD, 100.0),
-                shortcut("右 2/3", "Ctrl+Alt+T", Anchor::Right, 2.0 * THIRD, 100.0),
+                shortcut("Ctrl+Alt+Left", Anchor::Left, 50.0, 100.0),
+                shortcut("Ctrl+Alt+Right", Anchor::Right, 50.0, 100.0),
+                shortcut("Ctrl+Alt+Up", Anchor::Top, 100.0, 50.0),
+                shortcut("Ctrl+Alt+Down", Anchor::Bottom, 100.0, 50.0),
+                shortcut("Ctrl+Alt+Enter", Anchor::Center, 100.0, 100.0),
+                shortcut("Ctrl+Alt+C", Anchor::Center, 60.0, 80.0),
+                shortcut("Ctrl+Alt+U", Anchor::TopLeft, 50.0, 50.0),
+                shortcut("Ctrl+Alt+I", Anchor::TopRight, 50.0, 50.0),
+                shortcut("Ctrl+Alt+J", Anchor::BottomLeft, 50.0, 50.0),
+                shortcut("Ctrl+Alt+K", Anchor::BottomRight, 50.0, 50.0),
+                shortcut("Ctrl+Alt+D", Anchor::Left, THIRD, 100.0),
+                shortcut("Ctrl+Alt+F", Anchor::Center, THIRD, 100.0),
+                shortcut("Ctrl+Alt+G", Anchor::Right, THIRD, 100.0),
+                shortcut("Ctrl+Alt+E", Anchor::Left, 2.0 * THIRD, 100.0),
+                shortcut("Ctrl+Alt+T", Anchor::Right, 2.0 * THIRD, 100.0),
             ],
         }
     }
 
-    /// Everything a config must satisfy beyond parsing: a name to show for
-    /// each entry. Entries may share a shortcut; pressing it steps through
-    /// them (see cycle.rs).
-    pub fn validate(&self) -> Result<(), ConfigError> {
-        for s in &self.shortcuts {
-            if s.name.trim().is_empty() {
-                return Err(ConfigError::Invalid(format!(
-                    "{} に名前がありません",
-                    s.keys
-                )));
-            }
-        }
-        Ok(())
-    }
-
+    /// Entries may share a shortcut; pressing it steps through them (see
+    /// cycle.rs). Fields this version does not know, such as the `name` and
+    /// `offset_x`/`offset_y` of earlier versions, are ignored.
     pub fn parse(text: &str, path: &Path) -> Result<Config, ConfigError> {
-        let config: Config =
-            toml::from_str(text).map_err(|e| ConfigError::Parse(path.into(), e.to_string()))?;
-        config.validate()?;
-        Ok(config)
+        toml::from_str(text).map_err(|e| ConfigError::Parse(path.into(), e.to_string()))
     }
 
     pub fn to_toml(&self) -> String {
@@ -148,7 +121,6 @@ impl Config {
     /// Writes through a temporary file, so that a crash halfway leaves the
     /// previous config rather than half of the new one.
     pub fn save(&self, path: &Path) -> Result<(), ConfigError> {
-        self.validate()?;
         let io_err = |e| ConfigError::Io(path.into(), e);
         if let Some(dir) = path.parent() {
             fs::create_dir_all(dir).map_err(io_err)?;
@@ -170,11 +142,9 @@ mod tests {
     #[test]
     fn defaults_are_valid_and_round_trip() {
         let config = Config::defaults();
-        config.validate().unwrap();
         let reread = parse(&config.to_toml()).unwrap();
         assert_eq!(reread.shortcuts.len(), config.shortcuts.len());
         for (a, b) in reread.shortcuts.iter().zip(&config.shortcuts) {
-            assert_eq!(a.name, b.name);
             assert_eq!(a.keys, b.keys);
             assert_eq!(a.placement.anchor, b.placement.anchor);
             // Written with three decimals, so a third comes back a hair off.
@@ -189,12 +159,10 @@ mod tests {
         let config = parse(
             r#"
             [[shortcut]]
-            name = "作業用"
             keys = "win+alt+1"
             anchor = "bottom-right"
             width = "1280px"
             height = "70%"
-            offset_x = "-16px"
             "#,
         )
         .unwrap();
@@ -203,13 +171,26 @@ mod tests {
         assert_eq!(s.placement.anchor, Anchor::BottomRight);
         assert_eq!(s.placement.width, Length::Pixels(1280.0));
         assert_eq!(s.placement.height, Length::Percent(70.0));
-        assert_eq!(s.placement.offset_x, Length::Pixels(-16.0));
-        assert_eq!(s.placement.offset_y, Length::ZERO);
     }
 
     #[test]
-    fn leaves_zero_offsets_out_of_the_file() {
-        let text = Config::defaults().to_toml();
+    fn reads_a_file_from_before_names_and_offsets_were_dropped() {
+        let config = parse(
+            r#"
+            [[shortcut]]
+            name = "右下"
+            keys = "Ctrl+Alt+K"
+            anchor = "bottom-right"
+            width = "50%"
+            height = "50%"
+            offset_x = "-16px"
+            offset_y = "-16px"
+            "#,
+        )
+        .unwrap();
+        assert_eq!(config.shortcuts[0].keys.to_string(), "Ctrl+Alt+K");
+        let text = config.to_toml();
+        assert!(!text.contains("name"), "{text}");
         assert!(!text.contains("offset"), "{text}");
     }
 
@@ -222,7 +203,6 @@ mod tests {
     fn rejects_bad_values_with_the_reason() {
         let bad_keys = r#"
             [[shortcut]]
-            name = "x"
             keys = "Ctrl+Alt+Nope"
             anchor = "left"
             width = "50%"
@@ -241,31 +221,25 @@ mod tests {
     fn accepts_a_shortcut_used_twice_and_keeps_the_order() {
         let text = r#"
             [[shortcut]]
-            name = "左半分"
             keys = "Ctrl+Shift+Left"
             anchor = "left"
             width = "50%"
             height = "100%"
 
             [[shortcut]]
-            name = "左 2/3"
             keys = "Ctrl+Shift+Left"
             anchor = "left"
             width = "66.667%"
             height = "100%"
         "#;
         let config = parse(text).unwrap();
-        let names: Vec<&str> = config.shortcuts.iter().map(|s| s.name.as_str()).collect();
-        assert_eq!(names, ["左半分", "左 2/3"]);
-        let reread = parse(&config.to_toml()).unwrap();
-        assert_eq!(reread.shortcuts[1].name, "左 2/3");
-    }
-
-    #[test]
-    fn rejects_a_nameless_shortcut() {
-        let mut config = Config::defaults();
-        config.shortcuts[0].name = "  ".into();
-        assert!(config.validate().is_err());
+        let widths: Vec<String> = config
+            .shortcuts
+            .iter()
+            .map(|s| s.placement.width.to_string())
+            .collect();
+        assert_eq!(widths, ["50%", "66.667%"]);
+        assert_eq!(parse(&config.to_toml()).unwrap(), config);
     }
 
     #[test]
