@@ -24,6 +24,12 @@ silently dropped. Copy what you need out of the closure and make the call after 
 The settings window (`src/win/settings_ui.rs`) is a `windows-reactor` component running in
 its own process; its state lives in the component and changes only in `update`.
 
+## Keep explanations out of the UI
+
+Label controls; do not add sentences that explain what a control does or how to use it. A
+line of text in the settings window earns its place only when it tells the user something
+they could not see otherwise, such as why an action failed.
+
 ## Keeping the tests in step
 
 `DEVELOPMENT.md` describes what the tests cover and what they cannot reach. When winwin's

@@ -24,6 +24,7 @@ const FRACTION_TOLERANCE: f64 = 1e-5;
 
 impl Ratio {
     pub const WHOLE: Ratio = Ratio(1.0);
+    pub const HALF: Ratio = Ratio(0.5);
 
     pub fn new(v: f64) -> Option<Ratio> {
         (v.is_finite() && v > 0.0 && v <= 1.0).then_some(Ratio(v))
