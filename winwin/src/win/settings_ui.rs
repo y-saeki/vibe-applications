@@ -28,7 +28,7 @@ use crate::layout::{Anchor, Rect};
 
 /// The client area in DIPs, which is also as small as the window goes: the
 /// fields and the whole preview fit in it.
-const CLIENT: (f64, f64) = (900.0, 640.0);
+const CLIENT: (f64, f64) = (900.0, 690.0);
 /// The picture of a placement at the left of each line in the list, and the
 /// larger one under the fields.
 const THUMBNAIL: (f64, f64) = (40.0, 24.0);
@@ -282,34 +282,29 @@ impl Component for Settings {
             .grid_row(2)
             .margin(Thickness::new(0.0, 16.0, 0.0, 0.0))
             .children((
-                StackPanel::new()
-                    .orientation(Orientation::Horizontal)
-                    .spacing(24.0)
-                    .children((
-                        CheckBox::new()
-                            .is_checked(self.autostart)
-                            .on_is_checked_changed(context.callback(Msg::Autostart))
-                            .vertical_alignment(VerticalAlignment::Center)
-                            .content("Windows へのサインイン時に winwin を起動する"),
-                        StackPanel::new()
-                            .orientation(Orientation::Horizontal)
-                            .spacing(8.0)
-                            .children((
-                                TextBlock::new()
-                                    .text("表示")
-                                    .vertical_alignment(VerticalAlignment::Center),
-                                ComboBox::new()
-                                    .items_source(Theme::ALL.map(Theme::label))
-                                    .selected_index(
-                                        Theme::ALL.iter().position(|t| *t == self.theme),
-                                    )
-                                    .on_selection_changed(context.callback(Msg::Theme)),
-                            )),
-                    )),
+                StackPanel::new().spacing(12.0).children((
+                    StackPanel::new()
+                        .orientation(Orientation::Horizontal)
+                        .spacing(8.0)
+                        .children((
+                            TextBlock::new()
+                                .text("テーマ")
+                                .vertical_alignment(VerticalAlignment::Center),
+                            ComboBox::new()
+                                .items_source(Theme::ALL.map(Theme::label))
+                                .selected_index(Theme::ALL.iter().position(|t| *t == self.theme))
+                                .on_selection_changed(context.callback(Msg::Theme)),
+                        )),
+                    CheckBox::new()
+                        .is_checked(self.autostart)
+                        .on_is_checked_changed(context.callback(Msg::Autostart))
+                        .content("Windows へのサインイン時に winwin を起動する"),
+                )),
                 StackPanel::new()
                     .orientation(Orientation::Horizontal)
                     .spacing(8.0)
                     .grid_column(1)
+                    .vertical_alignment(VerticalAlignment::Bottom)
                     .children((
                         Button::new()
                             .style(ButtonStyle::Accent)
