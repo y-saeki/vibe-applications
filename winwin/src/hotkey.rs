@@ -78,6 +78,120 @@ pub fn key_name(vk: u32) -> String {
     }
 }
 
+/// The MOD_* flag a modifier key stands for, left and right alike.
+pub fn modifier_of(vk: u32) -> Option<u32> {
+    match vk {
+        0x10 | 0xA0 | 0xA1 => Some(MOD_SHIFT),
+        0x11 | 0xA2 | 0xA3 => Some(MOD_CONTROL),
+        0x12 | 0xA4 | 0xA5 => Some(MOD_ALT),
+        0x5B | 0x5C => Some(MOD_WIN),
+        _ => None,
+    }
+}
+
+/// One key as the settings window draws it: its name, or for the arrow keys
+/// the direction, which reads better as a chevron than as a word.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Keycap {
+    Name(&'static str),
+    Key(u32),
+    Arrow(Arrow),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Arrow {
+    Left,
+    Up,
+    Right,
+    Down,
+}
+
+impl Keycap {
+    /// The text on the cap, for all but the arrows.
+    pub fn label(self) -> Option<String> {
+        match self {
+            Keycap::Name(name) => Some(name.to_string()),
+            Keycap::Key(vk) => Some(key_name(vk)),
+            Keycap::Arrow(_) => None,
+        }
+    }
+}
+
+/// The keys of a combination as the settings window draws them, one cap
+/// each: the modifiers in the order they are written, then the key. The key
+/// is left out while it is 0.
+pub fn keycaps(modifiers: u32, vk: u32) -> Vec<Keycap> {
+    let mut caps: Vec<Keycap> = [
+        (MOD_WIN, "Win"),
+        (MOD_CONTROL, "Ctrl"),
+        (MOD_ALT, "Alt"),
+        (MOD_SHIFT, "Shift"),
+    ]
+    .into_iter()
+    .filter(|(m, _)| modifiers & m != 0)
+    .map(|(_, name)| Keycap::Name(name))
+    .collect();
+    if vk != 0 {
+        caps.push(match vk {
+            0x25 => Keycap::Arrow(Arrow::Left),
+            0x26 => Keycap::Arrow(Arrow::Up),
+            0x27 => Keycap::Arrow(Arrow::Right),
+            0x28 => Keycap::Arrow(Arrow::Down),
+            _ => Keycap::Key(vk),
+        });
+    }
+    caps
+}
+
+/// Follows the keys pressed while the settings window records a shortcut.
+/// Pressing a key that is not a modifier records it with the modifiers held
+/// at that moment; pressing a modifier starts over with just the modifiers
+/// held. Letting go changes what is held, not what was recorded.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Recorder {
+    held: u32,
+    /// What was recorded, as modifiers and a key (0 for none yet).
+    pub modifiers: u32,
+    pub vk: u32,
+}
+
+impl Recorder {
+    /// Starts out showing `modifiers` and `vk`, with nothing held.
+    pub fn showing(modifiers: u32, vk: u32) -> Recorder {
+        Recorder {
+            held: 0,
+            modifiers,
+            vk,
+        }
+    }
+
+    pub fn key_down(&mut self, vk: u32) {
+        match modifier_of(vk) {
+            Some(m) => {
+                self.held |= m;
+                self.modifiers = self.held;
+                self.vk = 0;
+            }
+            None => {
+                self.modifiers = self.held;
+                self.vk = vk;
+            }
+        }
+    }
+
+    pub fn key_up(&mut self, vk: u32) {
+        if let Some(m) = modifier_of(vk) {
+            self.held &= !m;
+        }
+    }
+
+    /// What was recorded as a shortcut, or why it cannot be one. `None`
+    /// while no key other than modifiers has been pressed.
+    pub fn result(&self) -> Option<Result<Hotkey, HotkeyError>> {
+        (self.vk != 0).then(|| Hotkey::new(self.modifiers, self.vk))
+    }
+}
+
 fn parse_key(name: &str) -> Option<u32> {
     let upper = name.to_ascii_uppercase();
     let bytes = upper.as_bytes();
@@ -233,6 +347,67 @@ mod tests {
             let h = Hotkey::new(MOD_CONTROL | MOD_ALT, vk).unwrap();
             assert_eq!(h.to_string().parse::<Hotkey>(), Ok(h), "vk 0x{vk:02X}");
         }
+    }
+
+    #[test]
+    fn records_the_modifiers_held_with_a_key() {
+        let mut r = Recorder::default();
+        assert_eq!(r.result(), None);
+        r.key_down(0xA2); // left Ctrl
+        r.key_down(0xA1); // right Shift
+        assert_eq!((r.modifiers, r.vk), (MOD_CONTROL | MOD_SHIFT, 0));
+        assert_eq!(r.result(), None);
+        r.key_down(0x25);
+        assert_eq!(r.result(), Some(Ok(hk("Ctrl+Shift+Left"))));
+        // Held keys repeat; that records the same thing again.
+        r.key_down(0x25);
+        r.key_up(0x25);
+        r.key_up(0xA1);
+        assert_eq!(r.result(), Some(Ok(hk("Ctrl+Shift+Left"))));
+        // Ctrl is still down: the next key goes with it alone.
+        r.key_down(0x4B);
+        assert_eq!(r.result(), Some(Ok(hk("Ctrl+K"))));
+    }
+
+    #[test]
+    fn a_modifier_starts_the_recording_over() {
+        let mut r = Recorder::default();
+        r.key_down(0x5B);
+        r.key_down(0x41);
+        r.key_up(0x41);
+        r.key_up(0x5B);
+        r.key_down(0xA4); // left Alt
+        assert_eq!((r.modifiers, r.vk), (MOD_ALT, 0));
+        assert_eq!(r.result(), None);
+    }
+
+    #[test]
+    fn says_why_a_recorded_combination_cannot_be_used() {
+        let mut r = Recorder::default();
+        r.key_down(0x10);
+        r.key_down(0x41);
+        assert_eq!(r.result(), Some(Err(HotkeyError::NeedsModifier)));
+    }
+
+    #[test]
+    fn keycaps_follow_the_written_order() {
+        assert_eq!(
+            keycaps(MOD_SHIFT | MOD_CONTROL | MOD_WIN, 0x25),
+            [
+                Keycap::Name("Win"),
+                Keycap::Name("Ctrl"),
+                Keycap::Name("Shift"),
+                Keycap::Arrow(Arrow::Left)
+            ]
+        );
+        let labels: Vec<_> = keycaps(MOD_CONTROL | MOD_ALT, 0x0D)
+            .into_iter()
+            .map(|c| c.label().unwrap())
+            .collect();
+        assert_eq!(labels, ["Ctrl", "Alt", "Enter"]);
+        assert_eq!(keycaps(MOD_ALT, 0), [Keycap::Name("Alt")]);
+        assert_eq!(keycaps(0, 0x28), [Keycap::Arrow(Arrow::Down)]);
+        assert_eq!(Keycap::Arrow(Arrow::Up).label(), None);
     }
 
     #[test]

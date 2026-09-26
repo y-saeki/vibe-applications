@@ -9,19 +9,20 @@ build or change it. The root `CLAUDE.md` describes what goes where.
 
 ## Keep logic out of `src/win/`
 
-`config.rs`, `layout.rs`, `hotkey.rs`, `cycle.rs` and `draft.rs` do not touch Win32, so they build and
+`config.rs`, `layout.rs`, `hotkey.rs`, `cycle.rs`, `draft.rs`, `art.rs` and `icon_res.rs` do not touch Win32, so they build and
 test on any platform. Anything that decides behaviour — what a placement resolves to, what a
 config accepts, what the settings window checks before saving — belongs there, with its
 tests. `src/win/` passes values between those modules and Win32 and should stay thin.
 
 ## The state borrow rule
 
-`with_app` (`src/win/app.rs`) and `with_state` (`src/win/settings.rs`) lend the window
-state out of a `RefCell`. Inside their closures, never call anything that sends a message
-to one of winwin's own windows: a message box, `SetWindowTextW` on a control,
-`SetWindowPos` on the settings window. The window procedure re-enters, the borrow fails,
-and the work is silently dropped. Copy what you need out of the closure and make the call
-after it.
+`with_app` (`src/win/app.rs`) lends the resident part's state out of a `RefCell`. Inside
+its closure, never call anything that sends a message to one of winwin's own windows, such
+as a message box. The window procedure re-enters, the borrow fails, and the work is
+silently dropped. Copy what you need out of the closure and make the call after it.
+
+The settings window (`src/win/settings_ui.rs`) is a `windows-reactor` component running in
+its own process; its state lives in the component and changes only in `update`.
 
 ## Keeping the tests in step
 
@@ -35,6 +36,7 @@ behaviour changes, the file that covers it changes in the same commit:
 | Key names or which combinations are allowed | `mod tests` in `src/hotkey.rs` |
 | How entries that share a shortcut are grouped and take turns | `mod tests` in `src/cycle.rs` |
 | What the settings window stores, checks on save, or shows in its list | `mod tests` in `src/draft.rs` |
+| The icon's picture, or how it is written into the executable | `mod tests` in `src/art.rs` or `src/icon_res.rs` |
 | The main window's class name, the config folder, or the `Run` value name | `installer/installer.nsi`, which closes winwin by that class and removes those on uninstall |
 
 Everything under `src/win/` is out of reach of `cargo test`; `DEVELOPMENT.md` lists the

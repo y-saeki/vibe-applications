@@ -3,17 +3,21 @@
 // Off Windows only the tests use these modules.
 #![cfg_attr(not(windows), allow(dead_code))]
 
+mod art;
 mod config;
 mod cycle;
 mod draft;
 mod hotkey;
+// Used by build.rs; the crate only tests it.
+#[cfg(test)]
+mod icon_res;
 mod layout;
 #[cfg(windows)]
 mod win;
 
 #[cfg(windows)]
 fn main() {
-    win::app::run();
+    win::main();
 }
 
 // The platform-independent modules are built and tested anywhere; the

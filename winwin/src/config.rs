@@ -38,8 +38,38 @@ mod hotkey_string {
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Config {
+    /// Light or dark for winwin's own windows and menu. Left out of the
+    /// file while it follows Windows.
+    #[serde(default, skip_serializing_if = "Theme::is_system")]
+    pub theme: Theme,
     #[serde(default, rename = "shortcut")]
     pub shortcuts: Vec<Shortcut>,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Theme {
+    /// Whatever Windows is set to.
+    #[default]
+    System,
+    Light,
+    Dark,
+}
+
+impl Theme {
+    pub const ALL: [Theme; 3] = [Theme::System, Theme::Light, Theme::Dark];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Theme::System => "Windows の設定に合わせる",
+            Theme::Light => "ライト",
+            Theme::Dark => "ダーク",
+        }
+    }
+
+    fn is_system(&self) -> bool {
+        *self == Theme::System
+    }
 }
 
 #[derive(Debug)]
@@ -91,6 +121,7 @@ impl Config {
     /// What a first run starts with.
     pub fn defaults() -> Config {
         Config {
+            theme: Theme::System,
             shortcuts: vec![
                 shortcut("Ctrl+Alt+Left", Anchor::Left, "1/2", "1"),
                 shortcut("Ctrl+Alt+Right", Anchor::Right, "1/2", "1"),
@@ -175,6 +206,18 @@ mod tests {
         let text = config.to_toml();
         assert!(text.contains(r#"width = "2/3""#), "{text}");
         assert_eq!(parse(&text).unwrap(), config);
+    }
+
+    #[test]
+    fn the_theme_is_written_only_when_chosen() {
+        let mut config = Config::defaults();
+        assert!(!config.to_toml().contains("theme"));
+        config.theme = Theme::Dark;
+        let text = config.to_toml();
+        assert!(text.starts_with("theme = \"dark\""), "{text}");
+        assert_eq!(parse(&text).unwrap(), config);
+        assert_eq!(parse("theme = \"light\"").unwrap().theme, Theme::Light);
+        assert!(parse("theme = \"blue\"").is_err());
     }
 
     #[test]

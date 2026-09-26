@@ -1,5 +1,7 @@
-//! The notification-area icon, drawn at run time at the size the taskbar asks
-//! for, so that there is no resource file to keep in step.
+//! winwin's icon as Windows icon handles, drawn at run time at the size
+//! Windows asks for: in the notification area, and on the settings window's
+//! title bar. The picture itself is art.rs, which build.rs also draws into
+//! the executable's icon.
 
 use windows::Win32::Graphics::Gdi::{
     BI_RGB, BITMAPINFO, BITMAPINFOHEADER, CreateBitmap, CreateDIBSection, DIB_RGB_COLORS,
@@ -7,47 +9,22 @@ use windows::Win32::Graphics::Gdi::{
 };
 use windows::Win32::UI::HiDpi::GetSystemMetricsForDpi;
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateIconIndirect, HICON, ICONINFO, IDI_APPLICATION, LoadIconW, SM_CXSMICON,
+    CreateIconIndirect, HICON, ICONINFO, IDI_APPLICATION, LoadIconW, SM_CXICON, SM_CXSMICON,
+    SYSTEM_METRICS_INDEX,
 };
 
-const BACKGROUND: u32 = 0xFF_2F_6F_EB;
-const FOREGROUND: u32 = 0xFF_FF_FF_FF;
-
-/// A window outline on a rounded blue square, its left half filled: a window
-/// snapped to one side. `size` is the edge in pixels; the result is
-/// top-down ARGB.
-fn pixels(size: usize) -> Vec<u32> {
-    let s = size as f32;
-    let u = s / 16.0;
-    let radius = 3.0 * u;
-    let stroke = u.round().max(1.0);
-    let (fl, fr, ft, fb) = (3.0 * u, 13.0 * u, 4.0 * u, 12.0 * u);
-    let mut out = vec![0u32; size * size];
-    for y in 0..size {
-        for x in 0..size {
-            let (px, py) = (x as f32 + 0.5, y as f32 + 0.5);
-            // Distance outside the rounded square's straight part.
-            let dx = (radius - px).max(px - (s - radius)).max(0.0);
-            let dy = (radius - py).max(py - (s - radius)).max(0.0);
-            if dx * dx + dy * dy > radius * radius {
-                continue;
-            }
-            let inside_frame = px >= fl && px < fr && py >= ft && py < fb;
-            let on_stroke = inside_frame
-                && (px < fl + stroke || px >= fr - stroke || py < ft + stroke || py >= fb - stroke);
-            let in_left_half = inside_frame && px < (fl + fr) / 2.0;
-            out[y * size + x] = if on_stroke || in_left_half {
-                FOREGROUND
-            } else {
-                BACKGROUND
-            };
-        }
-    }
-    out
+/// The small icon: the notification area and title bars.
+pub fn create(dpi: u32) -> HICON {
+    create_sized(SM_CXSMICON, dpi, 16)
 }
 
-pub fn create(dpi: u32) -> HICON {
-    let size = unsafe { GetSystemMetricsForDpi(SM_CXSMICON, dpi) }.max(16);
+/// The large icon: taskbar buttons and Alt+Tab.
+pub fn create_large(dpi: u32) -> HICON {
+    create_sized(SM_CXICON, dpi, 32)
+}
+
+fn create_sized(metric: SYSTEM_METRICS_INDEX, dpi: u32, least: i32) -> HICON {
+    let size = unsafe { GetSystemMetricsForDpi(metric, dpi) }.max(least);
     draw(size).unwrap_or_else(|| unsafe { LoadIconW(None, IDI_APPLICATION).unwrap_or_default() })
 }
 
@@ -68,7 +45,7 @@ fn draw(size: i32) -> Option<HICON> {
     let mut bits = std::ptr::null_mut();
     let color =
         unsafe { CreateDIBSection(None, &info, DIB_RGB_COLORS, &mut bits, None, 0) }.ok()?;
-    let src = pixels(size as usize);
+    let src = crate::art::pixels(size as usize);
     // SAFETY: the section is size × size 32-bit pixels, as requested above.
     unsafe { std::ptr::copy_nonoverlapping(src.as_ptr(), bits.cast::<u32>(), src.len()) };
     // With a 32-bit color bitmap the alpha channel decides transparency; the

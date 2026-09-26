@@ -7,11 +7,8 @@ use std::path::PathBuf;
 use windows::Win32::Foundation::{
     ERROR_ALREADY_EXISTS, GetLastError, HWND, LPARAM, LRESULT, POINT, WPARAM,
 };
-use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+use windows::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress, LoadLibraryW};
 use windows::Win32::System::Threading::CreateMutexW;
-use windows::Win32::UI::Controls::{
-    ICC_HOTKEY_CLASS, ICC_STANDARD_CLASSES, INITCOMMONCONTROLSEX, InitCommonControlsEx,
-};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetAsyncKeyState, HOT_KEY_MODIFIERS, MOD_NOREPEAT, RegisterHotKey, UnregisterHotKey,
     VIRTUAL_KEY, VK_CONTROL, VK_LWIN, VK_MENU, VK_RWIN, VK_SHIFT,
@@ -28,13 +25,13 @@ use windows::Win32::UI::WindowsAndMessaging::{
     TPM_RETURNCMD, TPM_RIGHTBUTTON, TrackPopupMenu, TranslateMessage, WINDOW_EX_STYLE,
     WM_CONTEXTMENU, WM_DESTROY, WM_HOTKEY, WM_TIMER, WNDCLASSEXW, WS_OVERLAPPED,
 };
-use windows::core::{HSTRING, PCWSTR, w};
+use windows::core::{HSTRING, PCSTR, PCWSTR, w};
 
 use super::{
     APP_NAME, WM_APP_OPEN_SETTINGS, WM_APP_SETTINGS_CLOSED, WM_APP_TRAY, config_path,
     copy_to_field, error_box, icon, loword, mover, settings,
 };
-use crate::config::Config;
+use crate::config::{Config, Theme};
 use crate::cycle::{self, Binding, Cycle};
 use crate::hotkey::{MOD_ALT, MOD_CONTROL, MOD_SHIFT, MOD_WIN};
 
@@ -65,6 +62,8 @@ struct App {
     taskbar_created: u32,
     /// How many hotkey ids are registered, from 1 up.
     registered: i32,
+    /// The settings window, while it is open.
+    settings: Option<settings::Child>,
     /// Whether the user has already been told that elevated windows cannot
     /// be moved; once per run is enough.
     told_access_denied: bool,
@@ -93,13 +92,6 @@ pub fn run() {
         return;
     }
 
-    unsafe {
-        let _ = InitCommonControlsEx(&INITCOMMONCONTROLSEX {
-            dwSize: size_of::<INITCOMMONCONTROLSEX>() as u32,
-            dwICC: ICC_STANDARD_CLASSES | ICC_HOTKEY_CLASS,
-        });
-    }
-
     let hwnd = match create_main_window() {
         Ok(hwnd) => hwnd,
         Err(e) => {
@@ -124,6 +116,7 @@ pub fn run() {
             icon: icon::create(dpi),
             taskbar_created: unsafe { RegisterWindowMessageW(w!("TaskbarCreated")) },
             registered: 0,
+            settings: None,
             told_access_denied: false,
         })
     });
@@ -141,9 +134,6 @@ pub fn run() {
 
     let mut msg = MSG::default();
     while unsafe { GetMessageW(&mut msg, None, 0, 0) }.as_bool() {
-        if settings::is_dialog_message(&msg) {
-            continue;
-        }
         unsafe {
             let _ = TranslateMessage(&msg);
             DispatchMessageW(&msg);
@@ -324,24 +314,41 @@ fn stop_cycle() {
 }
 
 fn open_settings() {
-    let Some((hwnd, config, path)) =
-        with_app(|app| (app.hwnd, app.config.clone(), app.path.clone()))
-    else {
+    let Some((hwnd, open)) = with_app(|app| {
+        if let Some(child) = &app.settings {
+            child.bring_forward();
+        }
+        (app.hwnd, app.settings.is_some())
+    }) else {
         return;
     };
-    // The shortcut field has to see key combinations that are registered as
-    // shortcuts, so they are released for as long as the window is open.
-    if settings::open(hwnd, &config, &path) {
-        unregister_hotkeys();
+    if open {
+        return;
+    }
+    // Shortcuts are released for as long as the window is open, so that
+    // pressing one while editing does not move the settings window about.
+    unregister_hotkeys();
+    match settings::open(hwnd) {
+        Ok(child) => {
+            with_app(|app| app.settings = Some(child));
+        }
+        Err(e) => {
+            error_box(None, &format!("設定を開けませんでした。\n{e}"));
+            register_hotkeys();
+        }
     }
 }
 
 /// The settings window has closed, saved or not. The file is the truth
 /// either way, so it is read again rather than handed over.
 fn on_settings_closed() {
-    let Some(path) = with_app(|app| app.path.clone()) else {
+    let Some((path, child)) = with_app(|app| (app.path.clone(), app.settings.take())) else {
         return;
     };
+    let Some(child) = child else {
+        return;
+    };
+    child.release();
     match Config::load_or_create(&path) {
         Ok(config) => {
             with_app(|app| {
@@ -354,7 +361,44 @@ fn on_settings_closed() {
     register_hotkeys();
 }
 
+/// Makes the tray menu light or dark as the settings say, following Windows
+/// by default as the menus of Explorer and most other applications do.
+/// Windows offers this only through two undocumented uxtheme.dll exports,
+/// known by ordinal: 135 is SetPreferredAppMode (1 follows Windows, 2 forces
+/// dark, 3 forces light; on 1809 it is AllowDarkModeForApp, where any of
+/// them allows dark), 136 FlushMenuThemes. Should a Windows update drop them,
+/// the menu is simply light.
+fn apply_menu_theme(theme: Theme) {
+    let mode = match theme {
+        Theme::System => 1,
+        Theme::Dark => 2,
+        Theme::Light => 3,
+    };
+    unsafe {
+        let Ok(uxtheme) = LoadLibraryW(w!("uxtheme.dll")) else {
+            return;
+        };
+        if let Some(f) = GetProcAddress(uxtheme, PCSTR(135 as *const u8)) {
+            // SAFETY: ordinal 135 takes one int on every Windows version
+            // that has it.
+            let set_preferred_app_mode: unsafe extern "system" fn(i32) -> i32 =
+                std::mem::transmute(f);
+            set_preferred_app_mode(mode);
+        }
+        if let Some(f) = GetProcAddress(uxtheme, PCSTR(136 as *const u8)) {
+            // SAFETY: ordinal 136 takes nothing and returns nothing.
+            let flush_menu_themes: unsafe extern "system" fn() = std::mem::transmute(f);
+            flush_menu_themes();
+        }
+    }
+}
+
 fn show_menu(hwnd: HWND) {
+    // Every time, so that a change of theme since the last menu is picked
+    // up.
+    if let Some(theme) = with_app(|app| app.config.theme) {
+        apply_menu_theme(theme);
+    }
     let Ok(menu) = (unsafe { CreatePopupMenu() }) else {
         return;
     };
@@ -417,7 +461,9 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
             LRESULT(0)
         }
         WM_DESTROY => {
-            settings::close();
+            if let Some(child) = with_app(|app| app.settings.take()).flatten() {
+                child.terminate();
+            }
             unregister_hotkeys();
             remove_tray_icon();
             if let Some(icon) = with_app(|app| app.icon) {

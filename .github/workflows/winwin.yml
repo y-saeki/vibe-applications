@@ -70,7 +70,9 @@ jobs:
             choco install nsis -y --no-progress
             $makensis = "${env:ProgramFiles(x86)}\NSIS\makensis.exe"
           }
-          & $makensis /V2 /INPUTCHARSET UTF8 "/DVERSION=$version" /DEXE=..\target\release\winwin.exe "/DOUTFILE=..\target\release\winwin_${version}_x64-setup.exe" installer.nsi
+          # winwin.exe and the Windows App Runtime files build.rs staged beside it.
+          ./payload.ps1 -Dir ..\target\release -Out payload.nsh
+          & $makensis /V2 /INPUTCHARSET UTF8 "/DVERSION=$version" /DPAYLOAD=payload.nsh "/DOUTFILE=..\target\release\winwin_${version}_x64-setup.exe" installer.nsi
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:

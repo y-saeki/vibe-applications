@@ -1,6 +1,6 @@
 [package]
 name = "winwin"
-version = "0.5.0"
+version = "0.6.0"
 edition = "2024"
 publish = false
 description = "A keyboard-driven window placer for Windows"
@@ -10,9 +10,10 @@ serde = { version = "1", features = ["derive"] }
 toml = "1"
 
 [build-dependencies]
-embed-manifest = "1.5"
+windows-reactor-setup = "0.100"
 
 [target.'cfg(windows)'.dependencies]
+windows-reactor = "0.100"
 windows = { version = "0.62", features = [
   "Win32_Foundation",
   "Win32_Graphics_Dwm",
