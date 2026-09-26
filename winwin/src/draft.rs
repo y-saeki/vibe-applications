@@ -234,6 +234,20 @@ impl Editor {
         }
         Ok(config)
     }
+
+    /// The rows that make a shortcut as they stand, in list order, without
+    /// saving anything: what the test window answers to. A row still being
+    /// filled in is left out rather than holding up the rest.
+    pub fn trial_config(&self) -> Config {
+        Config {
+            shortcuts: self
+                .rows
+                .iter()
+                .filter_map(|(_, row)| row.to_shortcut().ok())
+                .collect(),
+            ..Config::default()
+        }
+    }
 }
 
 /// Where row `index` of `len` lands when moved one place up or down, or
@@ -392,6 +406,23 @@ mod tests {
             error,
             "(未設定)    中央 1/2 × 1/2: ショートカットを設定してください"
         );
+    }
+
+    #[test]
+    fn the_test_window_takes_the_rows_that_make_a_shortcut() {
+        let mut e = editor();
+        e.add();
+        e.select(0);
+        e.edit(|d| d.width = "5".into());
+        let keys: Vec<String> = e
+            .trial_config()
+            .shortcuts
+            .iter()
+            .map(|s| s.keys.to_string())
+            .collect();
+        assert_eq!(keys, ["Ctrl+Alt+Right", "Ctrl+Alt+Up"]);
+        // Nothing is selected or saved on the way.
+        assert_eq!(e.current(), Some(0));
     }
 
     #[test]

@@ -10,8 +10,7 @@ use windows::Win32::Foundation::{
 use windows::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress, LoadLibraryW};
 use windows::Win32::System::Threading::CreateMutexW;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    GetAsyncKeyState, HOT_KEY_MODIFIERS, MOD_NOREPEAT, RegisterHotKey, UnregisterHotKey,
-    VIRTUAL_KEY, VK_CONTROL, VK_LWIN, VK_MENU, VK_RWIN, VK_SHIFT,
+    HOT_KEY_MODIFIERS, MOD_NOREPEAT, RegisterHotKey, UnregisterHotKey,
 };
 use windows::Win32::UI::Shell::{
     NIF_ICON, NIF_INFO, NIF_MESSAGE, NIF_TIP, NIIF_WARNING, NIM_ADD, NIM_DELETE, NIM_MODIFY,
@@ -29,11 +28,10 @@ use windows::core::{HSTRING, PCSTR, PCWSTR, w};
 
 use super::{
     APP_NAME, WM_APP_OPEN_SETTINGS, WM_APP_SETTINGS_CLOSED, WM_APP_TRAY, config_path,
-    copy_to_field, error_box, icon, loword, mover, settings,
+    copy_to_field, error_box, icon, loword, modifiers_held, mover, settings,
 };
 use crate::config::{Config, Theme};
 use crate::cycle::{self, Binding, Cycle};
-use crate::hotkey::{MOD_ALT, MOD_CONTROL, MOD_SHIFT, MOD_WIN};
 
 /// The installer finds a running winwin by this name to close it
 /// (installer/installer.nsi, MAIN_CLASS).
@@ -276,19 +274,6 @@ fn on_hotkey(id: usize) {
             );
         }
     }
-}
-
-fn is_down(vk: VIRTUAL_KEY) -> bool {
-    (unsafe { GetAsyncKeyState(i32::from(vk.0)) }) < 0
-}
-
-/// Whether every modifier in `modifiers` (MOD_*) is still held.
-fn modifiers_held(modifiers: u32) -> bool {
-    let held = |m: u32, down: bool| modifiers & m == 0 || down;
-    held(MOD_CONTROL, is_down(VK_CONTROL))
-        && held(MOD_ALT, is_down(VK_MENU))
-        && held(MOD_SHIFT, is_down(VK_SHIFT))
-        && held(MOD_WIN, is_down(VK_LWIN) || is_down(VK_RWIN))
 }
 
 /// Letting go of any modifier of the cycling shortcut counts as letting go:

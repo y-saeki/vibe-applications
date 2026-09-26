@@ -14,8 +14,9 @@ use windows::Win32::System::Threading::{
     STARTUPINFOW, TerminateProcess, UnregisterWait, WT_EXECUTEONLYONCE,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    AllowSetForegroundWindow, EnumWindows, GW_OWNER, GetWindow, GetWindowThreadProcessId, IsIconic,
-    IsWindowVisible, PostMessageW, SW_RESTORE, SetForegroundWindow, ShowWindow,
+    AllowSetForegroundWindow, EnumWindows, GW_OWNER, GWL_EXSTYLE, GetWindow, GetWindowLongPtrW,
+    GetWindowThreadProcessId, IsIconic, IsWindowVisible, PostMessageW, SW_RESTORE,
+    SetForegroundWindow, ShowWindow, WS_EX_TOOLWINDOW,
 };
 use windows::core::{BOOL, PWSTR};
 
@@ -112,7 +113,11 @@ impl Child {
             let mut pid = 0;
             unsafe { GetWindowThreadProcessId(hwnd, Some(&mut pid)) };
             let top_level = unsafe { GetWindow(hwnd, GW_OWNER) }.is_err();
-            if pid == found.0 && top_level && unsafe { IsWindowVisible(hwnd) }.as_bool() {
+            // The test window (testwin.rs) is a tool window of the same
+            // process; it is not the one to bring forward.
+            let tool =
+                unsafe { GetWindowLongPtrW(hwnd, GWL_EXSTYLE) } as u32 & WS_EX_TOOLWINDOW.0 != 0;
+            if pid == found.0 && top_level && !tool && unsafe { IsWindowVisible(hwnd) }.as_bool() {
                 found.1 = hwnd;
                 return false.into();
             }

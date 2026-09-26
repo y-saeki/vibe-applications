@@ -116,7 +116,11 @@ pub fn place_foreground(placement: &Placement) -> Result<(), MoveError> {
     if unsafe { IsZoomed(hwnd) }.as_bool() {
         let _ = unsafe { ShowWindow(hwnd, SW_RESTORE) };
     }
+    place(hwnd, placement)
+}
 
+/// Puts `hwnd` where `placement` says on the monitor it is on.
+pub fn place(hwnd: HWND, placement: &Placement) -> Result<(), MoveError> {
     let monitor = unsafe { MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST) };
     let mut info = MONITORINFO {
         cbSize: size_of::<MONITORINFO>() as u32,

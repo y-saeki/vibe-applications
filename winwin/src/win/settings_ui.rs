@@ -22,7 +22,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use windows::core::BOOL;
 use windows_reactor::*;
 
-use super::{autostart, config_path, error_box, icon, keyhook};
+use super::{autostart, config_path, error_box, icon, keyhook, testwin};
 use crate::config::{Config, Theme};
 use crate::draft::{Draft, Editor};
 use crate::hotkey::{self, Arrow, Keycap, Recorder};
@@ -103,6 +103,11 @@ struct Settings {
     confirming: bool,
     /// The ショートカットを設定 dialog is open, with what it has recorded.
     recording: Option<Recorder>,
+    /// The test window is open (testwin.rs).
+    testing: bool,
+    /// Why the test window cannot be tried as it stands: it did not open, or
+    /// shortcuts it could not take.
+    test_problem: Option<String>,
 }
 
 #[derive(Clone)]
@@ -131,6 +136,9 @@ enum Msg {
     Cancel,
     Confirmed(ContentDialogResult),
     DismissError,
+    /// Opens or closes the test window. It also sends `Test(false)` when
+    /// asked to close by itself.
+    Test(bool),
 }
 
 thread_local! {
@@ -157,6 +165,8 @@ impl Component for Settings {
             error: None,
             confirming: false,
             recording: None,
+            testing: false,
+            test_problem: None,
         }
     }
 
@@ -213,6 +223,9 @@ impl Component for Settings {
             Msg::Theme(i) => {
                 if let Some(&theme) = i.and_then(|i| Theme::ALL.get(i)) {
                     self.theme = theme;
+                    if self.testing {
+                        testwin::set_theme(theme);
+                    }
                 }
             }
             Msg::Save => self.save(context),
@@ -233,7 +246,23 @@ impl Component for Settings {
                 }
             }
             Msg::DismissError => self.error = None,
+            Msg::Test(true) => {
+                let sender = context.sender();
+                let opened = testwin::open(self.theme, move || {
+                    sender.send(Msg::Test(false));
+                });
+                self.testing = opened.is_ok();
+                self.test_problem = opened
+                    .err()
+                    .map(|e| format!("テスト用ウィンドウを開けませんでした。{e}"));
+            }
+            Msg::Test(false) => {
+                testwin::close();
+                self.testing = false;
+                self.test_problem = None;
+            }
         }
+        self.sync_test_window();
     }
 
     fn view(&self, input: &Input, context: &mut ViewContext<Self>) -> View {
@@ -336,6 +365,26 @@ impl Component for Settings {
 }
 
 impl Settings {
+    /// Gives the test window the shortcuts as they now stand. None while a
+    /// shortcut is being recorded: the keys pressed there are for the dialog.
+    fn sync_test_window(&mut self) {
+        if !self.testing {
+            return;
+        }
+        let config = if self.recording.is_some() {
+            Config::default()
+        } else {
+            self.editor.trial_config()
+        };
+        let failed = testwin::set_shortcuts(&config);
+        self.test_problem = (!failed.is_empty()).then(|| {
+            format!(
+                "他のアプリケーションか Windows が使用中のため試せません: {}",
+                failed.join("、")
+            )
+        });
+    }
+
     fn start_recording(&mut self, context: &ComponentContext<Self>) {
         let Some(d) = self.editor.selected() else {
             return;
@@ -514,8 +563,8 @@ impl Settings {
             ));
 
         Grid::new()
-            .rows([GridLength::STAR, GridLength::Auto])
-            .children((list, buttons))
+            .rows([GridLength::STAR, GridLength::Auto, GridLength::Auto])
+            .children((list, buttons, self.test_section(context)))
     }
 
     /// The selected shortcut's fields and a preview of where it puts a
@@ -583,6 +632,44 @@ impl Settings {
             size,
             field("プレビュー", preview),
         ))
+    }
+
+    /// Under the list, as it tries every shortcut in it: the button that
+    /// opens and closes the test window, and a line on what it does or what
+    /// stands in its way.
+    fn test_section(&self, context: &mut ViewContext<Self>) -> View {
+        let (label, glyph) = if self.testing {
+            ("テスト用ウィンドウを閉じる", "\u{E711}")
+        } else {
+            ("テスト用ウィンドウを開く", "\u{E8A7}")
+        };
+        let note = match &self.test_problem {
+            Some(problem) => TextBlock::new()
+                .text(problem.clone())
+                .foreground(ThemeBrush::SystemCritical),
+            None => TextBlock::new()
+                .text(if self.testing {
+                    "ショートカットを押すと、保存前の設定でテスト用ウィンドウが動きます。"
+                } else {
+                    "保存する前に、ショートカットの動きを試せます。"
+                })
+                .opacity(0.7),
+        };
+        StackPanel::new()
+            .spacing(8.0)
+            .grid_row(2)
+            .margin(Thickness::new(0.0, 16.0, 0.0, 0.0))
+            .children((
+                Button::new()
+                    .on_click(context.message(Msg::Test(!self.testing)))
+                    .content(
+                        StackPanel::new()
+                            .orientation(Orientation::Horizontal)
+                            .spacing(8.0)
+                            .children((FontIcon::new().glyph(glyph), label)),
+                    ),
+                note.text_wrapping(TextWrapping::Wrap),
+            ))
     }
 }
 
