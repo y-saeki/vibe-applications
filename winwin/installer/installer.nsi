@@ -1,6 +1,10 @@
-; The Windows installer. Built by CI after `cargo build --release`:
+﻿; The Windows installer. Keep this file UTF-8 with a BOM: without one,
+; makensis on Windows reads it in the system code page and the Japanese
+; strings below come out garbled.
 ;
-;   makensis /DVERSION=<version> /DEXE=<path to winwin.exe> /DOUTFILE=<setup.exe> installer.nsi
+; Built by CI after `cargo build --release`:
+;
+;   makensis /INPUTCHARSET UTF8 /DVERSION=<version> /DEXE=<path to winwin.exe> /DOUTFILE=<setup.exe> installer.nsi
 ;
 ; It follows what draftpad's installer does (draftpad/src-tauri/installer.nsi,
 ; see draftpad/DEVELOPMENT.md): a per-user install without elevation, a

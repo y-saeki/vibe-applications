@@ -34,7 +34,7 @@ cargo build --release  # 配布用ビルド: target/release/winwin.exe
 
 ```sh
 cd winwin/installer
-makensis /DVERSION=0.1.0 /DEXE=../target/release/winwin.exe /DOUTFILE=../target/release/winwin_0.1.0_x64-setup.exe installer.nsi
+makensis /INPUTCHARSET UTF8 /DVERSION=0.1.0 /DEXE=../target/release/winwin.exe /DOUTFILE=../target/release/winwin_0.1.0_x64-setup.exe installer.nsi
 ```
 
 デバッグビルドはコンソールサブシステムで、リリースビルドだけがコンソールを持たない GUI サブシステムです
@@ -52,7 +52,7 @@ CI(`.github/workflows/winwin.yml`)は `windows-latest` でこの 3 つとリリ�
 
 ## Pull Request のビルド
 
-`winwin/` を変更する Pull Request では、GitHub Actions が Windows 版をビルドし、成功するとインストーラと exe 単体への
+`winwin/` を変更する Pull Request では、GitHub Actions が Windows 版をビルドし、成功するとインストーラへの
 ダウンロードリンクを Pull Request にコメントします。push のたびに新しいコメントを投稿し、前回までのコメントは outdated として畳みます。
 リンク先のダウンロードには GitHub へのログインが必要で、成果物には保持期限があります(期限はコメントに書かれます)。
 
@@ -178,6 +178,10 @@ hotkey コントロールには Windows キーを表すフラグがないので�
 トレイメニューの「終了」と同じ後始末(通知領域アイコンの削除など)を通るためです。`src/win/app.rs` のクラス名を
 変えるときは、スクリプトの `MAIN_CLASS` も合わせてください。
 
+スクリプトは BOM 付きの UTF-8 です。BOM がないと、Windows の `makensis` はシステムの文字コード(英語版の
+ランナーでは CP1252)で読むため、スクリプトに直接書いた日本語(完了画面のチェックボックスやメッセージ)が
+文字化けします。CI はさらに `/INPUTCHARSET UTF8` を渡しています。
+
 スタブは NSIS 既定の 32 ビット(x86)版です。64 ビットでない Windows では `.onInit` で止めます。
 Wine で試すときに 32 ビットの Wine がなければ、`makensis "-XTarget amd64-unicode" ...` で 64 ビット版を作れば動きます
 (Linux の NSIS パッケージには amd64 のスタブが入っています)。
@@ -224,9 +228,8 @@ Windows がない環境では、`x86_64-pc-windows-gnu` ターゲット(mingw-w6
 バージョンの実体は `Cargo.toml` の `version` です。書き換えたら `cargo update -p winwin` で `Cargo.lock` も追随させてください。
 
 `main` ブランチで `Cargo.toml` の `version` が上がると、GitHub Actions が `winwin-v<version>` タグの Release を作り、
-インストーラ `winwin_<version>_x64-setup.exe` と exe 単体の `winwin.exe` を添付します。exe 単体のファイル名に
-バージョンを含めないのは、自動起動のレジストリが exe のパスを指しているためです。同じ名前で上書きすれば、
-更新後も自動起動がそのまま働きます。インストーラも常に同じフォルダの `winwin.exe` を上書きします。
+インストーラ `winwin_<version>_x64-setup.exe` を添付します。インストーラは常に同じフォルダの `winwin.exe` を
+上書きするので、自動起動のレジストリが指す exe のパスは更新後も変わりません。
 
 ### 上げ忘れを CI が止めます
 
@@ -238,5 +241,5 @@ Windows がない環境では、`x86_64-pc-windows-gnu` ターゲット(mingw-w6
 
 リリースするつもりがない変更(ドキュメントだけ、CI だけ、など)では、Pull Request に `no-release` ラベルを付けてください。
 
-配布物はコード署名をしていないため、ダウンロードしたインストーラと `winwin.exe` の実行時に SmartScreen の警告が出ます。
+配布物はコード署名をしていないため、ダウンロードしたインストーラの実行時に SmartScreen の警告が出ます。
 手順は README.md に書いてあります。

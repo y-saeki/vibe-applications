@@ -70,20 +70,15 @@ jobs:
             choco install nsis -y --no-progress
             $makensis = "${env:ProgramFiles(x86)}\NSIS\makensis.exe"
           }
-          & $makensis /V2 "/DVERSION=$version" /DEXE=..\target\release\winwin.exe "/DOUTFILE=..\target\release\winwin_${version}_x64-setup.exe" installer.nsi
+          & $makensis /V2 /INPUTCHARSET UTF8 "/DVERSION=$version" /DEXE=..\target\release\winwin.exe "/DOUTFILE=..\target\release\winwin_${version}_x64-setup.exe" installer.nsi
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: winwin-setup
           if-no-files-found: error
           path: winwin/target/release/winwin_*_x64-setup.exe
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: winwin-exe
-          if-no-files-found: error
-          path: winwin/target/release/winwin.exe
 
-  # The pull request itself only shows a check mark, so point at the binaries
+  # The pull request itself only shows a check mark, so point at the installer
   # the run just uploaded instead of making the reader walk the Actions tab.
   notify:
     needs: build
@@ -153,7 +148,7 @@ jobs:
             ' > "${RUNNER_TEMP}/previous-comments.txt"
       # A new comment every time: editing the previous one sends no
       # notification, so a rebuild would pass unnoticed.
-      - name: Comment the download links
+      - name: Comment the download link
         run: |
           artifacts="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts")"
           if [ "$(jq '.artifacts | length' <<<"${artifacts}")" -eq 0 ]; then
@@ -165,18 +160,11 @@ jobs:
             "<!-- winwin-build-artifacts -->",
             "## ビルド成果物",
             "",
-            def kind: {
-              "winwin-setup": "Windows インストーラ (-setup.exe)",
-              "winwin-exe": "Windows 実行ファイルのみ (winwin.exe)"
-            }[.] // .;
-            def rank: { "winwin-setup": 0, "winwin-exe": 1 }[.] // 2;
-            (.artifacts | sort_by([(.name | rank), .name])[]
-              | "- [ ] [\(.name | kind)](\($run_url)/artifacts/\(.id)) — \(.size_in_bytes | megabytes) MB"),
+            (.artifacts[] | "- [ ] [Windows (-setup.exe)](\($run_url)/artifacts/\(.id)) — \(.size_in_bytes | megabytes) MB"),
             "",
             "> [!TIP]",
             "> - ダウンロードには GitHub へのログインが必要です(保持期限: \(.artifacts[0].expires_at | fromdateiso8601 | strftime("%Y-%m-%d")))",
             "> - インストーラは起動中の winwin を終了させてから上書きします。",
-            "> - 実行ファイルのみを試すときは、起動中の winwin を先にトレイアイコンのメニューから終了してください。",
             "",
             "## ビルド情報",
             "",
@@ -199,7 +187,7 @@ jobs:
               }' >/dev/null || echo "::warning::could not collapse the comment ${id}"
           done < "${RUNNER_TEMP}/previous-comments.txt"
 
-  # Publishes the binaries built above whenever the version in Cargo.toml names
+  # Publishes the installer built above whenever the version in Cargo.toml names
   # a release that does not exist yet. Merging without a version bump is
   # therefore a no-op.
   release:
@@ -232,27 +220,20 @@ jobs:
       - if: steps.meta.outputs.exists == 'false'
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          pattern: winwin-*
-          merge-multiple: true
+          name: winwin-setup
           path: artifacts
-      # The bare executable keeps the plain name winwin.exe, without the
-      # version: the sign-in entry points at the file, so an update that
-      # overwrites it in place keeps working.
       - if: steps.meta.outputs.exists == 'false'
         run: |
           setup="artifacts/winwin_${{ steps.meta.outputs.version }}_x64-setup.exe"
-          for f in "${setup}" artifacts/winwin.exe; do
-            if [ ! -f "${f}" ]; then
-              echo "::error::the build uploaded no ${f#artifacts/}"
-              find artifacts -type f
-              exit 1
-            fi
-          done
+          if [ ! -f "${setup}" ]; then
+            echo "::error::the build uploaded no ${setup#artifacts/}"
+            find artifacts -type f
+            exit 1
+          fi
           cat > notes.md <<'NOTES'
           ## ダウンロード
 
-          - Windows 10 / 11 (x64): `-setup.exe`(インストーラ)
-          - インストールせずに使う場合: `winwin.exe`
+          - Windows 10 / 11 (x64): `-setup.exe`
 
           インストール手順は [README](${{ github.server_url }}/${{ github.repository }}/blob/${{ steps.meta.outputs.tag }}/winwin/README.md) を参照してください。
           NOTES
@@ -261,4 +242,4 @@ jobs:
             --notes-file notes.md \
             --generate-notes \
             --target "${GITHUB_SHA}" \
-            "${setup}" artifacts/winwin.exe
+            "${setup}"
