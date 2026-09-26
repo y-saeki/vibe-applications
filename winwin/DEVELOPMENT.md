@@ -4,7 +4,7 @@ winwin をビルド・変更するための情報です。使い方やインス�
 
 Rust と [`windows`](https://crates.io/crates/windows) クレート(Win32 API のバインディング)で書いた、単一の exe です。
 GUI フレームワークは使わず、設定画面も Win32 の標準コントロールで組んでいます。配布対象は Windows (x64) だけで、
-GitHub Actions の `windows-latest` でビルドします。
+GitHub Actions の `windows-latest` でビルドし、[NSIS](https://nsis.sourceforge.io/) でインストーラを作ります。
 
 ## 開発に必要なもの
 
@@ -12,6 +12,7 @@ GitHub Actions の `windows-latest` でビルドします。
 |---|---|
 | [Rust](https://rustup.rs/)(stable) | `rustup` でインストール |
 | Windows: Visual Studio Build Tools | 「C++ によるデスクトップ開発」を選択。Rust は MSVC ツールチェーンを既定にする |
+| [NSIS](https://nsis.sourceforge.io/) 3 | インストーラを作るときだけ。`makensis` が使えればよく、Linux のパッケージでも構いません |
 
 Windows 以外でも、Win32 に触れない部分(設定ファイル・配置の計算・ショートカットの表記・設定画面の編集中データ)は
 そのままビルド・テストできます。Win32 側の型検査は `x86_64-pc-windows-msvc` ターゲットで行えます(リンクはできません)。
@@ -29,6 +30,13 @@ cargo run              # デバッグビルドで起動(コンソールが開き
 cargo build --release  # 配布用ビルド: target/release/winwin.exe
 ```
 
+インストーラ(`installer/installer.nsi`)は、リリースビルドの exe を渡して作ります。
+
+```sh
+cd winwin/installer
+makensis /DVERSION=0.1.0 /DEXE=../target/release/winwin.exe /DOUTFILE=../target/release/winwin_0.1.0_x64-setup.exe installer.nsi
+```
+
 デバッグビルドはコンソールサブシステムで、リリースビルドだけがコンソールを持たない GUI サブシステムです
 (`src/main.rs` の `windows_subsystem`)。
 
@@ -40,12 +48,12 @@ cargo clippy --all-targets -- -D warnings
 cargo test
 ```
 
-CI(`.github/workflows/winwin.yml`)は `windows-latest` でこの 3 つとリリースビルドを実行します。
+CI(`.github/workflows/winwin.yml`)は `windows-latest` でこの 3 つとリリースビルド、インストーラの作成を実行します。
 
 ## Pull Request のビルド
 
-`winwin/` を変更する Pull Request では、GitHub Actions が Windows 版をビルドし、成功すると成果物へのダウンロードリンクを
-Pull Request にコメントします。push のたびに新しいコメントを投稿し、前回までのコメントは outdated として畳みます。
+`winwin/` を変更する Pull Request では、GitHub Actions が Windows 版をビルドし、成功するとインストーラと exe 単体への
+ダウンロードリンクを Pull Request にコメントします。push のたびに新しいコメントを投稿し、前回までのコメントは outdated として畳みます。
 リンク先のダウンロードには GitHub へのログインが必要で、成果物には保持期限があります(期限はコメントに書かれます)。
 
 ## 構成
@@ -53,6 +61,8 @@ Pull Request にコメントします。push のたびに新しいコメント�
 ```
 winwin/
 ├── build.rs            # アプリケーションマニフェストの埋め込み
+├── installer/
+│   └── installer.nsi   # Windows インストーラ(NSIS)
 └── src/
     ├── main.rs
     ├── config.rs       # 設定ファイルの型・読み書き・初期値・検証
@@ -149,6 +159,29 @@ hotkey コントロールには Windows キーを表すフラグがないので�
 借用に失敗します(`try_borrow_mut` なので落ちはしませんが、その処理は黙って捨てられます)。値を取り出してから
 クロージャの外で呼ぶのが決まりです。
 
+### Windows インストーラ(NSIS)
+
+`installer/installer.nsi` は winwin 用に書いた NSIS スクリプトです。winwin は Tauri を使っていないので Tauri の
+テンプレートは使えませんが、振る舞いは draftpad のインストーラ(`draftpad/src-tauri/installer.nsi`)に揃えています。
+
+| 項目 | 内容 |
+|---|---|
+| インストール先 | ユーザー単位(`%LOCALAPPDATA%\winwin`)。管理者権限を求めません。前回のインストール先があればそちらを既定にします |
+| 旧バージョンがあるとき | 確認せずに上書きします(draftpad が既定で選ぶ「上書きする」と同じ) |
+| 起動中の winwin | 確認ダイアログを出さずに終了させます。インストーラ・アンインストーラのどちらも |
+| インストール後 | ログの画面で止まらず、完了画面まで自動で進みます |
+| 完了画面 | 「winwin を起動する」と「デスクトップにショートカットを作成する」。後者は上書きインストールのときだけ外した状態で出します |
+| スタートメニュー | `winwin` のショートカットを置きます |
+| アンインストール | 「設定」→「アプリ」に登録します。exe・ショートカットに加えて、自動起動の `Run` の値も消します。`%APPDATA%\winwin` の設定は、消すかどうかを聞きます(既定は残す。サイレント実行では残します) |
+
+起動中の winwin は、隠しウィンドウのクラス名 `winwin.main` を `FindWindow` で探し、`WM_CLOSE` を送って終わらせます。
+トレイメニューの「終了」と同じ後始末(通知領域アイコンの削除など)を通るためです。`src/win/app.rs` のクラス名を
+変えるときは、スクリプトの `MAIN_CLASS` も合わせてください。
+
+スタブは NSIS 既定の 32 ビット(x86)版です。64 ビットでない Windows では `.onInit` で止めます。
+Wine で試すときに 32 ビットの Wine がなければ、`makensis "-XTarget amd64-unicode" ...` で 64 ビット版を作れば動きます
+(Linux の NSIS パッケージには amd64 のスタブが入っています)。
+
 ### 通知領域アイコン
 
 リソースファイルを持たず、実行時に `icon.rs` がピクセルを描いて作ります。exe 自体のアイコンは Windows 既定のものです。
@@ -171,10 +204,14 @@ hotkey コントロールには Windows キーを表すフラグがないので�
 - 設定画面の表示・入力・保存、DPI の違うモニターへの移動
 - 通知領域アイコン、メニュー、バルーン通知、Explorer 再起動後の再表示
 - 自動起動のレジストリ
+- インストーラとアンインストーラ(CI は `makensis` が通ることまでを確かめます)
 
 手で確かめるときは、少なくとも次を通してください: 初回起動で設定ファイルができる / 既定のショートカットで左右半分・
 四隅・中央に動く / 最大化中のウィンドウが解除されて動く / 設定画面で追加・複製・削除・保存ができ、閉じたあと新しい
 ショートカットが効く / 起動中にもう一度起動すると設定画面が開く / トレイメニューの「終了」でアイコンが消えて終了する。
+インストーラを変えたときは: 新規インストール / winwin の起動中に上書きインストール(winwin が終了し、完了画面の
+デスクトップショートカットが外れている)/ アンインストールで、ファイル・スタートメニュー・「設定」→「アプリ」の項目・
+自動起動の値が消える。
 
 Windows がない環境では、`x86_64-pc-windows-gnu` ターゲット(mingw-w64 が必要)でビルドした exe を Wine で
 動かすと、上の多くを大まかに確かめられます。ただし Wine の挙動は Windows と同じではないので、最終確認は実機で行ってください。
@@ -187,8 +224,9 @@ Windows がない環境では、`x86_64-pc-windows-gnu` ターゲット(mingw-w6
 バージョンの実体は `Cargo.toml` の `version` です。書き換えたら `cargo update -p winwin` で `Cargo.lock` も追随させてください。
 
 `main` ブランチで `Cargo.toml` の `version` が上がると、GitHub Actions が `winwin-v<version>` タグの Release を作り、
-`winwin.exe` を添付します。ファイル名にバージョンを含めないのは、自動起動のレジストリが exe のパスを指しているためです。
-同じ名前で上書きすれば、更新後も自動起動がそのまま働きます。
+インストーラ `winwin_<version>_x64-setup.exe` と exe 単体の `winwin.exe` を添付します。exe 単体のファイル名に
+バージョンを含めないのは、自動起動のレジストリが exe のパスを指しているためです。同じ名前で上書きすれば、
+更新後も自動起動がそのまま働きます。インストーラも常に同じフォルダの `winwin.exe` を上書きします。
 
 ### 上げ忘れを CI が止めます
 
@@ -200,5 +238,5 @@ Windows がない環境では、`x86_64-pc-windows-gnu` ターゲット(mingw-w6
 
 リリースするつもりがない変更(ドキュメントだけ、CI だけ、など)では、Pull Request に `no-release` ラベルを付けてください。
 
-配布物はコード署名をしていないため、ダウンロードした `winwin.exe` の初回実行時に SmartScreen の警告が出ます。
+配布物はコード署名をしていないため、ダウンロードしたインストーラと `winwin.exe` の実行時に SmartScreen の警告が出ます。
 手順は README.md に書いてあります。

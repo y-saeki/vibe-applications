@@ -35,6 +35,8 @@ use super::{
 };
 use crate::config::Config;
 
+/// The installer finds a running winwin by this name to close it
+/// (installer/installer.nsi, MAIN_CLASS).
 const CLASS_NAME: PCWSTR = w!("winwin.main");
 const TRAY_ID: u32 = 1;
 const MENU_SETTINGS: usize = 1;

@@ -34,6 +34,7 @@ behaviour changes, the file that covers it changes in the same commit:
 | The config file's fields, defaults or validation | `mod tests` in `src/config.rs`, and the example in `DEVELOPMENT.md` |
 | Key names or which combinations are allowed | `mod tests` in `src/hotkey.rs` |
 | What the settings window stores, checks on save, or shows in its list | `mod tests` in `src/draft.rs` |
+| The main window's class name, the config folder, or the `Run` value name | `installer/installer.nsi`, which closes winwin by that class and removes those on uninstall |
 
 Everything under `src/win/` is out of reach of `cargo test`; `DEVELOPMENT.md` lists the
 manual checks. Do not write a case that pretends to cover it.
