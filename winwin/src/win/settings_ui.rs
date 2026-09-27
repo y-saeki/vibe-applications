@@ -120,6 +120,8 @@ enum Msg {
     Move {
         up: bool,
     },
+    /// The list was dragged into a new order: the rows' ids, as tags.
+    Reorder(Vec<String>),
     /// 変更 beside the shortcut: opens the dialog that records one.
     Record,
     /// A key went down or up while recording.
@@ -181,6 +183,12 @@ impl Component for Settings {
             Msg::Duplicate => self.editor.duplicate(),
             Msg::Delete => self.editor.delete(),
             Msg::Move { up } => self.editor.move_selected(up),
+            Msg::Reorder(tags) => {
+                let ids: Result<Vec<u64>, _> = tags.iter().map(|t| t.parse()).collect();
+                if let Ok(ids) = ids {
+                    self.editor.reorder(&ids);
+                }
+            }
             Msg::Record => self.start_recording(context),
 
             Msg::Key(vk, down) => {
@@ -517,7 +525,7 @@ impl Settings {
                         .grid_column(2)
                         .content(picture(row, input.work, THUMBNAIL, Anchor::Center)),
                 ));
-            (id, ListViewItem::new().content(line))
+            (id, ListViewItem::new().tag(id.to_string()).content(line))
         });
         let list = Border::new()
             .background(ThemeBrush::CardBackground)
@@ -530,6 +538,11 @@ impl Settings {
                     .selection_mode(ListViewSelectionMode::Single)
                     .selected_index(self.editor.current())
                     .on_selection_changed(context.callback(Msg::Select))
+                    // What dragging a line to a new place needs, all three.
+                    .can_drag_items(true)
+                    .can_reorder_items(true)
+                    .allow_drop(true)
+                    .on_reordered(context.callback(Msg::Reorder))
                     .collection_slot(ListViewSlot::Items, items),
             );
 
