@@ -23,10 +23,10 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use windows::core::BOOL;
 use windows_reactor::*;
 
-use super::{autostart, config_path, error_box, icon, keyhook, testwin};
+use super::{autostart, config_path, error_box, icon, keyhook, modifiers_held, testwin};
 use crate::config::{Config, Theme};
-use crate::draft::{Draft, Editor};
-use crate::hotkey::{self, Arrow, Hotkey, Keycap, Recorder};
+use crate::draft::{Click, Draft, Editor};
+use crate::hotkey::{self, Arrow, Hotkey, Keycap, MOD_CONTROL, MOD_SHIFT, Recorder};
 use crate::layout::{Anchor, Rect};
 
 /// The client area in DIPs, which is also as small as the window goes: the
@@ -101,9 +101,6 @@ struct Settings {
     /// Applied to the window as soon as it is chosen; saved with the rest.
     theme: Theme,
     theme_was: Theme,
-    /// The editor's `lines` when the view was last published. The list is
-    /// given a selection only while it is still the same (see `list`).
-    shown: u64,
     /// Shown above everything when 保存 fails.
     error: Option<String>,
     /// The 変更を破棄しますか dialog is open.
@@ -128,8 +125,6 @@ enum Msg {
     },
     /// The list was dragged into a new order: the rows' ids, as tags.
     Reorder(Vec<String>),
-    /// The list now shows the rows as they were at this `lines`.
-    Shown(u64),
     /// 変更 beside the shortcut: opens the dialog that records one.
     Record,
     /// A key went down or up while recording.
@@ -177,7 +172,6 @@ impl Component for Settings {
             autostart_was: input.autostart,
             theme: input.theme,
             theme_was: input.theme,
-            shown: 0,
             error: None,
             confirming: false,
             recording: None,
@@ -188,7 +182,13 @@ impl Component for Settings {
 
     fn update(&mut self, msg: Msg, context: &ComponentContext<Self>) {
         match msg {
-            Msg::Select(Some(i)) => self.editor.select(i),
+            Msg::Select(Some(i)) => self.editor.click(
+                i,
+                Click {
+                    shift: modifiers_held(MOD_SHIFT),
+                    ctrl: modifiers_held(MOD_CONTROL),
+                },
+            ),
             Msg::Select(None) => {}
             Msg::Add => self.editor.add(),
             Msg::Duplicate => self.editor.duplicate(),
@@ -200,7 +200,6 @@ impl Component for Settings {
                     self.editor.reorder(&ids);
                 }
             }
-            Msg::Shown(id) => self.shown = id,
             Msg::Record => self.start_recording(context),
 
             Msg::Key(vk, down) => {
@@ -543,7 +542,7 @@ impl Settings {
             let line = Grid::new()
                 .columns([GridLength::STAR, GridLength::Auto, GridLength::Auto])
                 .column_spacing(12.0)
-                .margin(Thickness::xy(0.0, 6.0))
+                .grid_column(1)
                 .children((
                     Border::new()
                         .vertical_alignment(VerticalAlignment::Center)
@@ -557,22 +556,38 @@ impl Settings {
                         .grid_column(2)
                         .content(picture(row, input.work, THUMBNAIL, Anchor::Center)),
                 ));
+            let selected = self.editor.is_selected(id);
+            let indicator = Border::new()
+                .background(if selected {
+                    Brush::from(ThemeBrush::Accent)
+                } else {
+                    Brush::from(Color::transparent())
+                })
+                .corner_radius(CornerRadius::uniform(1.5))
+                .height(16.0)
+                .vertical_alignment(VerticalAlignment::Center);
+            let line = Border::new()
+                .background(if selected {
+                    SELECTED_ROW
+                } else {
+                    Color::transparent()
+                })
+                .corner_radius(CornerRadius::uniform(4.0))
+                .padding(Thickness::new(4.0, 6.0, 8.0, 6.0))
+                .content(
+                    Grid::new()
+                        .columns([GridLength::Pixel(3.0), GridLength::STAR])
+                        .column_spacing(9.0)
+                        .children((indicator, line)),
+                );
             (id, ListViewItem::new().tag(id.to_string()).content(line))
         });
-        // Reactor sets the list's selection before it adds or removes the
-        // lines of the same update. Selecting a row just added at the end
-        // would crash, as WinUI refuses, fatally, an index past the lines it
-        // has; one added above others would select the line it pushes down.
-        // Removing a line drops the list's selection, and Reactor puts back
-        // only an index it set itself, not one the user clicked. So after
-        // lines are added or removed, the list is given no selection until
-        // it has been published, and then the selected row's.
-        let lines = self.editor.lines();
-        let sender = context.sender();
-        context.use_effect("shown", lines, move || {
-            sender.send(Msg::Shown(lines));
-            None
-        });
+        // The list keeps no selection of its own: the rows it shows as
+        // selected are the editor's, which a click changes with the Shift
+        // and Ctrl it came with. The one a click selects is taken away again
+        // straight after, so that every click, even on that row, is reported.
+        // It also keeps WinUI from being handed an index past the lines it
+        // has, which it refuses fatally, while lines are added.
         let list = Border::new()
             .background(ThemeBrush::CardBackground)
             .border_brush(ThemeBrush::CardStroke)
@@ -582,7 +597,7 @@ impl Settings {
             .content(
                 ListView::new()
                     .selection_mode(ListViewSelectionMode::Single)
-                    .selected_index(self.editor.shown_selection(self.shown))
+                    .selected_index(None)
                     .on_selection_changed(context.callback(Msg::Select))
                     // What dragging a line to a new place needs, all three.
                     .can_drag_items(true)
@@ -592,7 +607,7 @@ impl Settings {
                     .collection_slot(ListViewSlot::Items, items),
             );
 
-        let selected = self.editor.current().is_some();
+        let selected = !self.editor.selection().is_empty();
         let button = |label: &str, msg: Msg, enabled: bool| {
             Button::new()
                 .is_enabled(enabled)
@@ -820,6 +835,15 @@ fn keycaps(caps: Vec<Keycap>, large: bool) -> View {
         .vertical_alignment(VerticalAlignment::Center)
         .keyed_children(caps)
 }
+
+/// Behind a selected line in the list, which draws its own selection: a
+/// gray that reads on both themes' backgrounds, as WinUI's own does.
+const SELECTED_ROW: Color = Color {
+    a: 0x26,
+    r: 0x80,
+    g: 0x80,
+    b: 0x80,
+};
 
 /// Text on an accent-colored cap. The window's base background is dark in
 /// the dark theme and light in the light one, the opposite of the accent
