@@ -13,15 +13,14 @@ use windows::Win32::UI::WindowsAndMessaging::{KillTimer, SetTimer};
 
 use super::modifiers_held;
 use crate::cycle::{self, Binding, Outcome, Presses};
-use crate::hotkey::{Hotkey, SEQUENCE_TIMEOUT_MS};
+use crate::hotkey::Hotkey;
 use crate::layout::Placement;
 
-/// Watches for the modifiers of a cycling shortcut to be let go. It runs
-/// only between such a press and that release.
-pub const CYCLE_TIMER: usize = 1;
-const CYCLE_POLL_MS: u32 = 15;
-/// Ends the wait for the next stroke of a shortcut under way.
-pub const PENDING_TIMER: usize = 2;
+/// Watches for the modifiers of a shortcut under way (waiting for its second
+/// stroke, or cycling) to be let go. It runs only between such a press and
+/// that release.
+pub const MODIFIER_TIMER: usize = 1;
+const MODIFIER_POLL_MS: u32 = 15;
 
 pub struct Shortcuts {
     hwnd: HWND,
@@ -73,19 +72,11 @@ impl Shortcuts {
     pub fn on_hotkey(&mut self, id: usize) -> Option<Placement> {
         let stroke = *self.registered.get(id.wrapping_sub(1))?;
         let outcome = self.presses.press(&self.bindings, stroke);
-        let hwnd = Some(self.hwnd);
-        unsafe {
-            if self.presses.is_pending() {
-                // Restarting a running timer starts its interval over.
-                SetTimer(hwnd, PENDING_TIMER, SEQUENCE_TIMEOUT_MS, None);
-            } else {
-                let _ = KillTimer(hwnd, PENDING_TIMER);
-            }
-            if self.presses.cycling().is_some() {
-                SetTimer(hwnd, CYCLE_TIMER, CYCLE_POLL_MS, None);
-            } else {
-                let _ = KillTimer(hwnd, CYCLE_TIMER);
-            }
+        if self.presses.watching(&self.bindings).is_some() {
+            // Restarting a running timer just resets its interval.
+            unsafe { SetTimer(Some(self.hwnd), MODIFIER_TIMER, MODIFIER_POLL_MS, None) };
+        } else {
+            let _ = unsafe { KillTimer(Some(self.hwnd), MODIFIER_TIMER) };
         }
         self.sync_next();
         match outcome {
@@ -94,42 +85,27 @@ impl Shortcuts {
         }
     }
 
-    /// A WM_TIMER. Returns whether it was one of these.
+    /// A WM_TIMER. Returns whether it was this one. Letting go of any of
+    /// the modifiers counts as letting go: the second stroke is no longer
+    /// awaited, and the next press starts from a binding's first entry.
     pub fn on_timer(&mut self, id: usize) -> bool {
-        match id {
-            PENDING_TIMER => {
-                self.presses.time_out();
-                self.stop(PENDING_TIMER);
-            }
-            // Letting go of any modifier of the cycling shortcut counts as
-            // letting go: the next press starts from its first entry.
-            CYCLE_TIMER => {
-                let modifiers = self
-                    .presses
-                    .cycling()
-                    .and_then(|b| self.bindings.get(b))
-                    .map(|b| b.keys.last().modifiers);
-                if modifiers.is_none_or(|m| !modifiers_held(m)) {
-                    self.presses.let_go();
-                    self.stop(CYCLE_TIMER);
-                }
-            }
-            _ => return false,
+        if id != MODIFIER_TIMER {
+            return false;
+        }
+        if self
+            .presses
+            .watching(&self.bindings)
+            .is_none_or(|m| !modifiers_held(m))
+        {
+            self.reset();
         }
         true
     }
 
-    fn stop(&mut self, timer: usize) {
-        let _ = unsafe { KillTimer(Some(self.hwnd), timer) };
-        self.sync_next();
-    }
-
-    /// Starts the next press over and stops waiting for anything.
+    /// Starts the next press over and stops watching.
     fn reset(&mut self) {
         self.presses.reset();
-        for timer in [CYCLE_TIMER, PENDING_TIMER] {
-            let _ = unsafe { KillTimer(Some(self.hwnd), timer) };
-        }
+        let _ = unsafe { KillTimer(Some(self.hwnd), MODIFIER_TIMER) };
         self.sync_next();
     }
 

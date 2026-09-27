@@ -129,8 +129,8 @@ enum Msg {
     Listed(usize),
     /// 変更 beside the shortcut: opens the dialog that records one.
     Record,
-    /// A key went down or up while recording, and when.
-    Key(u32, bool, u32),
+    /// A key went down or up while recording.
+    Key(u32, bool),
     RecordReset,
     RecordClear,
     RecordClosed(ContentDialogResult),
@@ -198,10 +198,10 @@ impl Component for Settings {
             Msg::Listed(n) => self.listed = n,
             Msg::Record => self.start_recording(context),
 
-            Msg::Key(vk, down, time) => {
+            Msg::Key(vk, down) => {
                 if let Some(r) = &mut self.recording {
                     if down {
-                        r.key_down(vk, time);
+                        r.key_down(vk);
                     } else {
                         r.key_up(vk);
                     }
@@ -406,8 +406,8 @@ impl Settings {
             return;
         };
         let sender = context.sender();
-        if let Err(e) = keyhook::start(move |vk, down, time| {
-            sender.send(Msg::Key(vk, down, time));
+        if let Err(e) = keyhook::start(move |vk, down| {
+            sender.send(Msg::Key(vk, down));
         }) {
             self.error = Some(format!("キー入力を受け取れませんでした。{e}"));
             return;
@@ -420,21 +420,20 @@ impl Settings {
     fn recorder(&self, context: &mut ViewContext<Self>) -> View {
         let r = self.recording.clone().unwrap_or_default();
         let result = r.result();
-        let keys: View = if r.strokes().is_empty() && r.partial == 0 {
+        let strokes = r.strokes();
+        let keys: View = if strokes.is_empty() && r.modifiers == 0 {
             TextBlock::new()
                 .text("キーを押してください")
                 .opacity(0.6)
                 .horizontal_alignment(HorizontalAlignment::Center)
                 .vertical_alignment(VerticalAlignment::Center)
                 .into()
+        } else if strokes.is_empty() {
+            keycaps(hotkey::keycaps(r.modifiers, 0), true)
         } else {
-            // Large while there is one stroke, to read at a glance; more
+            // Large while there is one stroke, to read at a glance; two
             // would not fit.
-            strokes_view(
-                r.strokes(),
-                r.partial,
-                r.strokes().len() + usize::from(r.partial != 0) <= 1,
-            )
+            strokes_view(&strokes, strokes.len() == 1)
         };
         let problem = match &result {
             Some(Err(e)) => e.to_string(),
@@ -714,21 +713,14 @@ fn shortcut_view(d: &Draft) -> View {
             .vertical_alignment(VerticalAlignment::Center)
             .into()
     } else {
-        strokes_view(&d.keys, 0, false)
+        strokes_view(&d.keys, false)
     }
 }
 
 /// Strokes one after another, each as its keycaps, with commas between
-/// them as the file writes them; then the modifiers of a stroke under way,
-/// if any.
-fn strokes_view(strokes: &[Hotkey], partial: u32, large: bool) -> View {
-    let mut groups: Vec<Vec<Keycap>> = strokes
-        .iter()
-        .map(|h| hotkey::keycaps(h.modifiers, h.vk))
-        .collect();
-    if partial != 0 {
-        groups.push(hotkey::keycaps(partial, 0));
-    }
+/// them as the file writes them.
+fn strokes_view(strokes: &[Hotkey], large: bool) -> View {
+    let groups = strokes.iter().map(|h| hotkey::keycaps(h.modifiers, h.vk));
     let text_size = if large { 18.0 } else { 14.0 };
     let children = groups.into_iter().enumerate().flat_map(|(i, caps)| {
         let comma: Option<(usize, View)> = (i > 0).then(|| {

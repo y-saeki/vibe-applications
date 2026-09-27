@@ -320,13 +320,15 @@ mod tests {
         }];
         assert_eq!(d.to_shortcut().unwrap().keys.to_string(), "Ctrl+Alt+A");
         d.keys.push(Hotkey {
-            modifiers: MOD_CONTROL,
+            modifiers: MOD_CONTROL | MOD_ALT,
             vk: 0x26,
         });
         assert_eq!(
             d.to_shortcut().unwrap().keys.to_string(),
-            "Ctrl+Alt+A, Ctrl+Up"
+            "Ctrl+Alt+A, Ctrl+Alt+Up"
         );
+        d.keys[1].modifiers = MOD_CONTROL;
+        assert!(d.to_shortcut().unwrap_err().contains("修飾キー"));
     }
 
     #[test]
@@ -353,8 +355,8 @@ mod tests {
         assert_eq!(d.list_text(), "Ctrl+Alt+Left    左 1/2 × 1");
         assert_eq!(Draft::new().list_text(), "(未設定)    中央 1/2 × 1/2");
         let mut d = d;
-        d.keys.push("Ctrl+Up".parse().unwrap());
-        assert_eq!(d.list_text(), "Ctrl+Alt+Left, Ctrl+Up    左 1/2 × 1");
+        d.keys.push("Ctrl+Alt+Up".parse().unwrap());
+        assert_eq!(d.list_text(), "Ctrl+Alt+Left, Ctrl+Alt+Up    左 1/2 × 1");
     }
 
     fn editor() -> Editor {

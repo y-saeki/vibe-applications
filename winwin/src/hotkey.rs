@@ -13,10 +13,7 @@ pub const MOD_SHIFT: u32 = 0x0004;
 pub const MOD_WIN: u32 = 0x0008;
 
 /// The most strokes a shortcut can take.
-pub const MAX_STROKES: usize = 3;
-/// How long after a stroke the next one of the same shortcut may come, in
-/// milliseconds. Later, it starts afresh.
-pub const SEQUENCE_TIMEOUT_MS: u32 = 1500;
+pub const MAX_STROKES: usize = 2;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Hotkey {
@@ -149,73 +146,69 @@ pub fn keycaps(modifiers: u32, vk: u32) -> Vec<Keycap> {
     caps
 }
 
-/// Follows the keys pressed while the settings window records a shortcut,
-/// which may take several strokes. Pressing a key that is not a modifier
-/// records a stroke of it with the modifiers held at that moment. A stroke
-/// that begins within [`SEQUENCE_TIMEOUT_MS`] of the last one follows it, as
-/// it would when the shortcut is used; one that begins later, or after
-/// [`MAX_STROKES`], starts the recording over. Modifiers pressed for a stroke
-/// show until its key is pressed or they are all let go.
+/// Follows the keys pressed while the settings window records a shortcut.
+/// Pressing a key that is not a modifier records it with the modifiers held
+/// at that moment. Another key pressed while those modifiers stay held is
+/// the second stroke, as it would be when the shortcut is used; anything
+/// else starts over. Pressing a modifier starts over with just the modifiers
+/// held. Letting go changes what is held, not what was recorded.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Recorder {
     held: u32,
     /// The key that is down and has been recorded, so that its repeats are
-    /// not taken for further strokes.
+    /// not taken for another stroke.
     down: u32,
-    /// The strokes recorded so far.
-    strokes: Vec<Hotkey>,
-    /// The modifiers of a stroke under way, shown after `strokes`; 0 for none.
-    pub partial: u32,
-    /// When the last stroke was recorded, in milliseconds.
-    last: Option<u32>,
+    /// What was recorded: modifiers and the keys pressed with them, one per
+    /// stroke (none yet while only modifiers have been pressed).
+    pub modifiers: u32,
+    vks: Vec<u32>,
+    /// Whether the modifiers have stayed held since the last stroke, so
+    /// that the next key follows it.
+    open: bool,
 }
 
 impl Recorder {
     /// Starts out showing `strokes`, with nothing held.
     pub fn showing(strokes: &[Hotkey]) -> Recorder {
         Recorder {
-            strokes: strokes.to_vec(),
+            modifiers: strokes.first().map_or(0, |h| h.modifiers),
+            vks: strokes.iter().map(|h| h.vk).collect(),
             ..Recorder::default()
         }
     }
 
-    pub fn strokes(&self) -> &[Hotkey] {
-        &self.strokes
+    /// The strokes recorded so far.
+    pub fn strokes(&self) -> Vec<Hotkey> {
+        self.vks
+            .iter()
+            .map(|&vk| Hotkey {
+                modifiers: self.modifiers,
+                vk,
+            })
+            .collect()
     }
 
-    /// Whether a stroke that begins at `time` follows the ones recorded.
-    fn follows(&self, time: u32) -> bool {
-        self.strokes.len() < MAX_STROKES
-            && self
-                .last
-                .is_some_and(|t| time.wrapping_sub(t) <= SEQUENCE_TIMEOUT_MS)
-    }
-
-    /// Key `vk` went down at `time` (milliseconds, as the system counts
-    /// them).
-    pub fn key_down(&mut self, vk: u32, time: u32) {
+    pub fn key_down(&mut self, vk: u32) {
         match modifier_of(vk) {
             // Already held: a repeat, or the other of a left-right pair.
             Some(m) if self.held & m != 0 => {}
             Some(m) => {
                 self.held |= m;
-                if self.partial == 0 && !self.follows(time) {
-                    self.strokes.clear();
-                }
-                self.partial = self.held;
+                self.modifiers = self.held;
+                self.vks.clear();
+                self.open = false;
             }
             None if vk == self.down => {}
             None => {
-                if self.partial == 0 && !self.follows(time) {
-                    self.strokes.clear();
+                let follows =
+                    self.open && self.vks.len() < MAX_STROKES && self.vks.last() != Some(&vk);
+                if !follows {
+                    self.modifiers = self.held;
+                    self.vks.clear();
                 }
-                self.strokes.push(Hotkey {
-                    modifiers: self.held,
-                    vk,
-                });
-                self.partial = 0;
+                self.vks.push(vk);
                 self.down = vk;
-                self.last = Some(time);
+                self.open = true;
             }
         }
     }
@@ -223,9 +216,7 @@ impl Recorder {
     pub fn key_up(&mut self, vk: u32) {
         if let Some(m) = modifier_of(vk) {
             self.held &= !m;
-            if self.held == 0 {
-                self.partial = 0;
-            }
+            self.open = false;
         }
         if vk == self.down {
             self.down = 0;
@@ -233,9 +224,9 @@ impl Recorder {
     }
 
     /// What was recorded as a shortcut, or why it cannot be one. `None`
-    /// while no stroke has been recorded, or one is under way.
+    /// while no key other than modifiers has been pressed.
     pub fn result(&self) -> Option<Result<Keys, HotkeyError>> {
-        (!self.strokes.is_empty() && self.partial == 0).then(|| Keys::new(self.strokes.clone()))
+        (!self.vks.is_empty()).then(|| Keys::new(self.strokes()))
     }
 }
 
@@ -276,6 +267,10 @@ pub enum HotkeyError {
     /// every application.
     NeedsModifier,
     TooManyStrokes,
+    /// The strokes of one shortcut are pressed with the modifiers held
+    /// throughout.
+    ModifiersDiffer,
+    SameKeyTwice,
 }
 
 impl fmt::Display for HotkeyError {
@@ -290,8 +285,12 @@ impl fmt::Display for HotkeyError {
                 write!(f, "Ctrl・Alt・Win のいずれかを含めてください")
             }
             HotkeyError::TooManyStrokes => {
-                write!(f, "続けて押せるのは {MAX_STROKES} 回までです")
+                write!(f, "続けて押せるのは {MAX_STROKES} つまでです")
             }
+            HotkeyError::ModifiersDiffer => {
+                write!(f, "続けて押すキーの修飾キーはそろえてください")
+            }
+            HotkeyError::SameKeyTwice => write!(f, "同じキーを続けて押すことはできません"),
         }
     }
 }
@@ -354,8 +353,9 @@ impl fmt::Display for Hotkey {
     }
 }
 
-/// A shortcut: one combination, or several pressed one after another
-/// ("Ctrl+Left, Ctrl+Up"). Each stroke is a valid [`Hotkey`] of its own.
+/// A shortcut: one combination, or two keys pressed one after the other
+/// while the same modifiers stay held ("Ctrl+Left, Ctrl+Up"). Each stroke is
+/// a valid [`Hotkey`] of its own.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Keys(Vec<Hotkey>);
 
@@ -369,6 +369,12 @@ impl Keys {
         }
         for h in &strokes {
             Hotkey::new(h.modifiers, h.vk)?;
+        }
+        if strokes.iter().any(|h| h.modifiers != strokes[0].modifiers) {
+            return Err(HotkeyError::ModifiersDiffer);
+        }
+        if strokes.windows(2).any(|w| w[0].vk == w[1].vk) {
+            return Err(HotkeyError::SameKeyTwice);
         }
         Ok(Keys(strokes))
     }
@@ -470,88 +476,81 @@ mod tests {
     fn records_the_modifiers_held_with_a_key() {
         let mut r = Recorder::default();
         assert_eq!(r.result(), None);
-        r.key_down(0xA2, 0); // left Ctrl
-        r.key_down(0xA1, 0); // right Shift
-        assert_eq!((r.strokes(), r.partial), (&[][..], MOD_CONTROL | MOD_SHIFT));
+        r.key_down(0xA2); // left Ctrl
+        r.key_down(0xA1); // right Shift
+        assert_eq!(
+            (r.modifiers, r.strokes()),
+            (MOD_CONTROL | MOD_SHIFT, vec![])
+        );
         assert_eq!(r.result(), None);
-        r.key_down(0x25, 0);
+        r.key_down(0x25);
         assert_eq!(r.result(), Some(Ok(keys("Ctrl+Shift+Left"))));
         // Held keys repeat; that records nothing more.
-        r.key_down(0x25, 30);
-        r.key_down(0xA2, 30);
-        assert_eq!(r.result(), Some(Ok(keys("Ctrl+Shift+Left"))));
+        r.key_down(0x25);
+        r.key_down(0xA2);
         r.key_up(0x25);
+        assert_eq!(r.result(), Some(Ok(keys("Ctrl+Shift+Left"))));
         r.key_up(0xA1);
         assert_eq!(r.result(), Some(Ok(keys("Ctrl+Shift+Left"))));
+        // Shift was let go: the next key starts over with Ctrl alone.
+        r.key_down(0x4B);
+        assert_eq!(r.result(), Some(Ok(keys("Ctrl+K"))));
     }
 
     #[test]
-    fn a_key_pressed_soon_after_is_the_next_stroke() {
+    fn a_second_key_with_the_modifiers_still_held_follows() {
         let mut r = Recorder::default();
-        r.key_down(0xA2, 0);
-        r.key_down(0x25, 100);
+        r.key_down(0xA2);
+        r.key_down(0x25);
         r.key_up(0x25);
-        // Ctrl is still down: the next key goes with it.
-        r.key_down(0x26, 400);
+        r.key_down(0x26);
         assert_eq!(r.result(), Some(Ok(keys("Ctrl+Left, Ctrl+Up"))));
-        // And again, as a cycle is pressed; that is a stroke of its own here.
+        // A third starts over, and so does the same key twice.
         r.key_up(0x26);
-        r.key_down(0x26, 600);
-        assert_eq!(r.result(), Some(Ok(keys("Ctrl+Left, Ctrl+Up, Ctrl+Up"))));
+        r.key_down(0x28);
+        assert_eq!(r.result(), Some(Ok(keys("Ctrl+Down"))));
+        r.key_up(0x28);
+        r.key_down(0x28);
+        assert_eq!(r.result(), Some(Ok(keys("Ctrl+Down"))));
     }
 
     #[test]
-    fn modifiers_let_go_between_strokes() {
+    fn letting_go_of_a_modifier_ends_the_shortcut() {
         let mut r = Recorder::default();
-        r.key_down(0xA2, 0);
-        r.key_down(0x58, 0);
-        r.key_up(0x58);
+        r.key_down(0xA2);
+        r.key_down(0x25);
+        r.key_up(0x25);
         r.key_up(0xA2);
-        r.key_down(0xA4, 1000); // left Alt
-        assert_eq!(r.strokes(), keys("Ctrl+X").strokes());
-        assert_eq!(r.partial, MOD_ALT);
-        assert_eq!(r.result(), None);
-        r.key_down(0x4B, 1200);
-        assert_eq!(r.result(), Some(Ok(keys("Ctrl+X, Alt+K"))));
-        // A stroke begun and let go of leaves what was recorded.
-        r.key_up(0x4B);
-        r.key_up(0xA4);
-        r.key_down(0xA2, 1500);
-        r.key_up(0xA2);
-        assert_eq!(r.partial, 0);
-        assert_eq!(r.result(), Some(Ok(keys("Ctrl+X, Alt+K"))));
-    }
-
-    #[test]
-    fn a_late_or_extra_stroke_starts_the_recording_over() {
+        r.key_down(0xA2);
+        assert_eq!((r.modifiers, r.strokes()), (MOD_CONTROL, vec![]));
+        r.key_down(0x26);
+        assert_eq!(r.result(), Some(Ok(keys("Ctrl+Up"))));
+        // What it starts out showing is not followed either.
         let mut r = Recorder::showing(keys("Ctrl+Alt+K").strokes());
-        // What it starts out showing is not followed.
-        r.key_down(0xA2, 0);
-        r.key_down(0x41, 0);
-        assert_eq!(r.result(), Some(Ok(keys("Ctrl+A"))));
-        r.key_down(0x42, SEQUENCE_TIMEOUT_MS + 1);
-        assert_eq!(r.result(), Some(Ok(keys("Ctrl+B"))));
-        for (i, vk) in [0x43, 0x44, 0x45].into_iter().enumerate() {
-            r.key_down(vk, SEQUENCE_TIMEOUT_MS + 2 + i as u32);
-        }
-        assert_eq!(r.result(), Some(Ok(keys("Ctrl+E"))));
-        // Modifiers pressed late start over too.
-        r.key_up(0xA2);
-        r.key_down(0xA4, 10_000);
-        assert_eq!((r.strokes(), r.partial), (&[][..], MOD_ALT));
-        // The system's clock wraps around.
+        assert_eq!(r.result(), Some(Ok(keys("Ctrl+Alt+K"))));
+        r.key_down(0xA2);
+        r.key_down(0xA4);
+        r.key_down(0x4A);
+        assert_eq!(r.result(), Some(Ok(keys("Ctrl+Alt+J"))));
+    }
+
+    #[test]
+    fn a_modifier_starts_the_recording_over() {
         let mut r = Recorder::default();
-        r.key_down(0xA2, u32::MAX - 10);
-        r.key_down(0x41, u32::MAX - 10);
-        r.key_down(0x42, 10);
-        assert_eq!(r.result(), Some(Ok(keys("Ctrl+A, Ctrl+B"))));
+        r.key_down(0x5B);
+        r.key_down(0x41);
+        r.key_up(0x41);
+        r.key_up(0x5B);
+        r.key_down(0xA4); // left Alt
+        assert_eq!((r.modifiers, r.strokes()), (MOD_ALT, vec![]));
+        assert_eq!(r.result(), None);
     }
 
     #[test]
     fn says_why_a_recorded_combination_cannot_be_used() {
         let mut r = Recorder::default();
-        r.key_down(0x10, 0);
-        r.key_down(0x41, 0);
+        r.key_down(0x10);
+        r.key_down(0x41);
         assert_eq!(r.result(), Some(Err(HotkeyError::NeedsModifier)));
     }
 
@@ -569,8 +568,26 @@ mod tests {
             Err(HotkeyError::NeedsModifier)
         );
         assert_eq!(
-            "Ctrl+A, Ctrl+B, Ctrl+C, Ctrl+D".parse::<Keys>(),
+            "Ctrl+A, Ctrl+B, Ctrl+C".parse::<Keys>(),
             Err(HotkeyError::TooManyStrokes)
+        );
+        assert_eq!(
+            "Ctrl+Left, Shift+Up".parse::<Keys>(),
+            Err(HotkeyError::NeedsModifier)
+        );
+        for other in ["Ctrl+Shift+Up", "Alt+Up"] {
+            assert_eq!(
+                format!("Ctrl+Left, {other}").parse::<Keys>(),
+                Err(HotkeyError::ModifiersDiffer)
+            );
+        }
+        assert_eq!(
+            "Ctrl+Shift+Left, Ctrl+Alt+Up".parse::<Keys>(),
+            Err(HotkeyError::ModifiersDiffer)
+        );
+        assert_eq!(
+            "Ctrl+Left, Ctrl+Left".parse::<Keys>(),
+            Err(HotkeyError::SameKeyTwice)
         );
     }
 

@@ -4,17 +4,15 @@
 //! config, and wraps around. Letting go of the modifiers starts the next
 //! press from the first entry.
 //!
-//! A shortcut of several strokes ("Ctrl+Left, Ctrl+Up") waits after each
-//! stroke but the last for the next one, for up to
-//! [`SEQUENCE_TIMEOUT_MS`](crate::hotkey::SEQUENCE_TIMEOUT_MS). Only the first
+//! A shortcut of two strokes ("Ctrl+Left, Ctrl+Up") waits after the first
+//! for the second for as long as the modifiers stay held. Only the first
 //! strokes are registered all the time; the ones that may come next are
 //! registered while they may.
 //!
 //! A shortcut may also be the start of a longer one (`Ctrl+Left` and
 //! `Ctrl+Left, Ctrl+Up`). Its entry is applied at once, and should the
-//! longer one's next stroke follow in time, the longer one's entry replaces
-//! it. That next stroke is taken as the longer shortcut even when it would
-//! also step the shorter one's cycle.
+//! longer one's next stroke follow before the modifiers are let go, the
+//! longer one's entry replaces it.
 //!
 //! Nothing here touches Win32, so it is tested on every platform.
 
@@ -139,30 +137,31 @@ impl Presses {
         }
     }
 
-    /// The binding whose modifiers are being watched, if any.
+    /// The binding whose entries are being stepped through, if any.
+    #[cfg(test)]
     pub fn cycling(&self) -> Option<usize> {
         self.cycling.map(|(b, _)| b)
     }
 
+    #[cfg(test)]
     pub fn is_pending(&self) -> bool {
         !self.pending.is_empty()
     }
 
-    /// The next stroke did not come in time: the next press starts a
-    /// shortcut afresh.
-    pub fn time_out(&mut self) {
-        self.pending.clear();
+    /// The modifiers (MOD_*) that, once any of them is let go, end the wait
+    /// for a next stroke and the cycle: `None` while there is neither. The
+    /// strokes of a shortcut share their modifiers, so there is one set.
+    pub fn watching(&self, bindings: &[Binding]) -> Option<u32> {
+        self.pending.first().map(|h| h.modifiers).or_else(|| {
+            let (b, _) = self.cycling?;
+            bindings.get(b).map(|b| b.keys.first().modifiers)
+        })
     }
 
-    /// The cycling binding's modifiers were let go: the next press starts
-    /// from its first entry.
-    pub fn let_go(&mut self) {
-        self.cycling = None;
-    }
-
+    /// The modifiers were let go: the next press starts over.
     pub fn reset(&mut self) {
-        self.time_out();
-        self.let_go();
+        self.pending.clear();
+        self.cycling = None;
     }
 
     /// The strokes that must be registered for now on top of
@@ -199,6 +198,7 @@ fn extended(bindings: &[Binding], strokes: &[Hotkey]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::hotkey::MOD_CONTROL;
 
     fn hk(s: &str) -> Hotkey {
         s.parse().unwrap()
@@ -395,7 +395,7 @@ mod tests {
         assert!(!presses.is_pending());
         // Without the next stroke, it stays as it is.
         presses.press(&bindings, left);
-        presses.time_out();
+        presses.reset();
         assert_eq!(presses.next_strokes(&bindings), []);
         assert_eq!(presses.press(&bindings, left), place(0, 0));
     }
@@ -416,43 +416,27 @@ mod tests {
         assert_eq!(presses.press(&bindings, up), place(1, 0));
         // The longer one took over; the cycle of the shorter one is over.
         assert_eq!(presses.cycling(), None);
-        // Timing out leaves the cycle, and letting go leaves the wait.
+        // Letting go ends both.
         presses.press(&bindings, left);
-        presses.time_out();
-        assert_eq!(presses.press(&bindings, left), place(0, 1));
-        presses.let_go();
-        assert!(presses.is_pending());
-        assert_eq!(presses.press(&bindings, up), place(1, 0));
+        presses.reset();
+        assert_eq!(presses.press(&bindings, left), place(0, 0));
     }
 
     #[test]
-    fn the_longer_shortcut_comes_before_a_cycle() {
-        let text = r#"
-            [[shortcut]]
-            keys = "Ctrl+Left"
-            anchor = "left"
-            width = "1/2"
-            height = "1"
-
-            [[shortcut]]
-            keys = "Ctrl+Left"
-            anchor = "left"
-            width = "2/3"
-            height = "1"
-
-            [[shortcut]]
-            keys = "Ctrl+Left, Ctrl+Left"
-            anchor = "left"
-            width = "1/3"
-            height = "1"
-        "#;
-        let config = Config::parse(text, std::path::Path::new("config.toml")).unwrap();
-        let bindings = bindings(&config);
+    fn the_modifiers_of_what_is_under_way_are_watched() {
+        let bindings = bindings(&config_with_sequences());
         let mut presses = Presses::default();
-        let left = hk("Ctrl+Left");
-        assert_eq!(presses.press(&bindings, left), place(0, 0));
-        assert_eq!(presses.press(&bindings, left), place(1, 0));
-        assert_eq!(presses.press(&bindings, left), place(0, 0));
+        assert_eq!(presses.watching(&bindings), None);
+        presses.press(&bindings, hk("Ctrl+Left"));
+        assert_eq!(presses.watching(&bindings), Some(MOD_CONTROL));
+        presses.press(&bindings, hk("Ctrl+Right"));
+        // 右半分 does not cycle: nothing is left to wait for.
+        assert_eq!(presses.watching(&bindings), None);
+        presses.press(&bindings, hk("Ctrl+Left"));
+        presses.press(&bindings, hk("Ctrl+Up"));
+        assert_eq!(presses.watching(&bindings), Some(MOD_CONTROL));
+        presses.reset();
+        assert_eq!(presses.watching(&bindings), None);
     }
 
     #[test]
