@@ -9,28 +9,29 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::hotkey::Hotkey;
+use crate::hotkey::Keys;
 use crate::layout::{Anchor, Placement};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Shortcut {
-    #[serde(with = "hotkey_string")]
-    pub keys: Hotkey,
+    #[serde(with = "keys_string")]
+    pub keys: Keys,
     #[serde(flatten)]
     pub placement: Placement,
 }
 
-// Hotkey is kept free of serde; the file spells it the way Display writes it.
-mod hotkey_string {
+// Keys are kept free of serde; the file spells them the way Display writes
+// them.
+mod keys_string {
     use serde::{Deserialize, Deserializer, Serializer, de::Error};
 
-    use crate::hotkey::Hotkey;
+    use crate::hotkey::Keys;
 
-    pub fn serialize<S: Serializer>(h: &Hotkey, s: S) -> Result<S::Ok, S::Error> {
-        s.serialize_str(&h.to_string())
+    pub fn serialize<S: Serializer>(k: &Keys, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(&k.to_string())
     }
 
-    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Hotkey, D::Error> {
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Keys, D::Error> {
         let s = String::deserialize(d)?;
         s.parse().map_err(D::Error::custom)
     }
@@ -335,6 +336,51 @@ mod tests {
             .map(|s| s.placement.width.to_string())
             .collect();
         assert_eq!(widths, ["1/2", "2/3"]);
+        assert_eq!(parse(&config.to_toml()).unwrap(), config);
+    }
+
+    #[test]
+    fn reads_keys_pressed_one_after_another() {
+        let text = r#"
+            [[shortcut]]
+            keys = "Ctrl+Left, Up"
+            anchor = "top-left"
+            width = "1/2"
+            height = "1/2"
+
+            [[shortcut]]
+            keys = "ctrl+left,ctrl+up"
+            anchor = "top-left"
+            width = "1/2"
+            height = "2/3"
+        "#;
+        let config = parse(text).unwrap();
+        assert_eq!(config.shortcuts[0].keys, config.shortcuts[1].keys);
+        let written = config.to_toml();
+        assert!(written.contains(r#"keys = "Ctrl+Left, Up""#), "{written}");
+        assert_eq!(parse(&written).unwrap(), config);
+
+        let too_long = text.replace("ctrl+left,ctrl+up", "Ctrl+A, Ctrl+B, Ctrl+C, Ctrl+D");
+        assert!(parse(&too_long).is_err());
+    }
+
+    #[test]
+    fn accepts_a_shortcut_that_starts_another() {
+        let text = r#"
+            [[shortcut]]
+            keys = "Ctrl+Left, Up"
+            anchor = "top-left"
+            width = "1/2"
+            height = "1/2"
+
+            [[shortcut]]
+            keys = "Ctrl+Left"
+            anchor = "left"
+            width = "1/2"
+            height = "1"
+        "#;
+        let config = parse(text).unwrap();
+        assert_eq!(config.shortcuts.len(), 2);
         assert_eq!(parse(&config.to_toml()).unwrap(), config);
     }
 

@@ -9,29 +9,26 @@ use windows::Win32::Foundation::{
 };
 use windows::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress, LoadLibraryW};
 use windows::Win32::System::Threading::CreateMutexW;
-use windows::Win32::UI::Input::KeyboardAndMouse::{
-    HOT_KEY_MODIFIERS, MOD_NOREPEAT, RegisterHotKey, UnregisterHotKey,
-};
 use windows::Win32::UI::Shell::{
     NIF_ICON, NIF_INFO, NIF_MESSAGE, NIF_TIP, NIIF_WARNING, NIM_ADD, NIM_DELETE, NIM_MODIFY,
     NIM_SETVERSION, NIN_SELECT, NINF_KEY, NOTIFYICON_VERSION_4, NOTIFYICONDATAW, Shell_NotifyIconW,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyIcon, DestroyMenu,
-    DestroyWindow, DispatchMessageW, FindWindowW, GetCursorPos, GetMessageW, HICON, KillTimer,
-    MF_SEPARATOR, MF_STRING, MSG, PostMessageW, PostQuitMessage, RegisterClassExW,
-    RegisterWindowMessageW, SetForegroundWindow, SetTimer, TPM_BOTTOMALIGN, TPM_NONOTIFY,
-    TPM_RETURNCMD, TPM_RIGHTBUTTON, TrackPopupMenu, TranslateMessage, WINDOW_EX_STYLE,
-    WM_CONTEXTMENU, WM_DESTROY, WM_HOTKEY, WM_TIMER, WNDCLASSEXW, WS_OVERLAPPED,
+    DestroyWindow, DispatchMessageW, FindWindowW, GetCursorPos, GetMessageW, HICON, MF_SEPARATOR,
+    MF_STRING, MSG, PostMessageW, PostQuitMessage, RegisterClassExW, RegisterWindowMessageW,
+    SetForegroundWindow, TPM_BOTTOMALIGN, TPM_NONOTIFY, TPM_RETURNCMD, TPM_RIGHTBUTTON,
+    TrackPopupMenu, TranslateMessage, WINDOW_EX_STYLE, WM_CONTEXTMENU, WM_DESTROY, WM_HOTKEY,
+    WM_TIMER, WNDCLASSEXW, WS_OVERLAPPED,
 };
 use windows::core::{HSTRING, PCSTR, PCWSTR, w};
 
 use super::{
     APP_NAME, WM_APP_OPEN_SETTINGS, WM_APP_SETTINGS_CLOSED, WM_APP_TRAY, config_path,
-    copy_to_field, error_box, icon, loword, modifiers_held, mover, settings,
+    copy_to_field, error_box, icon, loword, mover, settings, shortcuts::Shortcuts,
 };
 use crate::config::{Config, Theme};
-use crate::cycle::{self, Binding, Cycle};
+use crate::cycle;
 
 /// The installer finds a running winwin by this name to close it
 /// (installer/installer.nsi, MAIN_CLASS).
@@ -41,25 +38,17 @@ const MENU_SETTINGS: usize = 1;
 const MENU_QUIT: usize = 2;
 /// Enter or Space on the focused icon; the headers define it as this.
 const NIN_KEYSELECT: u32 = NIN_SELECT | NINF_KEY;
-/// Watches for the modifiers of a cycling shortcut to be let go. It runs
-/// only between such a press and that release.
-const CYCLE_TIMER: usize = 1;
-const CYCLE_POLL_MS: u32 = 15;
 
 struct App {
     hwnd: HWND,
     config: Config,
-    /// The config's shortcuts by key combination; hotkey id `n` is
-    /// `bindings[n - 1]`.
-    bindings: Vec<Binding>,
-    cycle: Cycle,
+    /// The config's shortcuts, while they are registered.
+    shortcuts: Shortcuts,
     path: PathBuf,
     icon: HICON,
     /// Broadcast when Explorer (re)starts, which empties the notification
     /// area.
     taskbar_created: u32,
-    /// How many hotkey ids are registered, from 1 up.
-    registered: i32,
     /// The settings window, while it is open.
     settings: Option<settings::Child>,
     /// Whether the user has already been told that elevated windows cannot
@@ -107,13 +96,11 @@ pub fn run() {
     APP.with(|a| {
         *a.borrow_mut() = Some(App {
             hwnd,
-            bindings: cycle::bindings(&config),
             config,
-            cycle: Cycle::default(),
+            shortcuts: Shortcuts::new(hwnd),
             path,
             icon: icon::create(dpi),
             taskbar_created: unsafe { RegisterWindowMessageW(w!("TaskbarCreated")) },
-            registered: 0,
             settings: None,
             told_access_denied: false,
         })
@@ -214,31 +201,14 @@ fn notify(title: &str, text: &str) {
 }
 
 fn unregister_hotkeys() {
-    stop_cycle();
-    with_app(|app| {
-        for id in 1..=app.registered {
-            let _ = unsafe { UnregisterHotKey(Some(app.hwnd), id) };
-        }
-        app.registered = 0;
-    });
+    with_app(|app| app.shortcuts.clear());
 }
 
-/// Registers every key combination in the config once, and says which ones
-/// another application already holds.
+/// Registers the config's shortcuts, and says which ones another
+/// application already holds.
 fn register_hotkeys() {
-    let failed = with_app(|app| {
-        let mut failed = Vec::new();
-        for (i, b) in app.bindings.iter().enumerate() {
-            let id = i as i32 + 1;
-            let modifiers = HOT_KEY_MODIFIERS(b.keys.modifiers) | MOD_NOREPEAT;
-            if unsafe { RegisterHotKey(Some(app.hwnd), id, modifiers, b.keys.vk) }.is_err() {
-                failed.push(b.keys.to_string());
-            }
-        }
-        app.registered = app.bindings.len() as i32;
-        failed
-    })
-    .unwrap_or_default();
+    let failed =
+        with_app(|app| app.shortcuts.set(cycle::bindings(&app.config))).unwrap_or_default();
     if !failed.is_empty() {
         notify(
             "使えないショートカットがあります",
@@ -251,20 +221,9 @@ fn register_hotkeys() {
 }
 
 fn on_hotkey(id: usize) {
-    let picked = with_app(|app| {
-        let index = id.wrapping_sub(1);
-        let b = app.bindings.get(index)?;
-        let entry = app.cycle.press(index, b.placements.len());
-        Some((app.hwnd, b.placements[entry], b.cycles()))
-    })
-    .flatten();
-    let Some((hwnd, placement, cycles)) = picked else {
+    let Some(placement) = with_app(|app| app.shortcuts.on_hotkey(id)).flatten() else {
         return;
     };
-    if cycles {
-        // Restarting an already running timer just resets its interval.
-        unsafe { SetTimer(Some(hwnd), CYCLE_TIMER, CYCLE_POLL_MS, None) };
-    }
     if let Err(mover::MoveError::AccessDenied) = mover::place_foreground(&placement) {
         let first = with_app(|app| !std::mem::replace(&mut app.told_access_denied, true));
         if first == Some(true) {
@@ -273,28 +232,6 @@ fn on_hotkey(id: usize) {
                 "管理者として実行されているウィンドウは、winwin も管理者として実行しているときだけ動かせます。",
             );
         }
-    }
-}
-
-/// Letting go of any modifier of the cycling shortcut counts as letting go:
-/// the next press starts from its first entry.
-fn on_cycle_timer() {
-    let modifiers = with_app(|app| {
-        let b = app.cycle.active()?;
-        app.bindings.get(b).map(|b| b.keys.modifiers)
-    })
-    .flatten();
-    if modifiers.is_none_or(|m| !modifiers_held(m)) {
-        stop_cycle();
-    }
-}
-
-fn stop_cycle() {
-    if let Some(hwnd) = with_app(|app| {
-        app.cycle.reset();
-        app.hwnd
-    }) {
-        let _ = unsafe { KillTimer(Some(hwnd), CYCLE_TIMER) };
     }
 }
 
@@ -336,10 +273,7 @@ fn on_settings_closed() {
     child.release();
     match Config::load_or_create(&path) {
         Ok(config) => {
-            with_app(|app| {
-                app.bindings = cycle::bindings(&config);
-                app.config = config;
-            });
+            with_app(|app| app.config = config);
         }
         Err(e) => error_box(None, &e.to_string()),
     }
@@ -424,10 +358,7 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
             on_hotkey(wparam.0);
             LRESULT(0)
         }
-        WM_TIMER if wparam.0 == CYCLE_TIMER => {
-            on_cycle_timer();
-            LRESULT(0)
-        }
+        WM_TIMER if with_app(|app| app.shortcuts.on_timer(wparam.0)) == Some(true) => LRESULT(0),
         WM_APP_TRAY => {
             // NOTIFYICON_VERSION_4: the event is in the low word of lParam.
             match loword(lparam.0 as usize) {

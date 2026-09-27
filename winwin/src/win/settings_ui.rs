@@ -26,7 +26,7 @@ use windows_reactor::*;
 use super::{autostart, config_path, error_box, icon, keyhook, testwin};
 use crate::config::{Config, Theme};
 use crate::draft::{Draft, Editor};
-use crate::hotkey::{self, Arrow, Keycap, Recorder};
+use crate::hotkey::{self, Arrow, Hotkey, Keycap, Recorder};
 use crate::layout::{Anchor, Rect};
 
 /// The client area in DIPs, which is also as small as the window goes: the
@@ -39,6 +39,9 @@ const PREVIEW: (f64, f64) = (360.0, 200.0);
 /// Pictures are worked out in whole units this many times finer than a DIP,
 /// so that a small one does not snap to whole DIPs.
 const SUBPIXEL: f64 = 4.0;
+
+/// The most keycaps the recording dialog draws large; more would not fit.
+const LARGE_CAPS: usize = 5;
 
 const WINUI_WINDOW_CLASS: &str = "WinUIDesktopWin32WindowClass";
 
@@ -209,7 +212,7 @@ impl Component for Settings {
             }
             Msg::RecordReset => {
                 if let (Some(r), Some(d)) = (&mut self.recording, self.editor.selected()) {
-                    *r = Recorder::showing(d.modifiers, d.vk);
+                    *r = Recorder::showing(&d.keys);
                 }
             }
             Msg::RecordClear => {
@@ -223,10 +226,7 @@ impl Component for Settings {
                 if result == ContentDialogResult::Primary
                     && let Some(Ok(keys)) = recorded
                 {
-                    self.editor.edit(|d| {
-                        d.modifiers = keys.modifiers;
-                        d.vk = keys.vk;
-                    });
+                    self.editor.edit(|d| d.keys = keys.strokes().to_vec());
                 }
             }
             Msg::Anchor(Some(i)) => self.editor.edit(|d| {
@@ -415,24 +415,26 @@ impl Settings {
             self.error = Some(format!("キー入力を受け取れませんでした。{e}"));
             return;
         }
-        self.recording = Some(Recorder::showing(d.modifiers, d.vk));
+        self.recording = Some(Recorder::showing(&d.keys));
     }
 
     /// The dialog that records a shortcut: it shows the keys as they are
     /// pressed, and saves only a combination that can be a shortcut.
     fn recorder(&self, context: &mut ViewContext<Self>) -> View {
-        let r = self.recording.unwrap_or_default();
+        let r = self.recording.clone().unwrap_or_default();
         let result = r.result();
-        let caps = hotkey::keycaps(r.modifiers, r.vk);
-        let keys: View = if caps.is_empty() {
+        let strokes = r.strokes();
+        let keys: View = if strokes.is_empty() && r.modifiers == 0 {
             TextBlock::new()
                 .text("キーを押してください")
                 .opacity(0.6)
                 .horizontal_alignment(HorizontalAlignment::Center)
                 .vertical_alignment(VerticalAlignment::Center)
                 .into()
+        } else if strokes.is_empty() {
+            keycaps(hotkey::keycaps(r.modifiers, 0), true)
         } else {
-            keycaps(caps, true)
+            strokes_view(&strokes, true)
         };
         let problem = match &result {
             Some(Err(e)) => e.to_string(),
@@ -705,15 +707,49 @@ impl Settings {
 
 /// A row's shortcut as keycaps, or 未設定.
 fn shortcut_view(d: &Draft) -> View {
-    if d.vk == 0 {
+    if d.keys.is_empty() {
         TextBlock::new()
             .text("未設定")
             .opacity(0.6)
             .vertical_alignment(VerticalAlignment::Center)
             .into()
     } else {
-        keycaps(hotkey::keycaps(d.modifiers, d.vk), false)
+        strokes_view(&d.keys, false)
     }
+}
+
+/// Strokes one after another as keycaps, with commas between them as the
+/// file writes them; the second without the modifiers it shares with the
+/// first. `dialog` is the recording dialog's: centered, and large caps as
+/// long as they fit.
+fn strokes_view(strokes: &[Hotkey], dialog: bool) -> View {
+    let groups = hotkey::strokes_caps(strokes);
+    let caps: usize = groups.iter().map(Vec::len).sum();
+    let large = dialog && caps <= LARGE_CAPS;
+    let text_size = if large { 18.0 } else { 14.0 };
+    let children = groups.into_iter().enumerate().flat_map(|(i, caps)| {
+        let comma: Option<(usize, View)> = (i > 0).then(|| {
+            (
+                2 * i - 1,
+                TextBlock::new()
+                    .text(",")
+                    .font_size(text_size)
+                    .vertical_alignment(VerticalAlignment::Bottom)
+                    .into(),
+            )
+        });
+        comma.into_iter().chain([(2 * i, keycaps(caps, large))])
+    });
+    StackPanel::new()
+        .orientation(Orientation::Horizontal)
+        .spacing(if large { 12.0 } else { 4.0 })
+        .horizontal_alignment(if dialog {
+            HorizontalAlignment::Center
+        } else {
+            HorizontalAlignment::Left
+        })
+        .vertical_alignment(VerticalAlignment::Center)
+        .keyed_children(children)
 }
 
 /// Keys drawn as keycaps in a row, accent colored as Windows' own settings

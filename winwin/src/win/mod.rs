@@ -7,6 +7,7 @@ mod keyhook;
 mod mover;
 mod settings;
 mod settings_ui;
+mod shortcuts;
 mod testwin;
 
 use std::path::PathBuf;

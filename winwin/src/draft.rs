@@ -5,14 +5,13 @@
 //! Nothing here touches Win32, so it is tested on every platform.
 
 use crate::config::{Config, Shortcut};
-use crate::hotkey::Hotkey;
+use crate::hotkey::{self, Hotkey, Keys};
 use crate::layout::{self, Anchor, Placement, Ratio, Rect};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Draft {
-    /// MOD_* flags and a virtual-key code; `vk` is 0 until a key is chosen.
-    pub modifiers: u32,
-    pub vk: u32,
+    /// The strokes as recorded; empty until a shortcut is chosen.
+    pub keys: Vec<Hotkey>,
     pub anchor: Anchor,
     pub width: String,
     pub height: String,
@@ -22,8 +21,7 @@ impl Draft {
     /// What 追加 starts from.
     pub fn new() -> Draft {
         Draft {
-            modifiers: 0,
-            vk: 0,
+            keys: Vec::new(),
             anchor: Anchor::Center,
             width: "1/2".into(),
             height: "1/2".into(),
@@ -33,8 +31,7 @@ impl Draft {
     pub fn from_shortcut(s: &Shortcut) -> Draft {
         let p = &s.placement;
         Draft {
-            modifiers: s.keys.modifiers,
-            vk: s.keys.vk,
+            keys: s.keys.strokes().to_vec(),
             anchor: p.anchor,
             width: p.width.to_string(),
             height: p.height.to_string(),
@@ -52,10 +49,10 @@ impl Draft {
     }
 
     pub fn to_shortcut(&self) -> Result<Shortcut, String> {
-        if self.vk == 0 {
+        if self.keys.is_empty() {
             return Err("ショートカットを設定してください".into());
         }
-        let keys = Hotkey::new(self.modifiers, self.vk).map_err(|e| e.to_string())?;
+        let keys = Keys::new(self.keys.clone()).map_err(|e| e.to_string())?;
         Ok(Shortcut {
             keys,
             placement: self.placement()?,
@@ -89,14 +86,10 @@ impl Draft {
     /// The row in one line, as errors name it: the keys first, then where
     /// they put the window.
     pub fn list_text(&self) -> String {
-        let keys = if self.vk == 0 {
+        let keys = if self.keys.is_empty() {
             "(未設定)".to_string()
         } else {
-            Hotkey {
-                modifiers: self.modifiers,
-                vk: self.vk,
-            }
-            .to_string()
+            hotkey::strokes_text(&self.keys)
         };
         format!("{keys}    {}", self.placement_text())
     }
@@ -320,9 +313,18 @@ mod tests {
             d.to_shortcut().unwrap_err(),
             "ショートカットを設定してください"
         );
-        d.modifiers = MOD_CONTROL | MOD_ALT;
-        d.vk = 0x41;
+        d.keys = vec![Hotkey {
+            modifiers: MOD_CONTROL | MOD_ALT,
+            vk: 0x41,
+        }];
         assert_eq!(d.to_shortcut().unwrap().keys.to_string(), "Ctrl+Alt+A");
+        d.keys.push(Hotkey {
+            modifiers: MOD_CONTROL | MOD_ALT,
+            vk: 0x26,
+        });
+        assert_eq!(d.to_shortcut().unwrap().keys.to_string(), "Ctrl+Alt+A, Up");
+        d.keys[1].modifiers = MOD_CONTROL;
+        assert!(d.to_shortcut().unwrap_err().contains("修飾キー"));
     }
 
     #[test]
@@ -338,7 +340,7 @@ mod tests {
         assert!(d.to_shortcut().unwrap_err().starts_with("高さ:"));
 
         d = Draft::from_shortcut(&Config::defaults().shortcuts[0]);
-        d.modifiers = MOD_SHIFT;
+        d.keys[0].modifiers = MOD_SHIFT;
         assert!(d.to_shortcut().unwrap_err().contains("Ctrl・Alt・Win"));
     }
 
@@ -348,6 +350,9 @@ mod tests {
         assert_eq!(d.placement_text(), "左 1/2 × 1");
         assert_eq!(d.list_text(), "Ctrl+Alt+Left    左 1/2 × 1");
         assert_eq!(Draft::new().list_text(), "(未設定)    中央 1/2 × 1/2");
+        let mut d = d;
+        d.keys.push("Ctrl+Alt+Up".parse().unwrap());
+        assert_eq!(d.list_text(), "Ctrl+Alt+Left, Up    左 1/2 × 1");
     }
 
     fn editor() -> Editor {
