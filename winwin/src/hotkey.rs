@@ -384,12 +384,6 @@ impl Keys {
     pub fn last(&self) -> Hotkey {
         self.0[self.0.len() - 1]
     }
-
-    /// Whether `self` is the start of `other` and shorter: pressing `self`
-    /// could not tell whether `other` is meant.
-    pub fn is_prefix_of(&self, other: &Keys) -> bool {
-        self.0.len() < other.0.len() && other.0.starts_with(&self.0)
-    }
 }
 
 impl From<Hotkey> for Keys {
@@ -578,15 +572,6 @@ mod tests {
             "Ctrl+A, Ctrl+B, Ctrl+C, Ctrl+D".parse::<Keys>(),
             Err(HotkeyError::TooManyStrokes)
         );
-    }
-
-    #[test]
-    fn a_prefix_is_a_shorter_start() {
-        let k = keys("Ctrl+Left, Ctrl+Up");
-        assert!(keys("Ctrl+Left").is_prefix_of(&k));
-        assert!(!k.is_prefix_of(&k));
-        assert!(!keys("Ctrl+Up").is_prefix_of(&k));
-        assert!(!k.is_prefix_of(&keys("Ctrl+Left")));
     }
 
     #[test]

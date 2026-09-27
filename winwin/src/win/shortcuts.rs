@@ -97,7 +97,10 @@ impl Shortcuts {
     /// A WM_TIMER. Returns whether it was one of these.
     pub fn on_timer(&mut self, id: usize) -> bool {
         match id {
-            PENDING_TIMER => self.reset(),
+            PENDING_TIMER => {
+                self.presses.time_out();
+                self.stop(PENDING_TIMER);
+            }
             // Letting go of any modifier of the cycling shortcut counts as
             // letting go: the next press starts from its first entry.
             CYCLE_TIMER => {
@@ -107,12 +110,18 @@ impl Shortcuts {
                     .and_then(|b| self.bindings.get(b))
                     .map(|b| b.keys.last().modifiers);
                 if modifiers.is_none_or(|m| !modifiers_held(m)) {
-                    self.reset();
+                    self.presses.let_go();
+                    self.stop(CYCLE_TIMER);
                 }
             }
             _ => return false,
         }
         true
+    }
+
+    fn stop(&mut self, timer: usize) {
+        let _ = unsafe { KillTimer(Some(self.hwnd), timer) };
+        self.sync_next();
     }
 
     /// Starts the next press over and stops waiting for anything.

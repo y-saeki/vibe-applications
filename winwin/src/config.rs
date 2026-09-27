@@ -100,24 +100,6 @@ fn shortcut(keys: &str, anchor: Anchor, width: &str, height: &str) -> Shortcut {
     }
 }
 
-/// Two shortcuts where one is the start of the other, such as `Ctrl+Left`
-/// and `Ctrl+Left, Ctrl+Up`: after the first stroke there would be no
-/// telling which is meant. The later of the two comes first in the pair.
-pub fn prefix_clash(shortcuts: &[Shortcut]) -> Option<(usize, usize)> {
-    shortcuts.iter().enumerate().find_map(|(i, s)| {
-        shortcuts[..i]
-            .iter()
-            .position(|t| t.keys.is_prefix_of(&s.keys) || s.keys.is_prefix_of(&t.keys))
-            .map(|j| (i, j))
-    })
-}
-
-/// Why the shortcuts of [`prefix_clash`] cannot both be used.
-pub fn clash_message(a: &Keys, b: &Keys) -> String {
-    let (short, long) = if a.is_prefix_of(b) { (a, b) } else { (b, a) };
-    format!("「{short}」は「{long}」の途中までと同じため、両方は使えません")
-}
-
 /// Whether a width or height in the file is written in percent, as versions
 /// before ratios wrote them.
 fn has_percent(text: &str) -> bool {
@@ -165,18 +147,8 @@ impl Config {
     /// cycle.rs). Widths and heights in percent, as earlier versions wrote
     /// them, are read as ratios. Fields this version does not know, such as the `name` and
     /// `offset_x`/`offset_y` of earlier versions, are ignored.
-    /// A shortcut that is the start of another is refused.
     pub fn parse(text: &str, path: &Path) -> Result<Config, ConfigError> {
-        let config: Config =
-            toml::from_str(text).map_err(|e| ConfigError::Parse(path.into(), e.to_string()))?;
-        if let Some((i, j)) = prefix_clash(&config.shortcuts) {
-            let s = &config.shortcuts;
-            return Err(ConfigError::Parse(
-                path.into(),
-                clash_message(&s[i].keys, &s[j].keys),
-            ));
-        }
-        Ok(config)
+        toml::from_str(text).map_err(|e| ConfigError::Parse(path.into(), e.to_string()))
     }
 
     pub fn to_toml(&self) -> String {
@@ -396,7 +368,7 @@ mod tests {
     }
 
     #[test]
-    fn refuses_a_shortcut_that_starts_another() {
+    fn accepts_a_shortcut_that_starts_another() {
         let text = r#"
             [[shortcut]]
             keys = "Ctrl+Left, Ctrl+Up"
@@ -410,18 +382,9 @@ mod tests {
             width = "1/2"
             height = "1"
         "#;
-        let e = parse(text).unwrap_err().to_string();
-        assert!(
-            e.contains("「Ctrl+Left」は「Ctrl+Left, Ctrl+Up」の途中までと同じ"),
-            "{e}"
-        );
-        let config = parse(&text.replace(r#"keys = "Ctrl+Left""#, r#"keys = "Ctrl+Up""#)).unwrap();
-        assert_eq!(prefix_clash(&config.shortcuts), None);
-        assert_eq!(prefix_clash(&parse_unchecked(text)), Some((1, 0)));
-    }
-
-    fn parse_unchecked(text: &str) -> Vec<Shortcut> {
-        toml::from_str::<Config>(text).unwrap().shortcuts
+        let config = parse(text).unwrap();
+        assert_eq!(config.shortcuts.len(), 2);
+        assert_eq!(parse(&config.to_toml()).unwrap(), config);
     }
 
     #[test]

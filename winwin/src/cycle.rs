@@ -10,6 +10,12 @@
 //! strokes are registered all the time; the ones that may come next are
 //! registered while they may.
 //!
+//! A shortcut may also be the start of a longer one (`Ctrl+Left` and
+//! `Ctrl+Left, Ctrl+Up`). Its entry is applied at once, and should the
+//! longer one's next stroke follow in time, the longer one's entry replaces
+//! it. That next stroke is taken as the longer shortcut even when it would
+//! also step the shorter one's cycle.
+//!
 //! Nothing here touches Win32, so it is tested on every platform.
 
 use crate::config::Config;
@@ -71,117 +77,123 @@ pub enum Outcome {
     Nothing,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
-enum State {
-    #[default]
-    Idle,
-    /// The strokes of an unfinished shortcut.
-    Pending(Vec<Hotkey>),
-    /// Binding `binding`, which has more than one entry, was pressed last
-    /// and chose `entry`.
-    Cycling { binding: usize, entry: usize },
-}
-
-/// Where the presses stand: a shortcut under way, or one whose entries are
-/// being stepped through.
+/// Where the presses stand. A shortcut that is also the start of a longer
+/// one is applied at once and waits for the longer one's next stroke, so
+/// both can hold at a time.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Presses {
-    state: State,
+    /// The strokes so far, while they are the start of a longer shortcut.
+    pending: Vec<Hotkey>,
+    /// Binding `.0`, which has more than one entry, was pressed last and
+    /// chose entry `.1`.
+    cycling: Option<(usize, usize)>,
 }
 
 impl Presses {
+    /// The next stroke of a longer shortcut comes first; then a press of
+    /// the cycling binding's last stroke; then the stroke on its own.
     pub fn press(&mut self, bindings: &[Binding], stroke: Hotkey) -> Outcome {
-        let pending = match std::mem::take(&mut self.state) {
-            State::Cycling { binding, entry } => {
-                if let Some(b) = bindings.get(binding)
-                    && b.keys.last() == stroke
-                {
-                    let entry = (entry + 1) % b.placements.len();
-                    self.state = State::Cycling { binding, entry };
-                    return Outcome::Place { binding, entry };
-                }
-                Vec::new()
+        let pending = std::mem::take(&mut self.pending);
+        let cycling = self.cycling.take();
+        if !pending.is_empty() {
+            let mut strokes = pending;
+            strokes.push(stroke);
+            let outcome = self.enter(bindings, strokes);
+            if outcome != Outcome::Nothing {
+                return outcome;
             }
-            State::Pending(strokes) => strokes,
-            State::Idle => Vec::new(),
-        };
-        let outcome = self.follow(bindings, pending.clone(), stroke);
-        // A stroke that does not go on from the ones before may still begin
-        // something of its own.
-        if outcome == Outcome::Nothing && !pending.is_empty() {
-            return self.follow(bindings, Vec::new(), stroke);
         }
-        outcome
+        if let Some((binding, entry)) = cycling
+            && let Some(b) = bindings.get(binding)
+            && b.keys.last() == stroke
+        {
+            let entry = (entry + 1) % b.placements.len();
+            self.cycling = Some((binding, entry));
+            // Still the start of the longer ones, whichever entry it is on.
+            if extended(bindings, b.keys.strokes()) {
+                self.pending = b.keys.strokes().to_vec();
+            }
+            return Outcome::Place { binding, entry };
+        }
+        self.enter(bindings, vec![stroke])
     }
 
-    fn follow(
-        &mut self,
-        bindings: &[Binding],
-        mut strokes: Vec<Hotkey>,
-        stroke: Hotkey,
-    ) -> Outcome {
-        strokes.push(stroke);
-        if let Some(binding) = bindings.iter().position(|b| b.keys.strokes() == strokes) {
-            if bindings[binding].cycles() {
-                self.state = State::Cycling { binding, entry: 0 };
+    /// `strokes` have been pressed: applies the binding they make, and waits
+    /// for more when they begin a longer one. Leaves the state alone when
+    /// they do neither.
+    fn enter(&mut self, bindings: &[Binding], strokes: Vec<Hotkey>) -> Outcome {
+        let exact = bindings.iter().position(|b| b.keys.strokes() == strokes);
+        let longer = extended(bindings, &strokes);
+        if longer {
+            self.pending = strokes;
+        }
+        match exact {
+            Some(binding) => {
+                if bindings[binding].cycles() {
+                    self.cycling = Some((binding, 0));
+                }
+                Outcome::Place { binding, entry: 0 }
             }
-            return Outcome::Place { binding, entry: 0 };
+            None if longer => Outcome::Pending,
+            None => Outcome::Nothing,
         }
-        if bindings
-            .iter()
-            .any(|b| b.keys.strokes().starts_with(&strokes))
-        {
-            self.state = State::Pending(strokes);
-            return Outcome::Pending;
-        }
-        Outcome::Nothing
     }
 
     /// The binding whose modifiers are being watched, if any.
     pub fn cycling(&self) -> Option<usize> {
-        match self.state {
-            State::Cycling { binding, .. } => Some(binding),
-            _ => None,
-        }
+        self.cycling.map(|(b, _)| b)
     }
 
     pub fn is_pending(&self) -> bool {
-        matches!(self.state, State::Pending(_))
+        !self.pending.is_empty()
     }
 
-    /// The modifiers were let go, or the next stroke did not come in time:
-    /// the next press starts over.
+    /// The next stroke did not come in time: the next press starts a
+    /// shortcut afresh.
+    pub fn time_out(&mut self) {
+        self.pending.clear();
+    }
+
+    /// The cycling binding's modifiers were let go: the next press starts
+    /// from its first entry.
+    pub fn let_go(&mut self) {
+        self.cycling = None;
+    }
+
     pub fn reset(&mut self) {
-        self.state = State::Idle;
+        self.time_out();
+        self.let_go();
     }
 
     /// The strokes that must be registered for now on top of
     /// [`first_strokes`]: those that may come next.
     pub fn next_strokes(&self, bindings: &[Binding]) -> Vec<Hotkey> {
         let firsts = first_strokes(bindings);
-        let candidates: Vec<Hotkey> = match &self.state {
-            State::Idle => Vec::new(),
-            State::Pending(strokes) => bindings
-                .iter()
-                .filter_map(|b| {
-                    let s = b.keys.strokes();
-                    (s.len() > strokes.len() && s.starts_with(strokes)).then(|| s[strokes.len()])
-                })
-                .collect(),
-            State::Cycling { binding, .. } => bindings
-                .get(*binding)
-                .map(|b| b.keys.last())
-                .into_iter()
-                .collect(),
-        };
+        let n = self.pending.len();
+        let following = bindings.iter().filter_map(|b| {
+            let s = b.keys.strokes();
+            (n > 0 && s.len() > n && s.starts_with(&self.pending)).then(|| s[n])
+        });
+        let repeated = self
+            .cycling
+            .and_then(|(b, _)| bindings.get(b))
+            .map(|b| b.keys.last());
         let mut out = Vec::new();
-        for h in candidates {
+        for h in following.chain(repeated) {
             if !firsts.contains(&h) && !out.contains(&h) {
                 out.push(h);
             }
         }
         out
     }
+}
+
+/// Whether some binding is longer than `strokes` and begins with them.
+fn extended(bindings: &[Binding], strokes: &[Hotkey]) -> bool {
+    bindings.iter().any(|b| {
+        let s = b.keys.strokes();
+        s.len() > strokes.len() && s.starts_with(strokes)
+    })
 }
 
 #[cfg(test)]
@@ -351,6 +363,96 @@ mod tests {
         assert_eq!(presses.cycling(), None);
         assert_eq!(presses.press(&bindings, hk("Ctrl+Alt+Z")), Outcome::Nothing);
         assert!(!presses.is_pending());
+    }
+
+    /// 左半分 on Ctrl+Left, 左上 1/2 × 1/2 on Ctrl+Left, Ctrl+Up.
+    fn config_with_a_prefix() -> Config {
+        let text = r#"
+            [[shortcut]]
+            keys = "Ctrl+Left"
+            anchor = "left"
+            width = "1/2"
+            height = "1"
+
+            [[shortcut]]
+            keys = "Ctrl+Left, Ctrl+Up"
+            anchor = "top-left"
+            width = "1/2"
+            height = "1/2"
+        "#;
+        Config::parse(text, std::path::Path::new("config.toml")).unwrap()
+    }
+
+    #[test]
+    fn a_shortcut_that_starts_another_applies_at_once() {
+        let bindings = bindings(&config_with_a_prefix());
+        let mut presses = Presses::default();
+        let (left, up) = (hk("Ctrl+Left"), hk("Ctrl+Up"));
+        assert_eq!(presses.press(&bindings, left), place(0, 0));
+        assert!(presses.is_pending());
+        assert_eq!(presses.next_strokes(&bindings), [up]);
+        assert_eq!(presses.press(&bindings, up), place(1, 0));
+        assert!(!presses.is_pending());
+        // Without the next stroke, it stays as it is.
+        presses.press(&bindings, left);
+        presses.time_out();
+        assert_eq!(presses.next_strokes(&bindings), []);
+        assert_eq!(presses.press(&bindings, left), place(0, 0));
+    }
+
+    #[test]
+    fn a_shorter_shortcut_cycles_and_still_leads_on() {
+        let mut config = config_with_a_prefix();
+        let mut two_thirds = config.shortcuts[0].clone();
+        two_thirds.placement.width = "2/3".parse().unwrap();
+        config.shortcuts.push(two_thirds);
+        let bindings = bindings(&config);
+        let mut presses = Presses::default();
+        let (left, up) = (hk("Ctrl+Left"), hk("Ctrl+Up"));
+        assert_eq!(presses.press(&bindings, left), place(0, 0));
+        assert_eq!(presses.press(&bindings, left), place(0, 1));
+        assert_eq!(presses.cycling(), Some(0));
+        assert!(presses.is_pending());
+        assert_eq!(presses.press(&bindings, up), place(1, 0));
+        // The longer one took over; the cycle of the shorter one is over.
+        assert_eq!(presses.cycling(), None);
+        // Timing out leaves the cycle, and letting go leaves the wait.
+        presses.press(&bindings, left);
+        presses.time_out();
+        assert_eq!(presses.press(&bindings, left), place(0, 1));
+        presses.let_go();
+        assert!(presses.is_pending());
+        assert_eq!(presses.press(&bindings, up), place(1, 0));
+    }
+
+    #[test]
+    fn the_longer_shortcut_comes_before_a_cycle() {
+        let text = r#"
+            [[shortcut]]
+            keys = "Ctrl+Left"
+            anchor = "left"
+            width = "1/2"
+            height = "1"
+
+            [[shortcut]]
+            keys = "Ctrl+Left"
+            anchor = "left"
+            width = "2/3"
+            height = "1"
+
+            [[shortcut]]
+            keys = "Ctrl+Left, Ctrl+Left"
+            anchor = "left"
+            width = "1/3"
+            height = "1"
+        "#;
+        let config = Config::parse(text, std::path::Path::new("config.toml")).unwrap();
+        let bindings = bindings(&config);
+        let mut presses = Presses::default();
+        let left = hk("Ctrl+Left");
+        assert_eq!(presses.press(&bindings, left), place(0, 0));
+        assert_eq!(presses.press(&bindings, left), place(1, 0));
+        assert_eq!(presses.press(&bindings, left), place(0, 0));
     }
 
     #[test]

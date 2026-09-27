@@ -4,7 +4,7 @@
 //!
 //! Nothing here touches Win32, so it is tested on every platform.
 
-use crate::config::{self, Config, Shortcut};
+use crate::config::{Config, Shortcut};
 use crate::hotkey::{Hotkey, Keys};
 use crate::layout::{self, Anchor, Placement, Ratio, Rect};
 
@@ -245,8 +245,7 @@ impl Editor {
     }
 
     /// Checks every row and makes the config to save. The first row that
-    /// does not make a shortcut, or whose shortcut is the start of an earlier
-    /// row's or the other way round, is selected, and the error names it.
+    /// does not make a shortcut is selected, and the error names it.
     pub fn build_config(&mut self) -> Result<Config, String> {
         let mut config = Config::default();
         for (i, (_, row)) in self.rows.iter().enumerate() {
@@ -259,34 +258,19 @@ impl Editor {
                 }
             }
         }
-        if let Some((i, j)) = config::prefix_clash(&config.shortcuts) {
-            let s = &config.shortcuts;
-            self.current = Some(i);
-            return Err(config::clash_message(&s[i].keys, &s[j].keys));
-        }
         Ok(config)
     }
 
     /// The rows that make a shortcut as they stand, in list order, without
     /// saving anything: what the test window answers to. A row still being
-    /// filled in is left out rather than holding up the rest, and so is one
-    /// whose shortcut clashes with an earlier row's.
+    /// filled in is left out rather than holding up the rest.
     pub fn trial_config(&self) -> Config {
-        let mut shortcuts: Vec<Shortcut> = Vec::new();
-        for s in self
-            .rows
-            .iter()
-            .filter_map(|(_, row)| row.to_shortcut().ok())
-        {
-            let clashes = shortcuts
-                .iter()
-                .any(|t| t.keys.is_prefix_of(&s.keys) || s.keys.is_prefix_of(&t.keys));
-            if !clashes {
-                shortcuts.push(s);
-            }
-        }
         Config {
-            shortcuts,
+            shortcuts: self
+                .rows
+                .iter()
+                .filter_map(|(_, row)| row.to_shortcut().ok())
+                .collect(),
             ..Config::default()
         }
     }
@@ -497,28 +481,6 @@ mod tests {
             error,
             "(未設定)    中央 1/2 × 1/2: ショートカットを設定してください"
         );
-    }
-
-    #[test]
-    fn saving_stops_at_a_shortcut_that_starts_another() {
-        let mut e = editor();
-        e.select(2);
-        e.edit(|d| d.keys = vec!["Ctrl+Alt+Left".parse().unwrap(), "Ctrl+Up".parse().unwrap()]);
-        e.select(1);
-        let error = e.build_config().unwrap_err();
-        assert_eq!(e.current(), Some(2));
-        assert_eq!(
-            error,
-            "「Ctrl+Alt+Left」は「Ctrl+Alt+Left, Ctrl+Up」の途中までと同じため、両方は使えません"
-        );
-        // The test window takes the earlier of the two.
-        let keys: Vec<String> = e
-            .trial_config()
-            .shortcuts
-            .iter()
-            .map(|s| s.keys.to_string())
-            .collect();
-        assert_eq!(keys, ["Ctrl+Alt+Left", "Ctrl+Alt+Right"]);
     }
 
     #[test]
