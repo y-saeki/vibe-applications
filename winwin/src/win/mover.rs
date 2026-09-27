@@ -11,7 +11,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
     CURSORINFO, GA_ROOT, GetAncestor, GetClassNameW, GetCursorInfo, GetForegroundWindow,
     GetShellWindow, GetWindowRect, IDC_SIZENESW, IDC_SIZENS, IDC_SIZENWSE, IDC_SIZEWE,
     IsHungAppWindow, IsIconic, IsWindowVisible, IsZoomed, LoadCursorW, SW_RESTORE,
-    SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE, SWP_NOOWNERZORDER, SWP_NOZORDER, SetWindowPos, ShowWindow,
+    SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER, SWP_NOZORDER, SetWindowPos,
+    ShowWindow,
 };
 use windows::core::{s, w};
 
@@ -199,6 +200,22 @@ pub fn is_resize_cursor() -> bool {
         .into_iter()
         .filter_map(|id| unsafe { LoadCursorW(None, id) }.ok())
         .any(|cursor| cursor == info.hCursor)
+}
+
+/// Gives `hwnd` a new outer size where it is, without waiting for the
+/// window to answer.
+pub fn resize(hwnd: HWND, width: i32, height: i32) {
+    let _ = unsafe {
+        SetWindowPos(
+            hwnd,
+            None,
+            0,
+            0,
+            width,
+            height,
+            SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_ASYNCWINDOWPOS,
+        )
+    };
 }
 
 /// Puts `hwnd` exactly at `rect`, without waiting for the window to answer.

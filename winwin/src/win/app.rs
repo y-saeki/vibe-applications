@@ -16,13 +16,13 @@ use windows::Win32::UI::Shell::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, CHILDID_SELF, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyIcon,
-    DestroyMenu, DestroyWindow, DispatchMessageW, EVENT_SYSTEM_MOVESIZEEND,
-    EVENT_SYSTEM_MOVESIZESTART, FindWindowW, GetCursorPos, GetMessageW, HICON, IsWindow,
-    MF_SEPARATOR, MF_STRING, MSG, OBJID_WINDOW, PostMessageW, PostQuitMessage, RegisterClassExW,
-    RegisterWindowMessageW, SetForegroundWindow, TPM_BOTTOMALIGN, TPM_NONOTIFY, TPM_RETURNCMD,
-    TPM_RIGHTBUTTON, TrackPopupMenu, TranslateMessage, WINDOW_EX_STYLE, WINEVENT_OUTOFCONTEXT,
-    WINEVENT_SKIPOWNPROCESS, WM_CONTEXTMENU, WM_DESTROY, WM_HOTKEY, WM_TIMER, WNDCLASSEXW,
-    WS_OVERLAPPED,
+    DestroyMenu, DestroyWindow, DispatchMessageW, EVENT_OBJECT_LOCATIONCHANGE,
+    EVENT_SYSTEM_MOVESIZEEND, EVENT_SYSTEM_MOVESIZESTART, FindWindowW, GetCursorPos, GetMessageW,
+    GetWindowThreadProcessId, HICON, IsWindow, MF_SEPARATOR, MF_STRING, MSG, OBJID_WINDOW,
+    PostMessageW, PostQuitMessage, RegisterClassExW, RegisterWindowMessageW, SetForegroundWindow,
+    TPM_BOTTOMALIGN, TPM_NONOTIFY, TPM_RETURNCMD, TPM_RIGHTBUTTON, TrackPopupMenu,
+    TranslateMessage, WINDOW_EX_STYLE, WINEVENT_OUTOFCONTEXT, WINEVENT_SKIPOWNPROCESS,
+    WM_CONTEXTMENU, WM_DESTROY, WM_HOTKEY, WM_TIMER, WNDCLASSEXW, WS_OVERLAPPED,
 };
 use windows::core::{HSTRING, PCSTR, PCWSTR, w};
 
@@ -63,6 +63,8 @@ struct App {
     sizes: Sizes,
     /// Hears the start and end of every window's move or resize.
     move_size_hook: HWINEVENTHOOK,
+    /// Hears the window being dragged move, until it gets its size back.
+    drag_hook: Option<(HWINEVENTHOOK, isize)>,
 }
 
 thread_local! {
@@ -114,6 +116,7 @@ pub fn run() {
             told_access_denied: false,
             sizes: Sizes::default(),
             move_size_hook: install_move_size_hook(),
+            drag_hook: None,
         })
     });
 
@@ -278,10 +281,15 @@ fn install_move_size_hook() -> HWINEVENTHOOK {
     }
 }
 
-/// Gives a placed window its size back when it is dragged away. Windows
-/// does it as the drag starts; winwin waits for the drop, since resizing a
-/// window in the middle of the system's move loop is not something the loop
-/// is known to follow.
+fn cursor_pos() -> (i32, i32) {
+    let mut cursor = POINT::default();
+    let _ = unsafe { GetCursorPos(&mut cursor) };
+    (cursor.x, cursor.y)
+}
+
+/// Gives a placed window its size back when it is dragged away
+/// (`restore.rs` decides). Between the start and the end, the window's own
+/// thread is watched for it to move, and only until it has.
 extern "system" fn on_move_size(
     _hook: HWINEVENTHOOK,
     event: u32,
@@ -303,24 +311,87 @@ extern "system" fn on_move_size(
     };
     match event {
         EVENT_SYSTEM_MOVESIZESTART => {
+            stop_watching_drag();
             let resizing = mover::is_resize_cursor();
-            with_app(|app| app.sizes.drag_started(window, current, resizing));
+            if with_app(|app| app.sizes.drag_started(window, current, resizing)) == Some(true) {
+                watch_drag(hwnd);
+            }
         }
         EVENT_SYSTEM_MOVESIZEEND => {
+            stop_watching_drag();
             let arranged = mover::is_arranged(hwnd);
             let dpi = mover::monitor_dpi(hwnd);
-            let mut cursor = POINT::default();
-            let _ = unsafe { GetCursorPos(&mut cursor) };
-            let back = with_app(|app| {
-                app.sizes
-                    .drag_ended(window, current, dpi, (cursor.x, cursor.y), arranged)
-            })
-            .flatten();
+            let cursor = cursor_pos();
+            let back = with_app(|app| app.sizes.drag_ended(window, current, dpi, cursor, arranged))
+                .flatten();
             if let Some(rect) = back {
                 mover::put(hwnd, rect);
             }
         }
         _ => {}
+    }
+}
+
+/// Hears `hwnd` move, through the location changes of its own thread only.
+fn watch_drag(hwnd: HWND) {
+    let mut process = 0;
+    let thread = unsafe { GetWindowThreadProcessId(hwnd, Some(&mut process)) };
+    if thread == 0 {
+        return;
+    }
+    let hook = unsafe {
+        SetWinEventHook(
+            EVENT_OBJECT_LOCATIONCHANGE,
+            EVENT_OBJECT_LOCATIONCHANGE,
+            None,
+            Some(on_drag_step),
+            process,
+            thread,
+            WINEVENT_OUTOFCONTEXT,
+        )
+    };
+    if hook.is_invalid() {
+        return;
+    }
+    with_app(|app| app.drag_hook = Some((hook, hwnd.0 as isize)));
+}
+
+fn stop_watching_drag() {
+    if let Some((hook, _)) = with_app(|app| app.drag_hook.take()).flatten() {
+        let _ = unsafe { UnhookWinEvent(hook) };
+    }
+}
+
+/// The dragged window moved. The first time it leaves the place winwin put
+/// it, it gets its size back. Only the size: the position stays with the
+/// system's move loop, which moves the window from where the drag started,
+/// so that changing it would have the two fight.
+extern "system" fn on_drag_step(
+    _hook: HWINEVENTHOOK,
+    _event: u32,
+    hwnd: HWND,
+    object: i32,
+    child: i32,
+    _thread: u32,
+    _time: u32,
+) {
+    if object != OBJID_WINDOW.0 || child != CHILDID_SELF as i32 {
+        return;
+    }
+    let window = hwnd.0 as isize;
+    let dragged = with_app(|app| app.drag_hook.map(|(_, w)| w)).flatten();
+    if dragged != Some(window) {
+        return;
+    }
+    let Some(current) = mover::window_rect(hwnd) else {
+        return;
+    };
+    let dpi = mover::monitor_dpi(hwnd);
+    let cursor = cursor_pos();
+    let size = with_app(|app| app.sizes.moved(window, current, dpi, cursor)).flatten();
+    if let Some((width, height)) = size {
+        stop_watching_drag();
+        mover::resize(hwnd, width, height);
     }
 }
 
@@ -470,6 +541,7 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                 child.terminate();
             }
             unregister_hotkeys();
+            stop_watching_drag();
             if let Some(hook) = with_app(|app| app.move_size_hook) {
                 let _ = unsafe { UnhookWinEvent(hook) };
             }
