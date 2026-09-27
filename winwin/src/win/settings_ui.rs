@@ -98,6 +98,9 @@ struct Settings {
     /// Applied to the window as soon as it is chosen; saved with the rest.
     theme: Theme,
     theme_was: Theme,
+    /// How many lines the list had when the view was last published. The
+    /// list is given a selection only below this (see `list`).
+    listed: usize,
     /// Shown above everything when 保存 fails.
     error: Option<String>,
     /// The 変更を破棄しますか dialog is open.
@@ -122,6 +125,8 @@ enum Msg {
     },
     /// The list was dragged into a new order: the rows' ids, as tags.
     Reorder(Vec<String>),
+    /// The list now has this many lines.
+    Listed(usize),
     /// 変更 beside the shortcut: opens the dialog that records one.
     Record,
     /// A key went down or up while recording.
@@ -167,6 +172,7 @@ impl Component for Settings {
             autostart_was: input.autostart,
             theme: input.theme,
             theme_was: input.theme,
+            listed: input.rows.len(),
             error: None,
             confirming: false,
             recording: None,
@@ -189,6 +195,7 @@ impl Component for Settings {
                     self.editor.reorder(&ids);
                 }
             }
+            Msg::Listed(n) => self.listed = n,
             Msg::Record => self.start_recording(context),
 
             Msg::Key(vk, down) => {
@@ -527,6 +534,16 @@ impl Settings {
                 ));
             (id, ListViewItem::new().tag(id.to_string()).content(line))
         });
+        // Reactor sets the list's selection before it adds the lines of the
+        // same update, and WinUI refuses, fatally, an index past the lines it
+        // has: selecting a row just added at the end would crash. So a row
+        // the list does not have yet is selected once it has been published.
+        let rows = self.editor.rows().count();
+        let sender = context.sender();
+        context.use_effect("listed", rows, move || {
+            sender.send(Msg::Listed(rows));
+            None
+        });
         let list = Border::new()
             .background(ThemeBrush::CardBackground)
             .border_brush(ThemeBrush::CardStroke)
@@ -536,7 +553,7 @@ impl Settings {
             .content(
                 ListView::new()
                     .selection_mode(ListViewSelectionMode::Single)
-                    .selected_index(self.editor.current())
+                    .selected_index(self.editor.current().filter(|&i| i < self.listed))
                     .on_selection_changed(context.callback(Msg::Select))
                     // What dragging a line to a new place needs, all three.
                     .can_drag_items(true)
