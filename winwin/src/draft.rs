@@ -104,7 +104,8 @@ impl Draft {
 
 /// The list the settings window edits: the rows, which one is selected, and
 /// whether anything has changed since the window opened. Each row carries an
-/// id that stays with it when it moves, for the list to follow it by.
+/// id, the key its line in the list is kept by: it goes with the row when the
+/// row is dragged, and stays with the line when 上へ・下へ swap two rows.
 #[derive(Clone, Debug, Default)]
 pub struct Editor {
     rows: Vec<(u64, Draft)>,
@@ -206,16 +207,47 @@ impl Editor {
     }
 
     /// 上へ・下へ: moves the selected row, which is also its turn among the
-    /// rows that share its shortcut.
+    /// rows that share its shortcut. The ids stay where they are and the two
+    /// rows trade contents, so the list redraws two lines in place instead of
+    /// taking one out and putting it back.
     pub fn move_selected(&mut self, up: bool) {
         let Some(from) = self.current else {
             return;
         };
         if let Some(to) = moved(from, self.rows.len(), up) {
-            self.rows.swap(from, to);
+            let (a, b) = self.rows.split_at_mut(from.max(to));
+            std::mem::swap(&mut a[from.min(to)].1, &mut b[0].1);
             self.current = Some(to);
             self.dirty = true;
         }
+    }
+
+    /// Puts the rows in the order of `ids`, as the list has been dragged
+    /// into. Each row keeps its id, since the list has already moved its
+    /// lines; the selection stays on the row it was on. An order that is not
+    /// the rows' ids rearranged is ignored.
+    pub fn reorder(&mut self, ids: &[u64]) {
+        let before: Vec<u64> = self.rows.iter().map(|(id, _)| *id).collect();
+        if before == ids {
+            return;
+        }
+        let (mut old, mut new) = (before, ids.to_vec());
+        old.sort_unstable();
+        new.sort_unstable();
+        if old != new {
+            return;
+        }
+        let selected = self.current.map(|i| self.rows[i].0);
+        let mut rows = std::mem::take(&mut self.rows);
+        self.rows = ids
+            .iter()
+            .map(|id| {
+                let i = rows.iter().position(|(r, _)| r == id).unwrap();
+                rows.swap_remove(i)
+            })
+            .collect();
+        self.current = selected.and_then(|id| self.rows.iter().position(|(r, _)| *r == id));
+        self.dirty = true;
     }
 
     /// Checks every row and makes the config to save. The first row that
@@ -338,7 +370,6 @@ mod tests {
         let e = editor();
         assert_eq!(e.current(), Some(0));
         assert!(!e.is_dirty());
-        assert_eq!(Editor::new(Vec::new()).current(), None);
     }
 
     #[test]
@@ -381,17 +412,54 @@ mod tests {
         assert_eq!(e.current(), Some(0));
     }
 
+    fn keys(e: &Editor) -> Vec<String> {
+        e.rows()
+            .map(|(_, d)| d.to_shortcut().unwrap().keys.to_string())
+            .collect()
+    }
+
     #[test]
     fn the_selected_row_moves_and_stays_selected() {
         let mut e = editor();
         assert!(!e.can_move(true));
         e.move_selected(false);
-        assert_eq!(ids(&e), [1, 0, 2]);
+        assert_eq!(keys(&e), ["Ctrl+Alt+Right", "Ctrl+Alt+Left", "Ctrl+Alt+Up"]);
         assert_eq!(e.current(), Some(1));
+        assert!(e.is_dirty());
+        // The lines stay put and trade what they show.
+        assert_eq!(ids(&e), [0, 1, 2]);
+        e.move_selected(true);
+        assert_eq!(keys(&e), ["Ctrl+Alt+Left", "Ctrl+Alt+Right", "Ctrl+Alt+Up"]);
+        assert_eq!(e.current(), Some(0));
         e.select(2);
         assert!(!e.can_move(false));
         e.select(7);
         assert_eq!(e.current(), Some(2));
+    }
+
+    #[test]
+    fn dragged_rows_take_the_new_order_with_their_ids() {
+        let mut e = editor();
+        e.select(1);
+        e.reorder(&[2, 0, 1]);
+        assert_eq!(ids(&e), [2, 0, 1]);
+        assert_eq!(keys(&e), ["Ctrl+Alt+Up", "Ctrl+Alt+Left", "Ctrl+Alt+Right"]);
+        // Still on Ctrl+Alt+Right, which is now last.
+        assert_eq!(e.current(), Some(2));
+        assert!(e.is_dirty());
+    }
+
+    #[test]
+    fn a_drag_that_changes_nothing_is_not_a_change() {
+        let mut e = editor();
+        e.reorder(&[0, 1, 2]);
+        assert!(!e.is_dirty());
+        // Not the rows' ids: missing one, an unknown one, one twice.
+        for order in [&[0, 1][..], &[0, 1, 5], &[0, 1, 1]] {
+            e.reorder(order);
+            assert_eq!(ids(&e), [0, 1, 2]);
+        }
+        assert!(!e.is_dirty());
     }
 
     #[test]
