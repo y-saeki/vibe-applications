@@ -4,6 +4,8 @@
 //!
 //! Nothing here touches Win32, so it is tested on every platform.
 
+use std::collections::BTreeSet;
+
 use crate::config::{Config, Shortcut};
 use crate::hotkey::{self, Hotkey, Keys};
 use crate::layout::{self, Anchor, Placement, Ratio, Rect};
@@ -95,66 +97,112 @@ impl Draft {
     }
 }
 
-/// The list the settings window edits: the rows, which one is selected, and
-/// whether anything has changed since the window opened. Each row carries an
-/// id, the key its line in the list is kept by: it goes with the row when the
-/// row is dragged, and stays with the line when 上へ・下へ swap two rows.
+/// The keys held with a click on a row in the list, or with the arrow key
+/// that moved to it.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Click {
+    pub shift: bool,
+    pub ctrl: bool,
+}
+
+/// The list the settings window edits: the rows, which of them are
+/// selected, and whether anything has changed since the window opened. Each
+/// row carries an id, the key its line in the list is kept by: it goes with
+/// the row when the row is dragged, and stays with the line when 上へ・下へ
+/// swap two rows.
 #[derive(Clone, Debug, Default)]
 pub struct Editor {
     rows: Vec<(u64, Draft)>,
     next_id: u64,
-    /// Counts the rows added and removed (see `lines`).
-    lines: u64,
-    current: Option<usize>,
+    /// The ids of the selected rows.
+    selected: BTreeSet<u64>,
+    /// Where a Shift+click range starts: the row last clicked without Shift.
+    anchor: Option<u64>,
     dirty: bool,
 }
 
 impl Editor {
     /// Starts on the first row, if there is one.
     pub fn new(rows: Vec<Draft>) -> Editor {
-        let current = (!rows.is_empty()).then_some(0);
         let next_id = rows.len() as u64;
-        Editor {
+        let mut editor = Editor {
             rows: (0..).zip(rows).collect(),
             next_id,
-            lines: 0,
-            current,
-            dirty: false,
-        }
+            ..Editor::default()
+        };
+        editor.select(0);
+        editor
     }
 
     pub fn rows(&self) -> impl Iterator<Item = (u64, &Draft)> {
         self.rows.iter().map(|(id, d)| (*id, d))
     }
 
+    pub fn is_selected(&self, id: u64) -> bool {
+        self.selected.contains(&id)
+    }
+
+    /// Where the selected rows are in the list, in list order.
+    pub fn selection(&self) -> Vec<usize> {
+        self.rows
+            .iter()
+            .enumerate()
+            .filter(|(_, (id, _))| self.selected.contains(id))
+            .map(|(i, _)| i)
+            .collect()
+    }
+
+    /// The selected row when it is the only one: the row whose fields the
+    /// window shows and edits.
     pub fn current(&self) -> Option<usize> {
-        self.current
+        match self.selection()[..] {
+            [i] => Some(i),
+            _ => None,
+        }
     }
 
     pub fn selected(&self) -> Option<&Draft> {
-        self.current.map(|i| &self.rows[i].1)
-    }
-
-    /// Changes each time a row is added or removed, and only then.
-    pub fn lines(&self) -> u64 {
-        self.lines
-    }
-
-    /// The selection for a list last shown when `lines` was `shown`: none
-    /// until the list has shown the rows as they are now, since a list whose
-    /// lines were just added or removed does not hold its selection.
-    pub fn shown_selection(&self, shown: u64) -> Option<usize> {
-        self.current.filter(|_| shown == self.lines)
+        self.current().map(|i| &self.rows[i].1)
     }
 
     pub fn is_dirty(&self) -> bool {
         self.dirty
     }
 
-    /// Selects row `index`; anything past the end is ignored.
+    /// Selects row `index` alone; anything past the end is ignored.
     pub fn select(&mut self, index: usize) {
-        if index < self.rows.len() {
-            self.current = Some(index);
+        self.click(index, Click::default());
+    }
+
+    /// Row `index` was clicked. On its own that selects the row alone. With
+    /// Ctrl it adds the row to the selection, or takes it out. With Shift it
+    /// selects the rows from the one last clicked without Shift to this one,
+    /// in place of the selection, or with Ctrl as well, on top of it.
+    /// Anything past the end is ignored.
+    pub fn click(&mut self, index: usize, click: Click) {
+        let Some(&(id, _)) = self.rows.get(index) else {
+            return;
+        };
+        let anchor = self
+            .anchor
+            .and_then(|a| self.rows.iter().position(|(r, _)| *r == a));
+        match anchor {
+            Some(from) if click.shift => {
+                if !click.ctrl {
+                    self.selected.clear();
+                }
+                let range = &self.rows[from.min(index)..=from.max(index)];
+                self.selected.extend(range.iter().map(|(r, _)| *r));
+            }
+            _ => {
+                if !click.ctrl {
+                    self.selected.clear();
+                    self.selected.insert(id);
+                } else if !self.selected.remove(&id) {
+                    self.selected.insert(id);
+                }
+                self.anchor = Some(id);
+            }
         }
     }
 
@@ -162,7 +210,7 @@ impl Editor {
     /// given as well as the user's edits, so a change that leaves the row
     /// as it was does not count as one.
     pub fn edit(&mut self, f: impl FnOnce(&mut Draft)) {
-        let Some(i) = self.current else {
+        let Some(i) = self.current() else {
             return;
         };
         let row = &mut self.rows[i].1;
@@ -173,46 +221,53 @@ impl Editor {
         }
     }
 
-    fn insert(&mut self, row: Draft) {
-        let i = self.current.map_or(self.rows.len(), |i| i + 1);
-        self.rows.insert(i, (self.next_id, row));
-        self.next_id += 1;
-        self.lines += 1;
-        self.current = Some(i);
+    /// Puts `rows` in below the last selected row, or at the end, and
+    /// selects them in place of what was.
+    fn insert(&mut self, rows: Vec<Draft>) {
+        let at = self.selection().last().map_or(self.rows.len(), |i| i + 1);
+        let first = self.next_id;
+        self.next_id += rows.len() as u64;
+        self.rows.splice(at..at, (first..).zip(rows));
+        self.selected = (first..self.next_id).collect();
+        self.anchor = Some(first);
         self.dirty = true;
     }
 
-    /// 追加: a new row below the selected one.
+    /// 追加: a new row below the selection.
     pub fn add(&mut self) {
-        self.insert(Draft::new());
+        self.insert(vec![Draft::new()]);
     }
 
-    /// 複製: a copy of the selected row below it, which shares its shortcut
-    /// and so takes the next turn.
+    /// 複製: copies of the selected rows, in their order, below the last of
+    /// them. A copy shares its row's shortcut and so takes a turn after it.
     pub fn duplicate(&mut self) {
-        if let Some(row) = self.selected().cloned() {
-            self.insert(row);
+        let copies: Vec<Draft> = self
+            .selection()
+            .into_iter()
+            .map(|i| self.rows[i].1.clone())
+            .collect();
+        if !copies.is_empty() {
+            self.insert(copies);
         }
     }
 
-    /// 削除: removes the selected row and selects the one that took its
-    /// place, or the new last row.
+    /// 削除: removes the selected rows and selects the one that took the
+    /// place of the first of them, or the new last row.
     pub fn delete(&mut self) {
-        let Some(i) = self.current else {
+        let Some(&first) = self.selection().first() else {
             return;
         };
-        self.rows.remove(i);
-        self.lines += 1;
+        self.rows.retain(|(id, _)| !self.selected.contains(id));
+        self.selected.clear();
+        self.anchor = None;
         self.dirty = true;
-        self.current = if self.rows.is_empty() {
-            None
-        } else {
-            Some(i.min(self.rows.len() - 1))
-        };
+        if let Some(last) = self.rows.len().checked_sub(1) {
+            self.select(first.min(last));
+        }
     }
 
     pub fn can_move(&self, up: bool) -> bool {
-        self.current
+        self.current()
             .is_some_and(|i| moved(i, self.rows.len(), up).is_some())
     }
 
@@ -221,21 +276,21 @@ impl Editor {
     /// rows trade contents, so the list redraws two lines in place instead of
     /// taking one out and putting it back.
     pub fn move_selected(&mut self, up: bool) {
-        let Some(from) = self.current else {
+        let Some(from) = self.current() else {
             return;
         };
         if let Some(to) = moved(from, self.rows.len(), up) {
             let (a, b) = self.rows.split_at_mut(from.max(to));
             std::mem::swap(&mut a[from.min(to)].1, &mut b[0].1);
-            self.current = Some(to);
+            self.select(to);
             self.dirty = true;
         }
     }
 
     /// Puts the rows in the order of `ids`, as the list has been dragged
     /// into. Each row keeps its id, since the list has already moved its
-    /// lines; the selection stays on the row it was on. An order that is not
-    /// the rows' ids rearranged is ignored.
+    /// lines, and so stays selected or not. An order that is not the rows'
+    /// ids rearranged is ignored.
     pub fn reorder(&mut self, ids: &[u64]) {
         let before: Vec<u64> = self.rows.iter().map(|(id, _)| *id).collect();
         if before == ids {
@@ -247,7 +302,6 @@ impl Editor {
         if old != new {
             return;
         }
-        let selected = self.current.map(|i| self.rows[i].0);
         let mut rows = std::mem::take(&mut self.rows);
         self.rows = ids
             .iter()
@@ -256,25 +310,31 @@ impl Editor {
                 rows.swap_remove(i)
             })
             .collect();
-        self.current = selected.and_then(|id| self.rows.iter().position(|(r, _)| *r == id));
         self.dirty = true;
     }
 
     /// Checks every row and makes the config to save. The first row that
-    /// does not make a shortcut is selected, and the error names it.
+    /// does not make a shortcut is selected alone, and the error names it.
     pub fn build_config(&mut self) -> Result<Config, String> {
-        let mut config = Config::default();
-        for (i, (_, row)) in self.rows.iter().enumerate() {
-            match row.to_shortcut() {
-                Ok(s) => config.shortcuts.push(s),
-                Err(e) => {
-                    let message = format!("{}: {e}", row.list_text());
-                    self.current = Some(i);
-                    return Err(message);
-                }
+        let shortcuts: Result<Vec<Shortcut>, (usize, String)> = self
+            .rows
+            .iter()
+            .enumerate()
+            .map(|(i, (_, row))| {
+                row.to_shortcut()
+                    .map_err(|e| (i, format!("{}: {e}", row.list_text())))
+            })
+            .collect();
+        match shortcuts {
+            Ok(shortcuts) => Ok(Config {
+                shortcuts,
+                ..Config::default()
+            }),
+            Err((i, message)) => {
+                self.select(i);
+                Err(message)
             }
         }
-        Ok(config)
     }
 
     /// The rows that make a shortcut as they stand, in list order, without
@@ -424,31 +484,90 @@ mod tests {
         assert!(e.is_dirty());
     }
 
+    fn shift() -> Click {
+        Click {
+            shift: true,
+            ctrl: false,
+        }
+    }
+
+    fn ctrl() -> Click {
+        Click {
+            shift: false,
+            ctrl: true,
+        }
+    }
+
     #[test]
-    fn the_list_is_given_a_selection_only_once_it_shows_the_rows_as_they_are() {
+    fn clicks_with_shift_and_ctrl_select_several_rows() {
+        let mut e = Editor::new(vec![Draft::new(); 5]);
+        e.select(1);
+        e.click(3, shift());
+        assert_eq!(e.selection(), [1, 2, 3]);
+        // The range starts from the row last clicked without Shift.
+        e.click(0, shift());
+        assert_eq!(e.selection(), [0, 1]);
+        e.click(4, ctrl());
+        assert_eq!(e.selection(), [0, 1, 4]);
+        e.click(
+            2,
+            Click {
+                shift: true,
+                ctrl: true,
+            },
+        );
+        assert_eq!(e.selection(), [0, 1, 2, 3, 4]);
+        e.click(3, ctrl());
+        assert_eq!(e.selection(), [0, 1, 2, 4]);
+        e.click(9, Click::default());
+        assert_eq!(e.selection(), [0, 1, 2, 4]);
+        e.click(2, Click::default());
+        assert_eq!(e.selection(), [2]);
+    }
+
+    #[test]
+    fn several_selected_rows_have_no_fields_to_edit_and_do_not_move() {
         let mut e = editor();
-        let shown = e.lines();
-        e.duplicate();
-        assert_eq!(e.current(), Some(1));
-        assert_eq!(e.shown_selection(shown), None);
-        assert_eq!(e.shown_selection(e.lines()), Some(1));
-        let shown = e.lines();
-        e.select(2);
-        e.add();
-        assert_eq!(e.shown_selection(shown), None);
-        assert_eq!(e.shown_selection(e.lines()), Some(3));
-        let shown = e.lines();
-        e.delete();
-        assert_eq!(e.current(), Some(3));
-        assert_eq!(e.shown_selection(shown), None);
-        assert_eq!(e.shown_selection(e.lines()), Some(3));
-        // Selecting and moving rows leaves the lines where they are.
-        let shown = e.lines();
-        e.select(0);
-        e.move_selected(false);
-        e.reorder(&[3, 0, 1, 2]);
+        e.click(1, shift());
+        assert_eq!((e.current(), e.selected()), (None, None));
         e.edit(|d| d.width = "1".into());
-        assert_eq!(e.shown_selection(shown), e.current());
+        assert!(!e.can_move(true) && !e.can_move(false));
+        e.move_selected(false);
+        assert!(!e.is_dirty());
+    }
+
+    #[test]
+    fn several_rows_are_duplicated_together_below_the_last_of_them() {
+        let mut e = editor();
+        e.click(2, ctrl());
+        e.duplicate();
+        assert_eq!(ids(&e), [0, 1, 2, 3, 4]);
+        assert_eq!(
+            keys(&e),
+            [
+                "Ctrl+Alt+Left",
+                "Ctrl+Alt+Right",
+                "Ctrl+Alt+Up",
+                "Ctrl+Alt+Left",
+                "Ctrl+Alt+Up"
+            ]
+        );
+        // The copies are selected, and a Shift+click ranges from the first.
+        assert_eq!(e.selection(), [3, 4]);
+        e.click(1, shift());
+        assert_eq!(e.selection(), [1, 2, 3]);
+    }
+
+    #[test]
+    fn several_rows_are_deleted_together() {
+        let mut e = editor();
+        e.add();
+        e.select(1);
+        e.click(2, shift());
+        assert_eq!(ids(&e), [0, 3, 1, 2]);
+        e.delete();
+        assert_eq!(ids(&e), [0, 2]);
+        assert_eq!(e.current(), Some(1));
     }
 
     #[test]
@@ -496,6 +615,10 @@ mod tests {
         // Still on Ctrl+Alt+Right, which is now last.
         assert_eq!(e.current(), Some(2));
         assert!(e.is_dirty());
+        e.click(0, ctrl());
+        assert_eq!(e.selection(), [0, 2]);
+        e.reorder(&[0, 1, 2]);
+        assert_eq!(e.selection(), [1, 2]);
     }
 
     #[test]
