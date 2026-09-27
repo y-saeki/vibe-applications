@@ -40,6 +40,9 @@ const PREVIEW: (f64, f64) = (360.0, 200.0);
 /// so that a small one does not snap to whole DIPs.
 const SUBPIXEL: f64 = 4.0;
 
+/// The most keycaps the recording dialog draws large; more would not fit.
+const LARGE_CAPS: usize = 5;
+
 const WINUI_WINDOW_CLASS: &str = "WinUIDesktopWin32WindowClass";
 
 /// Runs the settings window until it closes.
@@ -431,9 +434,7 @@ impl Settings {
         } else if strokes.is_empty() {
             keycaps(hotkey::keycaps(r.modifiers, 0), true)
         } else {
-            // Large while there is one stroke, to read at a glance; two
-            // would not fit.
-            strokes_view(&strokes, strokes.len() == 1)
+            strokes_view(&strokes, true)
         };
         let problem = match &result {
             Some(Err(e)) => e.to_string(),
@@ -717,10 +718,14 @@ fn shortcut_view(d: &Draft) -> View {
     }
 }
 
-/// Strokes one after another, each as its keycaps, with commas between
-/// them as the file writes them.
-fn strokes_view(strokes: &[Hotkey], large: bool) -> View {
-    let groups = strokes.iter().map(|h| hotkey::keycaps(h.modifiers, h.vk));
+/// Strokes one after another as keycaps, with commas between them as the
+/// file writes them; the second without the modifiers it shares with the
+/// first. `dialog` is the recording dialog's: centered, and large caps as
+/// long as they fit.
+fn strokes_view(strokes: &[Hotkey], dialog: bool) -> View {
+    let groups = hotkey::strokes_caps(strokes);
+    let caps: usize = groups.iter().map(Vec::len).sum();
+    let large = dialog && caps <= LARGE_CAPS;
     let text_size = if large { 18.0 } else { 14.0 };
     let children = groups.into_iter().enumerate().flat_map(|(i, caps)| {
         let comma: Option<(usize, View)> = (i > 0).then(|| {
@@ -738,7 +743,7 @@ fn strokes_view(strokes: &[Hotkey], large: bool) -> View {
     StackPanel::new()
         .orientation(Orientation::Horizontal)
         .spacing(if large { 12.0 } else { 4.0 })
-        .horizontal_alignment(if large {
+        .horizontal_alignment(if dialog {
             HorizontalAlignment::Center
         } else {
             HorizontalAlignment::Left

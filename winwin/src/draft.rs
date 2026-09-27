@@ -5,7 +5,7 @@
 //! Nothing here touches Win32, so it is tested on every platform.
 
 use crate::config::{Config, Shortcut};
-use crate::hotkey::{Hotkey, Keys};
+use crate::hotkey::{self, Hotkey, Keys};
 use crate::layout::{self, Anchor, Placement, Ratio, Rect};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -89,8 +89,7 @@ impl Draft {
         let keys = if self.keys.is_empty() {
             "(未設定)".to_string()
         } else {
-            let strokes: Vec<String> = self.keys.iter().map(Hotkey::to_string).collect();
-            strokes.join(", ")
+            hotkey::strokes_text(&self.keys)
         };
         format!("{keys}    {}", self.placement_text())
     }
@@ -323,10 +322,7 @@ mod tests {
             modifiers: MOD_CONTROL | MOD_ALT,
             vk: 0x26,
         });
-        assert_eq!(
-            d.to_shortcut().unwrap().keys.to_string(),
-            "Ctrl+Alt+A, Ctrl+Alt+Up"
-        );
+        assert_eq!(d.to_shortcut().unwrap().keys.to_string(), "Ctrl+Alt+A, Up");
         d.keys[1].modifiers = MOD_CONTROL;
         assert!(d.to_shortcut().unwrap_err().contains("修飾キー"));
     }
@@ -356,7 +352,7 @@ mod tests {
         assert_eq!(Draft::new().list_text(), "(未設定)    中央 1/2 × 1/2");
         let mut d = d;
         d.keys.push("Ctrl+Alt+Up".parse().unwrap());
-        assert_eq!(d.list_text(), "Ctrl+Alt+Left, Ctrl+Alt+Up    左 1/2 × 1");
+        assert_eq!(d.list_text(), "Ctrl+Alt+Left, Up    左 1/2 × 1");
     }
 
     fn editor() -> Editor {

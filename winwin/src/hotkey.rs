@@ -307,33 +307,39 @@ impl Hotkey {
     }
 }
 
+/// The modifiers and the key written in `s`, not yet checked as a shortcut.
+fn parse_combination(s: &str) -> Result<(u32, u32), HotkeyError> {
+    if s.trim().is_empty() {
+        return Err(HotkeyError::Empty);
+    }
+    let mut modifiers = 0;
+    let mut vk = None;
+    for part in s.split('+').map(str::trim) {
+        let modifier = match part.to_ascii_lowercase().as_str() {
+            "ctrl" | "control" => Some(MOD_CONTROL),
+            "alt" => Some(MOD_ALT),
+            "shift" => Some(MOD_SHIFT),
+            "win" => Some(MOD_WIN),
+            _ => None,
+        };
+        if let Some(m) = modifier {
+            modifiers |= m;
+            continue;
+        }
+        let key = parse_key(part).ok_or_else(|| HotkeyError::UnknownPart(part.to_string()))?;
+        if vk.replace(key).is_some() {
+            return Err(HotkeyError::TwoKeys);
+        }
+    }
+    Ok((modifiers, vk.ok_or(HotkeyError::NoKey)?))
+}
+
 impl FromStr for Hotkey {
     type Err = HotkeyError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if s.trim().is_empty() {
-            return Err(HotkeyError::Empty);
-        }
-        let mut modifiers = 0;
-        let mut vk = None;
-        for part in s.split('+').map(str::trim) {
-            let modifier = match part.to_ascii_lowercase().as_str() {
-                "ctrl" | "control" => Some(MOD_CONTROL),
-                "alt" => Some(MOD_ALT),
-                "shift" => Some(MOD_SHIFT),
-                "win" => Some(MOD_WIN),
-                _ => None,
-            };
-            if let Some(m) = modifier {
-                modifiers |= m;
-                continue;
-            }
-            let key = parse_key(part).ok_or_else(|| HotkeyError::UnknownPart(part.to_string()))?;
-            if vk.replace(key).is_some() {
-                return Err(HotkeyError::TwoKeys);
-            }
-        }
-        Hotkey::new(modifiers, vk.ok_or(HotkeyError::NoKey)?)
+        let (modifiers, vk) = parse_combination(s)?;
+        Hotkey::new(modifiers, vk)
     }
 }
 
@@ -354,7 +360,7 @@ impl fmt::Display for Hotkey {
 }
 
 /// A shortcut: one combination, or two keys pressed one after the other
-/// while the same modifiers stay held ("Ctrl+Left, Ctrl+Up"). Each stroke is
+/// while the same modifiers stay held ("Ctrl+Left, Up"). Each stroke is
 /// a valid [`Hotkey`] of its own.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Keys(Vec<Hotkey>);
@@ -367,11 +373,14 @@ impl Keys {
         if strokes.len() > MAX_STROKES {
             return Err(HotkeyError::TooManyStrokes);
         }
-        for h in &strokes {
-            Hotkey::new(h.modifiers, h.vk)?;
-        }
+        // A second stroke with other modifiers is told as such, before
+        // what those modifiers would be wrong for on their own.
+        Hotkey::new(strokes[0].modifiers, strokes[0].vk)?;
         if strokes.iter().any(|h| h.modifiers != strokes[0].modifiers) {
             return Err(HotkeyError::ModifiersDiffer);
+        }
+        for h in &strokes {
+            Hotkey::new(h.modifiers, h.vk)?;
         }
         if strokes.windows(2).any(|w| w[0].vk == w[1].vk) {
             return Err(HotkeyError::SameKeyTwice);
@@ -398,28 +407,62 @@ impl From<Hotkey> for Keys {
     }
 }
 
+/// A second stroke is written as its key alone ("Ctrl+Left, Up"): it is
+/// pressed with the first stroke's modifiers still held. Written with them
+/// in full, it reads the same.
 impl FromStr for Keys {
     type Err = HotkeyError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let strokes = s
-            .split(',')
-            .map(str::parse)
-            .collect::<Result<Vec<Hotkey>, _>>()?;
+        let mut parts = s.split(',');
+        let first: Hotkey = parts.next().unwrap_or_default().parse()?;
+        let mut strokes = vec![first];
+        for part in parts {
+            let (modifiers, vk) = parse_combination(part)?;
+            strokes.push(Hotkey {
+                modifiers: if modifiers == 0 {
+                    first.modifiers
+                } else {
+                    modifiers
+                },
+                vk,
+            });
+        }
         Keys::new(strokes)
     }
 }
 
 impl fmt::Display for Keys {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for (i, h) in self.0.iter().enumerate() {
-            if i > 0 {
-                f.write_str(", ")?;
-            }
-            write!(f, "{h}")?;
-        }
-        Ok(())
+        f.write_str(&strokes_text(&self.0))
     }
+}
+
+/// Strokes as they are written and shown: the first in full, the ones after
+/// it as their keys alone, since they share its modifiers ("Ctrl+Left, Up").
+pub fn strokes_text(strokes: &[Hotkey]) -> String {
+    let parts: Vec<String> = strokes
+        .iter()
+        .enumerate()
+        .map(|(i, h)| {
+            if i == 0 {
+                h.to_string()
+            } else {
+                key_name(h.vk)
+            }
+        })
+        .collect();
+    parts.join(", ")
+}
+
+/// Strokes as the settings window draws them, one group of caps each: the
+/// first with its modifiers, the ones after it as their keys alone.
+pub fn strokes_caps(strokes: &[Hotkey]) -> Vec<Vec<Keycap>> {
+    strokes
+        .iter()
+        .enumerate()
+        .map(|(i, h)| keycaps(if i == 0 { h.modifiers } else { 0 }, h.vk))
+        .collect()
 }
 
 #[cfg(test)]
@@ -504,7 +547,7 @@ mod tests {
         r.key_down(0x25);
         r.key_up(0x25);
         r.key_down(0x26);
-        assert_eq!(r.result(), Some(Ok(keys("Ctrl+Left, Ctrl+Up"))));
+        assert_eq!(r.result(), Some(Ok(keys("Ctrl+Left, Up"))));
         // A third starts over, and so does the same key twice.
         r.key_up(0x26);
         r.key_down(0x28);
@@ -558,14 +601,20 @@ mod tests {
     fn sequences_are_written_with_commas() {
         let k = keys("ctrl+left ,ctrl + up");
         assert_eq!(k.strokes(), [hk("Ctrl+Left"), hk("Ctrl+Up")]);
-        assert_eq!(k.to_string(), "Ctrl+Left, Ctrl+Up");
+        // The second stroke shares the first one's modifiers, and is
+        // written without them.
+        assert_eq!(k.to_string(), "Ctrl+Left, Up");
         assert_eq!(k.to_string().parse::<Keys>(), Ok(k.clone()));
+        assert_eq!(
+            keys("Ctrl+Shift+Left, Up").to_string(),
+            "Ctrl+Shift+Left, Up"
+        );
         assert_eq!((k.first(), k.last()), (hk("Ctrl+Left"), hk("Ctrl+Up")));
         assert_eq!(keys("Ctrl+Alt+K"), Keys::from(hk("Ctrl+Alt+K")));
         assert_eq!("Ctrl+A,".parse::<Keys>(), Err(HotkeyError::Empty));
         assert_eq!(
             "Ctrl+A, Shift+B".parse::<Keys>(),
-            Err(HotkeyError::NeedsModifier)
+            Err(HotkeyError::ModifiersDiffer)
         );
         assert_eq!(
             "Ctrl+A, Ctrl+B, Ctrl+C".parse::<Keys>(),
@@ -573,7 +622,12 @@ mod tests {
         );
         assert_eq!(
             "Ctrl+Left, Shift+Up".parse::<Keys>(),
-            Err(HotkeyError::NeedsModifier)
+            Err(HotkeyError::ModifiersDiffer)
+        );
+        assert_eq!("Left, Up".parse::<Keys>(), Err(HotkeyError::NeedsModifier));
+        assert_eq!(
+            "Ctrl+Left, Foo".parse::<Keys>(),
+            Err(HotkeyError::UnknownPart("Foo".into()))
         );
         for other in ["Ctrl+Shift+Up", "Alt+Up"] {
             assert_eq!(
@@ -586,9 +640,27 @@ mod tests {
             Err(HotkeyError::ModifiersDiffer)
         );
         assert_eq!(
-            "Ctrl+Left, Ctrl+Left".parse::<Keys>(),
+            "Ctrl+Left, Left".parse::<Keys>(),
             Err(HotkeyError::SameKeyTwice)
         );
+    }
+
+    #[test]
+    fn a_second_stroke_is_shown_as_its_key_alone() {
+        let k = keys("Ctrl+Shift+Left, Up");
+        assert_eq!(
+            strokes_caps(k.strokes()),
+            [
+                vec![
+                    Keycap::Name("Ctrl"),
+                    Keycap::Name("Shift"),
+                    Keycap::Arrow(Arrow::Left)
+                ],
+                vec![Keycap::Arrow(Arrow::Up)],
+            ]
+        );
+        assert_eq!(strokes_text(k.strokes()), "Ctrl+Shift+Left, Up");
+        assert_eq!(strokes_caps(&[]), Vec::<Vec<Keycap>>::new());
     }
 
     #[test]

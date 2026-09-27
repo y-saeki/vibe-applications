@@ -4,13 +4,13 @@
 //! config, and wraps around. Letting go of the modifiers starts the next
 //! press from the first entry.
 //!
-//! A shortcut of two strokes ("Ctrl+Left, Ctrl+Up") waits after the first
+//! A shortcut of two strokes ("Ctrl+Left, Up") waits after the first
 //! for the second for as long as the modifiers stay held. Only the first
 //! strokes are registered all the time; the ones that may come next are
 //! registered while they may.
 //!
 //! A shortcut may also be the start of a longer one (`Ctrl+Left` and
-//! `Ctrl+Left, Ctrl+Up`). Its entry is applied at once, and should the
+//! `Ctrl+Left, Up`). Its entry is applied at once, and should the
 //! longer one's next stroke follow before the modifiers are let go, the
 //! longer one's entry replaces it.
 //!
@@ -216,12 +216,12 @@ mod tests {
         config
     }
 
-    /// 左上 1/2 × 1/2 and 左上 1/2 × 2/3 on Ctrl+Left, Ctrl+Up; 上半分 on
-    /// Ctrl+Up; 右半分 on Ctrl+Left, Ctrl+Right.
+    /// 左上 1/2 × 1/2 and 左上 1/2 × 2/3 on Ctrl+Left, Up; 上半分 on
+    /// Ctrl+Up; 右半分 on Ctrl+Left, Right.
     fn config_with_sequences() -> Config {
         let text = r#"
             [[shortcut]]
-            keys = "Ctrl+Left, Ctrl+Up"
+            keys = "Ctrl+Left, Up"
             anchor = "top-left"
             width = "1/2"
             height = "1/2"
@@ -233,13 +233,13 @@ mod tests {
             height = "1/2"
 
             [[shortcut]]
-            keys = "Ctrl+Left, Ctrl+Up"
+            keys = "Ctrl+Left, Up"
             anchor = "top-left"
             width = "1/2"
             height = "2/3"
 
             [[shortcut]]
-            keys = "Ctrl+Left, Ctrl+Right"
+            keys = "Ctrl+Left, Right"
             anchor = "right"
             width = "1/2"
             height = "1"
@@ -365,7 +365,7 @@ mod tests {
         assert!(!presses.is_pending());
     }
 
-    /// 左半分 on Ctrl+Left, 左上 1/2 × 1/2 on Ctrl+Left, Ctrl+Up.
+    /// 左半分 on Ctrl+Left, 左上 1/2 × 1/2 on Ctrl+Left, Up.
     fn config_with_a_prefix() -> Config {
         let text = r#"
             [[shortcut]]
@@ -375,7 +375,7 @@ mod tests {
             height = "1"
 
             [[shortcut]]
-            keys = "Ctrl+Left, Ctrl+Up"
+            keys = "Ctrl+Left, Up"
             anchor = "top-left"
             width = "1/2"
             height = "1/2"

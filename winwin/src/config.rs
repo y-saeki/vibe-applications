@@ -343,7 +343,7 @@ mod tests {
     fn reads_keys_pressed_one_after_another() {
         let text = r#"
             [[shortcut]]
-            keys = "Ctrl+Left, Ctrl+Up"
+            keys = "Ctrl+Left, Up"
             anchor = "top-left"
             width = "1/2"
             height = "1/2"
@@ -357,10 +357,7 @@ mod tests {
         let config = parse(text).unwrap();
         assert_eq!(config.shortcuts[0].keys, config.shortcuts[1].keys);
         let written = config.to_toml();
-        assert!(
-            written.contains(r#"keys = "Ctrl+Left, Ctrl+Up""#),
-            "{written}"
-        );
+        assert!(written.contains(r#"keys = "Ctrl+Left, Up""#), "{written}");
         assert_eq!(parse(&written).unwrap(), config);
 
         let too_long = text.replace("ctrl+left,ctrl+up", "Ctrl+A, Ctrl+B, Ctrl+C, Ctrl+D");
@@ -371,7 +368,7 @@ mod tests {
     fn accepts_a_shortcut_that_starts_another() {
         let text = r#"
             [[shortcut]]
-            keys = "Ctrl+Left, Ctrl+Up"
+            keys = "Ctrl+Left, Up"
             anchor = "top-left"
             width = "1/2"
             height = "1/2"
