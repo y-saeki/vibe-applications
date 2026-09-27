@@ -103,6 +103,8 @@ impl Draft {
 pub struct Editor {
     rows: Vec<(u64, Draft)>,
     next_id: u64,
+    /// Counts the rows added and removed (see `lines`).
+    lines: u64,
     current: Option<usize>,
     dirty: bool,
 }
@@ -115,6 +117,7 @@ impl Editor {
         Editor {
             rows: (0..).zip(rows).collect(),
             next_id,
+            lines: 0,
             current,
             dirty: false,
         }
@@ -132,16 +135,16 @@ impl Editor {
         self.current.map(|i| &self.rows[i].1)
     }
 
-    /// The id the next new row gets. Every row made before is below it.
-    pub fn next_id(&self) -> u64 {
-        self.next_id
+    /// Changes each time a row is added or removed, and only then.
+    pub fn lines(&self) -> u64 {
+        self.lines
     }
 
-    /// The selection for a list that has shown only the rows made before
-    /// `shown`, a value of `next_id`: none while the selected row is newer,
-    /// since the list does not have its line yet.
+    /// The selection for a list last shown when `lines` was `shown`: none
+    /// until the list has shown the rows as they are now, since a list whose
+    /// lines were just added or removed does not hold its selection.
     pub fn shown_selection(&self, shown: u64) -> Option<usize> {
-        self.current.filter(|&i| self.rows[i].0 < shown)
+        self.current.filter(|_| shown == self.lines)
     }
 
     pub fn is_dirty(&self) -> bool {
@@ -174,6 +177,7 @@ impl Editor {
         let i = self.current.map_or(self.rows.len(), |i| i + 1);
         self.rows.insert(i, (self.next_id, row));
         self.next_id += 1;
+        self.lines += 1;
         self.current = Some(i);
         self.dirty = true;
     }
@@ -198,6 +202,7 @@ impl Editor {
             return;
         };
         self.rows.remove(i);
+        self.lines += 1;
         self.dirty = true;
         self.current = if self.rows.is_empty() {
             None
@@ -420,21 +425,30 @@ mod tests {
     }
 
     #[test]
-    fn a_new_row_is_not_selected_in_the_list_until_it_is_shown() {
+    fn the_list_is_given_a_selection_only_once_it_shows_the_rows_as_they_are() {
         let mut e = editor();
-        let shown = e.next_id();
+        let shown = e.lines();
         e.duplicate();
         assert_eq!(e.current(), Some(1));
         assert_eq!(e.shown_selection(shown), None);
-        assert_eq!(e.shown_selection(e.next_id()), Some(1));
-        let shown = e.next_id();
+        assert_eq!(e.shown_selection(e.lines()), Some(1));
+        let shown = e.lines();
         e.select(2);
         e.add();
         assert_eq!(e.shown_selection(shown), None);
-        assert_eq!(e.shown_selection(e.next_id()), Some(3));
-        let shown = e.next_id();
+        assert_eq!(e.shown_selection(e.lines()), Some(3));
+        let shown = e.lines();
+        e.delete();
+        assert_eq!(e.current(), Some(3));
+        assert_eq!(e.shown_selection(shown), None);
+        assert_eq!(e.shown_selection(e.lines()), Some(3));
+        // Selecting and moving rows leaves the lines where they are.
+        let shown = e.lines();
         e.select(0);
-        assert_eq!(e.shown_selection(shown), Some(0));
+        e.move_selected(false);
+        e.reorder(&[3, 0, 1, 2]);
+        e.edit(|d| d.width = "1".into());
+        assert_eq!(e.shown_selection(shown), e.current());
     }
 
     #[test]

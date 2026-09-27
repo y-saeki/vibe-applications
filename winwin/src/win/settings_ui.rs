@@ -101,9 +101,8 @@ struct Settings {
     /// Applied to the window as soon as it is chosen; saved with the rest.
     theme: Theme,
     theme_was: Theme,
-    /// The editor's `next_id` when the view was last published: the list
-    /// has a line for every row below it and is given a selection only
-    /// among those (see `list`).
+    /// The editor's `lines` when the view was last published. The list is
+    /// given a selection only while it is still the same (see `list`).
     shown: u64,
     /// Shown above everything when 保存 fails.
     error: Option<String>,
@@ -129,7 +128,7 @@ enum Msg {
     },
     /// The list was dragged into a new order: the rows' ids, as tags.
     Reorder(Vec<String>),
-    /// The list now has a line for every row below this id.
+    /// The list now shows the rows as they were at this `lines`.
     Shown(u64),
     /// 変更 beside the shortcut: opens the dialog that records one.
     Record,
@@ -176,7 +175,7 @@ impl Component for Settings {
             autostart_was: input.autostart,
             theme: input.theme,
             theme_was: input.theme,
-            shown: input.rows.len() as u64,
+            shown: 0,
             error: None,
             confirming: false,
             recording: None,
@@ -537,15 +536,18 @@ impl Settings {
                 ));
             (id, ListViewItem::new().tag(id.to_string()).content(line))
         });
-        // Reactor sets the list's selection before it adds the lines of the
-        // same update. Selecting a row just added at the end would crash, as
-        // WinUI refuses, fatally, an index past the lines it has; one added
-        // above others would select the line it pushes down. So a row the
-        // list does not have yet is selected once it has been published.
-        let next_id = self.editor.next_id();
+        // Reactor sets the list's selection before it adds or removes the
+        // lines of the same update. Selecting a row just added at the end
+        // would crash, as WinUI refuses, fatally, an index past the lines it
+        // has; one added above others would select the line it pushes down.
+        // Removing a line drops the list's selection, and Reactor puts back
+        // only an index it set itself, not one the user clicked. So after
+        // lines are added or removed, the list is given no selection until
+        // it has been published, and then the selected row's.
+        let lines = self.editor.lines();
         let sender = context.sender();
-        context.use_effect("shown", next_id, move || {
-            sender.send(Msg::Shown(next_id));
+        context.use_effect("shown", lines, move || {
+            sender.send(Msg::Shown(lines));
             None
         });
         let list = Border::new()
