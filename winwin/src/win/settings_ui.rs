@@ -108,6 +108,9 @@ struct Settings {
     error: Option<String>,
     /// The 変更を破棄しますか dialog is open.
     confirming: bool,
+    /// The window is drawn in the dark theme, which the 閉じる button in
+    /// that dialog takes its colors from.
+    dark: bool,
     /// The ショートカットを設定 dialog is open, with what it has recorded.
     recording: Option<Recorder>,
     /// The test window is open (testwin.rs).
@@ -145,7 +148,10 @@ enum Msg {
     Save,
     /// キャンセル, or the window's close button.
     Cancel,
-    Confirmed(ContentDialogResult),
+    /// The 変更を破棄しますか dialog was answered: true to close without
+    /// saving, false to go back.
+    Discard(bool),
+    Scheme(ColorScheme),
     DismissError,
     /// Opens or closes the test window. It also sends `Test(false)` when
     /// asked to close by itself.
@@ -178,6 +184,7 @@ impl Component for Settings {
             listed: input.rows.len(),
             error: None,
             confirming: false,
+            dark: false,
             recording: None,
             testing: false,
             test_problem: None,
@@ -254,12 +261,13 @@ impl Component for Settings {
                     close(context);
                 }
             }
-            Msg::Confirmed(result) => {
+            Msg::Discard(discard) => {
                 self.confirming = false;
-                if result == ContentDialogResult::Primary {
+                if discard {
                     close(context);
                 }
             }
+            Msg::Scheme(scheme) => self.dark = scheme == ColorScheme::Dark,
             Msg::DismissError => self.error = None,
             Msg::Test(true) => {
                 let sender = context.sender();
@@ -301,6 +309,7 @@ impl Component for Settings {
                     ..Default::default()
                 }),
         );
+        context.on_color_scheme(context.callback(Msg::Scheme));
         context.use_effect("adopt-window", (), || {
             adopt_window();
             None
@@ -368,13 +377,34 @@ impl Component for Settings {
                     )),
             ));
 
+        // The dialog's own buttons cannot be colored, so it has none and
+        // draws these in their place. Esc still closes it, as 戻る.
         let confirm = ContentDialog::new()
             .is_open(self.confirming)
             .title("変更を保存せずに閉じますか?")
-            .primary_button_text("閉じる")
-            .close_button_text("戻る")
-            .on_closed(context.callback(Msg::Confirmed))
-            .content("保存していない変更は失われます。");
+            .on_closed(context.callback(|_| Msg::Discard(false)))
+            .content(
+                StackPanel::new().spacing(24.0).children((
+                    TextBlock::new()
+                        .text("保存していない変更は失われます。")
+                        .text_wrapping(TextWrapping::Wrap),
+                    Grid::new()
+                        .columns([GridLength::STAR, GridLength::STAR])
+                        .column_spacing(8.0)
+                        .children((
+                            Button::new()
+                                .resource_overrides(critical_button(self.dark))
+                                .horizontal_alignment(HorizontalAlignment::Stretch)
+                                .on_click(context.message(Msg::Discard(true)))
+                                .content("閉じる"),
+                            Button::new()
+                                .grid_column(1)
+                                .horizontal_alignment(HorizontalAlignment::Stretch)
+                                .on_click(context.message(Msg::Discard(false)))
+                                .content("戻る"),
+                        )),
+                )),
+            );
 
         Grid::new()
             .rows([GridLength::Auto, GridLength::STAR, GridLength::Auto])
@@ -798,6 +828,36 @@ fn keycaps(caps: Vec<Keycap>, large: bool) -> View {
 /// the dark theme and light in the light one, the opposite of the accent
 /// fill, which is what text on it needs.
 const ON_ACCENT: ThemeBrush = ThemeBrush::SolidBackground;
+
+/// The colors of a button whose action cannot be undone: WinUI's
+/// SystemFillColorCritical behind the text colors it uses on an accent
+/// fill, lighter on hover and when pressed as an accent button is.
+fn critical_button(dark: bool) -> ResourceOverrides {
+    let (fill, text, text_pressed) = if dark {
+        (
+            Color::rgb(0xFF, 0x99, 0xA4),
+            Color::rgb(0x00, 0x00, 0x00),
+            Color::argb(0x80, 0x00, 0x00, 0x00),
+        )
+    } else {
+        (
+            Color::rgb(0xC4, 0x2B, 0x1C),
+            Color::rgb(0xFF, 0xFF, 0xFF),
+            Color::argb(0xB3, 0xFF, 0xFF, 0xFF),
+        )
+    };
+    let fill_at = |a| Color { a, ..fill };
+    ResourceOverrides::new()
+        .set("ButtonBackground", fill)
+        .set("ButtonBackgroundPointerOver", fill_at(0xE6))
+        .set("ButtonBackgroundPressed", fill_at(0xCC))
+        .set("ButtonForeground", text)
+        .set("ButtonForegroundPointerOver", text)
+        .set("ButtonForegroundPressed", text_pressed)
+        .set("ButtonBorderBrush", Color::transparent())
+        .set("ButtonBorderBrushPointerOver", Color::transparent())
+        .set("ButtonBorderBrushPressed", Color::transparent())
+}
 
 /// An arrow key's cap face: a chevron as tall as the text on the other caps,
 /// drawn as two strokes so that it takes the same color as that text.
