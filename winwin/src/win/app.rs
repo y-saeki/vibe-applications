@@ -9,17 +9,20 @@ use windows::Win32::Foundation::{
 };
 use windows::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress, LoadLibraryW};
 use windows::Win32::System::Threading::CreateMutexW;
+use windows::Win32::UI::Accessibility::{HWINEVENTHOOK, SetWinEventHook, UnhookWinEvent};
 use windows::Win32::UI::Shell::{
     NIF_ICON, NIF_INFO, NIF_MESSAGE, NIF_TIP, NIIF_WARNING, NIM_ADD, NIM_DELETE, NIM_MODIFY,
     NIM_SETVERSION, NIN_SELECT, NINF_KEY, NOTIFYICON_VERSION_4, NOTIFYICONDATAW, Shell_NotifyIconW,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    AppendMenuW, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyIcon, DestroyMenu,
-    DestroyWindow, DispatchMessageW, FindWindowW, GetCursorPos, GetMessageW, HICON, MF_SEPARATOR,
-    MF_STRING, MSG, PostMessageW, PostQuitMessage, RegisterClassExW, RegisterWindowMessageW,
-    SetForegroundWindow, TPM_BOTTOMALIGN, TPM_NONOTIFY, TPM_RETURNCMD, TPM_RIGHTBUTTON,
-    TrackPopupMenu, TranslateMessage, WINDOW_EX_STYLE, WM_CONTEXTMENU, WM_DESTROY, WM_HOTKEY,
-    WM_TIMER, WNDCLASSEXW, WS_OVERLAPPED,
+    AppendMenuW, CHILDID_SELF, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyIcon,
+    DestroyMenu, DestroyWindow, DispatchMessageW, EVENT_SYSTEM_MOVESIZEEND,
+    EVENT_SYSTEM_MOVESIZESTART, FindWindowW, GetCursorPos, GetMessageW, HICON, IsWindow,
+    MF_SEPARATOR, MF_STRING, MSG, OBJID_WINDOW, PostMessageW, PostQuitMessage, RegisterClassExW,
+    RegisterWindowMessageW, SetForegroundWindow, TPM_BOTTOMALIGN, TPM_NONOTIFY, TPM_RETURNCMD,
+    TPM_RIGHTBUTTON, TrackPopupMenu, TranslateMessage, WINDOW_EX_STYLE, WINEVENT_OUTOFCONTEXT,
+    WINEVENT_SKIPOWNPROCESS, WM_CONTEXTMENU, WM_DESTROY, WM_HOTKEY, WM_TIMER, WNDCLASSEXW,
+    WS_OVERLAPPED,
 };
 use windows::core::{HSTRING, PCSTR, PCWSTR, w};
 
@@ -29,6 +32,7 @@ use super::{
 };
 use crate::config::{Config, Theme};
 use crate::cycle;
+use crate::restore::Sizes;
 
 /// The installer finds a running winwin by this name to close it
 /// (installer/installer.nsi, MAIN_CLASS).
@@ -54,6 +58,11 @@ struct App {
     /// Whether the user has already been told that elevated windows cannot
     /// be moved; once per run is enough.
     told_access_denied: bool,
+    /// The sizes of the windows the shortcuts have placed, to give back
+    /// when one is dragged away.
+    sizes: Sizes,
+    /// Hears the start and end of every window's move or resize.
+    move_size_hook: HWINEVENTHOOK,
 }
 
 thread_local! {
@@ -103,6 +112,8 @@ pub fn run() {
             taskbar_created: unsafe { RegisterWindowMessageW(w!("TaskbarCreated")) },
             settings: None,
             told_access_denied: false,
+            sizes: Sizes::default(),
+            move_size_hook: install_move_size_hook(),
         })
     });
 
@@ -224,14 +235,92 @@ fn on_hotkey(id: usize) {
     let Some(placement) = with_app(|app| app.shortcuts.on_hotkey(id)).flatten() else {
         return;
     };
-    if let Err(mover::MoveError::AccessDenied) = mover::place_foreground(&placement) {
-        let first = with_app(|app| !std::mem::replace(&mut app.told_access_denied, true));
-        if first == Some(true) {
-            notify(
-                "このウィンドウは動かせません",
-                "管理者として実行されているウィンドウは、winwin も管理者として実行しているときだけ動かせます。",
-            );
+    match mover::place_foreground(&placement) {
+        Ok(Some(placed)) => {
+            with_app(|app| {
+                app.sizes
+                    .retain(|window| unsafe { IsWindow(Some(HWND(window as _))) }.as_bool());
+                app.sizes.placed(
+                    placed.hwnd.0 as isize,
+                    placed.before,
+                    placed.dpi,
+                    placed.after,
+                );
+            });
         }
+        Ok(None) => {}
+        Err(mover::MoveError::AccessDenied) => {
+            let first = with_app(|app| !std::mem::replace(&mut app.told_access_denied, true));
+            if first == Some(true) {
+                notify(
+                    "このウィンドウは動かせません",
+                    "管理者として実行されているウィンドウは、winwin も管理者として実行しているときだけ動かせます。",
+                );
+            }
+        }
+    }
+}
+
+/// Out of context, so the calls arrive through the message loop and nothing
+/// is loaded into other processes. Only the start and end of a move or
+/// resize come, not the steps in between.
+fn install_move_size_hook() -> HWINEVENTHOOK {
+    unsafe {
+        SetWinEventHook(
+            EVENT_SYSTEM_MOVESIZESTART,
+            EVENT_SYSTEM_MOVESIZEEND,
+            None,
+            Some(on_move_size),
+            0,
+            0,
+            WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS,
+        )
+    }
+}
+
+/// Gives a placed window its size back when it is dragged away. Windows
+/// does it as the drag starts; winwin waits for the drop, since resizing a
+/// window in the middle of the system's move loop is not something the loop
+/// is known to follow.
+extern "system" fn on_move_size(
+    _hook: HWINEVENTHOOK,
+    event: u32,
+    hwnd: HWND,
+    object: i32,
+    child: i32,
+    _thread: u32,
+    _time: u32,
+) {
+    if hwnd.is_invalid() || object != OBJID_WINDOW.0 || child != CHILDID_SELF as i32 {
+        return;
+    }
+    let window = hwnd.0 as isize;
+    if with_app(|app| app.sizes.tracks(window)) != Some(true) {
+        return;
+    }
+    let Some(current) = mover::window_rect(hwnd) else {
+        return;
+    };
+    match event {
+        EVENT_SYSTEM_MOVESIZESTART => {
+            let resizing = mover::is_resize_cursor();
+            with_app(|app| app.sizes.drag_started(window, current, resizing));
+        }
+        EVENT_SYSTEM_MOVESIZEEND => {
+            let arranged = mover::is_arranged(hwnd);
+            let dpi = mover::monitor_dpi(hwnd);
+            let mut cursor = POINT::default();
+            let _ = unsafe { GetCursorPos(&mut cursor) };
+            let back = with_app(|app| {
+                app.sizes
+                    .drag_ended(window, current, dpi, (cursor.x, cursor.y), arranged)
+            })
+            .flatten();
+            if let Some(rect) = back {
+                mover::put(hwnd, rect);
+            }
+        }
+        _ => {}
     }
 }
 
@@ -381,6 +470,9 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                 child.terminate();
             }
             unregister_hotkeys();
+            if let Some(hook) = with_app(|app| app.move_size_hook) {
+                let _ = unsafe { UnhookWinEvent(hook) };
+            }
             remove_tray_icon();
             if let Some(icon) = with_app(|app| app.icon) {
                 let _ = unsafe { DestroyIcon(icon) };
