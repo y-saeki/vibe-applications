@@ -22,33 +22,26 @@ use windows::Win32::Graphics::Gdi::{
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Controls::MARGINS;
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
-use windows::Win32::UI::Input::KeyboardAndMouse::{
-    HOT_KEY_MODIFIERS, MOD_NOREPEAT, RegisterHotKey, UnregisterHotKey,
-};
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, GWL_EXSTYLE, GetClientRect, GetCursorPos,
     GetWindowLongPtrW, GetWindowRect, HICON, HTBOTTOM, HTBOTTOMLEFT, HTBOTTOMRIGHT, HTCAPTION,
-    HTLEFT, HTRIGHT, HTTOP, HTTOPLEFT, HTTOPRIGHT, HWND_TOP, ICON_BIG, ICON_SMALL, KillTimer,
-    LWA_ALPHA, MINMAXINFO, RegisterClassExW, SW_SHOWNA, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
-    SendMessageW, SetLayeredWindowAttributes, SetTimer, SetWindowLongPtrW, SetWindowPos,
-    ShowWindow, WINDOW_EX_STYLE, WM_CLOSE, WM_ERASEBKGND, WM_GETMINMAXINFO, WM_HOTKEY,
-    WM_NCACTIVATE, WM_NCCALCSIZE, WM_NCHITTEST, WM_NCPAINT, WM_SETICON, WM_TIMER, WNDCLASSEXW,
-    WS_EX_LAYERED, WS_POPUP, WS_THICKFRAME,
+    HTLEFT, HTRIGHT, HTTOP, HTTOPLEFT, HTTOPRIGHT, HWND_TOP, ICON_BIG, ICON_SMALL, LWA_ALPHA,
+    MINMAXINFO, RegisterClassExW, SW_SHOWNA, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SendMessageW,
+    SetLayeredWindowAttributes, SetWindowLongPtrW, SetWindowPos, ShowWindow, WINDOW_EX_STYLE,
+    WM_CLOSE, WM_ERASEBKGND, WM_GETMINMAXINFO, WM_HOTKEY, WM_NCACTIVATE, WM_NCCALCSIZE,
+    WM_NCHITTEST, WM_NCPAINT, WM_SETICON, WM_TIMER, WNDCLASSEXW, WS_EX_LAYERED, WS_POPUP,
+    WS_THICKFRAME,
 };
 use windows::core::{HSTRING, PCWSTR};
 
-use super::{icon, modifiers_held, mover};
+use super::{icon, mover, shortcuts::Shortcuts};
 use crate::config::Config;
-use crate::cycle::{self, Binding, Cycle};
+use crate::cycle;
 use crate::layout::{Anchor, Placement, Ratio, Rect};
 
 /// settings.rs tells this window from the settings window by it.
 pub const CLASS_NAME: &str = "winwin.test";
 const TITLE: &str = "winwin テスト用ウィンドウ";
-/// As in the resident part (app.rs): watches for a cycling shortcut's
-/// modifiers to be let go.
-const CYCLE_TIMER: usize = 1;
-const CYCLE_POLL_MS: u32 = 15;
 /// How far in from its edges the window can be resized, in DIPs.
 const RESIZE_BORDER: i32 = 8;
 /// Where the window first appears on the monitor the pointer is on.
@@ -63,10 +56,8 @@ const PLAIN_ALPHA: u8 = 216;
 
 struct TestWindow {
     hwnd: HWND,
-    /// The shortcuts it answers to; hotkey id `n` is `bindings[n - 1]`.
-    bindings: Vec<Binding>,
-    cycle: Cycle,
-    registered: i32,
+    /// The shortcuts it answers to.
+    shortcuts: Shortcuts,
     /// The combinations another application holds, from the last time the
     /// shortcuts changed.
     failed: Vec<String>,
@@ -105,9 +96,7 @@ pub fn open(on_close: impl Fn() + 'static) -> Result<(), String> {
     WINDOW.with(|w| {
         *w.borrow_mut() = Some(TestWindow {
             hwnd,
-            bindings: Vec::new(),
-            cycle: Cycle::default(),
-            registered: 0,
+            shortcuts: Shortcuts::new(hwnd),
             failed: Vec::new(),
         })
     });
@@ -136,12 +125,10 @@ pub fn open(on_close: impl Fn() + 'static) -> Result<(), String> {
 
 /// Closes the window and lets go of its shortcuts.
 pub fn close() {
-    let Some(window) = WINDOW.with(|w| w.borrow_mut().take()) else {
+    let Some(mut window) = WINDOW.with(|w| w.borrow_mut().take()) else {
         return;
     };
-    for id in 1..=window.registered {
-        let _ = unsafe { UnregisterHotKey(Some(window.hwnd), id) };
-    }
+    window.shortcuts.clear();
     ON_CLOSE.with(|c| c.borrow_mut().take());
     let _ = unsafe { DestroyWindow(window.hwnd) };
 }
@@ -152,26 +139,13 @@ pub fn close() {
 /// shortcuts actually changed, so that a cycle in progress carries on.
 pub fn set_shortcuts(config: &Config) -> Vec<String> {
     let bindings = cycle::bindings(config);
-    let stale = with_window(|w| w.bindings != bindings).unwrap_or(false);
-    if stale {
-        stop_cycle();
-        with_window(|w| {
-            for id in 1..=w.registered {
-                let _ = unsafe { UnregisterHotKey(Some(w.hwnd), id) };
-            }
-            w.failed.clear();
-            for (i, b) in bindings.iter().enumerate() {
-                let modifiers = HOT_KEY_MODIFIERS(b.keys.modifiers) | MOD_NOREPEAT;
-                let id = i as i32 + 1;
-                if unsafe { RegisterHotKey(Some(w.hwnd), id, modifiers, b.keys.vk) }.is_err() {
-                    w.failed.push(b.keys.to_string());
-                }
-            }
-            w.registered = bindings.len() as i32;
-            w.bindings = bindings;
-        });
-    }
-    with_window(|w| w.failed.clone()).unwrap_or_default()
+    with_window(|w| {
+        if w.shortcuts.bindings() != bindings {
+            w.failed = w.shortcuts.set(bindings);
+        }
+        w.failed.clone()
+    })
+    .unwrap_or_default()
 }
 
 fn create() -> windows::core::Result<HWND> {
@@ -294,19 +268,10 @@ fn pointer_work_area() -> Option<Rect> {
 /// window that moves, whichever window has the focus. It comes to the front
 /// so that the result can be seen, without taking the focus.
 fn on_hotkey(id: usize) {
-    let picked = with_window(|w| {
-        let index = id.wrapping_sub(1);
-        let b = w.bindings.get(index)?;
-        let entry = w.cycle.press(index, b.placements.len());
-        Some((w.hwnd, b.placements[entry], b.cycles()))
-    })
-    .flatten();
-    let Some((hwnd, placement, cycles)) = picked else {
+    let picked = with_window(|w| Some((w.hwnd, w.shortcuts.on_hotkey(id)?))).flatten();
+    let Some((hwnd, placement)) = picked else {
         return;
     };
-    if cycles {
-        unsafe { SetTimer(Some(hwnd), CYCLE_TIMER, CYCLE_POLL_MS, None) };
-    }
     let _ = mover::place(hwnd, &placement);
     let _ = unsafe {
         SetWindowPos(
@@ -319,26 +284,6 @@ fn on_hotkey(id: usize) {
             SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
         )
     };
-}
-
-fn on_cycle_timer() {
-    let modifiers = with_window(|w| {
-        let b = w.cycle.active()?;
-        w.bindings.get(b).map(|b| b.keys.modifiers)
-    })
-    .flatten();
-    if modifiers.is_none_or(|m| !modifiers_held(m)) {
-        stop_cycle();
-    }
-}
-
-fn stop_cycle() {
-    if let Some(hwnd) = with_window(|w| {
-        w.cycle.reset();
-        w.hwnd
-    }) {
-        let _ = unsafe { KillTimer(Some(hwnd), CYCLE_TIMER) };
-    }
 }
 
 /// Resize handles along the edges, and a handle to drag it by everywhere
@@ -411,10 +356,7 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
             on_hotkey(wparam.0);
             LRESULT(0)
         }
-        WM_TIMER if wparam.0 == CYCLE_TIMER => {
-            on_cycle_timer();
-            LRESULT(0)
-        }
+        WM_TIMER if with_window(|w| w.shortcuts.on_timer(wparam.0)) == Some(true) => LRESULT(0),
         WM_CLOSE => {
             ON_CLOSE.with(|c| {
                 if let Ok(c) = c.try_borrow()

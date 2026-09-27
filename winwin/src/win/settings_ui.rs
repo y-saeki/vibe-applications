@@ -26,7 +26,7 @@ use windows_reactor::*;
 use super::{autostart, config_path, error_box, icon, keyhook, testwin};
 use crate::config::{Config, Theme};
 use crate::draft::{Draft, Editor};
-use crate::hotkey::{self, Arrow, Keycap, Recorder};
+use crate::hotkey::{self, Arrow, Hotkey, Keycap, Recorder};
 use crate::layout::{Anchor, Rect};
 
 /// The client area in DIPs, which is also as small as the window goes: the
@@ -129,8 +129,8 @@ enum Msg {
     Listed(usize),
     /// 変更 beside the shortcut: opens the dialog that records one.
     Record,
-    /// A key went down or up while recording.
-    Key(u32, bool),
+    /// A key went down or up while recording, and when.
+    Key(u32, bool, u32),
     RecordReset,
     RecordClear,
     RecordClosed(ContentDialogResult),
@@ -198,10 +198,10 @@ impl Component for Settings {
             Msg::Listed(n) => self.listed = n,
             Msg::Record => self.start_recording(context),
 
-            Msg::Key(vk, down) => {
+            Msg::Key(vk, down, time) => {
                 if let Some(r) = &mut self.recording {
                     if down {
-                        r.key_down(vk);
+                        r.key_down(vk, time);
                     } else {
                         r.key_up(vk);
                     }
@@ -209,7 +209,7 @@ impl Component for Settings {
             }
             Msg::RecordReset => {
                 if let (Some(r), Some(d)) = (&mut self.recording, self.editor.selected()) {
-                    *r = Recorder::showing(d.modifiers, d.vk);
+                    *r = Recorder::showing(&d.keys);
                 }
             }
             Msg::RecordClear => {
@@ -223,10 +223,7 @@ impl Component for Settings {
                 if result == ContentDialogResult::Primary
                     && let Some(Ok(keys)) = recorded
                 {
-                    self.editor.edit(|d| {
-                        d.modifiers = keys.modifiers;
-                        d.vk = keys.vk;
-                    });
+                    self.editor.edit(|d| d.keys = keys.strokes().to_vec());
                 }
             }
             Msg::Anchor(Some(i)) => self.editor.edit(|d| {
@@ -409,22 +406,21 @@ impl Settings {
             return;
         };
         let sender = context.sender();
-        if let Err(e) = keyhook::start(move |vk, down| {
-            sender.send(Msg::Key(vk, down));
+        if let Err(e) = keyhook::start(move |vk, down, time| {
+            sender.send(Msg::Key(vk, down, time));
         }) {
             self.error = Some(format!("キー入力を受け取れませんでした。{e}"));
             return;
         }
-        self.recording = Some(Recorder::showing(d.modifiers, d.vk));
+        self.recording = Some(Recorder::showing(&d.keys));
     }
 
     /// The dialog that records a shortcut: it shows the keys as they are
     /// pressed, and saves only a combination that can be a shortcut.
     fn recorder(&self, context: &mut ViewContext<Self>) -> View {
-        let r = self.recording.unwrap_or_default();
+        let r = self.recording.clone().unwrap_or_default();
         let result = r.result();
-        let caps = hotkey::keycaps(r.modifiers, r.vk);
-        let keys: View = if caps.is_empty() {
+        let keys: View = if r.strokes().is_empty() && r.partial == 0 {
             TextBlock::new()
                 .text("キーを押してください")
                 .opacity(0.6)
@@ -432,7 +428,13 @@ impl Settings {
                 .vertical_alignment(VerticalAlignment::Center)
                 .into()
         } else {
-            keycaps(caps, true)
+            // Large while there is one stroke, to read at a glance; more
+            // would not fit.
+            strokes_view(
+                r.strokes(),
+                r.partial,
+                r.strokes().len() + usize::from(r.partial != 0) <= 1,
+            )
         };
         let problem = match &result {
             Some(Err(e)) => e.to_string(),
@@ -705,15 +707,52 @@ impl Settings {
 
 /// A row's shortcut as keycaps, or 未設定.
 fn shortcut_view(d: &Draft) -> View {
-    if d.vk == 0 {
+    if d.keys.is_empty() {
         TextBlock::new()
             .text("未設定")
             .opacity(0.6)
             .vertical_alignment(VerticalAlignment::Center)
             .into()
     } else {
-        keycaps(hotkey::keycaps(d.modifiers, d.vk), false)
+        strokes_view(&d.keys, 0, false)
     }
+}
+
+/// Strokes one after another, each as its keycaps, with commas between
+/// them as the file writes them; then the modifiers of a stroke under way,
+/// if any.
+fn strokes_view(strokes: &[Hotkey], partial: u32, large: bool) -> View {
+    let mut groups: Vec<Vec<Keycap>> = strokes
+        .iter()
+        .map(|h| hotkey::keycaps(h.modifiers, h.vk))
+        .collect();
+    if partial != 0 {
+        groups.push(hotkey::keycaps(partial, 0));
+    }
+    let text_size = if large { 18.0 } else { 14.0 };
+    let children = groups.into_iter().enumerate().flat_map(|(i, caps)| {
+        let comma: Option<(usize, View)> = (i > 0).then(|| {
+            (
+                2 * i - 1,
+                TextBlock::new()
+                    .text(",")
+                    .font_size(text_size)
+                    .vertical_alignment(VerticalAlignment::Bottom)
+                    .into(),
+            )
+        });
+        comma.into_iter().chain([(2 * i, keycaps(caps, large))])
+    });
+    StackPanel::new()
+        .orientation(Orientation::Horizontal)
+        .spacing(if large { 12.0 } else { 4.0 })
+        .horizontal_alignment(if large {
+            HorizontalAlignment::Center
+        } else {
+            HorizontalAlignment::Left
+        })
+        .vertical_alignment(VerticalAlignment::Center)
+        .keyed_children(children)
 }
 
 /// Keys drawn as keycaps in a row, accent colored as Windows' own settings

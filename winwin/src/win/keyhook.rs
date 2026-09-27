@@ -14,18 +14,19 @@ use windows::Win32::UI::WindowsAndMessaging::{
     WM_SYSKEYDOWN,
 };
 
-/// Where keys go: a virtual-key code, and whether it went down.
-type Target = Box<dyn Fn(u32, bool)>;
+/// Where keys go: a virtual-key code, whether it went down, and when (in
+/// milliseconds, as the system counts them).
+type Target = Box<dyn Fn(u32, bool, u32)>;
 
 thread_local! {
     static HOOK: Cell<Option<HHOOK>> = const { Cell::new(None) };
     static TARGET: RefCell<Option<Target>> = const { RefCell::new(None) };
 }
 
-/// Sends every key to `target` (virtual-key code, pressed) and keeps it from
+/// Sends every key to `target` (virtual-key code, pressed, time) and keeps it from
 /// everything else, while one of this process's windows is in front. Keys
 /// typed into another application pass through untouched.
-pub fn start(target: impl Fn(u32, bool) + 'static) -> windows::core::Result<()> {
+pub fn start(target: impl Fn(u32, bool, u32) + 'static) -> windows::core::Result<()> {
     stop();
     let instance = unsafe { GetModuleHandleW(None) }?;
     let hook = unsafe { SetWindowsHookExW(WH_KEYBOARD_LL, Some(hook), Some(instance.into()), 0) }?;
@@ -55,7 +56,7 @@ unsafe extern "system" fn hook(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRE
         let taken = TARGET.with(|t| {
             let t = t.try_borrow().ok()?;
             let f = t.as_ref()?;
-            f(key.vkCode, down);
+            f(key.vkCode, down, key.time);
             Some(())
         });
         if taken.is_some() {

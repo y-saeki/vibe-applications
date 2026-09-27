@@ -9,28 +9,29 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::hotkey::Hotkey;
+use crate::hotkey::Keys;
 use crate::layout::{Anchor, Placement};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Shortcut {
-    #[serde(with = "hotkey_string")]
-    pub keys: Hotkey,
+    #[serde(with = "keys_string")]
+    pub keys: Keys,
     #[serde(flatten)]
     pub placement: Placement,
 }
 
-// Hotkey is kept free of serde; the file spells it the way Display writes it.
-mod hotkey_string {
+// Keys are kept free of serde; the file spells them the way Display writes
+// them.
+mod keys_string {
     use serde::{Deserialize, Deserializer, Serializer, de::Error};
 
-    use crate::hotkey::Hotkey;
+    use crate::hotkey::Keys;
 
-    pub fn serialize<S: Serializer>(h: &Hotkey, s: S) -> Result<S::Ok, S::Error> {
-        s.serialize_str(&h.to_string())
+    pub fn serialize<S: Serializer>(k: &Keys, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(&k.to_string())
     }
 
-    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Hotkey, D::Error> {
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Keys, D::Error> {
         let s = String::deserialize(d)?;
         s.parse().map_err(D::Error::custom)
     }
@@ -99,6 +100,24 @@ fn shortcut(keys: &str, anchor: Anchor, width: &str, height: &str) -> Shortcut {
     }
 }
 
+/// Two shortcuts where one is the start of the other, such as `Ctrl+Left`
+/// and `Ctrl+Left, Ctrl+Up`: after the first stroke there would be no
+/// telling which is meant. The later of the two comes first in the pair.
+pub fn prefix_clash(shortcuts: &[Shortcut]) -> Option<(usize, usize)> {
+    shortcuts.iter().enumerate().find_map(|(i, s)| {
+        shortcuts[..i]
+            .iter()
+            .position(|t| t.keys.is_prefix_of(&s.keys) || s.keys.is_prefix_of(&t.keys))
+            .map(|j| (i, j))
+    })
+}
+
+/// Why the shortcuts of [`prefix_clash`] cannot both be used.
+pub fn clash_message(a: &Keys, b: &Keys) -> String {
+    let (short, long) = if a.is_prefix_of(b) { (a, b) } else { (b, a) };
+    format!("「{short}」は「{long}」の途中までと同じため、両方は使えません")
+}
+
 /// Whether a width or height in the file is written in percent, as versions
 /// before ratios wrote them.
 fn has_percent(text: &str) -> bool {
@@ -146,8 +165,18 @@ impl Config {
     /// cycle.rs). Widths and heights in percent, as earlier versions wrote
     /// them, are read as ratios. Fields this version does not know, such as the `name` and
     /// `offset_x`/`offset_y` of earlier versions, are ignored.
+    /// A shortcut that is the start of another is refused.
     pub fn parse(text: &str, path: &Path) -> Result<Config, ConfigError> {
-        toml::from_str(text).map_err(|e| ConfigError::Parse(path.into(), e.to_string()))
+        let config: Config =
+            toml::from_str(text).map_err(|e| ConfigError::Parse(path.into(), e.to_string()))?;
+        if let Some((i, j)) = prefix_clash(&config.shortcuts) {
+            let s = &config.shortcuts;
+            return Err(ConfigError::Parse(
+                path.into(),
+                clash_message(&s[i].keys, &s[j].keys),
+            ));
+        }
+        Ok(config)
     }
 
     pub fn to_toml(&self) -> String {
@@ -336,6 +365,63 @@ mod tests {
             .collect();
         assert_eq!(widths, ["1/2", "2/3"]);
         assert_eq!(parse(&config.to_toml()).unwrap(), config);
+    }
+
+    #[test]
+    fn reads_keys_pressed_one_after_another() {
+        let text = r#"
+            [[shortcut]]
+            keys = "Ctrl+Left, Ctrl+Up"
+            anchor = "top-left"
+            width = "1/2"
+            height = "1/2"
+
+            [[shortcut]]
+            keys = "ctrl+left,ctrl+up"
+            anchor = "top-left"
+            width = "1/2"
+            height = "2/3"
+        "#;
+        let config = parse(text).unwrap();
+        assert_eq!(config.shortcuts[0].keys, config.shortcuts[1].keys);
+        let written = config.to_toml();
+        assert!(
+            written.contains(r#"keys = "Ctrl+Left, Ctrl+Up""#),
+            "{written}"
+        );
+        assert_eq!(parse(&written).unwrap(), config);
+
+        let too_long = text.replace("ctrl+left,ctrl+up", "Ctrl+A, Ctrl+B, Ctrl+C, Ctrl+D");
+        assert!(parse(&too_long).is_err());
+    }
+
+    #[test]
+    fn refuses_a_shortcut_that_starts_another() {
+        let text = r#"
+            [[shortcut]]
+            keys = "Ctrl+Left, Ctrl+Up"
+            anchor = "top-left"
+            width = "1/2"
+            height = "1/2"
+
+            [[shortcut]]
+            keys = "Ctrl+Left"
+            anchor = "left"
+            width = "1/2"
+            height = "1"
+        "#;
+        let e = parse(text).unwrap_err().to_string();
+        assert!(
+            e.contains("「Ctrl+Left」は「Ctrl+Left, Ctrl+Up」の途中までと同じ"),
+            "{e}"
+        );
+        let config = parse(&text.replace(r#"keys = "Ctrl+Left""#, r#"keys = "Ctrl+Up""#)).unwrap();
+        assert_eq!(prefix_clash(&config.shortcuts), None);
+        assert_eq!(prefix_clash(&parse_unchecked(text)), Some((1, 0)));
+    }
+
+    fn parse_unchecked(text: &str) -> Vec<Shortcut> {
+        toml::from_str::<Config>(text).unwrap().shortcuts
     }
 
     #[test]
