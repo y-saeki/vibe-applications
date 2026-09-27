@@ -101,9 +101,10 @@ struct Settings {
     /// Applied to the window as soon as it is chosen; saved with the rest.
     theme: Theme,
     theme_was: Theme,
-    /// How many lines the list had when the view was last published. The
-    /// list is given a selection only below this (see `list`).
-    listed: usize,
+    /// The editor's `next_id` when the view was last published: the list
+    /// has a line for every row below it and is given a selection only
+    /// among those (see `list`).
+    shown: u64,
     /// Shown above everything when 保存 fails.
     error: Option<String>,
     /// The 変更を破棄しますか dialog is open.
@@ -128,8 +129,8 @@ enum Msg {
     },
     /// The list was dragged into a new order: the rows' ids, as tags.
     Reorder(Vec<String>),
-    /// The list now has this many lines.
-    Listed(usize),
+    /// The list now has a line for every row below this id.
+    Shown(u64),
     /// 変更 beside the shortcut: opens the dialog that records one.
     Record,
     /// A key went down or up while recording.
@@ -175,7 +176,7 @@ impl Component for Settings {
             autostart_was: input.autostart,
             theme: input.theme,
             theme_was: input.theme,
-            listed: input.rows.len(),
+            shown: input.rows.len() as u64,
             error: None,
             confirming: false,
             recording: None,
@@ -198,7 +199,7 @@ impl Component for Settings {
                     self.editor.reorder(&ids);
                 }
             }
-            Msg::Listed(n) => self.listed = n,
+            Msg::Shown(id) => self.shown = id,
             Msg::Record => self.start_recording(context),
 
             Msg::Key(vk, down) => {
@@ -537,13 +538,14 @@ impl Settings {
             (id, ListViewItem::new().tag(id.to_string()).content(line))
         });
         // Reactor sets the list's selection before it adds the lines of the
-        // same update, and WinUI refuses, fatally, an index past the lines it
-        // has: selecting a row just added at the end would crash. So a row
-        // the list does not have yet is selected once it has been published.
-        let rows = self.editor.rows().count();
+        // same update. Selecting a row just added at the end would crash, as
+        // WinUI refuses, fatally, an index past the lines it has; one added
+        // above others would select the line it pushes down. So a row the
+        // list does not have yet is selected once it has been published.
+        let next_id = self.editor.next_id();
         let sender = context.sender();
-        context.use_effect("listed", rows, move || {
-            sender.send(Msg::Listed(rows));
+        context.use_effect("shown", next_id, move || {
+            sender.send(Msg::Shown(next_id));
             None
         });
         let list = Border::new()
@@ -555,7 +557,7 @@ impl Settings {
             .content(
                 ListView::new()
                     .selection_mode(ListViewSelectionMode::Single)
-                    .selected_index(self.editor.current().filter(|&i| i < self.listed))
+                    .selected_index(self.editor.shown_selection(self.shown))
                     .on_selection_changed(context.callback(Msg::Select))
                     // What dragging a line to a new place needs, all three.
                     .can_drag_items(true)

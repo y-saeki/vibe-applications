@@ -132,6 +132,18 @@ impl Editor {
         self.current.map(|i| &self.rows[i].1)
     }
 
+    /// The id the next new row gets. Every row made before is below it.
+    pub fn next_id(&self) -> u64 {
+        self.next_id
+    }
+
+    /// The selection for a list that has shown only the rows made before
+    /// `shown`, a value of `next_id`: none while the selected row is newer,
+    /// since the list does not have its line yet.
+    pub fn shown_selection(&self, shown: u64) -> Option<usize> {
+        self.current.filter(|&i| self.rows[i].0 < shown)
+    }
+
     pub fn is_dirty(&self) -> bool {
         self.dirty
     }
@@ -405,6 +417,24 @@ mod tests {
         e.delete();
         assert_eq!(e.current(), Some(2));
         assert!(e.is_dirty());
+    }
+
+    #[test]
+    fn a_new_row_is_not_selected_in_the_list_until_it_is_shown() {
+        let mut e = editor();
+        let shown = e.next_id();
+        e.duplicate();
+        assert_eq!(e.current(), Some(1));
+        assert_eq!(e.shown_selection(shown), None);
+        assert_eq!(e.shown_selection(e.next_id()), Some(1));
+        let shown = e.next_id();
+        e.select(2);
+        e.add();
+        assert_eq!(e.shown_selection(shown), None);
+        assert_eq!(e.shown_selection(e.next_id()), Some(3));
+        let shown = e.next_id();
+        e.select(0);
+        assert_eq!(e.shown_selection(shown), Some(0));
     }
 
     #[test]
