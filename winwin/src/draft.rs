@@ -8,15 +8,19 @@ use std::collections::BTreeSet;
 
 use crate::config::{Config, Shortcut};
 use crate::hotkey::{self, Hotkey, Keys};
-use crate::layout::{self, Anchor, Placement, Ratio, Rect};
+use crate::layout::{self, Anchor, Placement, Ratio, Rect, Size};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Draft {
     /// The strokes as recorded; empty until a shortcut is chosen.
     pub keys: Vec<Hotkey>,
     pub anchor: Anchor,
+    /// The ratio as typed. Left as it is while the width is kept, so that
+    /// unchecking 維持 brings it back.
     pub width: String,
+    pub keep_width: bool,
     pub height: String,
+    pub keep_height: bool,
 }
 
 impl Draft {
@@ -26,7 +30,9 @@ impl Draft {
             keys: Vec::new(),
             anchor: Anchor::Center,
             width: "1/2".into(),
+            keep_width: false,
             height: "1/2".into(),
+            keep_height: false,
         }
     }
 
@@ -35,18 +41,26 @@ impl Draft {
         Draft {
             keys: s.keys.strokes().to_vec(),
             anchor: p.anchor,
-            width: p.width.to_string(),
-            height: p.height.to_string(),
+            width: ratio_text(p.width),
+            keep_width: p.width == Size::Keep,
+            height: ratio_text(p.height),
+            keep_height: p.height == Size::Keep,
         }
     }
 
     pub fn placement(&self) -> Result<Placement, String> {
-        let field =
-            |label: &str, text: &str| text.parse::<Ratio>().map_err(|e| format!("{label}: {e}"));
+        let field = |label: &str, text: &str, keep: bool| {
+            if keep {
+                return Ok(Size::Keep);
+            }
+            text.parse::<Ratio>()
+                .map(Size::Ratio)
+                .map_err(|e| format!("{label}: {e}"))
+        };
         Ok(Placement {
             anchor: self.anchor,
-            width: field("幅", &self.width)?,
-            height: field("高さ", &self.height)?,
+            width: field("幅", &self.width, self.keep_width)?,
+            height: field("高さ", &self.height, self.keep_height)?,
         })
     }
 
@@ -63,7 +77,8 @@ impl Draft {
 
     /// A screen of `size` shrunk into `bounds`, and where on it this row puts
     /// a window; `None` for the window while the fields do not make a
-    /// placement yet.
+    /// placement yet. A width or height that is kept is drawn as half the
+    /// screen, there being no window to take it from.
     pub fn picture(
         &self,
         size: (i32, i32),
@@ -71,17 +86,19 @@ impl Draft {
         anchor: Anchor,
     ) -> Option<(Rect, Option<Rect>)> {
         let screen = layout::miniature(size, bounds, anchor)?;
-        let window = self.placement().ok().map(|p| p.resolve(screen));
+        let stand_in = (screen.width() / 2, screen.height() / 2);
+        let window = self.placement().ok().map(|p| p.resolve(screen, stand_in));
         Some((screen, window))
     }
 
-    /// Where the row puts a window, in words: 左 1/2 × 1.
+    /// Where the row puts a window, in words: 左 1/2 × 1, 左上 維持 × 1/3.
     pub fn placement_text(&self) -> String {
+        let size = |text: &str, keep: bool| if keep { KEEP_LABEL } else { text.trim() }.to_string();
         format!(
             "{} {} × {}",
             self.anchor.label(),
-            self.width.trim(),
-            self.height.trim()
+            size(&self.width, self.keep_width),
+            size(&self.height, self.keep_height)
         )
     }
 
@@ -94,6 +111,17 @@ impl Draft {
             hotkey::strokes_text(&self.keys)
         };
         format!("{keys}    {}", self.placement_text())
+    }
+}
+
+/// What the settings window calls a width or height that is kept.
+pub const KEEP_LABEL: &str = "維持";
+
+/// What a draft's text field holds for `size`: empty when it is kept.
+fn ratio_text(size: Size) -> String {
+    match size {
+        Size::Ratio(r) => r.to_string(),
+        Size::Keep => String::new(),
     }
 }
 
@@ -422,6 +450,25 @@ mod tests {
     }
 
     #[test]
+    fn a_kept_size_needs_no_ratio() {
+        let mut d = Draft::from_shortcut(&Config::defaults().shortcuts[0]);
+        d.keep_width = true;
+        d.width = "wide".into();
+        let s = d.to_shortcut().unwrap();
+        assert_eq!(s.placement.width, Size::Keep);
+        assert_eq!(d.placement_text(), "左 維持 × 1");
+
+        let back = Draft::from_shortcut(&s);
+        assert!(back.keep_width && !back.keep_height);
+        assert_eq!(back.width, "");
+        assert_eq!(back.to_shortcut().unwrap(), s);
+
+        // Unchecked again, the ratio has to be one.
+        d.keep_width = false;
+        assert!(d.to_shortcut().unwrap_err().starts_with("幅:"));
+    }
+
+    #[test]
     fn list_lines_show_the_shortcut_and_the_placement() {
         let d = Draft::from_shortcut(&Config::defaults().shortcuts[0]);
         assert_eq!(d.placement_text(), "左 1/2 × 1");
@@ -694,5 +741,11 @@ mod tests {
         d.width = "5".into();
         let (_, window) = d.picture((1920, 1080), bounds, Anchor::Center).unwrap();
         assert_eq!(window, None);
+
+        // A kept width is drawn as half the screen.
+        d.keep_width = true;
+        d.height = "1".into();
+        let (screen, window) = d.picture((1920, 1080), bounds, Anchor::Center).unwrap();
+        assert_eq!(window.unwrap().width(), screen.width() / 2);
     }
 }

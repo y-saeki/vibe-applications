@@ -25,7 +25,7 @@ use windows_reactor::*;
 
 use super::{autostart, config_path, error_box, icon, keyhook, modifiers_held, testwin};
 use crate::config::{Config, Theme};
-use crate::draft::{Click, Draft, Editor};
+use crate::draft::{Click, Draft, Editor, KEEP_LABEL};
 use crate::hotkey::{self, Arrow, Hotkey, Keycap, MOD_CONTROL, MOD_SHIFT, Recorder};
 use crate::layout::{Anchor, Rect};
 
@@ -135,6 +135,8 @@ enum Msg {
     Anchor(Option<usize>),
     Width(String),
     Height(String),
+    KeepWidth(bool),
+    KeepHeight(bool),
     Autostart(bool),
     Theme(Option<usize>),
     Save,
@@ -238,6 +240,8 @@ impl Component for Settings {
             Msg::Anchor(None) => {}
             Msg::Width(text) => self.editor.edit(|d| d.width = text),
             Msg::Height(text) => self.editor.edit(|d| d.height = text),
+            Msg::KeepWidth(keep) => self.editor.edit(|d| d.keep_width = keep),
+            Msg::KeepHeight(keep) => self.editor.edit(|d| d.keep_height = keep),
             Msg::Autostart(on) => self.autostart = on,
             Msg::Theme(i) => {
                 if let Some(&theme) = i.and_then(|i| Theme::ALL.get(i)) {
@@ -675,20 +679,37 @@ impl Settings {
             .min_width(160.0)
             .on_selection_changed(context.callback(Msg::Anchor));
 
-        let ratio = |value: &str, on_change: fn(String) -> Msg| {
-            TextBox::new()
-                .is_enabled(enabled)
-                .text(value.to_string())
-                .placeholder_text("1/2")
-                .width(120.0)
-                .on_text_changed(context.callback(on_change))
-        };
+        let ratio =
+            |value: &str, keep: bool, on_change: fn(String) -> Msg, on_keep: fn(bool) -> Msg| {
+                StackPanel::new()
+                    .orientation(Orientation::Horizontal)
+                    .spacing(12.0)
+                    .children((
+                        TextBox::new()
+                            .is_enabled(enabled && !keep)
+                            .text(value.to_string())
+                            .placeholder_text("1/2")
+                            .width(120.0)
+                            .on_text_changed(context.callback(on_change)),
+                        CheckBox::new()
+                            .is_enabled(enabled)
+                            .is_checked(keep)
+                            .on_is_checked_changed(context.callback(on_keep))
+                            .content(KEEP_LABEL),
+                    ))
+            };
         let size = StackPanel::new()
             .orientation(Orientation::Horizontal)
             .spacing(24.0)
             .children((
-                field("幅", ratio(&d.width, Msg::Width)),
-                field("高さ", ratio(&d.height, Msg::Height)),
+                field(
+                    "幅",
+                    ratio(&d.width, d.keep_width, Msg::Width, Msg::KeepWidth),
+                ),
+                field(
+                    "高さ",
+                    ratio(&d.height, d.keep_height, Msg::Height, Msg::KeepHeight),
+                ),
             ));
 
         let preview = Border::new()

@@ -34,11 +34,6 @@ impl Ratio {
         self.0
     }
 
-    /// `span` is the work area's extent on this axis in physical pixels.
-    fn resolve(self, span: f64) -> f64 {
-        span * self.0
-    }
-
     /// Reads what an earlier version wrote, which measured in percent
     /// (`"50%"`), as well as a ratio. Pixel lengths have no ratio to become
     /// and are refused.
@@ -119,6 +114,63 @@ impl TryFrom<String> for Ratio {
 impl From<Ratio> for String {
     fn from(r: Ratio) -> String {
         r.to_string()
+    }
+}
+
+/// A width or height: a share of the work area, or the window's own length
+/// on that axis as it is when the shortcut is pressed.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub enum Size {
+    Ratio(Ratio),
+    Keep,
+}
+
+/// How the file spells [`Size::Keep`].
+const KEEP: &str = "keep";
+
+impl Size {
+    /// `span` is the work area's extent on this axis and `current` the
+    /// window's, both in physical pixels.
+    fn resolve(self, span: f64, current: f64) -> f64 {
+        match self {
+            Size::Ratio(r) => span * r.value(),
+            Size::Keep => current,
+        }
+    }
+}
+
+impl From<Ratio> for Size {
+    fn from(r: Ratio) -> Size {
+        Size::Ratio(r)
+    }
+}
+
+impl TryFrom<String> for Size {
+    type Error = RatioError;
+
+    fn try_from(s: String) -> Result<Self, Self::Error> {
+        if s.trim().eq_ignore_ascii_case(KEEP) {
+            Ok(Size::Keep)
+        } else {
+            Ratio::from_config(&s).map(Size::Ratio)
+        }
+    }
+}
+
+impl fmt::Display for Size {
+    /// As the file spells it.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Size::Ratio(r) => r.fmt(f),
+            Size::Keep => f.write_str(KEEP),
+        }
+    }
+}
+
+impl From<Size> for String {
+    fn from(s: Size) -> String {
+        s.to_string()
     }
 }
 
@@ -211,8 +263,8 @@ impl Rect {
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Placement {
     pub anchor: Anchor,
-    pub width: Ratio,
-    pub height: Ratio,
+    pub width: Size,
+    pub height: Size,
 }
 
 /// Places a span of `size` inside `[start, start + span]` and returns its two
@@ -231,18 +283,20 @@ impl Placement {
     /// The rectangle, in physical pixels, that the visible frame of the
     /// window should occupy. Edges are rounded independently, so two
     /// placements that meet at a fraction of a pixel still share an edge.
-    pub fn resolve(&self, work: Rect) -> Rect {
+    /// `current` is the size of the window's visible frame now, which a
+    /// [`Size::Keep`] carries over.
+    pub fn resolve(&self, work: Rect, current: (i32, i32)) -> Rect {
         let (ww, wh) = (f64::from(work.width()), f64::from(work.height()));
         let (left, right) = place(
             f64::from(work.left),
             ww,
-            self.width.resolve(ww),
+            self.width.resolve(ww, f64::from(current.0)),
             self.anchor.horizontal(),
         );
         let (top, bottom) = place(
             f64::from(work.top),
             wh,
-            self.height.resolve(wh),
+            self.height.resolve(wh, f64::from(current.1)),
             self.anchor.vertical(),
         );
         Rect {
@@ -287,12 +341,16 @@ mod tests {
     };
 
     fn p(anchor: Anchor, width: &str, height: &str) -> Placement {
+        let size = |s: &str| Size::try_from(s.to_string()).unwrap();
         Placement {
             anchor,
-            width: width.parse().unwrap(),
-            height: height.parse().unwrap(),
+            width: size(width),
+            height: size(height),
         }
     }
+
+    /// A window's size, for placements that do not keep either.
+    const ANY: (i32, i32) = (0, 0);
 
     fn r(left: i32, top: i32, right: i32, bottom: i32) -> Rect {
         Rect {
@@ -341,15 +399,55 @@ mod tests {
     }
 
     #[test]
-    fn halves_and_quarters() {
-        assert_eq!(p(Anchor::Left, "1/2", "1").resolve(FHD), r(0, 0, 960, 1040));
+    fn reads_and_writes_keep() {
+        assert_eq!(Size::try_from(" Keep ".to_string()), Ok(Size::Keep));
+        assert_eq!(String::from(Size::Keep), "keep");
         assert_eq!(
-            p(Anchor::Right, "1/2", "1").resolve(FHD),
+            Size::try_from("50%".to_string()),
+            Ok(Size::Ratio(Ratio::HALF))
+        );
+        assert!(Size::try_from("kept".to_string()).is_err());
+    }
+
+    #[test]
+    fn keeps_the_current_width_or_height() {
+        let current = (800, 600);
+        // The width stays, the height becomes a third, from the top left.
+        assert_eq!(
+            p(Anchor::TopLeft, "keep", "1/3").resolve(FHD, current),
+            r(0, 0, 800, 347)
+        );
+        assert_eq!(
+            p(Anchor::Center, "1/2", "keep").resolve(FHD, current),
+            r(480, 220, 1440, 820)
+        );
+        assert_eq!(
+            p(Anchor::BottomRight, "keep", "keep").resolve(FHD, current),
+            r(1120, 440, 1920, 1040)
+        );
+        // A window larger than the work area is shrunk to fit it.
+        assert_eq!(
+            p(Anchor::Left, "keep", "1").resolve(FHD, (2400, 600)),
+            r(0, 0, 1920, 1040)
+        );
+    }
+
+    #[test]
+    fn halves_and_quarters() {
+        assert_eq!(
+            p(Anchor::Left, "1/2", "1").resolve(FHD, ANY),
+            r(0, 0, 960, 1040)
+        );
+        assert_eq!(
+            p(Anchor::Right, "1/2", "1").resolve(FHD, ANY),
             r(960, 0, 1920, 1040)
         );
-        assert_eq!(p(Anchor::Top, "1", "1/2").resolve(FHD), r(0, 0, 1920, 520));
         assert_eq!(
-            p(Anchor::BottomRight, "1/2", "1/2").resolve(FHD),
+            p(Anchor::Top, "1", "1/2").resolve(FHD, ANY),
+            r(0, 0, 1920, 520)
+        );
+        assert_eq!(
+            p(Anchor::BottomRight, "1/2", "1/2").resolve(FHD, ANY),
             r(960, 520, 1920, 1040)
         );
     }
@@ -357,8 +455,8 @@ mod tests {
     #[test]
     fn neighbours_share_an_edge_on_odd_sizes() {
         let work = r(0, 0, 1921, 1041);
-        let thirds =
-            [Anchor::Left, Anchor::Center, Anchor::Right].map(|a| p(a, "1/3", "1").resolve(work));
+        let thirds = [Anchor::Left, Anchor::Center, Anchor::Right]
+            .map(|a| p(a, "1/3", "1").resolve(work, ANY));
         assert_eq!(thirds[0].left, 0);
         assert_eq!(thirds[0].right, thirds[1].left);
         assert_eq!(thirds[1].right, thirds[2].left);
@@ -370,14 +468,17 @@ mod tests {
         // A monitor to the left of the primary one, below its top edge.
         let work = r(-2560, 200, 0, 1600);
         assert_eq!(
-            p(Anchor::Right, "1/2", "1").resolve(work),
+            p(Anchor::Right, "1/2", "1").resolve(work, ANY),
             r(-1280, 200, 0, 1600)
         );
     }
 
     #[test]
     fn keeps_at_least_a_pixel() {
-        assert_eq!(p(Anchor::Center, "0.0001", "1").resolve(FHD).width(), 1);
+        assert_eq!(
+            p(Anchor::Center, "0.0001", "1").resolve(FHD, ANY).width(),
+            1
+        );
     }
 
     #[test]
@@ -412,12 +513,18 @@ mod tests {
     #[test]
     fn placements_resolve_on_a_miniature() {
         let screen = miniature((1920, 1080), r(0, 0, 32, 18), Anchor::TopLeft).unwrap();
-        assert_eq!(p(Anchor::Left, "1/2", "1").resolve(screen), r(0, 0, 16, 18));
         assert_eq!(
-            p(Anchor::BottomRight, "1/2", "1/2").resolve(screen),
+            p(Anchor::Left, "1/2", "1").resolve(screen, ANY),
+            r(0, 0, 16, 18)
+        );
+        assert_eq!(
+            p(Anchor::BottomRight, "1/2", "1/2").resolve(screen, ANY),
             r(16, 9, 32, 18)
         );
         // However small, the window stays visible.
-        assert_eq!(p(Anchor::Center, "0.01", "1").resolve(screen).width(), 1);
+        assert_eq!(
+            p(Anchor::Center, "0.01", "1").resolve(screen, ANY).width(),
+            1
+        );
     }
 }
