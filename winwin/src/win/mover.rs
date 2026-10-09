@@ -129,7 +129,10 @@ pub fn place(hwnd: HWND, placement: &Placement) -> Result<(), MoveError> {
     if !unsafe { GetMonitorInfoW(monitor, &mut info) }.as_bool() {
         return Ok(());
     }
-    let target = placement.resolve(to_rect(info.rcWork));
+    let Some((_, frame)) = measure(hwnd) else {
+        return Ok(());
+    };
+    let target = placement.resolve(to_rect(info.rcWork), (frame.width(), frame.height()));
 
     set_frame(hwnd, target)?;
     // The invisible borders can change with the size (a window that reached

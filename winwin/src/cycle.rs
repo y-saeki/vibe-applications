@@ -199,6 +199,7 @@ fn extended(bindings: &[Binding], strokes: &[Hotkey]) -> bool {
 mod tests {
     use super::*;
     use crate::hotkey::MOD_CONTROL;
+    use crate::layout::Size;
 
     fn hk(s: &str) -> Hotkey {
         s.parse().unwrap()
@@ -404,7 +405,7 @@ mod tests {
     fn a_shorter_shortcut_cycles_and_still_leads_on() {
         let mut config = config_with_a_prefix();
         let mut two_thirds = config.shortcuts[0].clone();
-        two_thirds.placement.width = "2/3".parse().unwrap();
+        two_thirds.placement.width = Size::Ratio("2/3".parse().unwrap());
         config.shortcuts.push(two_thirds);
         let bindings = bindings(&config);
         let mut presses = Presses::default();
