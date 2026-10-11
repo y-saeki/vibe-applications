@@ -15,12 +15,9 @@ pub struct Draft {
     /// The strokes as recorded; empty until a shortcut is chosen.
     pub keys: Vec<Hotkey>,
     pub anchor: Anchor,
-    /// The ratio as typed. Left as it is while the width is kept, so that
-    /// unchecking 維持 brings it back.
+    /// The ratio as typed; left empty, the window keeps its width.
     pub width: String,
-    pub keep_width: bool,
     pub height: String,
-    pub keep_height: bool,
 }
 
 impl Draft {
@@ -30,9 +27,7 @@ impl Draft {
             keys: Vec::new(),
             anchor: Anchor::Center,
             width: "1/2".into(),
-            keep_width: false,
             height: "1/2".into(),
-            keep_height: false,
         }
     }
 
@@ -41,16 +36,14 @@ impl Draft {
         Draft {
             keys: s.keys.strokes().to_vec(),
             anchor: p.anchor,
-            width: ratio_text(p.width),
-            keep_width: p.width == Size::Keep,
-            height: ratio_text(p.height),
-            keep_height: p.height == Size::Keep,
+            width: size_text(p.width),
+            height: size_text(p.height),
         }
     }
 
     pub fn placement(&self) -> Result<Placement, String> {
-        let field = |label: &str, text: &str, keep: bool| {
-            if keep {
+        let field = |label: &str, text: &str| {
+            if text.trim().is_empty() {
                 return Ok(Size::Keep);
             }
             text.parse::<Ratio>()
@@ -59,8 +52,8 @@ impl Draft {
         };
         Ok(Placement {
             anchor: self.anchor,
-            width: field("幅", &self.width, self.keep_width)?,
-            height: field("高さ", &self.height, self.keep_height)?,
+            width: field("幅", &self.width)?,
+            height: field("高さ", &self.height)?,
         })
     }
 
@@ -93,12 +86,15 @@ impl Draft {
 
     /// Where the row puts a window, in words: 左 1/2 × 1, 左上 維持 × 1/3.
     pub fn placement_text(&self) -> String {
-        let size = |text: &str, keep: bool| if keep { KEEP_LABEL } else { text.trim() }.to_string();
+        let size = |text: &str| match text.trim() {
+            "" => KEEP_LABEL.to_string(),
+            t => t.to_string(),
+        };
         format!(
             "{} {} × {}",
             self.anchor.label(),
-            size(&self.width, self.keep_width),
-            size(&self.height, self.keep_height)
+            size(&self.width),
+            size(&self.height)
         )
     }
 
@@ -118,7 +114,7 @@ impl Draft {
 pub const KEEP_LABEL: &str = "維持";
 
 /// What a draft's text field holds for `size`: empty when it is kept.
-fn ratio_text(size: Size) -> String {
+fn size_text(size: Size) -> String {
     match size {
         Size::Ratio(r) => r.to_string(),
         Size::Keep => String::new(),
@@ -450,22 +446,16 @@ mod tests {
     }
 
     #[test]
-    fn a_kept_size_needs_no_ratio() {
+    fn an_empty_field_keeps_the_size() {
         let mut d = Draft::from_shortcut(&Config::defaults().shortcuts[0]);
-        d.keep_width = true;
-        d.width = "wide".into();
+        d.width = "  ".into();
         let s = d.to_shortcut().unwrap();
         assert_eq!(s.placement.width, Size::Keep);
         assert_eq!(d.placement_text(), "左 維持 × 1");
 
         let back = Draft::from_shortcut(&s);
-        assert!(back.keep_width && !back.keep_height);
-        assert_eq!(back.width, "");
+        assert_eq!((back.width.as_str(), back.height.as_str()), ("", "1"));
         assert_eq!(back.to_shortcut().unwrap(), s);
-
-        // Unchecked again, the ratio has to be one.
-        d.keep_width = false;
-        assert!(d.to_shortcut().unwrap_err().starts_with("幅:"));
     }
 
     #[test]
@@ -743,7 +733,7 @@ mod tests {
         assert_eq!(window, None);
 
         // A kept width is drawn as half the screen.
-        d.keep_width = true;
+        d.width = String::new();
         d.height = "1".into();
         let (screen, window) = d.picture((1920, 1080), bounds, Anchor::Center).unwrap();
         assert_eq!(window.unwrap().width(), screen.width() / 2);
