@@ -72,16 +72,23 @@ impl Draft {
     /// a window; `None` for the window while the fields do not make a
     /// placement yet. A width or height that is kept is drawn as half the
     /// screen, there being no window to take it from.
-    pub fn picture(
-        &self,
-        size: (i32, i32),
-        bounds: Rect,
-        anchor: Anchor,
-    ) -> Option<(Rect, Option<Rect>)> {
+    pub fn picture(&self, size: (i32, i32), bounds: Rect, anchor: Anchor) -> Option<Picture> {
         let screen = layout::miniature(size, bounds, anchor)?;
         let stand_in = (screen.width() / 2, screen.height() / 2);
-        let window = self.placement().ok().map(|p| p.resolve(screen, stand_in));
-        Some((screen, window))
+        let window = self.placement().ok().map(|p| {
+            let rect = p.resolve(screen, stand_in);
+            let (w, h) = (p.width == Size::Keep, p.height == Size::Keep);
+            Frame {
+                rect,
+                loose: Sides {
+                    left: w && rect.left > screen.left,
+                    top: h && rect.top > screen.top,
+                    right: w && rect.right < screen.right,
+                    bottom: h && rect.bottom < screen.bottom,
+                },
+            }
+        });
+        Some(Picture { screen, window })
     }
 
     /// Where the row puts a window, in words: 左 1/2 × 1, 左上 維持 × 1/3.
@@ -108,6 +115,52 @@ impl Draft {
         };
         format!("{keys}    {}", self.placement_text())
     }
+}
+
+/// A row's placement drawn on a shrunk screen.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Picture {
+    pub screen: Rect,
+    pub window: Option<Frame>,
+}
+
+/// The window in a [`Picture`], and the edges of it that are drawn dashed:
+/// those of a kept width or height, where the edge lands depends on the
+/// window. An edge on the screen's edge stays put whatever the size, so it
+/// stays solid.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Frame {
+    pub rect: Rect,
+    pub loose: Sides,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Sides {
+    pub left: bool,
+    pub top: bool,
+    pub right: bool,
+    pub bottom: bool,
+}
+
+/// The pieces a dashed line from `from` to `to` is drawn in: dashes of
+/// `dash` with gaps of about `gap`, stretched so that the line starts and
+/// ends on a dash. Nothing when the line has no length.
+pub fn dashes(from: f64, to: f64, dash: f64, gap: f64) -> Vec<(f64, f64)> {
+    let length = to - from;
+    if length <= 0.0 {
+        return Vec::new();
+    }
+    let count = (((length + gap) / (dash + gap)).floor() as usize).max(1);
+    if count == 1 {
+        return vec![(from, to)];
+    }
+    let gap = (length - dash * count as f64) / (count - 1) as f64;
+    (0..count)
+        .map(|i| {
+            let start = from + (dash + gap) * i as f64;
+            (start, start + dash)
+        })
+        .collect()
 }
 
 /// What the settings window calls a width or height that is kept.
@@ -720,22 +773,75 @@ mod tests {
             bottom: 100,
         };
         let d = Draft::from_shortcut(&Config::defaults().shortcuts[0]);
-        let (screen, window) = d.picture((1920, 1080), bounds, Anchor::Center).unwrap();
+        let Picture { screen, window } = d.picture((1920, 1080), bounds, Anchor::Center).unwrap();
         assert_eq!((screen.width(), screen.height()), (160, 90));
         assert_eq!(screen.top, 5);
         let window = window.unwrap();
-        assert_eq!((window.left, window.top), (screen.left, screen.top));
-        assert_eq!((window.width(), window.height()), (80, 90));
+        assert_eq!(
+            (window.rect.left, window.rect.top),
+            (screen.left, screen.top)
+        );
+        assert_eq!((window.rect.width(), window.rect.height()), (80, 90));
+        assert_eq!(window.loose, Sides::default());
 
         let mut d = Draft::new();
         d.width = "5".into();
-        let (_, window) = d.picture((1920, 1080), bounds, Anchor::Center).unwrap();
-        assert_eq!(window, None);
+        let picture = d.picture((1920, 1080), bounds, Anchor::Center).unwrap();
+        assert_eq!(picture.window, None);
+    }
 
-        // A kept width is drawn as half the screen.
-        d.width = String::new();
-        d.height = "1".into();
-        let (screen, window) = d.picture((1920, 1080), bounds, Anchor::Center).unwrap();
-        assert_eq!(window.unwrap().width(), screen.width() / 2);
+    #[test]
+    fn kept_sizes_are_drawn_as_half_with_loose_edges_off_the_screen_edge() {
+        let bounds = Rect {
+            left: 0,
+            top: 0,
+            right: 160,
+            bottom: 90,
+        };
+        let frame = |anchor: Anchor, width: &str, height: &str| {
+            let d = Draft {
+                anchor,
+                width: width.into(),
+                height: height.into(),
+                ..Draft::new()
+            };
+            d.picture((1920, 1080), bounds, Anchor::Center)
+                .unwrap()
+                .window
+                .unwrap()
+        };
+        let sides = |left, top, right, bottom| Sides {
+            left,
+            top,
+            right,
+            bottom,
+        };
+
+        let f = frame(Anchor::TopLeft, "", "1/3");
+        assert_eq!((f.rect.width(), f.rect.height()), (80, 30));
+        assert_eq!(f.loose, sides(false, false, true, false));
+        let f = frame(Anchor::Right, "", "1");
+        assert_eq!(f.loose, sides(true, false, false, false));
+        let f = frame(Anchor::Center, "", "1/2");
+        assert_eq!(f.loose, sides(true, false, true, false));
+        let f = frame(Anchor::Center, "", "");
+        assert_eq!(f.loose, sides(true, true, true, true));
+        let f = frame(Anchor::BottomRight, "", "");
+        assert_eq!(f.loose, sides(true, true, false, false));
+    }
+
+    #[test]
+    fn dashes_start_and_end_on_a_dash() {
+        assert_eq!(
+            dashes(0.0, 10.0, 2.0, 2.0),
+            [(0.0, 2.0), (4.0, 6.0), (8.0, 10.0)]
+        );
+        // The gaps stretch to fill what the dashes leave.
+        assert_eq!(
+            dashes(1.0, 12.0, 3.0, 1.0),
+            [(1.0, 4.0), (5.0, 8.0), (9.0, 12.0)]
+        );
+        assert_eq!(dashes(0.0, 2.5, 2.0, 2.0), [(0.0, 2.5)]);
+        assert_eq!(dashes(5.0, 5.0, 2.0, 2.0), []);
     }
 }
