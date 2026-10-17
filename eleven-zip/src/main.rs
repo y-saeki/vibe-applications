@@ -15,6 +15,7 @@ mod icon_res;
 mod release;
 mod shell;
 mod store;
+mod title;
 #[cfg(windows)]
 mod win;
 

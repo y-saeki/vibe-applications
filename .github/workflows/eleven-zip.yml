@@ -53,15 +53,33 @@ jobs:
           cargo clippy --all-targets --locked -- -D warnings
       - name: Rust tests
         run: cargo test --locked
+      # The settings window's title carries the same commit as the installer
+      # below; main's build leaves it unset and shows the plain version.
       - name: Release build
-        run: cargo build --release --locked
+        shell: bash
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: ELEVEN_ZIP_COMMIT="${HEAD_SHA:0:7}" cargo build --release --locked
       # NSIS comes with the runner image; installing it is the fallback for an
       # image that stops shipping it.
+      # A pull request's build carries the commit it came from as semver build
+      # metadata (0.1.2+047ba8f), so that an installed build tells which one
+      # it is. main builds what the release publishes, so it keeps the plain
+      # version.
       - name: Installer
         shell: pwsh
         working-directory: eleven-zip/installer
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           $version = (Select-String -Path ../Cargo.toml -Pattern '^version\s*=\s*"(.+)"' | Select-Object -First 1).Matches.Groups[1].Value
+          $build = @()
+          $fileVersion = $version
+          if ($env:HEAD_SHA) {
+            $commit = $env:HEAD_SHA.Substring(0, 7)
+            $build = @("/DBUILD=$commit")
+            $fileVersion = "$version+$commit"
+          }
           $makensis = (Get-Command makensis -ErrorAction SilentlyContinue).Source
           if (-not $makensis -and (Test-Path "${env:ProgramFiles(x86)}\NSIS\makensis.exe")) {
             $makensis = "${env:ProgramFiles(x86)}\NSIS\makensis.exe"
@@ -72,7 +90,7 @@ jobs:
           }
           # eleven-zip.exe and the Windows App Runtime files build.rs staged beside it.
           ./payload.ps1 -Dir ..\target\release -Out payload.nsh
-          & $makensis /V2 /INPUTCHARSET UTF8 "/DVERSION=$version" /DPAYLOAD=payload.nsh "/DOUTFILE=..\target\release\eleven-zip_${version}_x64-setup.exe" installer.nsi
+          & $makensis /V2 /INPUTCHARSET UTF8 "/DVERSION=$version" @build /DPAYLOAD=payload.nsh "/DOUTFILE=..\target\release\eleven-zip_${fileVersion}_x64-setup.exe" installer.nsi
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:

@@ -11,8 +11,8 @@ use windows::Win32::System::Threading::GetCurrentThreadId;
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::Shell::ShellExecuteW;
 use windows::Win32::UI::WindowsAndMessaging::{
-    EnumThreadWindows, FindWindowW, GetClassNameW, ICON_BIG, ICON_SMALL, IsIconic, SW_RESTORE,
-    SW_SHOWNORMAL, SendMessageW, SetForegroundWindow, ShowWindow, WM_SETICON,
+    EnumThreadWindows, FindWindowExW, GetClassNameW, GetWindowTextW, ICON_BIG, ICON_SMALL,
+    IsIconic, SW_RESTORE, SW_SHOWNORMAL, SendMessageW, SetForegroundWindow, ShowWindow, WM_SETICON,
 };
 use windows::core::{BOOL, HSTRING, PCWSTR, w};
 use windows_reactor::*;
@@ -21,8 +21,8 @@ use super::sevenzip::{self, Checked};
 use super::{config_path, error_box, icon, now, registry, store};
 use crate::config::Config;
 use crate::release::{self, Version};
+use crate::title;
 
-const TITLE: &str = "eleven-zip の設定";
 const CLIENT: (f64, f64) = (640.0, 640.0);
 const MIN_CLIENT: (f64, f64) = (480.0, 360.0);
 const WINUI_WINDOW_CLASS: &str = "WinUIDesktopWin32WindowClass";
@@ -151,7 +151,12 @@ impl Component for Settings {
     }
 
     fn view(&self, _input: &Input, context: &mut ViewContext<Self>) -> View {
-        context.window_title(TITLE);
+        // CI passes a pull request's commit, the same one the installer
+        // carries; main's build leaves it unset.
+        context.window_title(title::window_title(
+            env!("CARGO_PKG_VERSION"),
+            option_env!("ELEVEN_ZIP_COMMIT"),
+        ));
         context.window_visuals(
             WindowVisuals::new()
                 .backdrop(WindowBackdrop::Mica)
@@ -364,16 +369,25 @@ fn card(label: &str, detail: Option<(String, bool)>, control: impl Into<View>) -
 }
 
 /// Starting eleven-zip with no file while its settings window is open brings that
-/// window forward instead of opening a second one.
+/// window forward instead of opening a second one. The window is found by its
+/// title, which may be another version's.
 fn bring_forward_existing() -> bool {
-    let Ok(hwnd) =
-        (unsafe { FindWindowW(&HSTRING::from(WINUI_WINDOW_CLASS), &HSTRING::from(TITLE)) })
-    else {
-        return false;
+    let class = HSTRING::from(WINUI_WINDOW_CLASS);
+    let mut after = None;
+    let hwnd = loop {
+        let Ok(hwnd) = (unsafe { FindWindowExW(None, after, &class, PCWSTR::null()) }) else {
+            return false;
+        };
+        if hwnd.is_invalid() {
+            return false;
+        }
+        let mut text = [0u16; 256];
+        let len = unsafe { GetWindowTextW(hwnd, &mut text) }.max(0) as usize;
+        if title::is_settings(&String::from_utf16_lossy(&text[..len])) {
+            break hwnd;
+        }
+        after = Some(hwnd);
     };
-    if hwnd.is_invalid() {
-        return false;
-    }
     unsafe {
         if IsIconic(hwnd).as_bool() {
             let _ = ShowWindow(hwnd, SW_RESTORE);

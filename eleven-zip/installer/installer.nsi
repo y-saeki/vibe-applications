@@ -5,7 +5,7 @@
 ; Built by CI after `cargo build --release`:
 ;
 ;   pwsh payload.ps1 -Dir ../target/release -Out payload.nsh
-;   makensis /INPUTCHARSET UTF8 /DVERSION=<version> /DPAYLOAD=payload.nsh /DOUTFILE=<setup.exe> installer.nsi
+;   makensis /INPUTCHARSET UTF8 /DVERSION=<version> [/DBUILD=<commit>] /DPAYLOAD=payload.nsh /DOUTFILE=<setup.exe> installer.nsi
 ;
 ; payload.nsh lists eleven-zip.exe and the Windows App Runtime files beside
 ; it, which the settings window (WinUI 3) needs.
@@ -27,19 +27,28 @@ SetCompressorDictSize 64
 !ifndef VERSION
   !error "pass /DVERSION=<version>"
 !endif
+; A pull request's build passes the commit it came from as /DBUILD, which
+; follows the version as semver build metadata (0.1.2+047ba8f).
+; VIProductVersion takes digits only, so it keeps reading VERSION.
+!ifdef BUILD
+  !define DISPLAY_VERSION "${VERSION}+${BUILD}"
+!else
+  !define DISPLAY_VERSION "${VERSION}"
+!endif
 !ifndef PAYLOAD
   !error "pass /DPAYLOAD=<payload.nsh written by payload.ps1>"
 !endif
 !include "${PAYLOAD}"
 !ifndef OUTFILE
-  !define OUTFILE "eleven-zip_${VERSION}_x64-setup.exe"
+  !define OUTFILE "eleven-zip_${DISPLAY_VERSION}_x64-setup.exe"
 !endif
 
 !define PRODUCT "eleven-zip"
 !define EXE "eleven-zip.exe"
 !define UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\eleven-zip"
 ; The settings window (src/win/settings_ui.rs): WinUI 3's class for a
-; desktop window, and its title.
+; desktop window, and its title (src/title.rs), alone as up to 0.1.1 or
+; followed by " - v<version>".
 !define WINDOW_CLASS "WinUIDesktopWin32WindowClass"
 !define WINDOW_TITLE "eleven-zip の設定"
 
@@ -56,8 +65,8 @@ InstallDirRegKey HKCU "${UNINSTALL_KEY}" "InstallLocation"
 
 VIProductVersion "${VERSION}.0"
 VIAddVersionKey "ProductName" "${PRODUCT}"
-VIAddVersionKey "ProductVersion" "${VERSION}"
-VIAddVersionKey "FileVersion" "${VERSION}"
+VIAddVersionKey "ProductVersion" "${DISPLAY_VERSION}"
+VIAddVersionKey "FileVersion" "${DISPLAY_VERSION}"
 VIAddVersionKey "FileDescription" "${PRODUCT} installer"
 VIAddVersionKey "LegalCopyright" ""
 
@@ -81,6 +90,32 @@ VIAddVersionKey "LegalCopyright" ""
 
 !insertmacro MUI_LANGUAGE "Japanese"
 
+; Leaves an open settings window in $0, or 0. Its title carries the version,
+; which may be the previous one, so this walks the windows of its class and
+; matches the start of the title as src/title.rs does.
+!macro FindSettings un
+  Function ${un}FindSettings
+    StrCpy $0 0
+    StrLen $4 "${WINDOW_TITLE} - v"
+    loop:
+      FindWindow $0 "${WINDOW_CLASS}" "" 0 $0
+      ${If} $0 = 0
+        Return
+      ${EndIf}
+      System::Call 'user32::GetWindowTextW(p r0, t .r2, i ${NSIS_MAX_STRLEN})'
+      ${If} $2 == "${WINDOW_TITLE}"
+        Return
+      ${EndIf}
+      StrCpy $3 $2 $4
+      ${If} $3 == "${WINDOW_TITLE} - v"
+        Return
+      ${EndIf}
+      Goto loop
+  FunctionEnd
+!macroend
+!insertmacro FindSettings ""
+!insertmacro FindSettings "un."
+
 ; Closes an open settings window, the only eleven-zip that stays running, so
 ; that its files can be replaced or removed. An extraction in progress is a
 ; 7-Zip window and is left alone.
@@ -88,7 +123,7 @@ VIAddVersionKey "LegalCopyright" ""
   Function ${un}CloseSettings
     StrCpy $1 0
     loop:
-      FindWindow $0 "${WINDOW_CLASS}" "${WINDOW_TITLE}"
+      Call ${un}FindSettings
       ${If} $0 = 0
         Return
       ${EndIf}
@@ -131,7 +166,7 @@ Section "Install"
   ExecWait '"$INSTDIR\${EXE}" --register'
 
   WriteRegStr HKCU "${UNINSTALL_KEY}" "DisplayName" "${PRODUCT}"
-  WriteRegStr HKCU "${UNINSTALL_KEY}" "DisplayVersion" "${VERSION}"
+  WriteRegStr HKCU "${UNINSTALL_KEY}" "DisplayVersion" "${DISPLAY_VERSION}"
   WriteRegStr HKCU "${UNINSTALL_KEY}" "DisplayIcon" "$INSTDIR\${EXE}"
   WriteRegStr HKCU "${UNINSTALL_KEY}" "Publisher" "y-saeki"
   WriteRegStr HKCU "${UNINSTALL_KEY}" "InstallLocation" "$INSTDIR"

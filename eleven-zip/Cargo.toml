@@ -1,6 +1,6 @@
 [package]
 name = "eleven-zip"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 publish = false
 description = "Extracts archives from Explorer with a 7-Zip it keeps up to date"
