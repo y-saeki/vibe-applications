@@ -444,11 +444,32 @@ pub fn moved(index: usize, len: usize, up: bool) -> Option<usize> {
     }
 }
 
+/// The settings window's title: the version, and for a pull request's build
+/// the commit it came from as semver build metadata (`0.12.1+047ba8f`), the
+/// same form the installer and 設定 → アプリ show. A build without a commit,
+/// such as main's, shows the plain version.
+pub fn window_title(version: &str, commit: Option<&str>) -> String {
+    match commit.filter(|c| !c.is_empty()) {
+        Some(c) => format!("winwin の設定 - v{version}+{c}"),
+        None => format!("winwin の設定 - v{version}"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::config::Config;
     use crate::hotkey::{MOD_ALT, MOD_CONTROL, MOD_SHIFT};
+
+    #[test]
+    fn the_title_shows_the_version_and_a_pull_requests_commit() {
+        assert_eq!(window_title("0.12.1", None), "winwin の設定 - v0.12.1");
+        assert_eq!(window_title("0.12.1", Some("")), "winwin の設定 - v0.12.1");
+        assert_eq!(
+            window_title("0.12.1", Some("047ba8f")),
+            "winwin の設定 - v0.12.1+047ba8f"
+        );
+    }
 
     #[test]
     fn a_saved_shortcut_comes_back_unchanged() {
