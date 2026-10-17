@@ -9,8 +9,8 @@ build or change it. The root `CLAUDE.md` describes what goes where.
 
 ## Keep logic out of `src/win/`
 
-`cli.rs`, `config.rs`, `archive.rs`, `release.rs`, `store.rs`, `shell.rs`, `art.rs` and
-`icon_res.rs` do not touch Win32, the network or 7-Zip, so they build and test on any platform.
+`cli.rs`, `config.rs`, `archive.rs`, `release.rs`, `store.rs`, `shell.rs`, `title.rs`, `art.rs`
+and `icon_res.rs` do not touch Win32, the network or 7-Zip, so they build and test on any platform.
 Anything that decides behaviour — where an archive is extracted to, which release is installed
 and whether a download is it, what is written to the registry and what is removed again —
 belongs there, with its tests. `src/win/` runs processes, makes requests and calls Win32 with
@@ -44,7 +44,8 @@ behaviour changes, the file that covers it changes in the same commit:
 | How versions of 7-Zip are kept, switched and removed | `mod tests` in `src/store.rs` |
 | What is written to or removed from the registry, or the extensions handled | `mod tests` in `src/shell.rs` |
 | The icon's picture (`icon.svg`), how it is drawn, or how it is written into the executable | `mod tests` in `src/art.rs` or `src/icon_res.rs` |
-| The settings window's title, the config folder or the 7-Zip folder | `installer/installer.nsi`, which closes the window by that title and removes those on uninstall |
+| The settings window's title, or how an open one is recognised by it | `mod tests` in `src/title.rs`, and `installer/installer.nsi`, which closes the window by the start of that title |
+| The config folder or the 7-Zip folder | `installer/installer.nsi`, which removes those on uninstall |
 
 Everything under `src/win/` is out of reach of `cargo test`; `DEVELOPMENT.md` lists the
 manual checks. Do not write a case that pretends to cover it.
