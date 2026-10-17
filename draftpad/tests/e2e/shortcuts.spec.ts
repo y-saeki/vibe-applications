@@ -2,7 +2,7 @@
 // menu bar. `src/commands.ts` is the single table both paths resolve against,
 // and `src/shortcuts.ts` says which key each command is on.
 
-import { expect, test } from './fixtures'
+import { type App, expect, test } from './fixtures'
 
 test('Ctrl+F opens search and replace, with the keyboard on the find field', async ({ launch }) => {
   const app = await launch({ platform: 'windows' })
@@ -202,6 +202,36 @@ test('a window resize is remembered, in logical pixels', async ({ launch }) => {
 
   await app.page.evaluate(() => window.dispatchEvent(new Event('resize')))
   await app.expectSaved((state) => state.windowWidth === 500 && state.windowHeight === 375)
+})
+
+/** Delivers the event the real window sends once it has been moved. */
+async function moveWindow(app: App): Promise<void> {
+  await app.page.evaluate(() =>
+    window.__TAURI_INTERNALS__.invoke('plugin:event|emit', { event: 'tauri://move', payload: { x: 0, y: 0 } }),
+  )
+}
+
+test('a window move is remembered in pixels on Windows', async ({ launch }) => {
+  const app = await launch({ platform: 'windows', outerPosition: { x: -1200, y: 300 }, scaleFactor: 2 })
+
+  await moveWindow(app)
+  await app.expectSaved((state) => state.windowX === -1200 && state.windowY === 300)
+})
+
+test('a window move is remembered in points on macOS', async ({ launch }) => {
+  const app = await launch({ platform: 'macos', outerPosition: { x: 1200, y: 400 }, scaleFactor: 2 })
+
+  await moveWindow(app)
+  await app.expectSaved((state) => state.windowX === 600 && state.windowY === 200)
+})
+
+test('a minimized window does not record where it was parked', async ({ launch }) => {
+  const app = await launch({ platform: 'windows', outerPosition: { x: -32000, y: -32000 }, minimized: true })
+
+  await moveWindow(app)
+  // A resize after it, so that there is a save to look at.
+  await app.page.evaluate(() => window.dispatchEvent(new Event('resize')))
+  await app.expectSaved((state) => state.windowWidth === 600 && state.windowX === null)
 })
 
 // ---- keys moved in the preferences panel ----------------------------------

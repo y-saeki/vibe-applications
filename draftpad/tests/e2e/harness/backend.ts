@@ -28,6 +28,8 @@ export interface State {
   searchRegexp: boolean
   windowWidth: number | null
   windowHeight: number | null
+  windowX: number | null
+  windowY: number | null
   shortcuts: Record<string, string[]>
 }
 
@@ -49,6 +51,10 @@ export interface BackendConfig {
   clipboard?: string
   /** The window's inner size in physical pixels. */
   innerSize: { width: number; height: number }
+  /** The window's outer top-left corner in physical pixels. */
+  outerPosition: { x: number; y: number }
+  /** Whether the window reports itself minimized. */
+  minimized?: boolean
   scaleFactor: number
 }
 
@@ -86,6 +92,8 @@ const DEFAULT_STATE: State = {
   searchRegexp: false,
   windowWidth: null,
   windowHeight: null,
+  windowX: null,
+  windowY: null,
   shortcuts: {},
 }
 
@@ -153,6 +161,11 @@ function handle(cmd: string, args: unknown): unknown {
       return config.innerSize
     case 'plugin:window|scale_factor':
       return config.scaleFactor
+    // Asked before a new position is recorded.
+    case 'plugin:window|outer_position':
+      return config.outerPosition
+    case 'plugin:window|is_minimized':
+      return config.minimized ?? false
     default:
       throw new Error(`draftpad test: unexpected command ${cmd}`)
   }

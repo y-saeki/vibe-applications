@@ -150,6 +150,7 @@ export const FIXED: readonly FixedGroup[] = [
     title: 'ウィンドウ',
     items: [
       { title: 'フルスクリーンを切り替え', keys: macOnly('Ctrl+Mod+F') },
+      { title: 'しまう', keys: macOnly('Mod+M') },
       { title: 'draftpad を隠す', keys: macOnly('Mod+H') },
       { title: 'ほかを隠す', keys: macOnly('Alt+Mod+H') },
       { title: 'ウィンドウを閉じる', keys: otherOnly('Alt+F4') },

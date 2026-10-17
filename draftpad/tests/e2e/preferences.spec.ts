@@ -589,6 +589,8 @@ test('writes the keys the macOS way on macOS, and lists what only macOS has', as
   // Full screen is an item AppKit draws, which keeps its own key.
   await expect(app.shortcutRow('toggle_fullscreen')).toHaveCount(0)
   await expect(app.preferences.locator('.shortcut-row.fixed', { hasText: 'フルスクリーンを切り替え' }).locator('kbd')).toHaveText(['⌃⌘F'])
+  // The Window menu's minimize item, which AppKit keeps on its own key.
+  await expect(app.preferences.locator('.shortcut-row.fixed', { hasText: 'しまう' }).locator('kbd')).toHaveText(['⌘M'])
   await expect(app.preferences.locator('#pref-shortcuts legend', { hasText: 'macOS のテキスト操作' })).toBeVisible()
 })
 

@@ -67,6 +67,7 @@ const DEFAULT_CONFIG: BackendConfig = {
   openPreferences: false,
   fonts: [],
   innerSize: { width: 600, height: 400 },
+  outerPosition: { x: 0, y: 0 },
   scaleFactor: 1,
 }
 

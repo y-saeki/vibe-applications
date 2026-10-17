@@ -40,6 +40,12 @@ export interface State {
   windowWidth: number | null
   windowHeight: number | null
   /**
+   * The window's outer top-left corner, in the platform's own screen
+   * coordinates: points on macOS, pixels elsewhere.
+   */
+  windowX: number | null
+  windowY: number | null
+  /**
    * The keys of every shortcut the user has moved, by id; a shortcut left
    * alone has no entry. See src/shortcuts.ts.
    */
