@@ -32,7 +32,7 @@ use super::{
 };
 use crate::config::{Config, Theme};
 use crate::cycle;
-use crate::restore::Sizes;
+use crate::restore::{Ended, Sizes};
 
 /// The installer finds a running winwin by this name to close it
 /// (installer/installer.nsi, MAIN_CLASS).
@@ -296,7 +296,7 @@ fn cursor_pos() -> (i32, i32) {
 
 /// Gives a placed window its size back when it is dragged away
 /// (`restore.rs` decides). Between the start and the end, the window's own
-/// thread is watched for it to move, and only until it has.
+/// thread is watched for it to move.
 extern "system" fn on_move_size(
     _hook: HWINEVENTHOOK,
     event: u32,
@@ -333,13 +333,22 @@ extern "system" fn on_move_size(
             let arranged = mover::is_arranged(hwnd);
             let dpi = mover::monitor_dpi(hwnd);
             let cursor = cursor_pos();
-            let back = with_app(|app| app.sizes.drag_ended(window, current, dpi, cursor, arranged))
-                .flatten();
+            let down = mover::primary_button_down();
+            let ended = with_app(|app| {
+                app.sizes
+                    .drag_ended(window, current, dpi, cursor, arranged, down)
+            })
+            .unwrap_or(Ended::Leave);
             trace(&format!(
-                "end {window:#x} at {current:?} cursor={cursor:?} arranged={arranged} put={back:?}"
+                "end {window:#x} at {current:?} cursor={cursor:?} arranged={arranged} down={down} -> {ended:?}"
             ));
-            if let Some(rect) = back {
-                mover::put(hwnd, rect);
+            match ended {
+                Ended::Leave => {}
+                Ended::Put(rect) => mover::put(hwnd, rect),
+                Ended::Resume(rect) => {
+                    mover::resume_drag(hwnd, rect, cursor);
+                    trace(&format!("resumed at {:?}", mover::window_rect(hwnd)));
+                }
             }
         }
         _ => {}
@@ -381,9 +390,9 @@ fn stop_watching_drag() {
 }
 
 /// The dragged window moved. The first time it leaves the place winwin put
-/// it, it gets its size back. Only the size: the position stays with the
-/// system's move loop, which moves the window from where the drag started,
-/// so that changing it would have the two fight.
+/// it, its move loop is asked to stop: the loop puts the size it started
+/// with back on every step, so the size can only come back between two
+/// loops (`on_move_size` starts the second).
 extern "system" fn on_drag_step(
     _hook: HWINEVENTHOOK,
     _event: u32,
@@ -404,15 +413,12 @@ extern "system" fn on_drag_step(
     let Some(current) = mover::window_rect(hwnd) else {
         return;
     };
-    let dpi = mover::monitor_dpi(hwnd);
     let cursor = cursor_pos();
-    let size = with_app(|app| app.sizes.moved(window, current, dpi, cursor)).flatten();
-    trace(&format!("step {window:#x} at {current:?} resize={size:?}"));
-    if let Some((width, height)) = size {
-        // TEMPORARY: keep watching until the drop, to see whether the move
-        // loop keeps the new size.
-        mover::resize(hwnd, width, height);
-        trace(&format!("resized to {:?}", mover::window_rect(hwnd)));
+    let stop = with_app(|app| app.sizes.moved(window, current, cursor)) == Some(true);
+    trace(&format!("step {window:#x} at {current:?} stop={stop}"));
+    if stop {
+        // TEMPORARY: keep watching until the loop ends, for the trace.
+        mover::stop_drag(hwnd);
     }
 }
 

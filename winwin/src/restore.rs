@@ -8,9 +8,11 @@
 //! from before the first one.
 //!
 //! The size comes back as soon as the window first moves in a drag, not
-//! when the drag starts: a click on the title bar starts one too. Only the
-//! size changes then, never the position, which belongs to the system's move
-//! loop until the drop. The drop settles whatever the loop made of it.
+//! when the drag starts: a click on the title bar starts one too. The
+//! system's move loop puts the size it started with back on every step, so
+//! winwin ends that loop, gives the window its size under the cursor, and
+//! has the system start a new one while the button is still down. Should
+//! any of that not happen, the drop settles it.
 
 use std::collections::HashMap;
 
@@ -21,11 +23,26 @@ enum Drag {
     None,
     /// A move started while the window was as winwin made it.
     Started,
-    /// It has moved and got its size back; the cursor held the title bar at
-    /// this share of the width.
-    Moved {
+    /// It has moved, and winwin has asked its move loop to stop. The cursor
+    /// held the title bar at `share` of the width, `dy` below the top.
+    Stopping {
+        share: f64,
+        dy: i32,
+    },
+    /// It has its size back, and a new move loop carries on the drag.
+    Resumed {
         share: f64,
     },
+}
+
+/// What to do with a window whose move loop has ended.
+#[derive(Debug, PartialEq)]
+pub enum Ended {
+    Leave,
+    /// Put it here.
+    Put(Rect),
+    /// Put it here and start a new move loop: the button is still down.
+    Resume(Rect),
 }
 
 struct Entry {
@@ -107,6 +124,10 @@ impl Sizes {
         let Some(entry) = self.windows.get_mut(&window) else {
             return false;
         };
+        // The move loop winwin started itself, at the size it gave back.
+        if let Drag::Resumed { .. } = entry.drag {
+            return true;
+        }
         if resizing || !same_size(entry.placed, current) {
             self.windows.remove(&window);
             return false;
@@ -116,37 +137,37 @@ impl Sizes {
     }
 
     /// `window`, being dragged, is now at `current`, with the cursor at
-    /// `cursor`, on a monitor of `dpi`. The first time it has left the place
-    /// winwin put it, returns the size to give it right away.
-    pub fn moved(
-        &mut self,
-        window: isize,
-        current: Rect,
-        dpi: u32,
-        cursor: (i32, i32),
-    ) -> Option<(i32, i32)> {
-        let entry = self.windows.get_mut(&window)?;
+    /// `cursor`. The first time it has left the place winwin put it, returns
+    /// true: time to stop the move loop.
+    pub fn moved(&mut self, window: isize, current: Rect, cursor: (i32, i32)) -> bool {
+        let Some(entry) = self.windows.get_mut(&window) else {
+            return false;
+        };
         if entry.drag != Drag::Started || same_corner(entry.placed, current) {
-            return None;
+            return false;
         }
         if !same_size(entry.placed, current) {
             self.windows.remove(&window);
-            return None;
+            return false;
         }
-        entry.drag = Drag::Moved {
+        entry.drag = Drag::Stopping {
             share: share(current, cursor),
+            dy: cursor.1 - current.top,
         };
-        Some(entry.size_at(dpi))
+        true
     }
 
-    /// The user let go of `window` at `current`, with the cursor at
-    /// `cursor`, on a monitor of `dpi`. Returns where the window has to go
-    /// to end up at its own size under the cursor, if it is not there yet.
+    /// The move loop of `window` ended with the window at `current`, the
+    /// cursor at `cursor` on a monitor of `dpi`, and the button `down` or
+    /// not.
     ///
-    /// A window back where winwin put it was only clicked, or the drag was
-    /// cancelled: it keeps its place, and winwin keeps its size. Otherwise
-    /// winwin is done with the window, and leaves it alone if Windows has
-    /// just snapped or maximized it.
+    /// The loop winwin stopped, with the button still down, resumes at the
+    /// window's own size under the cursor. Otherwise the user let go: the
+    /// window goes to its own size under the cursor, if it is not there
+    /// yet, and winwin is done with it, unless Windows has just snapped or
+    /// maximized it. A window back where winwin put it without having moved
+    /// was only clicked, or the drag was cancelled: it keeps its place, and
+    /// winwin keeps its size.
     pub fn drag_ended(
         &mut self,
         window: isize,
@@ -154,37 +175,53 @@ impl Sizes {
         dpi: u32,
         cursor: (i32, i32),
         arranged: bool,
-    ) -> Option<Rect> {
-        let entry = self.windows.get_mut(&window)?;
+        down: bool,
+    ) -> Ended {
+        let Some(entry) = self.windows.get_mut(&window) else {
+            return Ended::Leave;
+        };
         let drag = std::mem::replace(&mut entry.drag, Drag::None);
-        if drag == Drag::None {
-            return None;
-        }
-        if !arranged && same_corner(entry.placed, current) {
-            return (current != entry.placed).then_some(entry.placed);
-        }
-        let entry = self.windows.remove(&window)?;
-        if arranged {
-            return None;
-        }
         let (width, height) = entry.size_at(dpi);
-        let under_cursor = current.width() == width
+        let under_cursor = |share: f64, top: i32| {
+            let left = cursor.0 - (share * f64::from(width)).round() as i32;
+            Rect {
+                left,
+                top,
+                right: left + width,
+                bottom: top + height,
+            }
+        };
+        match drag {
+            Drag::None => return Ended::Leave,
+            Drag::Stopping { share, dy } if down && !arranged => {
+                entry.drag = Drag::Resumed { share };
+                return Ended::Resume(under_cursor(share, cursor.1 - dy));
+            }
+            Drag::Started if !arranged && same_corner(entry.placed, current) => {
+                return match current != entry.placed {
+                    true => Ended::Put(entry.placed),
+                    false => Ended::Leave,
+                };
+            }
+            _ => {}
+        }
+        self.windows.remove(&window);
+        if arranged {
+            return Ended::Leave;
+        }
+        let there = current.width() == width
             && current.height() == height
             && (current.left..=current.right).contains(&cursor.0);
-        if under_cursor {
-            return None;
+        if there {
+            return Ended::Leave;
         }
-        let share = match drag {
-            Drag::Moved { share } => share,
-            _ => share(current, cursor),
-        };
-        let left = cursor.0 - (share * f64::from(width)).round() as i32;
-        Some(Rect {
-            left,
-            top: current.top,
-            right: left + width,
-            bottom: current.top + height,
-        })
+        match drag {
+            // Stopped, but let go before it could resume: the loop may have
+            // put the window back where the drag started.
+            Drag::Stopping { share, dy } => Ended::Put(under_cursor(share, cursor.1 - dy)),
+            Drag::Resumed { share } => Ended::Put(under_cursor(share, current.top)),
+            _ => Ended::Put(under_cursor(share(current, cursor), current.top)),
+        }
     }
 
     /// Forgets the windows for which `alive` says no.
@@ -230,48 +267,60 @@ mod tests {
         sizes
     }
 
-    #[test]
-    fn the_size_comes_back_as_soon_as_the_window_moves() {
-        let mut sizes = placed();
+    /// Starts a drag and moves the window by 5px, the cursor holding the
+    /// title bar a quarter of the way across, 10px down.
+    fn dragged(sizes: &mut Sizes) {
         assert!(sizes.drag_started(W, LEFT_HALF, false));
-        assert_eq!(sizes.moved(W, LEFT_HALF, 96, (240, 10)), None);
-        let first_step = shifted(LEFT_HALF, 5, 0);
-        assert_eq!(sizes.moved(W, first_step, 96, (245, 10)), Some((800, 600)));
-        // Once is enough.
-        assert_eq!(sizes.moved(W, first_step, 96, (245, 10)), None);
+        assert!(!sizes.moved(W, LEFT_HALF, (240, 10)));
+        assert!(sizes.moved(W, shifted(LEFT_HALF, 5, 0), (245, 10)));
     }
 
     #[test]
-    fn a_drop_where_the_loop_kept_the_size_leaves_the_window_alone() {
+    fn the_first_move_stops_the_loop_once() {
         let mut sizes = placed();
-        sizes.drag_started(W, LEFT_HALF, false);
-        sizes.moved(W, shifted(LEFT_HALF, 5, 0), 96, (245, 10));
-        // The loop moved the 800 × 600 window along; the cursor is on it.
-        let dropped = rect(505, 200, 1305, 800);
-        assert_eq!(sizes.drag_ended(W, dropped, 96, (745, 210), false), None);
+        dragged(&mut sizes);
+        assert!(!sizes.moved(W, shifted(LEFT_HALF, 6, 0), (246, 10)));
+    }
+
+    #[test]
+    fn a_stopped_loop_resumes_at_the_old_size_under_the_cursor() {
+        let mut sizes = placed();
+        dragged(&mut sizes);
+        // The loop may have put the window back where the drag started.
+        let ended = sizes.drag_ended(W, LEFT_HALF, 96, (250, 12), false, true);
+        assert_eq!(ended, Ended::Resume(rect(50, 2, 850, 602)));
+        // The new loop is winwin's own: watched, and settled on the drop.
+        assert!(sizes.drag_started(W, rect(50, 2, 850, 602), false));
+        let dropped = rect(500, 300, 1300, 900);
+        assert_eq!(
+            sizes.drag_ended(W, dropped, 96, (700, 310), false, false),
+            Ended::Leave
+        );
         assert!(!sizes.tracks(W));
     }
 
     #[test]
-    fn a_drop_where_the_loop_put_the_old_size_back_is_settled() {
+    fn a_resumed_drag_dropped_at_the_wrong_size_is_settled() {
         let mut sizes = placed();
-        sizes.drag_started(W, LEFT_HALF, false);
-        // Held at a quarter of the width.
-        sizes.moved(W, shifted(LEFT_HALF, 5, 0), 96, (245, 10));
+        dragged(&mut sizes);
+        sizes.drag_ended(W, LEFT_HALF, 96, (250, 12), false, true);
+        sizes.drag_started(W, rect(50, 2, 850, 602), false);
         let dropped = shifted(LEFT_HALF, 500, 0);
-        let back = sizes.drag_ended(W, dropped, 96, (740, 10), false);
-        assert_eq!(back, Some(rect(540, 0, 1340, 600)));
+        assert_eq!(
+            sizes.drag_ended(W, dropped, 96, (740, 10), false, false),
+            Ended::Put(rect(540, 0, 1340, 600))
+        );
     }
 
     #[test]
-    fn a_drop_with_the_cursor_off_the_window_puts_it_under_the_cursor() {
+    fn a_stopped_loop_let_go_of_puts_the_window_under_the_cursor() {
         let mut sizes = placed();
-        sizes.drag_started(W, LEFT_HALF, false);
-        // Held near the right end, further right than the old width.
-        sizes.moved(W, shifted(LEFT_HALF, 5, 0), 96, (869, 10));
-        let dropped = rect(505, 0, 1305, 600);
-        let back = sizes.drag_ended(W, dropped, 96, (1369, 10), false);
-        assert_eq!(back, Some(rect(649, 0, 1449, 600)));
+        dragged(&mut sizes);
+        assert_eq!(
+            sizes.drag_ended(W, LEFT_HALF, 96, (740, 310), false, false),
+            Ended::Put(rect(540, 300, 1340, 900))
+        );
+        assert!(!sizes.tracks(W));
     }
 
     #[test]
@@ -279,37 +328,50 @@ mod tests {
         let mut sizes = placed();
         sizes.drag_started(W, LEFT_HALF, false);
         let dropped = shifted(LEFT_HALF, 500, 0);
-        let back = sizes.drag_ended(W, dropped, 96, (740, 10), false);
-        assert_eq!(back, Some(rect(540, 0, 1340, 600)));
+        assert_eq!(
+            sizes.drag_ended(W, dropped, 96, (740, 10), false, false),
+            Ended::Put(rect(540, 0, 1340, 600))
+        );
     }
 
     #[test]
     fn a_click_on_the_title_bar_changes_nothing() {
         let mut sizes = placed();
         sizes.drag_started(W, LEFT_HALF, false);
-        assert_eq!(sizes.moved(W, LEFT_HALF, 96, (240, 10)), None);
-        assert_eq!(sizes.drag_ended(W, LEFT_HALF, 96, (240, 10), false), None);
+        assert!(!sizes.moved(W, LEFT_HALF, (240, 10)));
+        assert_eq!(
+            sizes.drag_ended(W, LEFT_HALF, 96, (240, 10), false, false),
+            Ended::Leave
+        );
         // Still remembered for a real drag later.
         sizes.drag_started(W, LEFT_HALF, false);
-        assert!(
-            sizes
-                .moved(W, shifted(LEFT_HALF, 5, 0), 96, (0, 0))
-                .is_some()
-        );
+        assert!(sizes.moved(W, shifted(LEFT_HALF, 5, 0), (0, 0)));
     }
 
     #[test]
-    fn a_cancelled_drag_puts_the_window_back_as_placed() {
+    fn a_window_moved_back_without_news_keeps_its_place() {
         let mut sizes = placed();
         sizes.drag_started(W, LEFT_HALF, false);
-        sizes.moved(W, shifted(LEFT_HALF, 5, 0), 96, (245, 10));
-        // Esc: the loop moved it back, at the size winwin gave it.
-        let cancelled = rect(0, 0, 800, 600);
+        // Esc, at a size the application changed on the way.
         assert_eq!(
-            sizes.drag_ended(W, cancelled, 96, (245, 10), false),
-            Some(LEFT_HALF)
+            sizes.drag_ended(W, rect(0, 0, 800, 600), 96, (245, 10), false, false),
+            Ended::Put(LEFT_HALF)
         );
         assert!(sizes.tracks(W));
+    }
+
+    /// The size the window resumes at, after a drag stopped with the
+    /// cursor at the window's top-left corner.
+    fn resumed_size(sizes: &mut Sizes, from: Rect, dpi: u32) -> Option<(i32, i32)> {
+        sizes.drag_started(W, from, false);
+        let moved = shifted(from, 5, 0);
+        if !sizes.moved(W, moved, (moved.left, moved.top)) {
+            return None;
+        }
+        match sizes.drag_ended(W, from, dpi, (0, 0), false, true) {
+            Ended::Resume(r) => Some((r.width(), r.height())),
+            _ => None,
+        }
     }
 
     #[test]
@@ -317,11 +379,7 @@ mod tests {
         let mut sizes = placed();
         let quarter = rect(0, 0, 960, 520);
         sizes.placed(W, LEFT_HALF, 96, quarter);
-        sizes.drag_started(W, quarter, false);
-        assert_eq!(
-            sizes.moved(W, shifted(quarter, 5, 0), 96, (0, 0)),
-            Some((800, 600))
-        );
+        assert_eq!(resumed_size(&mut sizes, quarter, 96), Some((800, 600)));
     }
 
     #[test]
@@ -330,11 +388,13 @@ mod tests {
         let elsewhere = rect(50, 50, 650, 450);
         // Moved by hand or by the application, then placed again.
         sizes.placed(W, elsewhere, 96, LEFT_HALF);
-        sizes.drag_started(W, LEFT_HALF, false);
-        assert_eq!(
-            sizes.moved(W, shifted(LEFT_HALF, 5, 0), 96, (0, 0)),
-            Some((600, 400))
-        );
+        assert_eq!(resumed_size(&mut sizes, LEFT_HALF, 96), Some((600, 400)));
+    }
+
+    #[test]
+    fn the_size_follows_the_dpi_of_the_monitor() {
+        let mut sizes = placed();
+        assert_eq!(resumed_size(&mut sizes, LEFT_HALF, 144), Some((1200, 900)));
     }
 
     #[test]
@@ -360,18 +420,28 @@ mod tests {
     #[test]
     fn a_window_snapped_or_maximized_on_drop_keeps_that() {
         let mut sizes = placed();
-        sizes.drag_started(W, LEFT_HALF, false);
-        sizes.moved(W, shifted(LEFT_HALF, 5, 0), 96, (245, 10));
-        assert_eq!(sizes.drag_ended(W, LEFT_HALF, 96, (0, 0), true), None);
+        dragged(&mut sizes);
+        sizes.drag_ended(W, LEFT_HALF, 96, (250, 12), false, true);
+        sizes.drag_started(W, rect(50, 2, 850, 602), false);
+        assert_eq!(
+            sizes.drag_ended(W, LEFT_HALF, 96, (0, 0), true, false),
+            Ended::Leave
+        );
         assert!(!sizes.tracks(W));
     }
 
     #[test]
     fn nothing_happens_outside_a_drag() {
         let mut sizes = placed();
-        assert_eq!(sizes.moved(W, shifted(LEFT_HALF, 5, 0), 96, (0, 0)), None);
-        assert_eq!(sizes.drag_ended(W, LEFT_HALF, 96, (0, 0), false), None);
-        assert_eq!(sizes.drag_ended(2, LEFT_HALF, 96, (0, 0), false), None);
+        assert!(!sizes.moved(W, shifted(LEFT_HALF, 5, 0), (0, 0)));
+        assert_eq!(
+            sizes.drag_ended(W, LEFT_HALF, 96, (0, 0), false, true),
+            Ended::Leave
+        );
+        assert_eq!(
+            sizes.drag_ended(2, LEFT_HALF, 96, (0, 0), false, true),
+            Ended::Leave
+        );
         assert!(!sizes.drag_started(2, LEFT_HALF, false));
     }
 
@@ -381,29 +451,15 @@ mod tests {
         sizes.drag_started(W, LEFT_HALF, false);
         let quarter = rect(0, 0, 960, 520);
         sizes.placed(W, LEFT_HALF, 96, quarter);
-        assert_eq!(sizes.moved(W, shifted(quarter, 5, 0), 96, (0, 0)), None);
+        assert!(!sizes.moved(W, shifted(quarter, 5, 0), (0, 0)));
     }
 
     #[test]
     fn a_window_resized_by_itself_during_the_drag_is_forgotten() {
         let mut sizes = placed();
         sizes.drag_started(W, LEFT_HALF, false);
-        assert_eq!(sizes.moved(W, rect(5, 0, 900, 1040), 96, (0, 0)), None);
+        assert!(!sizes.moved(W, rect(5, 0, 900, 1040), (0, 0)));
         assert!(!sizes.tracks(W));
-    }
-
-    #[test]
-    fn the_size_follows_the_dpi_of_the_monitor() {
-        let mut sizes = placed();
-        sizes.drag_started(W, LEFT_HALF, false);
-        assert_eq!(
-            sizes.moved(W, shifted(LEFT_HALF, 5, 0), 144, (0, 0)),
-            Some((1200, 900))
-        );
-        // Dropped on a 96 DPI monitor after the application scaled itself
-        // there: 800 × 600 again, under the cursor.
-        let dropped = rect(2000, 0, 2800, 600);
-        assert_eq!(sizes.drag_ended(W, dropped, 96, (2100, 10), false), None);
     }
 
     #[test]

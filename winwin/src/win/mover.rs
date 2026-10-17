@@ -1,18 +1,19 @@
 //! Moving and resizing the foreground window.
 
-use windows::Win32::Foundation::{ERROR_ACCESS_DENIED, HWND, RECT};
+use windows::Win32::Foundation::{ERROR_ACCESS_DENIED, HWND, LPARAM, RECT, WPARAM};
 use windows::Win32::Graphics::Dwm::{DWMWA_EXTENDED_FRAME_BOUNDS, DwmGetWindowAttribute};
 use windows::Win32::Graphics::Gdi::{
     GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromWindow,
 };
 use windows::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress};
 use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
+use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON, VK_RBUTTON};
 use windows::Win32::UI::WindowsAndMessaging::{
     CURSORINFO, GA_ROOT, GetAncestor, GetClassNameW, GetCursorInfo, GetForegroundWindow,
-    GetShellWindow, GetWindowRect, IDC_SIZENESW, IDC_SIZENS, IDC_SIZENWSE, IDC_SIZEWE,
-    IsHungAppWindow, IsIconic, IsWindowVisible, IsZoomed, LoadCursorW, SW_RESTORE,
-    SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER, SWP_NOZORDER, SetWindowPos,
-    ShowWindow,
+    GetShellWindow, GetSystemMetrics, GetWindowRect, HTCAPTION, IDC_SIZENESW, IDC_SIZENS,
+    IDC_SIZENWSE, IDC_SIZEWE, IsHungAppWindow, IsIconic, IsWindowVisible, IsZoomed, LoadCursorW,
+    PostMessageW, SC_MOVE, SM_SWAPBUTTON, SW_RESTORE, SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE,
+    SWP_NOOWNERZORDER, SWP_NOZORDER, SetWindowPos, ShowWindow, WM_CANCELMODE, WM_SYSCOMMAND,
 };
 use windows::core::{s, w};
 
@@ -202,10 +203,20 @@ pub fn is_resize_cursor() -> bool {
         .any(|cursor| cursor == info.hCursor)
 }
 
-/// Gives `hwnd` a new outer size where it is. Synchronous, so that the
-/// window's thread handles it inside its move loop rather than after it;
-/// a window that does not answer is left alone.
-pub fn resize(hwnd: HWND, width: i32, height: i32) {
+/// Ends the move loop `hwnd` is in, and has the system start another one
+/// after putting the window at `rect`: the drag carries on at the new size.
+/// The first is a posted WM_CANCELMODE, which a window that is not in a move
+/// loop takes as nothing more than that.
+pub fn stop_drag(hwnd: HWND) {
+    let _ = unsafe { PostMessageW(Some(hwnd), WM_CANCELMODE, WPARAM(0), LPARAM(0)) };
+}
+
+/// Puts `hwnd` at `rect` and starts a new move loop on it, as a press on
+/// its title bar would (SC_MOVE with HTCAPTION in the low bits, the
+/// combination Windows itself uses for a drag from the caption). The window
+/// is put synchronously, so that the loop starts from the new rectangle; a
+/// window that does not answer is left alone.
+pub fn resume_drag(hwnd: HWND, rect: Rect, cursor: (i32, i32)) {
     if unsafe { IsHungAppWindow(hwnd) }.as_bool() {
         return;
     }
@@ -213,13 +224,29 @@ pub fn resize(hwnd: HWND, width: i32, height: i32) {
         SetWindowPos(
             hwnd,
             None,
-            0,
-            0,
-            width,
-            height,
-            SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOOWNERZORDER,
+            rect.left,
+            rect.top,
+            rect.width(),
+            rect.height(),
+            SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOOWNERZORDER,
         )
     };
+    let point = (cursor.0 as u16 as u32) | ((cursor.1 as u16 as u32) << 16);
+    let _ = unsafe {
+        PostMessageW(
+            Some(hwnd),
+            WM_SYSCOMMAND,
+            WPARAM((SC_MOVE | HTCAPTION) as usize),
+            LPARAM(point as isize),
+        )
+    };
+}
+
+/// Whether the primary mouse button is held, whichever physical one it is.
+pub fn primary_button_down() -> bool {
+    let swapped = unsafe { GetSystemMetrics(SM_SWAPBUTTON) } != 0;
+    let button = if swapped { VK_RBUTTON } else { VK_LBUTTON };
+    (unsafe { GetAsyncKeyState(i32::from(button.0)) }) < 0
 }
 
 /// Puts `hwnd` exactly at `rect`, without waiting for the window to answer.
