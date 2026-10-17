@@ -82,17 +82,24 @@ commit:
 - Adding or removing a library re-reads the entries for its directory: a group that names
   the library is updated or dropped, and a library that has to move in step with another
   joins the other's group.
-- A new application also gets a line in `.github/workflows/dependency-bump.yml`, which needs
-  to know which files carry its version.
 
-## Dependency updates are patch releases
+## Dependency updates ride along with the next release
 
-Updating a dependency raises the application's patch version, and nothing more, unless the
-same change also alters what the user sees. For Dependabot's pull requests,
-`.github/workflows/dependency-bump.yml` does it: it sets the version to the base branch's
-with the patch raised by one. When two of them for the same application are open and one
-merges, the other is left at the version that just shipped; comment `@dependabot recreate`
-on it and the workflow raises the version again.
+A dependency update is not a release of its own. Dependabot's pull requests go like this:
+
+1. Dependabot raises the library's version, and the application's CI runs its build and
+   tests on the pull request (for draftpad, the Playwright suite included).
+2. When every check passes, `.github/workflows/dependabot-merge.yml` merges it. The
+   `no-release` label that `dependabot.yml` puts on it lets the version check through, so
+   the application's own version stays where it is.
+3. What CI cannot check — the checks by hand that the application's `DEVELOPMENT.md`
+   lists — happens in the next pull request that changes the application. Before raising
+   its version, look for dependency updates merged since the last release
+   (`git log <app>-v<version>..HEAD --oneline -- <app>/`) and name them in that pull
+   request's body as covered by its checks.
+
+A Dependabot pull request whose checks fail stays open and is fixed by hand, in that pull
+request, still without raising the version.
 
 ## Name the session after the issue
 
@@ -146,7 +153,8 @@ issue gets no such line.
 
 Branching, committing, pushing and opening the pull request are part of carrying out the
 work here, not a further request to put to the user. What stays theirs is everything past
-that point: merging, closing a pull request, and deleting branches.
+that point: merging, closing a pull request, and deleting branches. (Dependabot's pull
+requests are the exception: a workflow merges them, as described above.)
 
 ## A pull request you opened stays yours
 

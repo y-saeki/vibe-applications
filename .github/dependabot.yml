@@ -1,8 +1,8 @@
 # Dependabot watches every manifest in the repository. Each entry names one
-# application directory, so that a pull request never spans two applications:
-# .github/workflows/dependency-bump.yml raises the patch version of the
-# application a Dependabot pull request touches, and its version check
-# (<app>-version.yml) then lets it through.
+# application directory, so that a pull request never spans two applications.
+# Its pull requests carry no-release: a dependency update ships with the next
+# release of the application rather than as one of its own, and
+# .github/workflows/dependabot-merge.yml merges it once every check has passed.
 #
 # Adding or removing a dependency, a manifest or an application changes this
 # file in the same commit (see CLAUDE.md).
@@ -13,6 +13,9 @@ updates:
     directory: /eleven-zip
     schedule:
       interval: weekly
+    labels:
+      - dependencies
+      - no-release
     commit-message:
       prefix: eleven-zip
     groups:
@@ -31,6 +34,9 @@ updates:
     directory: /winwin
     schedule:
       interval: weekly
+    labels:
+      - dependencies
+      - no-release
     commit-message:
       prefix: winwin
     groups:
@@ -47,6 +53,9 @@ updates:
     directory: /draftpad/src-tauri
     schedule:
       interval: weekly
+    labels:
+      - dependencies
+      - no-release
     commit-message:
       prefix: draftpad
     groups:
@@ -59,6 +68,9 @@ updates:
     directory: /draftpad
     schedule:
       interval: weekly
+    labels:
+      - dependencies
+      - no-release
     commit-message:
       prefix: draftpad
     # pnpm-workspace.yaml refuses versions younger than 7 days
@@ -75,6 +87,9 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    labels:
+      - dependencies
+      - no-release
     groups:
       actions:
         patterns:

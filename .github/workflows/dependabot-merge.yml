@@ -1,0 +1,78 @@
+name: dependabot merge
+
+# Dependabot's pull requests are merged as soon as every check on them has
+# passed: the build and unit tests of the application they touch, and the
+# version check, which the no-release label from dependabot.yml lets through.
+# The dependency update then ships with the application's next release, and the
+# pull request that makes that release is where the manual checks happen.
+#
+# GitHub's own auto-merge is not enough here. It waits only for the checks the
+# ruleset requires, and the build and test workflows cannot be required because
+# their paths filters keep them from reporting on pull requests that do not
+# touch their application. So this job waits for every workflow run on the head
+# commit instead, and merges only when none of them failed.
+#
+# Runs triggered by Dependabot get a read-only token; the permissions key below
+# is what lets this one merge. A failure leaves the pull request open and this
+# job red, for someone to look at.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+concurrency:
+  group: dependabot-merge-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  merge:
+    name: merge when green
+    if: github.actor == 'dependabot[bot]' && github.event.pull_request.user.login == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      actions: read
+      contents: write
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      SELF: ${{ github.workflow_ref }}
+    steps:
+      - name: Wait for the other workflow runs on the head commit
+        run: |
+          self_path="${SELF#*/*/}"
+          self_path="${self_path%@*}"
+          # The other workflows start from the same event; give them time to
+          # register their runs before the first look.
+          sleep 60
+          while :; do
+            # The newest run of each workflow, so that a run cancelled by a
+            # later one (a label added right after opening) does not count.
+            runs="$(gh api --paginate "repos/${GH_REPO}/actions/runs?head_sha=${HEAD_SHA}&event=pull_request&per_page=100" \
+              --jq '.workflow_runs[] | [.id, .path, .status, (.conclusion // "")] | @tsv' \
+              | sort -t $'\t' -k2,2 -k1,1nr \
+              | awk -F '\t' -v self="${self_path}" '$2 != self && !seen[$2]++')"
+            if [ -z "${runs}" ]; then
+              echo "::error::no other workflow ran on ${HEAD_SHA}, so there is nothing to vouch for this pull request."
+              exit 1
+            fi
+            printf '%s\n' "${runs}"
+            if printf '%s\n' "${runs}" | awk -F '\t' '$3 != "completed" {found=1} END {exit !found}'; then
+              sleep 30
+              continue
+            fi
+            failed="$(printf '%s\n' "${runs}" | awk -F '\t' '$4 != "success" && $4 != "skipped" && $4 != "neutral" {print $2 " (" $4 ")"}')"
+            if [ -n "${failed}" ]; then
+              echo "::error::not merging, because these did not pass:"
+              printf '%s\n' "${failed}"
+              exit 1
+            fi
+            break
+          done
+      - name: Merge
+        run: gh pr merge "${PR_NUMBER}" --merge --match-head-commit "${HEAD_SHA}"
