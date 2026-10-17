@@ -1,6 +1,6 @@
 # eleven-zip
 
-![](icon.svg)
+<img width="3600" height="1200" alt="image" src="https://github.com/user-attachments/assets/1c9652d0-d39c-41c8-86e7-dfa39f2a07aa" />
 
 エクスプローラーから書庫をすばやく展開する Windows 用アプリです。展開には 7-Zip を使います。
 
