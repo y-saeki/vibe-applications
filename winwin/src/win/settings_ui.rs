@@ -25,7 +25,7 @@ use windows_reactor::*;
 
 use super::{autostart, config_path, error_box, icon, keyhook, modifiers_held, testwin};
 use crate::config::{Config, Theme};
-use crate::draft::{self, Click, Draft, Editor, Frame, KEEP_LABEL, Picture};
+use crate::draft::{self, Click, Draft, Editor, Frame, Picture};
 use crate::hotkey::{self, Arrow, Hotkey, Keycap, MOD_CONTROL, MOD_SHIFT, Recorder};
 use crate::layout::{Anchor, Rect};
 
@@ -675,20 +675,21 @@ impl Settings {
             .min_width(160.0)
             .on_selection_changed(context.callback(Msg::Anchor));
 
-        let ratio = |value: &str, on_change: fn(String) -> Msg| {
+        // Wide enough for the placeholder, which an empty field shows.
+        let ratio = |value: &str, kept: &str, on_change: fn(String) -> Msg| {
             TextBox::new()
                 .is_enabled(enabled)
                 .text(value.to_string())
-                .placeholder_text(KEEP_LABEL)
-                .width(120.0)
+                .placeholder_text(kept)
+                .width(144.0)
                 .on_text_changed(context.callback(on_change))
         };
         let size = StackPanel::new()
             .orientation(Orientation::Horizontal)
             .spacing(24.0)
             .children((
-                field("幅", ratio(&d.width, Msg::Width)),
-                field("高さ", ratio(&d.height, Msg::Height)),
+                field("幅", ratio(&d.width, "（幅を維持）", Msg::Width)),
+                field("高さ", ratio(&d.height, "（高さを維持）", Msg::Height)),
             ));
 
         let preview = Border::new()

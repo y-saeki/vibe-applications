@@ -91,18 +91,22 @@ impl Draft {
         Some(Picture { screen, window })
     }
 
-    /// Where the row puts a window, in words: 左 1/2 × 1, 左上 維持 × 1/3.
+    /// Where the row puts a window, in words: 左 , w1/2 x h1. A kept width
+    /// or height is left out (左上 , h1/3), and with both kept the anchor
+    /// stands alone.
     pub fn placement_text(&self) -> String {
-        let size = |text: &str| match text.trim() {
-            "" => KEEP_LABEL.to_string(),
-            t => t.to_string(),
-        };
-        format!(
-            "{} {} × {}",
-            self.anchor.label(),
-            size(&self.width),
-            size(&self.height)
-        )
+        let sizes: Vec<String> = [("w", &self.width), ("h", &self.height)]
+            .into_iter()
+            .filter_map(|(axis, text)| {
+                let text = text.trim();
+                (!text.is_empty()).then(|| format!("{axis}{text}"))
+            })
+            .collect();
+        if sizes.is_empty() {
+            self.anchor.label().to_string()
+        } else {
+            format!("{} , {}", self.anchor.label(), sizes.join(" x "))
+        }
     }
 
     /// The row in one line, as errors name it: the keys first, then where
@@ -162,9 +166,6 @@ pub fn dashes(from: f64, to: f64, dash: f64, gap: f64) -> Vec<(f64, f64)> {
         })
         .collect()
 }
-
-/// What the settings window calls a width or height that is kept.
-pub const KEEP_LABEL: &str = "維持";
 
 /// What a draft's text field holds for `size`: empty when it is kept.
 fn size_text(size: Size) -> String {
@@ -504,7 +505,7 @@ mod tests {
         d.width = "  ".into();
         let s = d.to_shortcut().unwrap();
         assert_eq!(s.placement.width, Size::Keep);
-        assert_eq!(d.placement_text(), "左 維持 × 1");
+        assert_eq!(d.placement_text(), "左 , h1");
 
         let back = Draft::from_shortcut(&s);
         assert_eq!((back.width.as_str(), back.height.as_str()), ("", "1"));
@@ -514,12 +515,24 @@ mod tests {
     #[test]
     fn list_lines_show_the_shortcut_and_the_placement() {
         let d = Draft::from_shortcut(&Config::defaults().shortcuts[0]);
-        assert_eq!(d.placement_text(), "左 1/2 × 1");
-        assert_eq!(d.list_text(), "Ctrl+Alt+Left    左 1/2 × 1");
-        assert_eq!(Draft::new().list_text(), "(未設定)    中央 1/2 × 1/2");
+        assert_eq!(d.placement_text(), "左 , w1/2 x h1");
+        assert_eq!(d.list_text(), "Ctrl+Alt+Left    左 , w1/2 x h1");
+        assert_eq!(Draft::new().list_text(), "(未設定)    中央 , w1/2 x h1/2");
         let mut d = d;
         d.keys.push("Ctrl+Alt+Up".parse().unwrap());
-        assert_eq!(d.list_text(), "Ctrl+Alt+Left, Up    左 1/2 × 1");
+        assert_eq!(d.list_text(), "Ctrl+Alt+Left, Up    左 , w1/2 x h1");
+
+        // A kept width or height is left out.
+        let mut d = Draft::new();
+        d.anchor = Anchor::TopLeft;
+        d.width = " ".into();
+        d.height = "1/3".into();
+        assert_eq!(d.placement_text(), "左上 , h1/3");
+        d.width = "2/3".into();
+        d.height = String::new();
+        assert_eq!(d.placement_text(), "左上 , w2/3");
+        d.width = String::new();
+        assert_eq!(d.placement_text(), "左上");
     }
 
     fn editor() -> Editor {
@@ -734,7 +747,7 @@ mod tests {
         assert_eq!(e.current(), Some(1));
         assert_eq!(
             error,
-            "(未設定)    中央 1/2 × 1/2: ショートカットを設定してください"
+            "(未設定)    中央 , w1/2 x h1/2: ショートカットを設定してください"
         );
     }
 
