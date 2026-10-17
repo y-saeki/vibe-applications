@@ -6,6 +6,11 @@
 #
 # Adding or removing a dependency, a manifest or an application changes this
 # file in the same commit (see CLAUDE.md).
+#
+# Every entry waits 7 days after a release before proposing it, the same as
+# draftpad's pnpm-workspace.yaml (minimumReleaseAge), which refuses anything
+# younger. One wait for all also keeps Tauri's crates and npm packages, which
+# are released together, arriving in the same week.
 version: 2
 
 updates:
@@ -13,6 +18,8 @@ updates:
     directory: /eleven-zip
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     labels:
       - dependencies
       - no-release
@@ -34,6 +41,8 @@ updates:
     directory: /winwin
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     labels:
       - dependencies
       - no-release
@@ -53,6 +62,8 @@ updates:
     directory: /draftpad/src-tauri
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     labels:
       - dependencies
       - no-release
@@ -81,15 +92,13 @@ updates:
     directory: /draftpad
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     labels:
       - dependencies
       - no-release
     commit-message:
       prefix: draftpad
-    # pnpm-workspace.yaml refuses versions younger than 7 days
-    # (minimumReleaseAge), so Dependabot waits as long.
-    cooldown:
-      default-days: 7
     groups:
       # See the tauri group of /draftpad/src-tauri.
       tauri:
@@ -104,6 +113,8 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     labels:
       - dependencies
       - no-release
