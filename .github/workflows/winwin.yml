@@ -53,8 +53,13 @@ jobs:
           cargo clippy --all-targets --locked -- -D warnings
       - name: Rust tests
         run: cargo test --locked
+      # The settings window's title carries the same commit as the installer
+      # below; main's build leaves it unset and shows the plain version.
       - name: Release build
-        run: cargo build --release --locked
+        shell: bash
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: WINWIN_COMMIT="${HEAD_SHA:0:7}" cargo build --release --locked
       # NSIS comes with the runner image; installing it is the fallback for an
       # image that stops shipping it.
       # A pull request's build carries the commit it came from as semver build
