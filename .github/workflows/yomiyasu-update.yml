@@ -1,0 +1,98 @@
+name: yomiyasu update
+
+# The yomiyasu skill is vendored under .claude/skills/yomiyasu/ because cloud
+# sessions do not install plugins. This keeps the copy on upstream's latest
+# release tag by opening a pull request whenever a newer one appears; merging
+# it stays a manual step. Release tags rather than upstream's main, because main
+# moves several times a day and may carry half-finished work.
+#
+# A pull request opened with the default GITHUB_TOKEN does not trigger other
+# workflows, so the version checks never report on it. Setting the
+# YOMIYASU_UPDATE_TOKEN secret (a fine-grained token with contents and pull
+# requests write on this repository) opens it as that token's owner instead,
+# and the checks run as on any other pull request.
+on:
+  schedule:
+    - cron: "17 0 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: yomiyasu-update
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  update:
+    name: update yomiyasu
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      UPSTREAM: https://github.com/nanaism/yomiyasu
+      GH_TOKEN: ${{ secrets.YOMIYASU_UPDATE_TOKEN || github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: main
+          token: ${{ secrets.YOMIYASU_UPDATE_TOKEN || github.token }}
+      - name: Find the latest upstream release
+        id: latest
+        run: |
+          tag="$(git ls-remote --tags --refs "${UPSTREAM}.git" \
+            | sed 's|.*refs/tags/||' \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+            | sort -V | tail -n 1)"
+          current="$(cat .github/yomiyasu-version)"
+          if [ -z "${tag}" ]; then
+            echo "::error::no release tag found in ${UPSTREAM}."
+            exit 1
+          fi
+          echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
+          echo "current=${current}" >> "${GITHUB_OUTPUT}"
+          echo "branch=yomiyasu-update/${tag}" >> "${GITHUB_OUTPUT}"
+          if [ "${tag}" = "${current}" ]; then
+            echo "update=false" >> "${GITHUB_OUTPUT}"
+            echo "::notice::already on ${current}."
+          elif git ls-remote --exit-code --heads origin "yomiyasu-update/${tag}" > /dev/null; then
+            # The branch is left behind until its pull request is merged or the
+            # branch deleted, so a later run does not open the same one twice.
+            echo "update=false" >> "${GITHUB_OUTPUT}"
+            echo "::notice::a branch for ${tag} already exists."
+          else
+            echo "update=true" >> "${GITHUB_OUTPUT}"
+          fi
+      - name: Replace the vendored copy
+        if: steps.latest.outputs.update == 'true'
+        env:
+          TAG: ${{ steps.latest.outputs.tag }}
+        run: |
+          git -c advice.detachedHead=false clone --quiet --depth 1 --branch "${TAG}" "${UPSTREAM}.git" "${RUNNER_TEMP}/yomiyasu"
+          rm -rf .claude/skills/yomiyasu
+          cp -R "${RUNNER_TEMP}/yomiyasu/skills/yomiyasu" .claude/skills/yomiyasu
+          rm -rf .claude/skills/yomiyasu/.claude-plugin
+          printf '%s\n' "${TAG}" > .github/yomiyasu-version
+      - name: Open a pull request
+        if: steps.latest.outputs.update == 'true'
+        env:
+          TAG: ${{ steps.latest.outputs.tag }}
+          CURRENT: ${{ steps.latest.outputs.current }}
+          BRANCH: ${{ steps.latest.outputs.branch }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "${BRANCH}"
+          git add -A .claude/skills/yomiyasu .github/yomiyasu-version
+          git commit -m "Update the vendored yomiyasu skill to ${TAG}"
+          git push origin "${BRANCH}"
+          gh pr create --base main --head "${BRANCH}" \
+            --title "yomiyasu スキルを ${TAG} に更新する" \
+            --body "$(cat <<EOF
+          配布元の ${TAG} に合わせて、\`.claude/skills/yomiyasu/\` の同梱版を ${CURRENT} から更新します。
+
+          この PR は \`.github/workflows/yomiyasu-update.yml\` が作りました。差分は配布元の \`skills/yomiyasu/\` から \`.claude-plugin/\` を除いて写したものです。配布元での変更は [${CURRENT}...${TAG}](${UPSTREAM}/compare/${CURRENT}...${TAG}) で確認できます。
+          EOF
+          )"

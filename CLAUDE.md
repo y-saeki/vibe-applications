@@ -95,8 +95,10 @@ commit messages, English documentation such as this file).
 
 The skill is vendored in `.claude/skills/yomiyasu/` so that cloud sessions, which do not
 install plugins, have it too. When the `yomiyasu:yomiyasu` plugin is also loaded, either
-one satisfies this rule. To update the vendored copy, replace the directory with
-`skills/yomiyasu/` from https://github.com/nanaism/yomiyasu, minus its `.claude-plugin/`.
+one satisfies this rule. The copy follows upstream's release tags
+(https://github.com/nanaism/yomiyasu), and `.github/yomiyasu-version` records which one it
+is. `.github/workflows/yomiyasu-update.yml` checks weekly and opens a pull request when a
+newer tag appears; run it by hand to update sooner rather than editing the directory.
 
 ## Link pull requests to the issue they close
 
