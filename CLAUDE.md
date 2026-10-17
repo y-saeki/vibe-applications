@@ -85,6 +85,21 @@ Inside the codebase: code, identifiers, code comments and commit messages are En
 while user-facing documentation (`README.md`, `docs/`) and strings shown to the user are
 Japanese.
 
+## Run Japanese prose through yomiyasu before it leaves the chat
+
+Japanese text written for somewhere other than the chat reply — issue and pull request
+titles, bodies and comments, review replies, artifacts, `README.md`, `DEVELOPMENT.md`,
+`docs/` and other documentation — goes through the `yomiyasu` skill before it is posted or
+committed. Ordinary chat replies are exempt, and so is text that is not Japanese (code,
+commit messages, English documentation such as this file).
+
+The skill is vendored in `.claude/skills/yomiyasu/` so that cloud sessions, which do not
+install plugins, have it too. When the `yomiyasu:yomiyasu` plugin is also loaded, either
+one satisfies this rule. The copy follows upstream's release tags
+(https://github.com/nanaism/yomiyasu), and `.github/yomiyasu-version` records which one it
+is. `.github/workflows/yomiyasu-update.yml` checks weekly and opens a pull request when a
+newer tag appears; run it by hand to update sooner rather than editing the directory.
+
 ## Link pull requests to the issue they close
 
 A pull request that comes from an issue opens its body with a closing reference to that
