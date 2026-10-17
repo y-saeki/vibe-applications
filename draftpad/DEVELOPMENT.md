@@ -192,6 +192,8 @@ eleven-zip のインストーラが、ファイル名にハッシュを付けた
 
 依存ライブラリの新しいバージョンは Dependabot が週に 1 回確かめ、見つかると Pull Request を作ります(設定は `.github/dependabot.yml`)。この Pull Request には `no-release` ラベルが付き、ビルドとテストがすべて通ると `.github/workflows/dependabot-merge.yml` がマージします。バージョンは上げず、更新は次のリリースに含めて出します。手で確かめる項目は次にこのアプリを変更する Pull Request でまとめて確認し、その Pull Request の本文に、取り込んだ更新を書きます。
 
+Tauri は、Rust のクレートと npm のパッケージで major と minor がそろっていることを求めます。また、draftpad が直接使う `webview2-com` と `windows` は、Tauri(wry)が使うものと同じバージョンでなければなりません。そのため Dependabot の設定では、Rust 側の `tauri`・`tauri-*`・`webview2-com`・`windows` と npm 側の `@tauri-apps/*` を、それぞれ `tauri` という別のグループにしています。minor が変わる更新では片側だけが上がるので、このグループの Pull Request は落ちます。そのときは両側を同じ minor にそろえる Pull Request を手で作り、マージしたあとで Dependabot の Pull Request に `@dependabot recreate` とコメントします。
+
 ビルド成果物のコメントにもバージョンが出ます。据え置きのまま `no-release` で通した Pull Request では、
 Release が作られないことをそこで警告します。動作確認の前に必ず読む場所なので、macOS 側で作業していて
 インストーラを開かない場合でも目に入ります。

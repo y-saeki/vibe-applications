@@ -59,6 +59,17 @@ updates:
     commit-message:
       prefix: draftpad
     groups:
+      # Tauri checks that its crates and its npm packages share a major and
+      # minor version, and draftpad's own webview2-com and windows have to be
+      # the ones Tauri's wry uses. These cannot pass on their own, so they are
+      # kept apart from the updates that can, and brought in line by hand
+      # together with the npm side's tauri group.
+      tauri:
+        patterns:
+          - tauri
+          - tauri-*
+          - webview2-com
+          - windows
       minor-and-patch:
         update-types:
           - minor
@@ -78,6 +89,10 @@ updates:
     cooldown:
       default-days: 7
     groups:
+      # See the tauri group of /draftpad/src-tauri.
+      tauri:
+        patterns:
+          - "@tauri-apps/*"
       minor-and-patch:
         update-types:
           - minor
