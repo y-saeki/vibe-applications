@@ -33,12 +33,13 @@ use crate::layout::{Anchor, Rect};
 /// fields and the whole preview fit in it. Its width is fixed, since a wider
 /// window only adds empty space on the right; only the list grows taller.
 const CLIENT: (f64, f64) = (900.0, 690.0);
-/// The picture of a placement at the left of each line in the list, and the
-/// larger one under the fields.
-const THUMBNAIL: (f64, f64) = (40.0, 24.0);
+/// The picture of a placement under the fields.
 const PREVIEW: (f64, f64) = (360.0, 200.0);
+/// The columns at the right of each line in the list: the anchor, the width
+/// and the height. They are fixed so that they line up from line to line.
+const PLACEMENT_COLUMNS: [f64; 3] = [40.0, 64.0, 64.0];
 /// Pictures are worked out in whole units this many times finer than a DIP,
-/// so that a small one does not snap to whole DIPs.
+/// so that the picture's edges do not snap to whole DIPs.
 const SUBPIXEL: f64 = 4.0;
 
 /// The most keycaps the recording dialog draws large; more would not fit.
@@ -328,7 +329,7 @@ impl Component for Settings {
             .columns([GridLength::Pixel(420.0), GridLength::STAR])
             .column_spacing(24.0)
             .grid_row(1)
-            .children((self.list(input, context), self.form(input, context)));
+            .children((self.list(context), self.form(input, context)));
 
         let footer = Grid::new()
             .columns([GridLength::STAR, GridLength::Auto])
@@ -535,28 +536,36 @@ impl Settings {
         close(context);
     }
 
-    /// The shortcuts, each with a picture of where it puts a window, and the
-    /// buttons that change the list.
-    fn list(&self, input: &Input, context: &mut ViewContext<Self>) -> View {
+    /// The shortcuts, each with where it puts a window, and the buttons that
+    /// change the list.
+    fn list(&self, context: &mut ViewContext<Self>) -> View {
         let items = self.editor.rows().map(|(id, row)| {
-            // The keys at the left; where they put the window, in words and
-            // as a picture, at the right.
+            // The keys at the left; the anchor, the width and the height in
+            // columns of their own at the right.
+            let [anchor, width, height] = PLACEMENT_COLUMNS;
+            let cell = |text: String, column: i32| {
+                TextBlock::new()
+                    .text(text)
+                    .text_trimming(TextTrimming::CharacterEllipsis)
+                    .vertical_alignment(VerticalAlignment::Center)
+                    .grid_column(column)
+            };
             let line = Grid::new()
-                .columns([GridLength::STAR, GridLength::Auto, GridLength::Auto])
+                .columns([
+                    GridLength::STAR,
+                    GridLength::Pixel(anchor),
+                    GridLength::Pixel(width),
+                    GridLength::Pixel(height),
+                ])
                 .column_spacing(12.0)
                 .grid_column(1)
                 .children((
                     Border::new()
                         .vertical_alignment(VerticalAlignment::Center)
                         .content(shortcut_view(row)),
-                    TextBlock::new()
-                        .text(row.placement_text())
-                        .vertical_alignment(VerticalAlignment::Center)
-                        .grid_column(1),
-                    Border::new()
-                        .vertical_alignment(VerticalAlignment::Center)
-                        .grid_column(2)
-                        .content(picture(row, input.work, THUMBNAIL, Anchor::Center)),
+                    cell(row.anchor.label().to_string(), 1),
+                    cell(row.width_text(), 2),
+                    cell(row.height_text(), 3),
                 ));
             let selected = self.editor.is_selected(id);
             let indicator = Border::new()
@@ -943,7 +952,7 @@ fn picture(row: &Draft, work: (i32, i32), size: (f64, f64), anchor: Anchor) -> V
         .border_thickness(Thickness::uniform(1.0))
         .corner_radius(CornerRadius::uniform(2.0));
     let window = match window {
-        Some(frame) => window_view(frame, size.0 >= 100.0),
+        Some(frame) => window_view(frame),
         None => View::empty(),
     };
     canvas.children((screen, window))
@@ -962,12 +971,8 @@ fn placed(border: Border, r: Rect) -> Border {
 /// are dashed. WinUI's `Border` draws no dashes, so those edges are left out
 /// of its outline and drawn as short lines over it, along their straight
 /// part between the rounded corners.
-fn window_view(frame: Frame, large: bool) -> View {
-    let (stroke, radius, dash, gap) = if large {
-        (2.0, 6.0, 6.0, 4.0)
-    } else {
-        (1.0, 2.0, 2.0, 1.5)
-    };
+fn window_view(frame: Frame) -> View {
+    let (stroke, radius, dash, gap) = (2.0, 6.0, 6.0, 4.0);
     let loose = frame.loose;
     let edge = |is_loose: bool| if is_loose { 0.0 } else { stroke };
     let fill = placed(Border::new(), frame.rect)
