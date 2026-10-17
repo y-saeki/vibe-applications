@@ -1,0 +1,81 @@
+# Dependabot watches every manifest in the repository. Each entry names one
+# application directory, so that a pull request never spans two applications:
+# .github/workflows/dependency-bump.yml raises the patch version of the
+# application a Dependabot pull request touches, and its version check
+# (<app>-version.yml) then lets it through.
+#
+# Adding or removing a dependency, a manifest or an application changes this
+# file in the same commit (see CLAUDE.md).
+version: 2
+
+updates:
+  - package-ecosystem: cargo
+    directory: /eleven-zip
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: eleven-zip
+    groups:
+      # windows-reactor-setup lays out the Windows App Runtime that
+      # windows-reactor loads, so the two move together.
+      windows-reactor:
+        patterns:
+          - windows-reactor
+          - windows-reactor-setup
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: cargo
+    directory: /winwin
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: winwin
+    groups:
+      windows-reactor:
+        patterns:
+          - windows-reactor
+          - windows-reactor-setup
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: cargo
+    directory: /draftpad/src-tauri
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: draftpad
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: npm
+    directory: /draftpad
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: draftpad
+    # pnpm-workspace.yaml refuses versions younger than 7 days
+    # (minimumReleaseAge), so Dependabot waits as long.
+    cooldown:
+      default-days: 7
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns:
+          - "*"

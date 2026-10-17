@@ -86,6 +86,8 @@ Pull Request では `.github/workflows/eleven-zip-version.yml` が、`eleven-zip
 同じままなら失敗します。リリースしない変更には `no-release` ラベルを付けてください。バージョンを上げたら
 `cargo update -p eleven-zip` で `Cargo.lock` も合わせます。
 
+ユーザーに見える変化を伴わない依存ライブラリの更新では patch を上げます。依存ライブラリの新しい版は Dependabot が週に 1 回確かめ、見つかると Pull Request を作ります(設定は `.github/dependabot.yml`)。この Pull Request には `.github/workflows/dependency-bump.yml` が、base ブランチのバージョンから patch を 1 つ上げたコミットを足すので、手でバージョンを上げる必要はありません。同じアプリの Pull Request が 2 つ開いているときに片方をマージすると、もう片方はバージョンが base と同じになり、バージョンのチェックで落ちます。その Pull Request に `@dependabot recreate` とコメントすると作り直され、バージョンも上げ直されます。
+
 ## 構成
 
 ```

@@ -70,6 +70,30 @@ This is not a demand for coverage of everything. Each application's `DEVELOPMENT
 its tests are for and what they cannot reach. That is the scope — and what it lists as out of
 reach stays out of reach rather than being faked with a case that asserts nothing.
 
+## Keep Dependabot in step with the dependencies
+
+`.github/dependabot.yml` is how this repository hears about new versions of what it depends
+on, so it covers every dependency, and changing the dependencies changes it in the same
+commit:
+
+- A new manifest — a new application, or a new package manager inside one — gets an entry.
+  So does a new kind of dependency an existing entry does not reach.
+- A manifest that goes away takes its entry with it.
+- Adding or removing a library re-reads the entries for its directory: a group that names
+  the library is updated or dropped, and a library that has to move in step with another
+  joins the other's group.
+- A new application also gets a line in `.github/workflows/dependency-bump.yml`, which needs
+  to know which files carry its version.
+
+## Dependency updates are patch releases
+
+Updating a dependency raises the application's patch version, and nothing more, unless the
+same change also alters what the user sees. For Dependabot's pull requests,
+`.github/workflows/dependency-bump.yml` does it: it sets the version to the base branch's
+with the patch raised by one. When two of them for the same application are open and one
+merges, the other is left at the version that just shipped; comment `@dependabot recreate`
+on it and the workflow raises the version again.
+
 ## Name the session after the issue
 
 A session that starts from a GitHub issue is renamed to `<issue title> #<issue number>` —
