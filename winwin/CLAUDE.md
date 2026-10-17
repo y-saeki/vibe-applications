@@ -44,7 +44,7 @@ behaviour changes, the file that covers it changes in the same commit:
 | Which size a dragged window gets back, where it lands, and how it is kept on the window | `mod tests` in `src/restore.rs` |
 | What the settings window stores, checks on save, or shows in its list | `mod tests` in `src/draft.rs` |
 | The icon's picture, or how it is written into the executable | `mod tests` in `src/art.rs` or `src/icon_res.rs` |
-| The main window's class name, the config folder, or the `Run` value name | `installer/installer.nsi`, which closes winwin by that class and removes those on uninstall |
+| The main window's class name, the config folder, the `Run` value name, or a second start opening the settings | `installer/installer.nsi`, which closes winwin by that class, removes those on uninstall, and opens the settings from its finish page by starting winwin twice |
 
 Everything under `src/win/` is out of reach of `cargo test`; `DEVELOPMENT.md` lists the
 manual checks. Do not write a case that pretends to cover it.

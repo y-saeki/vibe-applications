@@ -14,7 +14,8 @@
 ; see draftpad/DEVELOPMENT.md): a per-user install without elevation, a
 ; running copy closed without asking, an upgrade that installs over the
 ; previous version, no stop on the log page, and a desktop shortcut offered on
-; the finish page, unticked when upgrading.
+; the finish page, unticked when upgrading. Unlike draftpad's, the finish page
+; also offers to open the settings window.
 
 Unicode true
 ManifestDPIAware true
@@ -63,6 +64,10 @@ VIAddVersionKey "LegalCopyright" ""
 ; Set when this run installs over an existing installation. See the finish
 ; page below.
 Var Upgrading
+; The finish page's "open the settings" checkbox, and whether it was ticked
+; when the page was left.
+Var OpenSettingsBox
+Var OpenSettings
 
 !define MUI_ABORTWARNING
 
@@ -81,6 +86,7 @@ Var Upgrading
 !define MUI_FINISHPAGE_RUN_TEXT "winwin を起動する"
 !define MUI_FINISHPAGE_RUN_FUNCTION RunWinwin
 !define MUI_PAGE_CUSTOMFUNCTION_SHOW FinishPageShow
+!define MUI_PAGE_CUSTOMFUNCTION_LEAVE FinishPageLeave
 !insertmacro MUI_PAGE_FINISH
 
 !insertmacro MUI_UNPAGE_CONFIRM
@@ -130,10 +136,37 @@ FunctionEnd
 
 ; An installation that was kept in place already has whatever shortcuts its
 ; owner decided to keep, so the desktop shortcut starts unticked there.
+;
+; The finish page has only the two checkboxes above, so the third, to open the
+; settings window, is added here. MUI places the run checkbox at 90u and the
+; readme one 20u below it (Contrib/Modern UI 2/Pages/Finish.nsh); this one
+; follows at the same spacing. The settings are opened by the winwin that the
+; run checkbox starts, so it is greyed out while that one is unticked.
 Function FinishPageShow
   ${If} $Upgrading = 1
     ${NSD_Uncheck} $mui.FinishPage.ShowReadme
   ${EndIf}
+  ${NSD_CreateCheckbox} 120u 130u 195u 10u "設定画面を開く"
+  Pop $OpenSettingsBox
+  SetCtlColors $OpenSettingsBox "${MUI_TEXTCOLOR}" "${MUI_BGCOLOR}"
+  ${NSD_Check} $OpenSettingsBox
+  ${NSD_OnClick} $mui.FinishPage.Run FinishPageRunClicked
+FunctionEnd
+
+Function FinishPageRunClicked
+  Pop $0
+  ${NSD_GetState} $mui.FinishPage.Run $0
+  ${If} $0 = ${BST_CHECKED}
+    EnableWindow $OpenSettingsBox 1
+  ${Else}
+    EnableWindow $OpenSettingsBox 0
+  ${EndIf}
+FunctionEnd
+
+; MUI calls this before it acts on its own checkboxes, so RunWinwin sees the
+; answer.
+Function FinishPageLeave
+  ${NSD_GetState} $OpenSettingsBox $OpenSettings
 FunctionEnd
 
 Function CreateDesktopShortcut
@@ -141,6 +174,32 @@ Function CreateDesktopShortcut
 FunctionEnd
 
 Function RunWinwin
+  Exec '"$INSTDIR\winwin.exe"'
+  ${If} $OpenSettings = ${BST_CHECKED}
+    Call OpenSettingsWindow
+  ${EndIf}
+FunctionEnd
+
+; Starting winwin a second time while it runs makes the running copy open its
+; settings (src/win/app.rs), so wait for the copy just started to create its
+; main window and start another. The installer is the foreground process and
+; passes that right on to any process, so that the settings window, which the
+; resident copy starts, comes up in front instead of behind other windows.
+Function OpenSettingsWindow
+  StrCpy $1 0
+  loop:
+    FindWindow $0 "${MAIN_CLASS}"
+    ${If} $0 = 0
+      Sleep 100
+      IntOp $1 $1 + 1
+      ; Five seconds, then give up: winwin has shown whatever stopped it.
+      ${If} $1 < 50
+        Goto loop
+      ${EndIf}
+      Return
+    ${EndIf}
+  ; ASFW_ANY
+  System::Call 'user32::AllowSetForegroundWindow(i -1)'
   Exec '"$INSTDIR\winwin.exe"'
 FunctionEnd
 
