@@ -5,7 +5,7 @@
 ; Built by CI after `cargo build --release`:
 ;
 ;   pwsh payload.ps1 -Dir ../target/release -Out payload.nsh
-;   makensis /INPUTCHARSET UTF8 /DVERSION=<version> [/DBUILD=<commit>] /DPAYLOAD=payload.nsh /DOUTFILE=<setup.exe> installer.nsi
+;   makensis /INPUTCHARSET UTF8 /DVERSION=<version> /DPAYLOAD=payload.nsh /DOUTFILE=<setup.exe> installer.nsi
 ;
 ; payload.nsh lists winwin.exe and the Windows App Runtime files beside it,
 ; which the settings window (WinUI 3) needs.
@@ -27,20 +27,12 @@ SetCompressorDictSize 64
 !ifndef VERSION
   !error "pass /DVERSION=<version>"
 !endif
-; A pull request's build passes the commit it came from as /DBUILD, which
-; follows the version as semver build metadata (0.12.0+047ba8f).
-; VIProductVersion takes digits only, so it keeps reading VERSION.
-!ifdef BUILD
-  !define DISPLAY_VERSION "${VERSION}+${BUILD}"
-!else
-  !define DISPLAY_VERSION "${VERSION}"
-!endif
 !ifndef PAYLOAD
   !error "pass /DPAYLOAD=<payload.nsh written by payload.ps1>"
 !endif
 !include "${PAYLOAD}"
 !ifndef OUTFILE
-  !define OUTFILE "winwin_${DISPLAY_VERSION}_x64-setup.exe"
+  !define OUTFILE "winwin_${VERSION}_x64-setup.exe"
 !endif
 
 !define PRODUCT "winwin"
@@ -63,8 +55,8 @@ InstallDirRegKey HKCU "${UNINSTALL_KEY}" "InstallLocation"
 
 VIProductVersion "${VERSION}.0"
 VIAddVersionKey "ProductName" "${PRODUCT}"
-VIAddVersionKey "ProductVersion" "${DISPLAY_VERSION}"
-VIAddVersionKey "FileVersion" "${DISPLAY_VERSION}"
+VIAddVersionKey "ProductVersion" "${VERSION}"
+VIAddVersionKey "FileVersion" "${VERSION}"
 VIAddVersionKey "FileDescription" "${PRODUCT} installer"
 VIAddVersionKey "LegalCopyright" ""
 
@@ -162,7 +154,7 @@ Section "Install"
   CreateShortcut "$SMPROGRAMS\${PRODUCT}.lnk" "$INSTDIR\winwin.exe"
 
   WriteRegStr HKCU "${UNINSTALL_KEY}" "DisplayName" "${PRODUCT}"
-  WriteRegStr HKCU "${UNINSTALL_KEY}" "DisplayVersion" "${DISPLAY_VERSION}"
+  WriteRegStr HKCU "${UNINSTALL_KEY}" "DisplayVersion" "${VERSION}"
   WriteRegStr HKCU "${UNINSTALL_KEY}" "DisplayIcon" "$INSTDIR\winwin.exe"
   WriteRegStr HKCU "${UNINSTALL_KEY}" "Publisher" "y-saeki"
   WriteRegStr HKCU "${UNINSTALL_KEY}" "InstallLocation" "$INSTDIR"
