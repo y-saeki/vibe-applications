@@ -100,13 +100,15 @@ impl FromStr for Ratio {
 
 impl fmt::Display for Ratio {
     /// As a fraction when it is one with a small denominator (1/2, 2/3, 1),
-    /// otherwise as a decimal of up to four places (0.1429).
+    /// otherwise rounded to a decimal of up to three places (0.077). One too
+    /// small to show in three places is written as the smallest that is
+    /// (0.001), so that the file still reads.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.as_fraction() {
             Some((n, 1)) => write!(f, "{n}"),
             Some((n, d)) => write!(f, "{n}/{d}"),
             None => {
-                let s = format!("{:.4}", self.0);
+                let s = format!("{:.3}", self.0.max(0.001));
                 f.write_str(s.trim_end_matches('0').trim_end_matches('.'))
             }
         }
@@ -404,8 +406,11 @@ mod tests {
         assert_eq!(show(0.66667), "2/3");
         assert_eq!(show(5.0 / 12.0), "5/12");
         assert_eq!(show(1.0 / 7.0), "1/7");
-        assert_eq!(show(1.0 / 13.0), "0.0769");
+        assert_eq!(show(1.0 / 13.0), "0.077");
         assert_eq!(show(0.123), "0.123");
+        assert_eq!(show(0.12351), "0.124");
+        assert_eq!(show(0.0001), "0.001");
+        assert_eq!(show(0.0001).parse::<Ratio>().map(Ratio::value), Ok(0.001));
     }
 
     #[test]

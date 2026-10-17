@@ -101,18 +101,27 @@ impl Draft {
     /// or height is left out (左上 , h1/3), and with both kept the anchor
     /// stands alone.
     pub fn placement_text(&self) -> String {
-        let sizes: Vec<String> = [("w", &self.width), ("h", &self.height)]
+        let sizes: Vec<String> = [self.width_text(), self.height_text()]
             .into_iter()
-            .filter_map(|(axis, text)| {
-                let text = text.trim();
-                (!text.is_empty()).then(|| format!("{axis}{text}"))
-            })
+            .filter(|text| !text.is_empty())
             .collect();
         if sizes.is_empty() {
             self.anchor.label().to_string()
         } else {
             format!("{} , {}", self.anchor.label(), sizes.join(" x "))
         }
+    }
+
+    /// The width as the list shows it in its own column: w1/2, or nothing
+    /// when it is kept.
+    pub fn width_text(&self) -> String {
+        axis_text("w", &self.width)
+    }
+
+    /// The height as the list shows it in its own column: h1, or nothing
+    /// when it is kept.
+    pub fn height_text(&self) -> String {
+        axis_text("h", &self.height)
     }
 
     /// The row in one line, as errors name it: the keys first, then where
@@ -171,6 +180,17 @@ pub fn dashes(from: f64, to: f64, dash: f64, gap: f64) -> Vec<(f64, f64)> {
             (start, start + dash)
         })
         .collect()
+}
+
+/// A width or height field behind its axis letter, or nothing when it is
+/// left empty and so kept.
+fn axis_text(axis: &str, text: &str) -> String {
+    let text = text.trim();
+    if text.is_empty() {
+        String::new()
+    } else {
+        format!("{axis}{text}")
+    }
 }
 
 /// What a draft's text field holds for `size`: empty when it is kept.
@@ -559,6 +579,24 @@ mod tests {
         assert_eq!(d.placement_text(), "左上 , w2/3");
         d.width = String::new();
         assert_eq!(d.placement_text(), "左上");
+    }
+
+    #[test]
+    fn list_columns_show_each_size_on_its_own() {
+        let d = Draft::from_shortcut(&Config::defaults().shortcuts[0]);
+        assert_eq!(
+            (d.width_text().as_str(), d.height_text().as_str()),
+            ("w1/2", "h1")
+        );
+
+        // A kept size leaves its column empty; what was typed is trimmed.
+        let mut d = Draft::new();
+        d.width = " ".into();
+        d.height = " 1/3 ".into();
+        assert_eq!(
+            (d.width_text().as_str(), d.height_text().as_str()),
+            ("", "h1/3")
+        );
     }
 
     fn editor() -> Editor {
