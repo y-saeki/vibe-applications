@@ -5,10 +5,11 @@
 #![cfg_attr(not(windows), allow(dead_code))]
 
 mod archive;
+// Used by build.rs; the crate only tests them.
+#[cfg(test)]
 mod art;
 mod cli;
 mod config;
-// Used by build.rs; the crate only tests it.
 #[cfg(test)]
 mod icon_res;
 mod release;

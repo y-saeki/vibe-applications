@@ -88,6 +88,7 @@ Pull Request では `.github/workflows/eleven-zip-version.yml` が、`eleven-zip
 eleven-zip/
 ├── build.rs              # Windows App Runtime の配置、アプリケーションマニフェストと exe のアイコンの埋め込み
 ├── eleven-zip.manifest   # DPI 対応などの宣言。build.rs が Windows App Runtime のマニフェストと合わせて埋め込む
+├── icon.svg              # アイコンの原画。build.rs が exe のアイコンに描く
 ├── installer/
 │   ├── installer.nsi     # Windows インストーラ(NSIS)
 │   └── payload.ps1       # インストーラに入れるファイルの一覧(payload.nsh)を書き出す
@@ -99,7 +100,7 @@ eleven-zip/
     ├── release.rs        # GitHub の最新リリースの読み方、MSI のファイル名、SHA-256 の照合、更新確認の間隔
     ├── store.rs          # 7-Zip を置くフォルダ(版ごとのフォルダ、使う版の切り替え、古い版の削除、更新のロック)
     ├── shell.rs          # レジストリに書く内容と消す内容
-    ├── art.rs            # アイコンの絵(ピクセル)。設定画面と exe のアイコンのすべてがこれを描く
+    ├── art.rs            # icon.svg を指定の大きさのピクセルに描く([resvg](https://crates.io/crates/resvg))。build.rs が使う
     ├── icon_res.rs       # exe に埋め込むアイコンのリソース(.res)を組み立てる。build.rs が使う
     └── win/              # Win32・ネットワーク・7-Zip に触れる部分。Windows でだけビルドされる
         ├── extract.rs    # 展開: 7z.exe で一覧を取り、7zG.exe で展開し、エクスプローラーで開く
@@ -107,7 +108,7 @@ eleven-zip/
         ├── net.rs        # WinHTTP での HTTPS の GET
         ├── registry.rs   # shell.rs の内容を HKEY_CURRENT_USER に書く・消す
         ├── settings_ui.rs # 設定画面(WinUI 3)
-        └── icon.rs       # 設定画面のアイコンの描画
+        └── icon.rs       # 設定画面のアイコン(exe のアイコンを読み込む)
 ```
 
 `win/` 以外の 8 つは Win32 に依存しないので、どのプラットフォームでもテストできます。挙動を決めるロジックはなるべく
@@ -234,11 +235,13 @@ WinUI 3 の画面で、Windows 11 の設定アプリにならってカードを�
 
 ### アイコン
 
-アイコンの絵は `art.rs` の 1 か所にあり、ピクセルで描きます(オレンジの角丸の正方形にファスナー)。アイコンファイルは持ちません。
+アイコンの原画は `icon.svg` です。`build.rs` が `art.rs`(resvg)で 16〜256px の 8 サイズに描き、`icon_res.rs` で
+リソースファイル(.res)にしてリンカに渡します。`rc.exe` もアイコンファイル(.ico)も要りません。resvg はビルドとテストで
+だけ使い、exe には入りません。
 
-- 設定画面のタイトルバー: 実行時に `win/icon.rs` が描き、`WM_SETICON` で付けます
-- exe 自体(エクスプローラー、タスクバー、右クリックメニュー、関連付けたファイル): `build.rs` が 16〜256px の 8 サイズを描き、
-  `icon_res.rs` でリソースファイル(.res)にしてリンカに渡します
+エクスプローラー、タスクバー、右クリックメニュー、関連付けたファイルは exe のこのアイコンを使います。設定画面の
+タイトルバーも、実行時に `win/icon.rs` が exe のアイコンを Windows の求める大きさで読み込み(`LoadImageW`)、
+`WM_SETICON` で付けます。
 
 ## テスト
 
@@ -252,7 +255,7 @@ WinUI 3 の画面で、Windows 11 の設定アプリにならってカードを�
 | `release.rs` | 版の読み書きと比較、MSI のファイル名、最新リリースの読み方、digest がないリリース、MSI がないリリースと配布元以外の URL の拒否、API のエラー応答、SHA-256 の照合、確認の間隔、URL の分解 |
 | `store.rs` | 何もない状態、版を置いて使う版にすること、7-Zip の入っていないパッケージを拒むこと、ファイルが消えた版を使わないこと、古い版と残骸の削除、更新のロック |
 | `shell.rs` | 開くと展開するコマンド、関連付けと既定のアプリのための値、右クリックメニュー、オフにしたときに右クリックメニューだけを消すこと、解除で登録したものがすべて消えること、共有のキーを丸ごと消さないこと、拡張子の一覧 |
-| `art.rs` | アイコンの角が透明で、ファスナーの歯と引き手があること |
+| `art.rs` | `icon.svg` が描けること、角が透明で上がオレンジ・下が緑・中央がファスナーの赤であること、小さいサイズでも中央が不透明なこと |
 | `icon_res.rs` | リソースファイルの各アイコンとグループの対応、行が下から並ぶこと |
 
 届かない範囲もあります。`win/` 以下は CI でビルドと clippy を通すだけで、動作は手で確かめます。

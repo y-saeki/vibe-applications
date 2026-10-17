@@ -43,7 +43,7 @@ behaviour changes, the file that covers it changes in the same commit:
 | Which release and file are installed, the digest check, how often updates are checked | `mod tests` in `src/release.rs` |
 | How versions of 7-Zip are kept, switched and removed | `mod tests` in `src/store.rs` |
 | What is written to or removed from the registry, or the extensions handled | `mod tests` in `src/shell.rs` |
-| The icon's picture, or how it is written into the executable | `mod tests` in `src/art.rs` or `src/icon_res.rs` |
+| The icon's picture (`icon.svg`), how it is drawn, or how it is written into the executable | `mod tests` in `src/art.rs` or `src/icon_res.rs` |
 | The settings window's title, the config folder or the 7-Zip folder | `installer/installer.nsi`, which closes the window by that title and removes those on uninstall |
 
 Everything under `src/win/` is out of reach of `cargo test`; `DEVELOPMENT.md` lists the

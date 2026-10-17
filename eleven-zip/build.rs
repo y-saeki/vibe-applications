@@ -1,5 +1,4 @@
-// The executable's icon is drawn from the same pixels as the settings
-// window's.
+// The executable's icon is drawn from icon.svg.
 #[path = "src/art.rs"]
 mod art;
 #[path = "src/icon_res.rs"]
@@ -28,6 +27,7 @@ fn main() {
     }
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=eleven-zip.manifest");
+    println!("cargo:rerun-if-changed=icon.svg");
     println!("cargo:rerun-if-changed=src/art.rs");
     println!("cargo:rerun-if-changed=src/icon_res.rs");
 }
