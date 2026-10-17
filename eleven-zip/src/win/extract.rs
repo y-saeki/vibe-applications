@@ -1,8 +1,9 @@
 //! Extracting the archives Explorer hands eleven-zip: lists each with 7z.exe to
 //! decide where it goes (archive.rs), extracts it with 7zG.exe, whose own
 //! window shows the progress and asks for a password or what to overwrite,
-//! then shows the result in Explorer.
+//! then shows the result in Explorer and puts the archive in the Recycle Bin.
 
+use std::os::windows::ffi::OsStrExt;
 use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -12,7 +13,10 @@ use windows::Win32::System::Com::{
 };
 use windows::Win32::System::Threading::CREATE_NO_WINDOW;
 use windows::Win32::UI::Shell::Common::ITEMIDLIST;
-use windows::Win32::UI::Shell::{SHOpenFolderAndSelectItems, SHParseDisplayName, ShellExecuteW};
+use windows::Win32::UI::Shell::{
+    FO_DELETE, FOF_ALLOWUNDO, FOF_NOCONFIRMATION, FOF_SILENT, FOF_WANTNUKEWARNING, SHFILEOPSTRUCTW,
+    SHFileOperationW, SHOpenFolderAndSelectItems, SHParseDisplayName, ShellExecuteW,
+};
 use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
 use windows::core::{HSTRING, PCWSTR, w};
 
@@ -72,6 +76,38 @@ fn extract(sevenzip: &Installed, archive: &Path, config: &Config) {
     if outcome.extracted() && config.open_in_explorer && plan.result.exists() {
         show(&plan.result);
     }
+    if outcome == Outcome::Done && config.trash_archive {
+        trash(archive);
+    }
+}
+
+/// Puts `archive`, with the other volumes of a split one, in the Recycle
+/// Bin. Explorer asks first where there is no Recycle Bin to put it in, and
+/// says itself when a file cannot be moved.
+fn trash(archive: &Path) {
+    let Ok(archive) = std::path::absolute(archive) else {
+        return;
+    };
+    let siblings = archive
+        .parent()
+        .and_then(|dir| dir.read_dir().ok())
+        .into_iter()
+        .flatten()
+        .filter_map(|entry| entry.ok()?.file_name().into_string().ok());
+    // A list of paths, each ending in a null, and the list in another.
+    let mut from: Vec<u16> = Vec::new();
+    for path in archive::volumes(&archive, siblings) {
+        from.extend(path.as_os_str().encode_wide());
+        from.push(0);
+    }
+    from.push(0);
+    let mut op = SHFILEOPSTRUCTW {
+        wFunc: FO_DELETE,
+        pFrom: PCWSTR(from.as_ptr()),
+        fFlags: (FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_SILENT | FOF_WANTNUKEWARNING).0 as u16,
+        ..Default::default()
+    };
+    unsafe { SHFileOperationW(&mut op) };
 }
 
 /// The paths inside `archive`, or `None` when 7z.exe cannot list them.

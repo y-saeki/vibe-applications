@@ -82,18 +82,12 @@ pub fn folder_name(file_name: &str) -> String {
     let mut name = file_name;
     // A volume of a split archive: `.001`.
     if let Some((stem, ext)) = name.rsplit_once('.')
-        && ext.len() == 3
-        && ext.bytes().all(|b| b.is_ascii_digit())
+        && is_number(ext, 3)
     {
         name = stem;
     }
     // A volume of a RAR archive: `.part1.rar`.
-    if let Some(stem) = strip_suffix_ignore_case(name, ".rar")
-        && let Some((before, part)) = stem.rsplit_once('.')
-        && part.len() > 4
-        && part[..4].eq_ignore_ascii_case("part")
-        && part[4..].bytes().all(|b| b.is_ascii_digit())
-    {
+    if let Some(before) = rar_volume(name) {
         name = before;
     } else if let Some((stem, _ext)) = name.rsplit_once('.')
         && !stem.is_empty()
@@ -112,6 +106,75 @@ pub fn folder_name(file_name: &str) -> String {
     } else {
         name.to_string()
     }
+}
+
+/// The files that make up `archive`, to put in the Recycle Bin once it is
+/// extracted: the archive itself, or every volume of a split one
+/// (`photos.7z.001`, `photos.7z.002`, … or `photos.part1.rar`,
+/// `photos.part2.rar`, …). `siblings` are the names of the files in its
+/// folder.
+pub fn volumes(archive: &Path, siblings: impl IntoIterator<Item = String>) -> Vec<PathBuf> {
+    let parent = archive.parent().unwrap_or(Path::new(""));
+    let Some(file_name) = archive.file_name().map(|n| n.to_string_lossy()) else {
+        return vec![archive.to_path_buf()];
+    };
+    let Some(set) = split_volume(&file_name) else {
+        return vec![archive.to_path_buf()];
+    };
+    let mut names: Vec<String> = siblings
+        .into_iter()
+        .filter(|n| split_volume(n).is_some_and(|other| other.is_same_set(&set)))
+        .collect();
+    if !names.iter().any(|n| *n == *file_name) {
+        names.push(file_name.into_owned());
+    }
+    names.sort();
+    names.into_iter().map(|n| parent.join(n)).collect()
+}
+
+/// Which split archive a volume belongs to: the name before its volume's
+/// number, and how the volumes are numbered.
+struct Volume<'a> {
+    base: &'a str,
+    rar_part: bool,
+}
+
+impl Volume<'_> {
+    fn is_same_set(&self, other: &Volume) -> bool {
+        self.rar_part == other.rar_part && self.base.eq_ignore_ascii_case(other.base)
+    }
+}
+
+/// `photos.7z` for `photos.7z.001`, `photos` for `photos.part1.rar`, and
+/// `None` for an archive in one file.
+fn split_volume(file_name: &str) -> Option<Volume<'_>> {
+    if let Some((base, ext)) = file_name.rsplit_once('.')
+        && is_number(ext, 3)
+    {
+        return Some(Volume {
+            base,
+            rar_part: false,
+        });
+    }
+    rar_volume(file_name).map(|base| Volume {
+        base,
+        rar_part: true,
+    })
+}
+
+/// `photos` for `photos.part1.rar`.
+fn rar_volume(file_name: &str) -> Option<&str> {
+    let stem = strip_suffix_ignore_case(file_name, ".rar")?;
+    let (before, part) = stem.rsplit_once('.')?;
+    (part.len() > 4
+        && part.is_char_boundary(4)
+        && part[..4].eq_ignore_ascii_case("part")
+        && is_number(&part[4..], part.len() - 4))
+    .then_some(before)
+}
+
+fn is_number(s: &str, len: usize) -> bool {
+    s.len() == len && s.bytes().all(|b| b.is_ascii_digit())
 }
 
 fn strip_suffix_ignore_case<'a>(s: &'a str, suffix: &str) -> Option<&'a str> {
@@ -188,6 +251,7 @@ mod tests {
             ("photos.rar", "photos"),
             ("v1.2.0.zip", "v1.2.0"),
             ("report.party.rar", "report.party"),
+            ("写真.説明.rar", "写真.説明"),
             ("noext", "noext"),
             ("trailing. .zip", "trailing"),
             ("写真.zip", "写真"),
@@ -299,5 +363,71 @@ Size = 12
         assert_eq!(Outcome::from_code(None), Outcome::Failed);
         assert!(Outcome::Done.extracted() && Outcome::Warnings.extracted());
         assert!(!Outcome::Cancelled.extracted() && !Outcome::Failed.extracted());
+    }
+
+    fn names(names: &[&str]) -> Vec<String> {
+        names.iter().map(|n| n.to_string()).collect()
+    }
+
+    fn paths(paths: &[&str]) -> Vec<PathBuf> {
+        paths.iter().map(PathBuf::from).collect()
+    }
+
+    #[test]
+    fn an_archive_in_one_file_is_only_itself() {
+        let siblings = names(&["photos.zip", "photos.z01", "photos.7z", "other.zip"]);
+        assert_eq!(
+            volumes(Path::new("/dl/photos.zip"), siblings),
+            paths(&["/dl/photos.zip"])
+        );
+    }
+
+    #[test]
+    fn every_numbered_volume_goes_with_the_first() {
+        let siblings = names(&[
+            "photos.7z.002",
+            "photos.7z.001",
+            "PHOTOS.7Z.003",
+            "photos.7z",
+            "photos.7z.0004",
+            "other.7z.001",
+            "photos (2).7z.002",
+        ]);
+        assert_eq!(
+            volumes(Path::new("/dl/photos.7z.001"), siblings),
+            paths(&[
+                "/dl/PHOTOS.7Z.003",
+                "/dl/photos.7z.001",
+                "/dl/photos.7z.002"
+            ])
+        );
+    }
+
+    #[test]
+    fn every_rar_part_goes_with_the_first() {
+        let siblings = names(&[
+            "photos.part1.rar",
+            "photos.part2.rar",
+            "photos.Part10.RAR",
+            "photos.rar",
+            "photos.party.rar",
+            "other.part1.rar",
+        ]);
+        assert_eq!(
+            volumes(Path::new("/dl/photos.part1.rar"), siblings),
+            paths(&[
+                "/dl/photos.Part10.RAR",
+                "/dl/photos.part1.rar",
+                "/dl/photos.part2.rar"
+            ])
+        );
+    }
+
+    #[test]
+    fn the_archive_itself_is_there_even_when_not_listed() {
+        assert_eq!(
+            volumes(Path::new("/dl/photos.7z.001"), names(&["photos.7z.002"])),
+            paths(&["/dl/photos.7z.001", "/dl/photos.7z.002"])
+        );
     }
 }
