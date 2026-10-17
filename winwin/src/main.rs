@@ -12,6 +12,7 @@ mod hotkey;
 #[cfg(test)]
 mod icon_res;
 mod layout;
+mod restore;
 #[cfg(windows)]
 mod win;
 
