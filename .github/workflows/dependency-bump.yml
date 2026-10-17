@@ -1,0 +1,127 @@
+name: dependency bump
+
+# A dependency update ships as a patch release. Dependabot cannot raise an
+# application's own version, so this does it on every pull request Dependabot
+# opens or re-creates: for each application the pull request touches, the
+# version becomes the base branch's with the patch raised by one. Without it,
+# <app>-version.yml would turn every Dependabot pull request red.
+#
+# Runs triggered by Dependabot get a read-only token and only Dependabot
+# secrets; the permissions key below is what lets this one push. A push made
+# with the default GITHUB_TOKEN leaves the checks on the new commit waiting for
+# someone to press "Approve workflows to run". Setting the VERSION_BUMP_TOKEN
+# Dependabot secret (a fine-grained token with contents write on this
+# repository) pushes as that token's owner instead, and the checks start on
+# their own.
+#
+# Nothing from the pull request is built or run here: the version is rewritten
+# with awk and sed only.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+concurrency:
+  group: dependency-bump-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  bump:
+    name: raise the patch version
+    # Only Dependabot's own pushes. The commit this job pushes comes from
+    # someone else, so it does not start the job again.
+    if: github.actor == 'dependabot[bot]' && github.event.pull_request.user.login == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      BASE_REF: ${{ github.base_ref }}
+      HEAD_REF: ${{ github.head_ref }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.head_ref }}
+          token: ${{ secrets.VERSION_BUMP_TOKEN || github.token }}
+      - name: Raise the version of each application the pull request touches
+        run: |
+          # Each application lists the files that carry its version, the first
+          # being the one its version check reads. A new application gets a
+          # line here when it gets an entry in .github/dependabot.yml.
+          version_files() {
+            case "$1" in
+              eleven-zip) echo "Cargo.toml Cargo.lock" ;;
+              winwin) echo "Cargo.toml Cargo.lock" ;;
+              draftpad) echo "src-tauri/tauri.conf.json package.json src-tauri/Cargo.toml src-tauri/Cargo.lock" ;;
+              *) return 1 ;;
+            esac
+          }
+          # Prints the version a file holds for application $1.
+          read_version() {
+            case "$2" in
+              *.json) sed -n 's/^  "version": "\([^"]*\)",*$/\1/p' | head -n 1 ;;
+              *Cargo.toml) awk '/^\[package\]/{p=1;next} /^\[/{p=0} p && /^version *=/{gsub(/[" ]/,"");sub(/^version=/,"");print;exit}' ;;
+              *Cargo.lock) awk -v name="$1" '$0 == "name = \"" name "\"" {getline; gsub(/[" ]/,""); sub(/^version=/,""); print; exit}' ;;
+            esac
+          }
+          # Rewrites, in place, the version file $2 holds for application $1.
+          write_version() {
+            tmp="$(mktemp)"
+            case "$2" in
+              *.json) sed '0,/^  "version": "[^"]*"/s//  "version": "'"$3"'"/' "$2" > "${tmp}" ;;
+              *Cargo.toml) awk -v v="$3" '/^\[package\]/{p=1} /^\[/ && !/^\[package\]/{p=0} p && !done && /^version *=/{print "version = \"" v "\""; done=1; next} {print}' "$2" > "${tmp}" ;;
+              *Cargo.lock) awk -v name="$1" -v v="$3" 'hit && /^version = /{print "version = \"" v "\""; hit=0; next} {hit = ($0 == "name = \"" name "\""); print}' "$2" > "${tmp}" ;;
+            esac
+            mv "${tmp}" "$2"
+          }
+
+          git fetch --depth=1 origin "${BASE_REF}"
+          apps="$(gh pr diff --name-only "${PR_NUMBER}" | awk -F/ 'NF > 1 && $1 !~ /^\./ {print $1}' | sort -u)"
+          if [ -z "${apps}" ]; then
+            echo "::notice::no application changed, so there is no version to raise."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          for app in ${apps}; do
+            if ! files="$(version_files "${app}")"; then
+              echo "::error::${app} has no entry in dependency-bump.yml, so its version cannot be raised. Add one next to its entry in .github/dependabot.yml."
+              exit 1
+            fi
+            main_file="${app}/${files%% *}"
+            if ! git cat-file -e "FETCH_HEAD:${main_file}" 2>/dev/null; then
+              echo "::notice::${app} is new on ${BASE_REF}; its first release needs no raise."
+              continue
+            fi
+            base="$(git show "FETCH_HEAD:${main_file}" | read_version "${app}" "${main_file}")"
+            current="$(read_version "${app}" "${main_file}" < "${main_file}")"
+            if [ -z "${base}" ] || [ -z "${current}" ]; then
+              echo "::error::could not read the version out of ${main_file}"
+              exit 1
+            fi
+            if [ "${current}" != "${base}" ] && [ "$(printf '%s\n%s\n' "${base}" "${current}" | sort -V | tail -n 1)" = "${current}" ]; then
+              echo "::notice::${app} is already ${current}, ahead of ${base} on ${BASE_REF}."
+              continue
+            fi
+            IFS=. read -r major minor patch <<< "${base%%[-+]*}"
+            next="${major}.${minor}.$((patch + 1))"
+            for f in ${files}; do
+              write_version "${app}" "${app}/${f}" "${next}"
+              got="$(read_version "${app}" "${app}/${f}" < "${app}/${f}")"
+              if [ "${got}" != "${next}" ]; then
+                echo "::error::${app}/${f} reads ${got} after writing ${next}"
+                exit 1
+              fi
+            done
+            git add -- $(printf "${app}/%s " ${files})
+            git commit -m "${app}: raise the version to ${next} for the dependency update"
+            echo "::notice::${app} goes from ${base} to ${next}."
+          done
+          git push origin "HEAD:${HEAD_REF}"
