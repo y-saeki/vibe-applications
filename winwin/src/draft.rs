@@ -8,13 +8,14 @@ use std::collections::BTreeSet;
 
 use crate::config::{Config, Shortcut};
 use crate::hotkey::{self, Hotkey, Keys};
-use crate::layout::{self, Anchor, Placement, Ratio, Rect};
+use crate::layout::{self, Anchor, Placement, Ratio, Rect, Size};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Draft {
     /// The strokes as recorded; empty until a shortcut is chosen.
     pub keys: Vec<Hotkey>,
     pub anchor: Anchor,
+    /// The ratio as typed; left empty, the window keeps its width.
     pub width: String,
     pub height: String,
 }
@@ -35,14 +36,20 @@ impl Draft {
         Draft {
             keys: s.keys.strokes().to_vec(),
             anchor: p.anchor,
-            width: p.width.to_string(),
-            height: p.height.to_string(),
+            width: size_text(p.width),
+            height: size_text(p.height),
         }
     }
 
     pub fn placement(&self) -> Result<Placement, String> {
-        let field =
-            |label: &str, text: &str| text.parse::<Ratio>().map_err(|e| format!("{label}: {e}"));
+        let field = |label: &str, text: &str| {
+            if text.trim().is_empty() {
+                return Ok(Size::Keep);
+            }
+            text.parse::<Ratio>()
+                .map(Size::Ratio)
+                .map_err(|e| format!("{label}: {e}"))
+        };
         Ok(Placement {
             anchor: self.anchor,
             width: field("幅", &self.width)?,
@@ -63,26 +70,43 @@ impl Draft {
 
     /// A screen of `size` shrunk into `bounds`, and where on it this row puts
     /// a window; `None` for the window while the fields do not make a
-    /// placement yet.
-    pub fn picture(
-        &self,
-        size: (i32, i32),
-        bounds: Rect,
-        anchor: Anchor,
-    ) -> Option<(Rect, Option<Rect>)> {
+    /// placement yet. A width or height that is kept is drawn as half the
+    /// screen, there being no window to take it from.
+    pub fn picture(&self, size: (i32, i32), bounds: Rect, anchor: Anchor) -> Option<Picture> {
         let screen = layout::miniature(size, bounds, anchor)?;
-        let window = self.placement().ok().map(|p| p.resolve(screen));
-        Some((screen, window))
+        let stand_in = (screen.width() / 2, screen.height() / 2);
+        let window = self.placement().ok().map(|p| {
+            let rect = p.resolve(screen, stand_in);
+            let (w, h) = (p.width == Size::Keep, p.height == Size::Keep);
+            Frame {
+                rect,
+                loose: Sides {
+                    left: w && rect.left > screen.left,
+                    top: h && rect.top > screen.top,
+                    right: w && rect.right < screen.right,
+                    bottom: h && rect.bottom < screen.bottom,
+                },
+            }
+        });
+        Some(Picture { screen, window })
     }
 
-    /// Where the row puts a window, in words: 左 1/2 × 1.
+    /// Where the row puts a window, in words: 左 , w1/2 x h1. A kept width
+    /// or height is left out (左上 , h1/3), and with both kept the anchor
+    /// stands alone.
     pub fn placement_text(&self) -> String {
-        format!(
-            "{} {} × {}",
-            self.anchor.label(),
-            self.width.trim(),
-            self.height.trim()
-        )
+        let sizes: Vec<String> = [("w", &self.width), ("h", &self.height)]
+            .into_iter()
+            .filter_map(|(axis, text)| {
+                let text = text.trim();
+                (!text.is_empty()).then(|| format!("{axis}{text}"))
+            })
+            .collect();
+        if sizes.is_empty() {
+            self.anchor.label().to_string()
+        } else {
+            format!("{} , {}", self.anchor.label(), sizes.join(" x "))
+        }
     }
 
     /// The row in one line, as errors name it: the keys first, then where
@@ -94,6 +118,60 @@ impl Draft {
             hotkey::strokes_text(&self.keys)
         };
         format!("{keys}    {}", self.placement_text())
+    }
+}
+
+/// A row's placement drawn on a shrunk screen.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Picture {
+    pub screen: Rect,
+    pub window: Option<Frame>,
+}
+
+/// The window in a [`Picture`], and the edges of it that are drawn dashed:
+/// those of a kept width or height, where the edge lands depends on the
+/// window. An edge on the screen's edge stays put whatever the size, so it
+/// stays solid.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Frame {
+    pub rect: Rect,
+    pub loose: Sides,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Sides {
+    pub left: bool,
+    pub top: bool,
+    pub right: bool,
+    pub bottom: bool,
+}
+
+/// The pieces a dashed line from `from` to `to` is drawn in: dashes of
+/// `dash` with gaps of about `gap`, stretched so that the line starts and
+/// ends on a dash. Nothing when the line has no length.
+pub fn dashes(from: f64, to: f64, dash: f64, gap: f64) -> Vec<(f64, f64)> {
+    let length = to - from;
+    if length <= 0.0 {
+        return Vec::new();
+    }
+    let count = (((length + gap) / (dash + gap)).floor() as usize).max(1);
+    if count == 1 {
+        return vec![(from, to)];
+    }
+    let gap = (length - dash * count as f64) / (count - 1) as f64;
+    (0..count)
+        .map(|i| {
+            let start = from + (dash + gap) * i as f64;
+            (start, start + dash)
+        })
+        .collect()
+}
+
+/// What a draft's text field holds for `size`: empty when it is kept.
+fn size_text(size: Size) -> String {
+    match size {
+        Size::Ratio(r) => r.to_string(),
+        Size::Keep => String::new(),
     }
 }
 
@@ -422,14 +500,39 @@ mod tests {
     }
 
     #[test]
+    fn an_empty_field_keeps_the_size() {
+        let mut d = Draft::from_shortcut(&Config::defaults().shortcuts[0]);
+        d.width = "  ".into();
+        let s = d.to_shortcut().unwrap();
+        assert_eq!(s.placement.width, Size::Keep);
+        assert_eq!(d.placement_text(), "左 , h1");
+
+        let back = Draft::from_shortcut(&s);
+        assert_eq!((back.width.as_str(), back.height.as_str()), ("", "1"));
+        assert_eq!(back.to_shortcut().unwrap(), s);
+    }
+
+    #[test]
     fn list_lines_show_the_shortcut_and_the_placement() {
         let d = Draft::from_shortcut(&Config::defaults().shortcuts[0]);
-        assert_eq!(d.placement_text(), "左 1/2 × 1");
-        assert_eq!(d.list_text(), "Ctrl+Alt+Left    左 1/2 × 1");
-        assert_eq!(Draft::new().list_text(), "(未設定)    中央 1/2 × 1/2");
+        assert_eq!(d.placement_text(), "左 , w1/2 x h1");
+        assert_eq!(d.list_text(), "Ctrl+Alt+Left    左 , w1/2 x h1");
+        assert_eq!(Draft::new().list_text(), "(未設定)    中央 , w1/2 x h1/2");
         let mut d = d;
         d.keys.push("Ctrl+Alt+Up".parse().unwrap());
-        assert_eq!(d.list_text(), "Ctrl+Alt+Left, Up    左 1/2 × 1");
+        assert_eq!(d.list_text(), "Ctrl+Alt+Left, Up    左 , w1/2 x h1");
+
+        // A kept width or height is left out.
+        let mut d = Draft::new();
+        d.anchor = Anchor::TopLeft;
+        d.width = " ".into();
+        d.height = "1/3".into();
+        assert_eq!(d.placement_text(), "左上 , h1/3");
+        d.width = "2/3".into();
+        d.height = String::new();
+        assert_eq!(d.placement_text(), "左上 , w2/3");
+        d.width = String::new();
+        assert_eq!(d.placement_text(), "左上");
     }
 
     fn editor() -> Editor {
@@ -644,7 +747,7 @@ mod tests {
         assert_eq!(e.current(), Some(1));
         assert_eq!(
             error,
-            "(未設定)    中央 1/2 × 1/2: ショートカットを設定してください"
+            "(未設定)    中央 , w1/2 x h1/2: ショートカットを設定してください"
         );
     }
 
@@ -683,16 +786,75 @@ mod tests {
             bottom: 100,
         };
         let d = Draft::from_shortcut(&Config::defaults().shortcuts[0]);
-        let (screen, window) = d.picture((1920, 1080), bounds, Anchor::Center).unwrap();
+        let Picture { screen, window } = d.picture((1920, 1080), bounds, Anchor::Center).unwrap();
         assert_eq!((screen.width(), screen.height()), (160, 90));
         assert_eq!(screen.top, 5);
         let window = window.unwrap();
-        assert_eq!((window.left, window.top), (screen.left, screen.top));
-        assert_eq!((window.width(), window.height()), (80, 90));
+        assert_eq!(
+            (window.rect.left, window.rect.top),
+            (screen.left, screen.top)
+        );
+        assert_eq!((window.rect.width(), window.rect.height()), (80, 90));
+        assert_eq!(window.loose, Sides::default());
 
         let mut d = Draft::new();
         d.width = "5".into();
-        let (_, window) = d.picture((1920, 1080), bounds, Anchor::Center).unwrap();
-        assert_eq!(window, None);
+        let picture = d.picture((1920, 1080), bounds, Anchor::Center).unwrap();
+        assert_eq!(picture.window, None);
+    }
+
+    #[test]
+    fn kept_sizes_are_drawn_as_half_with_loose_edges_off_the_screen_edge() {
+        let bounds = Rect {
+            left: 0,
+            top: 0,
+            right: 160,
+            bottom: 90,
+        };
+        let frame = |anchor: Anchor, width: &str, height: &str| {
+            let d = Draft {
+                anchor,
+                width: width.into(),
+                height: height.into(),
+                ..Draft::new()
+            };
+            d.picture((1920, 1080), bounds, Anchor::Center)
+                .unwrap()
+                .window
+                .unwrap()
+        };
+        let sides = |left, top, right, bottom| Sides {
+            left,
+            top,
+            right,
+            bottom,
+        };
+
+        let f = frame(Anchor::TopLeft, "", "1/3");
+        assert_eq!((f.rect.width(), f.rect.height()), (80, 30));
+        assert_eq!(f.loose, sides(false, false, true, false));
+        let f = frame(Anchor::Right, "", "1");
+        assert_eq!(f.loose, sides(true, false, false, false));
+        let f = frame(Anchor::Center, "", "1/2");
+        assert_eq!(f.loose, sides(true, false, true, false));
+        let f = frame(Anchor::Center, "", "");
+        assert_eq!(f.loose, sides(true, true, true, true));
+        let f = frame(Anchor::BottomRight, "", "");
+        assert_eq!(f.loose, sides(true, true, false, false));
+    }
+
+    #[test]
+    fn dashes_start_and_end_on_a_dash() {
+        assert_eq!(
+            dashes(0.0, 10.0, 2.0, 2.0),
+            [(0.0, 2.0), (4.0, 6.0), (8.0, 10.0)]
+        );
+        // The gaps stretch to fill what the dashes leave.
+        assert_eq!(
+            dashes(1.0, 12.0, 3.0, 1.0),
+            [(1.0, 4.0), (5.0, 8.0), (9.0, 12.0)]
+        );
+        assert_eq!(dashes(0.0, 2.5, 2.0, 2.0), [(0.0, 2.5)]);
+        assert_eq!(dashes(5.0, 5.0, 2.0, 2.0), []);
     }
 }

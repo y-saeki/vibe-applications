@@ -25,7 +25,7 @@ use windows_reactor::*;
 
 use super::{autostart, config_path, error_box, icon, keyhook, modifiers_held, testwin};
 use crate::config::{Config, Theme};
-use crate::draft::{Click, Draft, Editor};
+use crate::draft::{self, Click, Draft, Editor, Frame, Picture};
 use crate::hotkey::{self, Arrow, Hotkey, Keycap, MOD_CONTROL, MOD_SHIFT, Recorder};
 use crate::layout::{Anchor, Rect};
 
@@ -675,20 +675,21 @@ impl Settings {
             .min_width(160.0)
             .on_selection_changed(context.callback(Msg::Anchor));
 
-        let ratio = |value: &str, on_change: fn(String) -> Msg| {
+        // Wide enough for the placeholder, which an empty field shows.
+        let ratio = |value: &str, kept: &str, on_change: fn(String) -> Msg| {
             TextBox::new()
                 .is_enabled(enabled)
                 .text(value.to_string())
-                .placeholder_text("1/2")
-                .width(120.0)
+                .placeholder_text(kept)
+                .width(144.0)
                 .on_text_changed(context.callback(on_change))
         };
         let size = StackPanel::new()
             .orientation(Orientation::Horizontal)
             .spacing(24.0)
             .children((
-                field("幅", ratio(&d.width, Msg::Width)),
-                field("高さ", ratio(&d.height, Msg::Height)),
+                field("幅", ratio(&d.width, "（幅を維持）", Msg::Width)),
+                field("高さ", ratio(&d.height, "（高さを維持）", Msg::Height)),
             ));
 
         let preview = Border::new()
@@ -922,25 +923,90 @@ fn picture(row: &Draft, work: (i32, i32), size: (f64, f64), anchor: Anchor) -> V
         bottom: (size.1 * SUBPIXEL) as i32,
     };
     let canvas = Canvas::new().width(size.0).height(size.1);
-    let Some((screen, window)) = row.picture(work, bounds, anchor) else {
+    let Some(Picture { screen, window }) = row.picture(work, bounds, anchor) else {
         return canvas.into();
     };
-    let rect = |r: Rect, fill: ThemeBrush| {
-        Border::new()
-            .background(fill)
-            .border_brush(ThemeBrush::CardStroke)
-            .border_thickness(Thickness::uniform(1.0))
-            .corner_radius(CornerRadius::uniform(2.0))
-            .width(f64::from(r.width()) / SUBPIXEL)
-            .height(f64::from(r.height()) / SUBPIXEL)
-            .canvas_left(f64::from(r.left) / SUBPIXEL)
-            .canvas_top(f64::from(r.top) / SUBPIXEL)
-    };
-    let window: View = match window {
-        Some(w) => rect(w, ThemeBrush::Accent).into(),
+    let screen = placed(Border::new(), screen)
+        .background(ThemeBrush::SolidBackground)
+        .border_brush(ThemeBrush::CardStroke)
+        .border_thickness(Thickness::uniform(1.0))
+        .corner_radius(CornerRadius::uniform(2.0));
+    let window = match window {
+        Some(frame) => window_view(frame, size.0 >= 100.0),
         None => View::empty(),
     };
-    canvas.children((rect(screen, ThemeBrush::SolidBackground), window))
+    canvas.children((screen, window))
+}
+
+/// `border` sized and placed on a picture's canvas where `r` is.
+fn placed(border: Border, r: Rect) -> Border {
+    border
+        .width(f64::from(r.width()) / SUBPIXEL)
+        .height(f64::from(r.height()) / SUBPIXEL)
+        .canvas_left(f64::from(r.left) / SUBPIXEL)
+        .canvas_top(f64::from(r.top) / SUBPIXEL)
+}
+
+/// The window in a picture: a tinted, rounded rectangle whose loose edges
+/// are dashed. WinUI's `Border` draws no dashes, so those edges are left out
+/// of its outline and drawn as short lines over it, along their straight
+/// part between the rounded corners.
+fn window_view(frame: Frame, large: bool) -> View {
+    let (stroke, radius, dash, gap) = if large {
+        (2.0, 6.0, 6.0, 4.0)
+    } else {
+        (1.0, 2.0, 2.0, 1.5)
+    };
+    let loose = frame.loose;
+    let edge = |is_loose: bool| if is_loose { 0.0 } else { stroke };
+    let fill = placed(Border::new(), frame.rect)
+        .background(ThemeBrush::Accent)
+        .opacity(0.22)
+        .corner_radius(CornerRadius::uniform(radius));
+    let outline = placed(Border::new(), frame.rect)
+        .border_brush(ThemeBrush::Accent)
+        .border_thickness(Thickness::new(
+            edge(loose.left),
+            edge(loose.top),
+            edge(loose.right),
+            edge(loose.bottom),
+        ))
+        .corner_radius(CornerRadius::uniform(radius));
+
+    let r = frame.rect;
+    let [left, top, right, bottom] =
+        [r.left, r.top, r.right, r.bottom].map(|v| f64::from(v) / SUBPIXEL);
+    let inset = stroke / 2.0;
+    let mut segments = Vec::new();
+    for (x, on) in [(left + inset, loose.left), (right - inset, loose.right)] {
+        if on {
+            for (a, b) in draft::dashes(top + radius, bottom - radius, dash, gap) {
+                segments.push((x, a, x, b));
+            }
+        }
+    }
+    for (y, on) in [(top + inset, loose.top), (bottom - inset, loose.bottom)] {
+        if on {
+            for (a, b) in draft::dashes(left + radius, right - radius, dash, gap) {
+                segments.push((a, y, b, y));
+            }
+        }
+    }
+    let dashes = View::keyed_fragment(segments.into_iter().enumerate().map(
+        |(i, (x1, y1, x2, y2))| {
+            (
+                i.to_string(),
+                Line::new()
+                    .stroke(ThemeBrush::Accent)
+                    .stroke_thickness(stroke)
+                    .x1(x1)
+                    .y1(y1)
+                    .x2(x2)
+                    .y2(y2),
+            )
+        },
+    ));
+    View::fragment((fill, outline, dashes))
 }
 
 fn close(context: &ComponentContext<Settings>) {
