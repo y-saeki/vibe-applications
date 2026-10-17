@@ -155,12 +155,7 @@ impl Component for Settings {
     }
 
     fn view(&self, _input: &Input, context: &mut ViewContext<Self>) -> View {
-        // CI passes a pull request's commit, the same one the installer
-        // carries; main's build leaves it unset.
-        context.window_title(title::window_title(
-            env!("CARGO_PKG_VERSION"),
-            option_env!("ELEVEN_ZIP_COMMIT"),
-        ));
+        context.window_title(title::window_title(env!("CARGO_PKG_VERSION")));
         context.window_visuals(
             WindowVisuals::new()
                 .backdrop(WindowBackdrop::Mica)

@@ -10,15 +10,9 @@
 /// this alone; installer/installer.nsi closes the window by it.
 const NAME: &str = "eleven-zip の設定";
 
-/// The settings window's title: the version, and for a pull request's build
-/// the commit it came from as semver build metadata (`0.1.2+047ba8f`), the
-/// same form the installer and 設定 → アプリ show. A build without a commit,
-/// such as main's, shows the plain version.
-pub fn window_title(version: &str, commit: Option<&str>) -> String {
-    match commit.filter(|c| !c.is_empty()) {
-        Some(c) => format!("{NAME} - v{version}+{c}"),
-        None => format!("{NAME} - v{version}"),
-    }
+/// The settings window's title, with the version (`0.1.2`).
+pub fn window_title(version: &str) -> String {
+    format!("{NAME} - v{version}")
 }
 
 /// Whether a window with this title is eleven-zip's settings window, of this
@@ -35,23 +29,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_title_shows_the_version_and_a_pull_requests_commit() {
-        assert_eq!(window_title("0.1.2", None), "eleven-zip の設定 - v0.1.2");
-        assert_eq!(
-            window_title("0.1.2", Some("")),
-            "eleven-zip の設定 - v0.1.2"
-        );
-        assert_eq!(
-            window_title("0.1.2", Some("047ba8f")),
-            "eleven-zip の設定 - v0.1.2+047ba8f"
-        );
+    fn the_title_shows_the_version() {
+        assert_eq!(window_title("0.1.2"), "eleven-zip の設定 - v0.1.2");
     }
 
     #[test]
     fn any_versions_settings_window_is_recognised() {
-        assert!(is_settings(&window_title("0.1.2", None)));
-        assert!(is_settings(&window_title("0.1.2", Some("047ba8f"))));
-        assert!(is_settings(&window_title("10.0.0", None)));
+        assert!(is_settings(&window_title("0.1.2")));
+        assert!(is_settings(&window_title("10.0.0")));
         // 0.1.1 and earlier.
         assert!(is_settings("eleven-zip の設定"));
     }

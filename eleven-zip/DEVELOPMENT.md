@@ -78,11 +78,9 @@ CI(`.github/workflows/eleven-zip.yml`)は `windows-latest` でこの 3 つとリ
 `main` に push されたとき、`Cargo.toml` の `version` に対応するタグ `eleven-zip-v<version>` の Release がまだなければ、
 CI が作ったインストーラを添えて作成します。バージョンを上げずにマージしても Release は作られません。
 
-Pull Request でビルドしたインストーラは、バージョンの後ろに Pull Request の先頭コミットの短いハッシュを semver の
-ビルドメタデータとして付けます(`0.1.2+047ba8f`)。インストーラのファイル名、「設定」→「アプリ」に出るバージョン、
-設定画面のタイトルがこの形になるので、手元に入っているのがどの Pull Request のどのコミットか見分けられます。
-ハッシュは `cargo build` に環境変数 `ELEVEN_ZIP_COMMIT` で、`makensis` に `/DBUILD=<commit>` で渡します。数字しか
-受け付けない `VIProductVersion` には付けません。`main` のビルドは Release に載るものなので、`0.1.2` のままです。
+Pull Request でビルドしたものも、バージョンは Release と同じ `0.1.2` の形です。コミットのハッシュは付けません。
+eleven-zip のインストーラが、ファイル名にハッシュを付けたときだけ Microsoft Defender に `Trojan:Win32/Bearfoos.A!ml`
+として検出されたためです(#188)。どのコミットのビルドかは、Pull Request に CI が書くコメントで確かめます。
 
 Pull Request では `.github/workflows/eleven-zip-version.yml` が、`eleven-zip/` を変更しているのにバージョンが base ブランチと
 同じままなら失敗します。リリースしない変更には `no-release` ラベルを付けてください。バージョンを上げたら
@@ -225,7 +223,7 @@ WinUI 3 の画面で、Windows 11 の設定アプリにならってカードを�
 開いたとき、7-Zip がまだないか、自動更新が有効で確認の時期なら、更新を確認します。確認と取得は
 `spawn_background` で別スレッドで行い、終わると結果のメッセージが画面に届きます。
 
-設定画面のタイトルにはバージョンが入ります(`eleven-zip の設定 - v0.1.2`。Pull Request のビルドは `v0.1.2+047ba8f`)。
+設定画面のタイトルにはバージョンが入ります(`eleven-zip の設定 - v0.1.2`)。
 すでに設定画面が開いていれば、クラス名(`WinUIDesktopWin32WindowClass`)のウィンドウからタイトルで設定画面を
 見つけて前に出し、新しいウィンドウは開きません。タイトルは `eleven-zip の設定` だけか、`eleven-zip の設定 - v` で
 始まるものを設定画面とみなします(`title.rs`)。バージョンの違う eleven-zip の画面も見つかります。
