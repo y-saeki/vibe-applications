@@ -30,7 +30,7 @@ pub struct Loaded {
 
 #[cfg(target_os = "windows")]
 fn started_for_preferences() -> bool {
-    crate::jumplist::started_for_preferences()
+    crate::jumplist::started_with(crate::jumplist::PREFERENCES_ARG)
 }
 
 #[cfg(not(target_os = "windows"))]

@@ -1,10 +1,12 @@
 //! Windows taskbar jump list (Windows only).
 //!
-//! Right-clicking the taskbar button shows a "設定" task. Jump list tasks are
-//! shortcuts, so the task can only start the executable again — it passes
-//! [`PREFERENCES_ARG`], and `tauri-plugin-single-instance` (wired up in
+//! Right-clicking the taskbar button shows a "設定" task and, under it,
+//! "ウィンドウ位置をリセット". Jump list tasks are shortcuts, so a task can only
+//! start the executable again — it passes [`PREFERENCES_ARG`] or
+//! [`RESET_POSITION_ARG`], and `tauri-plugin-single-instance` (wired up in
 //! `lib.rs`) hands that argument to the instance that is already running.
-//! A cold start reads the same argument in `commands::load_state`.
+//! A cold start reads the same arguments, in `commands::load_state` and
+//! `lib.rs`'s `restore_window`.
 
 use std::ffi::OsStr;
 use std::iter::once;
@@ -32,12 +34,24 @@ use windows::Win32::UI::Shell::{
 /// The argument the "設定" task passes to the process it starts.
 pub const PREFERENCES_ARG: &str = "--preferences";
 
-const TASK_TITLE: &str = "設定";
-const TASK_DESCRIPTION: &str = "draftpad の環境設定を開きます";
+/// The argument the "ウィンドウ位置をリセット" task passes to the process it
+/// starts.
+pub const RESET_POSITION_ARG: &str = "--reset-window-position";
 
-/// True when this process was started by the jump list task.
-pub fn started_for_preferences() -> bool {
-    std::env::args().any(|arg| arg == PREFERENCES_ARG)
+/// Each task, in the order the taskbar lists them: the argument it starts the
+/// executable with, its label and its tooltip.
+const TASKS: [(&str, &str, &str); 2] = [
+    (PREFERENCES_ARG, "設定", "draftpad の環境設定を開きます"),
+    (
+        RESET_POSITION_ARG,
+        "ウィンドウ位置をリセット",
+        "draftpad のウィンドウを、いま使っているディスプレイの中央に戻します",
+    ),
+];
+
+/// True when this process was started by the jump list task that passes `arg`.
+pub fn started_with(arg: &str) -> bool {
+    std::env::args().any(|given| given == arg)
 }
 
 /// Publishes the jump list for this process.
@@ -72,33 +86,35 @@ unsafe fn build(exe: &Path) -> Result<()> {
     let list: ICustomDestinationList =
         CoCreateInstance(&DestinationList, None, CLSCTX_INPROC_SERVER)?;
     // BeginList reports how many slots the taskbar will show and hands back the
-    // destinations the user removed by hand. We add a single task and no
+    // destinations the user removed by hand. We add only tasks and no
     // destinations, so neither is of any use to us.
     let mut slots = 0u32;
     let _removed: IObjectArray = list.BeginList(&mut slots)?;
 
     let tasks: IObjectCollection =
         CoCreateInstance(&EnumerableObjectCollection, None, CLSCTX_INPROC_SERVER)?;
-    tasks.AddObject(&preferences_task(exe)?)?;
+    for (arg, title, description) in TASKS {
+        tasks.AddObject(&task(exe, arg, title, description)?)?;
+    }
     list.AddUserTasks(&tasks.cast::<IObjectArray>()?)?;
     list.CommitList()
 }
 
-/// The "設定" entry: this executable, started again with [`PREFERENCES_ARG`].
-unsafe fn preferences_task(exe: &Path) -> Result<IShellLinkW> {
+/// One entry: this executable, started again with `arg`.
+unsafe fn task(exe: &Path, arg: &str, title: &str, description: &str) -> Result<IShellLinkW> {
     let task: IShellLinkW = CoCreateInstance(&ShellLink, None, CLSCTX_INPROC_SERVER)?;
     let path = wide(exe);
     task.SetPath(PCWSTR(path.as_ptr()))?;
     task.SetIconLocation(PCWSTR(path.as_ptr()), 0)?;
-    let args = wide(PREFERENCES_ARG);
+    let args = wide(arg);
     task.SetArguments(PCWSTR(args.as_ptr()))?;
-    let description = wide(TASK_DESCRIPTION);
+    let description = wide(description);
     task.SetDescription(PCWSTR(description.as_ptr()))?;
 
     // The label the taskbar draws does not come from the shortcut itself: it is
     // System.Title in the link's property store.
     let store: IPropertyStore = task.cast()?;
-    store.SetValue(&PKEY_Title, &lpwstr(TASK_TITLE)?)?;
+    store.SetValue(&PKEY_Title, &lpwstr(title)?)?;
     store.Commit()?;
     Ok(task)
 }
