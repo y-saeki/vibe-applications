@@ -35,9 +35,13 @@ use crate::layout::{Anchor, Rect};
 const CLIENT: (f64, f64) = (900.0, 690.0);
 /// The picture of a placement under the fields.
 const PREVIEW: (f64, f64) = (360.0, 200.0);
+/// The list's width. The rest of the client area goes to the fields and the
+/// preview, which take all of it.
+const LIST_WIDTH: f64 = 436.0;
 /// The columns at the right of each line in the list: the anchor, the width
-/// and the height. They are fixed so that they line up from line to line.
-const PLACEMENT_COLUMNS: [f64; 3] = [40.0, 64.0, 64.0];
+/// and the height. They are fixed so that they line up from line to line;
+/// a value too long for its column ends in an ellipsis.
+const PLACEMENT_COLUMNS: [f64; 3] = [32.0, 40.0, 40.0];
 /// Pictures are worked out in whole units this many times finer than a DIP,
 /// so that the picture's edges do not snap to whole DIPs.
 const SUBPIXEL: f64 = 4.0;
@@ -326,7 +330,7 @@ impl Component for Settings {
             ));
 
         let body = Grid::new()
-            .columns([GridLength::Pixel(420.0), GridLength::STAR])
+            .columns([GridLength::Pixel(LIST_WIDTH), GridLength::STAR])
             .column_spacing(24.0)
             .grid_row(1)
             .children((self.list(context), self.form(input, context)));
@@ -457,9 +461,9 @@ impl Settings {
                 .vertical_alignment(VerticalAlignment::Center)
                 .into()
         } else if strokes.is_empty() {
-            keycaps(hotkey::keycaps(r.modifiers, 0), true)
+            keycaps(hotkey::keycaps(r.modifiers, 0), Caps::LARGE, true)
         } else {
-            strokes_view(&strokes, true)
+            strokes_view(&strokes, Caps::LARGE, true)
         };
         let problem = match &result {
             Some(Err(e)) => e.to_string(),
@@ -557,12 +561,12 @@ impl Settings {
                     GridLength::Pixel(width),
                     GridLength::Pixel(height),
                 ])
-                .column_spacing(12.0)
+                .column_spacing(8.0)
                 .grid_column(1)
                 .children((
                     Border::new()
                         .vertical_alignment(VerticalAlignment::Center)
-                        .content(shortcut_view(row)),
+                        .content(shortcut_view(row, Caps::SMALL)),
                     cell(row.anchor.label().to_string(), 1),
                     cell(row.width_text(), 2),
                     cell(row.height_text(), 3),
@@ -584,7 +588,7 @@ impl Settings {
                     Color::transparent()
                 })
                 .corner_radius(CornerRadius::uniform(4.0))
-                .padding(Thickness::new(4.0, 6.0, 8.0, 6.0))
+                .padding(Thickness::new(4.0, 8.0, 4.0, 8.0))
                 .content(
                     Grid::new()
                         .columns([GridLength::Pixel(3.0), GridLength::STAR])
@@ -667,7 +671,7 @@ impl Settings {
             .orientation(Orientation::Horizontal)
             .spacing(12.0)
             .children((
-                shortcut_view(d),
+                shortcut_view(d, Caps::MEDIUM),
                 Button::new()
                     .is_enabled(enabled)
                     .on_click(context.message(Msg::Record))
@@ -769,7 +773,7 @@ impl Settings {
 }
 
 /// A row's shortcut as keycaps, or 未設定.
-fn shortcut_view(d: &Draft) -> View {
+fn shortcut_view(d: &Draft, size: Caps) -> View {
     if d.keys.is_empty() {
         TextBlock::new()
             .text("未設定")
@@ -777,35 +781,84 @@ fn shortcut_view(d: &Draft) -> View {
             .vertical_alignment(VerticalAlignment::Center)
             .into()
     } else {
-        strokes_view(&d.keys, false)
+        strokes_view(&d.keys, size, false)
     }
+}
+
+/// How large keycaps are drawn.
+#[derive(Clone, Copy)]
+struct Caps {
+    height: f64,
+    min_width: f64,
+    text_size: f64,
+    radius: f64,
+    /// Inside a cap, at either side of its text.
+    padding: f64,
+    /// Between caps, and around the comma between strokes.
+    spacing: f64,
+}
+
+impl Caps {
+    /// The recording dialog's, big enough to read at a glance.
+    const LARGE: Caps = Caps {
+        height: 56.0,
+        min_width: 64.0,
+        text_size: 18.0,
+        radius: 6.0,
+        padding: 10.0,
+        spacing: 12.0,
+    };
+    /// The shortcut field's, and the dialog's when large ones do not fit.
+    const MEDIUM: Caps = Caps {
+        height: 32.0,
+        min_width: 36.0,
+        text_size: 14.0,
+        radius: 4.0,
+        padding: 10.0,
+        spacing: 4.0,
+    };
+    /// The list's, narrow enough that four modifiers and two keys fit
+    /// beside the placement columns.
+    const SMALL: Caps = Caps {
+        height: 28.0,
+        min_width: 28.0,
+        text_size: 13.0,
+        radius: 4.0,
+        padding: 7.0,
+        spacing: 3.0,
+    };
 }
 
 /// Strokes one after another as keycaps, with commas between them as the
 /// file writes them; the second without the modifiers it shares with the
 /// first. `dialog` is the recording dialog's: centered, and large caps as
-/// long as they fit.
-fn strokes_view(strokes: &[Hotkey], dialog: bool) -> View {
+/// long as they fit, whatever `size` says.
+fn strokes_view(strokes: &[Hotkey], size: Caps, dialog: bool) -> View {
     let groups = hotkey::strokes_caps(strokes);
     let caps: usize = groups.iter().map(Vec::len).sum();
-    let large = dialog && caps <= LARGE_CAPS;
-    let text_size = if large { 18.0 } else { 14.0 };
+    let size = match dialog {
+        true if caps <= LARGE_CAPS => Caps::LARGE,
+        true => Caps::MEDIUM,
+        false => size,
+    };
     let children = groups.into_iter().enumerate().flat_map(|(i, caps)| {
         let comma: Option<(usize, View)> = (i > 0).then(|| {
             (
                 2 * i - 1,
                 TextBlock::new()
                     .text(",")
-                    .font_size(text_size)
+                    .font_size(size.text_size)
                     .vertical_alignment(VerticalAlignment::Bottom)
                     .into(),
             )
         });
-        comma.into_iter().chain([(2 * i, keycaps(caps, large))])
+        comma
+            .into_iter()
+            .chain([(2 * i, keycaps(caps, size, dialog))])
     });
     StackPanel::new()
         .orientation(Orientation::Horizontal)
-        .spacing(if large { 12.0 } else { 4.0 })
+        .spacing(size.spacing)
         .horizontal_alignment(if dialog {
             HorizontalAlignment::Center
         } else {
@@ -816,21 +869,15 @@ fn strokes_view(strokes: &[Hotkey], dialog: bool) -> View {
 }
 
 /// Keys drawn as keycaps in a row, accent colored as Windows' own settings
-/// draw shortcuts. `large` is the recording dialog's, big enough to read at
-/// a glance. The caps are pictures, not buttons: they do nothing when
-/// clicked.
-fn keycaps(caps: Vec<Keycap>, large: bool) -> View {
-    let (height, min_width, text_size, radius) = if large {
-        (56.0, 64.0, 18.0, 6.0)
-    } else {
-        (32.0, 36.0, 14.0, 4.0)
-    };
+/// draw shortcuts. `centered` is the recording dialog's. The caps are
+/// pictures, not buttons: they do nothing when clicked.
+fn keycaps(caps: Vec<Keycap>, size: Caps, centered: bool) -> View {
     let caps = caps.into_iter().enumerate().map(|(i, cap)| {
         let face: View = match cap {
-            Keycap::Arrow(arrow) => chevron(arrow, text_size),
+            Keycap::Arrow(arrow) => chevron(arrow, size.text_size),
             _ => TextBlock::new()
                 .text(cap.label().unwrap_or_default())
-                .font_size(text_size)
+                .font_size(size.text_size)
                 .foreground(ON_ACCENT)
                 .horizontal_alignment(HorizontalAlignment::Center)
                 .vertical_alignment(VerticalAlignment::Center)
@@ -838,17 +885,17 @@ fn keycaps(caps: Vec<Keycap>, large: bool) -> View {
         };
         let cap = Border::new()
             .background(ThemeBrush::Accent)
-            .corner_radius(CornerRadius::uniform(radius))
-            .padding(Thickness::xy(10.0, 0.0))
-            .height(height)
-            .min_width(min_width)
+            .corner_radius(CornerRadius::uniform(size.radius))
+            .padding(Thickness::xy(size.padding, 0.0))
+            .height(size.height)
+            .min_width(size.min_width)
             .content(face);
         (i, cap)
     });
     StackPanel::new()
         .orientation(Orientation::Horizontal)
-        .spacing(if large { 12.0 } else { 4.0 })
-        .horizontal_alignment(if large {
+        .spacing(size.spacing)
+        .horizontal_alignment(if centered {
             HorizontalAlignment::Center
         } else {
             HorizontalAlignment::Left
