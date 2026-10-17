@@ -124,9 +124,10 @@ impl Sizes {
         let Some(entry) = self.windows.get_mut(&window) else {
             return false;
         };
-        // The move loop winwin started itself, at the size it gave back.
+        // The move loop winwin started itself, at the size it gave back:
+        // nothing to watch, the drop settles it.
         if let Drag::Resumed { .. } = entry.drag {
-            return true;
+            return false;
         }
         if resizing || !same_size(entry.placed, current) {
             self.windows.remove(&window);
@@ -289,8 +290,8 @@ mod tests {
         // The loop may have put the window back where the drag started.
         let ended = sizes.drag_ended(W, LEFT_HALF, 96, (250, 12), false, true);
         assert_eq!(ended, Ended::Resume(rect(50, 2, 850, 602)));
-        // The new loop is winwin's own: watched, and settled on the drop.
-        assert!(sizes.drag_started(W, rect(50, 2, 850, 602), false));
+        // The new loop is winwin's own: not watched, settled on the drop.
+        assert!(!sizes.drag_started(W, rect(50, 2, 850, 602), false));
         let dropped = rect(500, 300, 1300, 900);
         assert_eq!(
             sizes.drag_ended(W, dropped, 96, (700, 310), false, false),

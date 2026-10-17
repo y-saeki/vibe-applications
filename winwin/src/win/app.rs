@@ -281,13 +281,6 @@ fn install_move_size_hook() -> HWINEVENTHOOK {
     }
 }
 
-/// TEMPORARY (#149 investigation): what the drag handling sees, readable
-/// with Sysinternals DebugView. To be removed before merging.
-fn trace(text: &str) {
-    let text = HSTRING::from(format!("winwin: {text}\n"));
-    unsafe { windows::Win32::System::Diagnostics::Debug::OutputDebugStringW(&text) };
-}
-
 fn cursor_pos() -> (i32, i32) {
     let mut cursor = POINT::default();
     let _ = unsafe { GetCursorPos(&mut cursor) };
@@ -295,8 +288,8 @@ fn cursor_pos() -> (i32, i32) {
 }
 
 /// Gives a placed window its size back when it is dragged away
-/// (`restore.rs` decides). Between the start and the end, the window's own
-/// thread is watched for it to move.
+/// (`restore.rs` decides). Between the start and the first move, the
+/// window's own thread is watched for it to move.
 extern "system" fn on_move_size(
     _hook: HWINEVENTHOOK,
     event: u32,
@@ -320,11 +313,7 @@ extern "system" fn on_move_size(
         EVENT_SYSTEM_MOVESIZESTART => {
             stop_watching_drag();
             let resizing = mover::is_resize_cursor();
-            let watching = with_app(|app| app.sizes.drag_started(window, current, resizing));
-            trace(&format!(
-                "start {window:#x} at {current:?} resizing={resizing} watching={watching:?}"
-            ));
-            if watching == Some(true) {
+            if with_app(|app| app.sizes.drag_started(window, current, resizing)) == Some(true) {
                 watch_drag(hwnd);
             }
         }
@@ -339,16 +328,10 @@ extern "system" fn on_move_size(
                     .drag_ended(window, current, dpi, cursor, arranged, down)
             })
             .unwrap_or(Ended::Leave);
-            trace(&format!(
-                "end {window:#x} at {current:?} cursor={cursor:?} arranged={arranged} down={down} -> {ended:?}"
-            ));
             match ended {
                 Ended::Leave => {}
                 Ended::Put(rect) => mover::put(hwnd, rect),
-                Ended::Resume(rect) => {
-                    mover::resume_drag(hwnd, rect, cursor);
-                    trace(&format!("resumed at {:?}", mover::window_rect(hwnd)));
-                }
+                Ended::Resume(rect) => mover::resume_drag(hwnd, rect, cursor),
             }
         }
         _ => {}
@@ -373,10 +356,6 @@ fn watch_drag(hwnd: HWND) {
             WINEVENT_OUTOFCONTEXT,
         )
     };
-    trace(&format!(
-        "watch thread {thread} hook_ok={}",
-        !hook.is_invalid()
-    ));
     if hook.is_invalid() {
         return;
     }
@@ -415,9 +394,8 @@ extern "system" fn on_drag_step(
     };
     let cursor = cursor_pos();
     let stop = with_app(|app| app.sizes.moved(window, current, cursor)) == Some(true);
-    trace(&format!("step {window:#x} at {current:?} stop={stop}"));
     if stop {
-        // TEMPORARY: keep watching until the loop ends, for the trace.
+        stop_watching_drag();
         mover::stop_drag(hwnd);
     }
 }
