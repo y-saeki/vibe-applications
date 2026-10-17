@@ -41,7 +41,7 @@ const LIST_WIDTH: f64 = 436.0;
 /// The columns at the right of each line in the list: the anchor, the width
 /// and the height. They are fixed so that they line up from line to line;
 /// a value too long for its column ends in an ellipsis.
-const PLACEMENT_COLUMNS: [f64; 3] = [32.0, 40.0, 40.0];
+const PLACEMENT_COLUMNS: [f64; 3] = [32.0, 44.0, 44.0];
 /// Pictures are worked out in whole units this many times finer than a DIP,
 /// so that the picture's edges do not snap to whole DIPs.
 const SUBPIXEL: f64 = 4.0;
