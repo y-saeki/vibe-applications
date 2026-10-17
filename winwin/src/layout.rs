@@ -44,7 +44,7 @@ impl Ratio {
                 .parse::<f64>()
                 .ok()
                 .and_then(|p| Ratio::new(p / 100.0))
-                .ok_or_else(|| RatioError(s.to_string())),
+                .ok_or(RatioError),
             None => s.parse(),
         }
     }
@@ -60,13 +60,25 @@ impl Ratio {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct RatioError(String);
+pub struct RatioError;
 
 impl fmt::Display for RatioError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("画面に対する比率を入力してください（例: 2/3, 0.75, 1）")
+    }
+}
+
+/// A ratio the config file could not read. Unlike [`RatioError`], which the
+/// settings window shows next to the field, it names the value, since the
+/// parser points only at the `[[shortcut]]` table it is in.
+#[derive(Debug, PartialEq, Eq)]
+pub struct FileRatioError(String);
+
+impl fmt::Display for FileRatioError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "「{}」は画面に対する比率として読めません(0 より大きく 1 以下。例: 1/2、2/3、0.75、1)",
+            "「{}」は画面に対する比率として読めません（例: 2/3, 0.75, 1）",
             self.0
         )
     }
@@ -82,9 +94,7 @@ impl FromStr for Ratio {
             Some((n, d)) => number(n).zip(number(d)).map(|(n, d)| n / d),
             None => number(s),
         };
-        value
-            .and_then(Ratio::new)
-            .ok_or_else(|| RatioError(s.to_string()))
+        value.and_then(Ratio::new).ok_or(RatioError)
     }
 }
 
@@ -104,10 +114,10 @@ impl fmt::Display for Ratio {
 }
 
 impl TryFrom<String> for Ratio {
-    type Error = RatioError;
+    type Error = FileRatioError;
 
     fn try_from(s: String) -> Result<Self, Self::Error> {
-        Ratio::from_config(&s)
+        Ratio::from_config(&s).map_err(|_| FileRatioError(s))
     }
 }
 
@@ -147,13 +157,13 @@ impl From<Ratio> for Size {
 }
 
 impl TryFrom<String> for Size {
-    type Error = RatioError;
+    type Error = FileRatioError;
 
     fn try_from(s: String) -> Result<Self, Self::Error> {
         if s.trim().eq_ignore_ascii_case(KEEP) {
             Ok(Size::Keep)
         } else {
-            Ratio::from_config(&s).map(Size::Ratio)
+            Ratio::try_from(s).map(Size::Ratio)
         }
     }
 }

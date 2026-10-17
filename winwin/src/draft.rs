@@ -533,7 +533,10 @@ mod tests {
         for bad in ["-1", "2", "1.1", "0"] {
             d.width = bad.into();
             let e = d.size_problem().unwrap();
-            assert!(e.starts_with("幅:") && e.contains(bad), "{e}");
+            assert_eq!(
+                e,
+                "幅: 画面に対する比率を入力してください（例: 2/3, 0.75, 1）"
+            );
             assert!(d.to_shortcut().is_err(), "{bad}");
         }
         d.width = String::new();
