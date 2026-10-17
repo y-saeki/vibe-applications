@@ -1,5 +1,5 @@
-//! eleven-zip's icon as pixels, drawn from `icon.svg`: a white zipper on
-//! green, over an orange band. build.rs draws it into the executable's icon at
+//! eleven-zip's icon as pixels, drawn from `icon.svg`: a red zipper on
+//! white, over crossing orange and green bands. build.rs draws it into the executable's icon at
 //! every size the icon resource holds; everything else (Explorer, the
 //! taskbar, the context menu, the settings window's title bar) takes it from
 //! there.
@@ -39,6 +39,7 @@ mod tests {
 
     const ORANGE: u32 = 0xFF_F0_83_00;
     const GREEN: u32 = 0xFF_01_88_37;
+    const RED: u32 = 0xFF_FF_00_01;
     const WHITE: u32 = 0xFF_FF_FF_FF;
 
     #[test]
@@ -50,10 +51,12 @@ mod tests {
         // Rounded corners stay transparent.
         assert_eq!(at(0, 0) >> 24, 0);
         assert_eq!(at(size - 1, size - 1) >> 24, 0);
-        // Green at the top, orange at the bottom, the zipper in the middle.
-        assert_eq!(at(30, 20), GREEN);
-        assert_eq!(at(30, 236), ORANGE);
-        assert_eq!(at(128, 128), WHITE);
+        // White at the top, orange on the left above green at the bottom,
+        // the zipper in the middle.
+        assert_eq!(at(30, 20), WHITE);
+        assert_eq!(at(30, 150), ORANGE);
+        assert_eq!(at(128, 236), GREEN);
+        assert_eq!(at(128, 128), RED);
     }
 
     #[test]
