@@ -161,7 +161,7 @@ CI では失敗したテストを 1 回だけ再実行します。1 回目の tr
 ## バージョニングとリリース
 
 [セマンティック バージョニング](https://semver.org/lang/ja/)に従います。0.x の間は、ユーザーに見える機能の追加や
-挙動の変更で minor を、修正だけなら patch を上げます。依存ライブラリの更新もユーザーに見える変化を伴わない限り patch を上げます。
+挙動の変更で minor を、修正だけなら patch を上げます。
 
 バージョンの実体は `src-tauri/tauri.conf.json` の `version` の 1 箇所だけです。Release のタグ名、配布物のファイル名、
 環境設定パネルの表示のすべてがここから決まります。`package.json` と `src-tauri/Cargo.toml` の `version` は実際には
@@ -190,7 +190,7 @@ eleven-zip のインストーラが、ファイル名にハッシュを付けた
 付けてください。付いていればバージョンが据え置きでも通ります。上げるか、上げない理由をラベルで示すか、
 どちらかを必ず選ぶことになります。
 
-依存ライブラリの新しい版は Dependabot が週に 1 回確かめ、見つかると Pull Request を作ります(設定は `.github/dependabot.yml`)。この Pull Request には `.github/workflows/dependency-bump.yml` が、base ブランチのバージョンから patch を 1 つ上げたコミットを足すので、手でバージョンを上げる必要はありません。同じアプリの Pull Request が 2 つ開いているときに片方をマージすると、もう片方はバージョンが base と同じになり、バージョンのチェックで落ちます。その Pull Request に `@dependabot recreate` とコメントすると作り直され、バージョンも上げ直されます。
+依存ライブラリの新しいバージョンは Dependabot が週に 1 回確かめ、見つかると Pull Request を作ります(設定は `.github/dependabot.yml`)。この Pull Request には `no-release` ラベルが付き、ビルドとテストがすべて通ると `.github/workflows/dependabot-merge.yml` がマージします。バージョンは上げず、更新は次のリリースに含めて出します。手で確かめる項目は次にこのアプリを変更する Pull Request でまとめて確認し、その Pull Request の本文に、取り込んだ更新を書きます。
 
 ビルド成果物のコメントにもバージョンが出ます。据え置きのまま `no-release` で通した Pull Request では、
 Release が作られないことをそこで警告します。動作確認の前に必ず読む場所なので、macOS 側で作業していて

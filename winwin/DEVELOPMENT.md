@@ -480,7 +480,7 @@ Windows がない環境では確かめられません。WinUI 3 は Wine では�
 ## バージョニングとリリース
 
 [セマンティック バージョニング](https://semver.org/lang/ja/)に従います。0.x の間は、ユーザーに見える機能の追加や
-挙動の変更で minor を、修正だけなら patch を上げます。依存ライブラリの更新もユーザーに見える変化を伴わない限り patch を上げます。
+挙動の変更で minor を、修正だけなら patch を上げます。
 
 バージョンの実体は `Cargo.toml` の `version` です。書き換えたら `cargo update -p winwin` で `Cargo.lock` も追随させてください。
 
@@ -502,7 +502,7 @@ eleven-zip のインストーラが、ファイル名にハッシュを付けた
 
 リリースするつもりがない変更(ドキュメントだけ、CI だけ、など)では、Pull Request に `no-release` ラベルを付けてください。
 
-依存ライブラリの新しい版は Dependabot が週に 1 回確かめ、見つかると Pull Request を作ります(設定は `.github/dependabot.yml`)。この Pull Request には `.github/workflows/dependency-bump.yml` が、base ブランチのバージョンから patch を 1 つ上げたコミットを足すので、手でバージョンを上げる必要はありません。同じアプリの Pull Request が 2 つ開いているときに片方をマージすると、もう片方はバージョンが base と同じになり、バージョンのチェックで落ちます。その Pull Request に `@dependabot recreate` とコメントすると作り直され、バージョンも上げ直されます。
+依存ライブラリの新しいバージョンは Dependabot が週に 1 回確かめ、見つかると Pull Request を作ります(設定は `.github/dependabot.yml`)。この Pull Request には `no-release` ラベルが付き、ビルドとテストがすべて通ると `.github/workflows/dependabot-merge.yml` がマージします。バージョンは上げず、更新は次のリリースに含めて出します。手で確かめる項目は次にこのアプリを変更する Pull Request でまとめて確認し、その Pull Request の本文に、取り込んだ更新を書きます。
 
 配布物はコード署名をしていないため、ダウンロードしたインストーラの実行時に SmartScreen の警告が出ます。
 手順は README.md に書いてあります。
