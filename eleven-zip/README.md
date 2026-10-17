@@ -1,5 +1,7 @@
 # eleven-zip
 
+![](icon.svg)
+
 エクスプローラーから書庫をすばやく展開する Windows 用アプリです。展開には 7-Zip を使います。
 
 - 右クリックメニューやダブルクリックで、zip・7z・rar・tar・gz・xz・zst・lzh・cab・iso など 7-Zip が読める書庫を展開
