@@ -30,7 +30,8 @@ use crate::hotkey::{self, Arrow, Hotkey, Keycap, MOD_CONTROL, MOD_SHIFT, Recorde
 use crate::layout::{Anchor, Rect};
 
 /// The client area in DIPs, which is also as small as the window goes: the
-/// fields and the whole preview fit in it.
+/// fields and the whole preview fit in it. Its width is fixed, since a wider
+/// window only adds empty space on the right; only the list grows taller.
 const CLIENT: (f64, f64) = (900.0, 690.0);
 /// The picture of a placement at the left of each line in the list, and the
 /// larger one under the fields.
@@ -301,6 +302,7 @@ impl Component for Settings {
                 .client_size(CLIENT.0, CLIENT.1)
                 .constraints(WindowConstraints {
                     min_width: Some(CLIENT.0),
+                    max_width: Some(CLIENT.0),
                     min_height: Some(CLIENT.1),
                     ..Default::default()
                 }),
