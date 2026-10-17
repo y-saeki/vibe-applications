@@ -286,7 +286,7 @@ impl Component for Settings {
     }
 
     fn view(&self, input: &Input, context: &mut ViewContext<Self>) -> View {
-        context.window_title("winwin の設定");
+        context.window_title(concat!("winwin の設定 - v", env!("CARGO_PKG_VERSION")));
         context.window_visuals(
             WindowVisuals::new()
                 .backdrop(WindowBackdrop::Mica)
