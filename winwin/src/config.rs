@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::hotkey::Keys;
-use crate::layout::{Anchor, Placement};
+use crate::layout::{Anchor, Placement, Size};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Shortcut {
@@ -94,8 +94,8 @@ fn shortcut(keys: &str, anchor: Anchor, width: &str, height: &str) -> Shortcut {
         keys: keys.parse().expect(valid),
         placement: Placement {
             anchor,
-            width: width.parse().expect(valid),
-            height: height.parse().expect(valid),
+            width: Size::Ratio(width.parse().expect(valid)),
+            height: Size::Ratio(height.parse().expect(valid)),
         },
     }
 }
@@ -236,8 +236,27 @@ mod tests {
         let s = &config.shortcuts[0];
         assert_eq!(s.keys.to_string(), "Win+Alt+1");
         assert_eq!(s.placement.anchor, Anchor::BottomRight);
-        assert_eq!(s.placement.width, "2/3".parse().unwrap());
-        assert_eq!(s.placement.height, Ratio::new(0.7).unwrap());
+        assert_eq!(s.placement.width, Size::Ratio("2/3".parse().unwrap()));
+        assert_eq!(s.placement.height, Size::Ratio(Ratio::new(0.7).unwrap()));
+    }
+
+    #[test]
+    fn reads_and_writes_a_size_that_is_kept() {
+        let config = parse(
+            r#"
+            [[shortcut]]
+            keys = "Ctrl+Alt+H"
+            anchor = "top-left"
+            width = "keep"
+            height = "1/3"
+            "#,
+        )
+        .unwrap();
+        let p = &config.shortcuts[0].placement;
+        assert_eq!(p.width, Size::Keep);
+        let text = config.to_toml();
+        assert!(text.contains(r#"width = "keep""#), "{text}");
+        assert_eq!(parse(&text).unwrap(), config);
     }
 
     #[test]
