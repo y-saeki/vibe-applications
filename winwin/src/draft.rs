@@ -57,6 +57,12 @@ impl Draft {
         })
     }
 
+    /// Why the width or height does not make a placement, shown under the
+    /// fields while they are typed; `None` while both do.
+    pub fn size_problem(&self) -> Option<String> {
+        self.placement().err()
+    }
+
     pub fn to_shortcut(&self) -> Result<Shortcut, String> {
         if self.keys.is_empty() {
             return Err("ショートカットを設定してください".into());
@@ -518,6 +524,23 @@ mod tests {
         d = Draft::from_shortcut(&Config::defaults().shortcuts[0]);
         d.keys[0].modifiers = MOD_SHIFT;
         assert!(d.to_shortcut().unwrap_err().contains("Ctrl・Alt・Win"));
+    }
+
+    #[test]
+    fn sizes_off_the_screen_are_named_while_typed() {
+        let mut d = Draft::from_shortcut(&Config::defaults().shortcuts[0]);
+        assert_eq!(d.size_problem(), None);
+        for bad in ["-1", "2", "1.1", "0"] {
+            d.width = bad.into();
+            let e = d.size_problem().unwrap();
+            assert!(e.starts_with("幅:") && e.contains(bad), "{e}");
+            assert!(d.to_shortcut().is_err(), "{bad}");
+        }
+        d.width = String::new();
+        d.height = "0".into();
+        assert!(d.size_problem().unwrap().starts_with("高さ:"));
+        d.height = "1/3".into();
+        assert_eq!(d.size_problem(), None);
     }
 
     #[test]

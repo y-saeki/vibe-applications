@@ -689,13 +689,22 @@ impl Settings {
                 .width(144.0)
                 .on_text_changed(context.callback(on_change))
         };
-        let size = StackPanel::new()
+        let fields = StackPanel::new()
             .orientation(Orientation::Horizontal)
             .spacing(24.0)
             .children((
                 field("幅", ratio(&d.width, "（幅を維持）", Msg::Width)),
                 field("高さ", ratio(&d.height, "（高さを維持）", Msg::Height)),
             ));
+        let problem: View = match d.size_problem().filter(|_| enabled) {
+            Some(problem) => TextBlock::new()
+                .text(problem)
+                .foreground(ThemeBrush::SystemCritical)
+                .text_wrapping(TextWrapping::Wrap)
+                .into(),
+            None => View::empty(),
+        };
+        let size = StackPanel::new().spacing(6.0).children((fields, problem));
 
         let preview = Border::new()
             .background(ThemeBrush::CardBackground)
