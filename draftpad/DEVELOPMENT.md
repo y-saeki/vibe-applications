@@ -693,8 +693,8 @@ Tauri の NSIS スクリプトはビルド時のテンプレートなので、`t
 `bundle.windows.nsis.template` で `src-tauri/installer.nsi` を指し、Tauri のものを置き換えています。
 
 `src-tauri/installer.nsi` は Tauri の
-[`installer.nsi`](https://github.com/tauri-apps/tauri/blob/tauri-cli-v2.11.4/crates/tauri-bundler/src/bundle/windows/nsis/installer.nsi)
-(`@tauri-apps/cli` v2.11.4 のもの)をそのまま写し、次の 4 点だけを変えたものです。変更箇所には
+[`installer.nsi`](https://github.com/tauri-apps/tauri/blob/tauri-cli-v2.12.2/crates/tauri-bundler/src/bundle/windows/nsis/installer.nsi)
+(`@tauri-apps/cli` v2.12.2 のもの)をそのまま写し、次の 4 点だけを変えたものです。変更箇所には
 `; draftpad:` で始まるコメントを付けてあります。
 
 | 変更 | 内容 |
