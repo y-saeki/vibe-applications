@@ -21,6 +21,11 @@
 //! page — the pane with the caret while the compare pane is open, otherwise
 //! the window.
 //!
+//! "ウインドウ位置をリセット" in the Window menu is handled here rather than
+//! in the page: it only moves the window (`window_position.rs`). The Window
+//! menu is also handed to AppKit as the app's Windows menu, which is what has it
+//! list the open windows and, from macOS 15, add its own window tiling items.
+//!
 //! The accelerators written here are the defaults. The page moves them to
 //! whatever keys the preferences panel has given those commands
 //! ([`set_shortcuts`]), once it has started and again after every change.
@@ -54,6 +59,10 @@ pub(crate) const FIND: &str = "検索・置換";
 #[cfg(target_os = "macos")]
 pub(crate) const EDIT_TITLE: &str = "編集";
 
+/// The Window menu's item that puts the window back on the display in use.
+/// Never forwarded to the page.
+const RESET_WINDOW_POSITION: &str = "reset_window_position";
+
 const FORWARDED_IDS: [&str; 8] = [
     "preferences",
     "quit",
@@ -73,6 +82,11 @@ pub fn forward_events(app: &AppHandle) {
         if FORWARDED_IDS.contains(&id) {
             if let Err(err) = app.emit("menu", id) {
                 eprintln!("draftpad: failed to forward menu event {id}: {err}");
+            }
+        }
+        if id == RESET_WINDOW_POSITION {
+            if let Some(window) = app.get_webview_window("main") {
+                crate::window_position::reset(&window);
             }
         }
         #[cfg(debug_assertions)]
@@ -233,8 +247,23 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
     )?);
     let view = view.build()?;
 
+    // The items and wording of the Window menu every Mac app carries, with
+    // draftpad's one addition between the window's own items and the app's.
+    let window = SubmenuBuilder::new(app, "ウインドウ")
+        .minimize_with_text("しまう")
+        .maximize_with_text("拡大/縮小")
+        .separator()
+        .item(
+            &MenuItemBuilder::with_id(RESET_WINDOW_POSITION, "ウインドウ位置をリセット")
+                .build(app)?,
+        )
+        .separator()
+        .bring_all_to_front_with_text("すべてを手前に移動")
+        .build()?;
+    window.set_as_windows_menu_for_nsapp()?;
+
     let menu = MenuBuilder::new(app)
-        .items(&[&app_menu, &edit, &view])
+        .items(&[&app_menu, &edit, &view, &window])
         .build()?;
     app.set_menu(menu)?;
     app.manage(Shortcuts(shortcuts));

@@ -45,6 +45,11 @@ pub struct State {
     pub search_regexp: bool,
     pub window_width: Option<f64>,
     pub window_height: Option<f64>,
+    /// The window's outer top-left corner, in the platform's own screen
+    /// coordinates: points on macOS, pixels elsewhere. See
+    /// `window_position.rs`.
+    pub window_x: Option<f64>,
+    pub window_y: Option<f64>,
     /// The keys of every keyboard shortcut the user has moved, by id; one
     /// left alone has no entry. `src/shortcuts.ts` owns what the ids and the
     /// keys mean, and checks both when it reads them.
@@ -73,6 +78,8 @@ impl Default for State {
             search_regexp: false,
             window_width: None,
             window_height: None,
+            window_x: None,
+            window_y: None,
             shortcuts: BTreeMap::new(),
         }
     }
@@ -183,6 +190,8 @@ mod tests {
         assert!(!state.search_case_sensitive);
         assert!(!state.search_regexp);
         assert_eq!(state.window_width, None);
+        assert_eq!(state.window_x, None);
+        assert_eq!(state.window_y, None);
         assert!(state.shortcuts.is_empty());
     }
 
@@ -209,6 +218,9 @@ mod tests {
             search_regexp: true,
             window_width: Some(800.0),
             window_height: Some(600.0),
+            // A display to the left of the main one has negative coordinates.
+            window_x: Some(-1200.0),
+            window_y: Some(140.0),
             shortcuts: BTreeMap::from([
                 ("find".to_string(), vec!["Shift+Mod+F".to_string()]),
                 ("open_compare".to_string(), Vec::new()),
@@ -237,6 +249,8 @@ mod tests {
         assert!(read.search_regexp);
         assert_eq!(read.window_width, Some(800.0));
         assert_eq!(read.window_height, Some(600.0));
+        assert_eq!(read.window_x, Some(-1200.0));
+        assert_eq!(read.window_y, Some(140.0));
         // A shortcut moved to another key, and one taken off every key: the
         // empty list is kept, since it is what says the key was removed.
         assert_eq!(read.shortcuts, written.shortcuts);
@@ -261,6 +275,8 @@ mod tests {
         assert!(raw.contains("\"compareText\": \"右\""));
         assert!(raw.contains("\"compare\": true"));
         assert!(raw.contains("\"diffMode\""));
+        assert!(raw.contains("\"windowX\""));
+        assert!(raw.contains("\"windowY\""));
         assert!(raw.contains("\"shortcuts\""));
     }
 
@@ -283,6 +299,8 @@ mod tests {
         assert!(!state.show_whitespace);
         assert!(!state.show_indent_guides);
         assert!(!state.show_line_numbers);
+        // Written before the position was kept: the window opens centered.
+        assert_eq!(state.window_x, None);
         // Written before shortcuts could be moved: every one is on its default.
         assert!(state.shortcuts.is_empty());
     }

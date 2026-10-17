@@ -12,6 +12,7 @@ mod menu;
 mod state;
 #[cfg(target_os = "macos")]
 mod traffic_lights;
+mod window_position;
 
 use std::time::Duration;
 
@@ -34,6 +35,9 @@ pub fn run() {
     let builder = builder.plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
         if let Some(window) = app.get_webview_window("main") {
             let _ = window.unminimize();
+            if argv.iter().any(|arg| arg == jumplist::RESET_POSITION_ARG) {
+                window_position::reset(&window);
+            }
             let _ = window.set_focus();
         }
         if argv.iter().any(|arg| arg == jumplist::PREFERENCES_ARG) {
@@ -59,10 +63,9 @@ pub fn run() {
             let window = app
                 .get_webview_window("main")
                 .expect("the main window is declared in tauri.conf.json");
-            // The window starts hidden (`visible: false`) so the saved size can
-            // be applied before anything is drawn. The position is deliberately
-            // not restored: the window is always centered.
-            restore_window_size(app.handle(), &window);
+            // The window starts hidden (`visible: false`) so the saved size and
+            // position can be applied before anything is drawn.
+            restore_window(app.handle(), &window);
             // Showing it is the frontend's job: Windows anchors the IME's
             // composition string and candidate list to the caret, and a window
             // that is activated before anything inside it holds the caret
@@ -108,14 +111,21 @@ pub fn run() {
         });
 }
 
-fn restore_window_size(app: &AppHandle, window: &WebviewWindow) {
-    let Ok(path) = state::path(app) else {
-        return;
-    };
-    let Ok(saved) = state::load(&path) else {
-        return;
-    };
-    let (Some(width), Some(height)) = (saved.window_width, saved.window_height) else {
+fn restore_window(app: &AppHandle, window: &WebviewWindow) {
+    let saved = state::path(app)
+        .ok()
+        .and_then(|path| state::load(&path).ok())
+        .unwrap_or_default();
+    restore_window_size(window, saved.window_width, saved.window_height);
+    if started_for_reset() {
+        window_position::reset(window);
+    } else {
+        window_position::restore(window, saved.window_x, saved.window_y);
+    }
+}
+
+fn restore_window_size(window: &WebviewWindow, width: Option<f64>, height: Option<f64>) {
+    let (Some(width), Some(height)) = (width, height) else {
         return;
     };
     if width < MIN_WIDTH || height < MIN_HEIGHT || !width.is_finite() || !height.is_finite() {
@@ -123,11 +133,20 @@ fn restore_window_size(app: &AppHandle, window: &WebviewWindow) {
     }
     if let Err(err) = window.set_size(tauri::LogicalSize::new(width, height)) {
         eprintln!("draftpad: failed to restore window size: {err}");
-        return;
     }
-    if let Err(err) = window.center() {
-        eprintln!("draftpad: failed to center window: {err}");
-    }
+}
+
+/// True when the jump list's "ウィンドウ位置をリセット" task started this
+/// process, so that the window opens where that task puts it rather than where
+/// it was left.
+#[cfg(target_os = "windows")]
+fn started_for_reset() -> bool {
+    jumplist::started_with(jumplist::RESET_POSITION_ARG)
+}
+
+#[cfg(not(target_os = "windows"))]
+fn started_for_reset() -> bool {
+    false
 }
 
 /// Shows `window` if the frontend has not shown it within [`SHOW_FALLBACK`], so

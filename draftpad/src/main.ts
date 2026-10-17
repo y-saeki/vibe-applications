@@ -327,7 +327,7 @@ async function main(): Promise<void> {
     )
   }
 
-  // ---- window size (position is intentionally not remembered) ------------
+  // ---- window size and position --------------------------------------------
   // The maximize button follows the window however it got there: the button
   // itself, a double click on the title bar, or a snap from the keyboard.
   const refreshMaximized = async (): Promise<void> => titleBar.setMaximized(await appWindow.isMaximized())
@@ -343,6 +343,23 @@ async function main(): Promise<void> {
         const height = Math.round(size.height)
         if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return
         store.set({ windowWidth: width, windowHeight: height })
+      })()
+    }),
+  )
+  // Kept in the platform's own screen coordinates, as src-tauri/src/window_position.rs
+  // reads them back: points on macOS, pixels elsewhere. A maximized, full
+  // screen or minimized window is not where it will open next time — Windows
+  // parks a minimized one far off every display.
+  await appWindow.onMoved(
+    debounce(RESIZE_DEBOUNCE_MS, () => {
+      void (async () => {
+        if ((await appWindow.isFullscreen()) || (await appWindow.isMaximized()) || (await appWindow.isMinimized())) return
+        const position = await appWindow.outerPosition()
+        const unit = isMac ? await appWindow.scaleFactor() : 1
+        const x = Math.round(position.x / unit)
+        const y = Math.round(position.y / unit)
+        if (!Number.isFinite(x) || !Number.isFinite(y)) return
+        store.set({ windowX: x, windowY: y })
       })()
     }),
   )
