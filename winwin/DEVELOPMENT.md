@@ -483,6 +483,12 @@ Windows がない環境では確かめられません。WinUI 3 は Wine では�
 インストーラ `winwin_<version>_x64-setup.exe` を添付します。インストーラは常に同じフォルダの `winwin.exe` を
 上書きするので、自動起動のレジストリが指す exe のパスは更新後も変わりません。
 
+Pull Request でビルドしたインストーラは、バージョンの後ろに Pull Request の先頭コミットの短いハッシュを semver の
+ビルドメタデータとして付けます(`0.12.0+047ba8f`)。「設定」→「アプリ」に出るバージョンとインストーラのファイル名が
+この形になるので、手元に入っているのがどの Pull Request のどのコミットか見分けられます。ハッシュは `makensis` に
+`/DBUILD=<commit>` で渡し、数字しか受け付けない `VIProductVersion` には付けません。`main` のビルドは Release に
+載るものなので `0.12.0` のままです。
+
 ### 上げ忘れを CI が止めます
 
 上げ忘れても Release ジョブは黙ってスキップするだけなので、`winwin-version.yml` が Pull Request を赤くします。
