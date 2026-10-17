@@ -58,18 +58,20 @@ updates:
       - no-release
     commit-message:
       prefix: draftpad
+    # draftpad's own webview2-com and windows have to be the ones Tauri's wry
+    # uses, so they move only when Tauri does, by hand.
+    ignore:
+      - dependency-name: webview2-com
+      - dependency-name: windows
     groups:
       # Tauri checks that its crates and its npm packages share a major and
-      # minor version, and draftpad's own webview2-com and windows have to be
-      # the ones Tauri's wry uses. These cannot pass on their own, so they are
-      # kept apart from the updates that can, and brought in line by hand
-      # together with the npm side's tauri group.
+      # minor version. A minor update raises one side at a time and cannot
+      # pass on its own, so these are kept apart from the updates that can,
+      # and brought in line by hand together with the npm side's tauri group.
       tauri:
         patterns:
           - tauri
           - tauri-*
-          - webview2-com
-          - windows
       minor-and-patch:
         update-types:
           - minor
