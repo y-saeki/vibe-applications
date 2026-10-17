@@ -8,7 +8,10 @@ use std::collections::BTreeSet;
 
 use crate::config::{Config, Shortcut};
 use crate::hotkey::{self, Hotkey, Keys};
-use crate::layout::{self, Anchor, Placement, Ratio, Rect, Size};
+use crate::layout::{self, Anchor, Placement, Ratio, Rect, Size, Sizing};
+
+/// How the list and errors name a placement that fits.
+pub const FIT_LABEL: &str = "フィット";
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Draft {
@@ -18,6 +21,9 @@ pub struct Draft {
     /// The ratio as typed; left empty, the window keeps its width.
     pub width: String,
     pub height: String,
+    /// The window takes the empty space at the anchor; the width and the
+    /// height stay as typed but do not count.
+    pub fit: bool,
 }
 
 impl Draft {
@@ -28,20 +34,37 @@ impl Draft {
             anchor: Anchor::Center,
             width: "1/2".into(),
             height: "1/2".into(),
+            fit: false,
         }
     }
 
     pub fn from_shortcut(s: &Shortcut) -> Draft {
         let p = &s.placement;
-        Draft {
-            keys: s.keys.strokes().to_vec(),
-            anchor: p.anchor,
-            width: size_text(p.width),
-            height: size_text(p.height),
+        let keys = s.keys.strokes().to_vec();
+        match p.sizes() {
+            Some((width, height)) => Draft {
+                keys,
+                anchor: p.anchor,
+                width: size_text(width),
+                height: size_text(height),
+                fit: false,
+            },
+            None => Draft {
+                keys,
+                anchor: p.anchor,
+                fit: true,
+                ..Draft::new()
+            },
         }
     }
 
     pub fn placement(&self) -> Result<Placement, String> {
+        if self.fit {
+            return Ok(Placement {
+                anchor: self.anchor,
+                sizing: Sizing::Fit,
+            });
+        }
         let field = |label: &str, text: &str| {
             if text.trim().is_empty() {
                 return Ok(Size::Keep);
@@ -50,11 +73,11 @@ impl Draft {
                 .map(Size::Ratio)
                 .map_err(|e| format!("{label}: {e}"))
         };
-        Ok(Placement {
-            anchor: self.anchor,
-            width: field("幅", &self.width)?,
-            height: field("高さ", &self.height)?,
-        })
+        Ok(Placement::given(
+            self.anchor,
+            field("幅", &self.width)?,
+            field("高さ", &self.height)?,
+        ))
     }
 
     /// Why the width or height does not make a placement, shown under the
@@ -77,13 +100,15 @@ impl Draft {
     /// A screen of `size` shrunk into `bounds`, and where on it this row puts
     /// a window; `None` for the window while the fields do not make a
     /// placement yet. A width or height that is kept is drawn as half the
-    /// screen, there being no window to take it from.
+    /// screen, there being no window to take it from, and so is a
+    /// placement that fits, there being no windows to fit between.
     pub fn picture(&self, size: (i32, i32), bounds: Rect, anchor: Anchor) -> Option<Picture> {
         let screen = layout::miniature(size, bounds, anchor)?;
         let stand_in = (screen.width() / 2, screen.height() / 2);
         let window = self.placement().ok().map(|p| {
-            let rect = p.resolve(screen, stand_in);
-            let (w, h) = (p.width == Size::Keep, p.height == Size::Keep);
+            let (width, height) = p.sizes().unwrap_or((Size::Keep, Size::Keep));
+            let rect = layout::sized(p.anchor, width, height, screen, stand_in);
+            let (w, h) = (width == Size::Keep, height == Size::Keep);
             Frame {
                 rect,
                 loose: Sides {
@@ -99,8 +124,11 @@ impl Draft {
 
     /// Where the row puts a window, in words: 左 , w1/2 x h1. A kept width
     /// or height is left out (左上 , h1/3), and with both kept the anchor
-    /// stands alone.
+    /// stands alone. One that fits is 右 , フィット.
     pub fn placement_text(&self) -> String {
+        if self.fit {
+            return format!("{} , {FIT_LABEL}", self.anchor.label());
+        }
         let sizes: Vec<String> = [self.width_text(), self.height_text()]
             .into_iter()
             .filter(|text| !text.is_empty())
@@ -113,15 +141,24 @@ impl Draft {
     }
 
     /// The width as the list shows it in its own column: w1/2, or nothing
-    /// when it is kept.
+    /// when it is kept. A placement that fits says so here and leaves the
+    /// height's column empty.
     pub fn width_text(&self) -> String {
-        axis_text("w", &self.width)
+        if self.fit {
+            FIT_LABEL.to_string()
+        } else {
+            axis_text("w", &self.width)
+        }
     }
 
     /// The height as the list shows it in its own column: h1, or nothing
-    /// when it is kept.
+    /// when it is kept or the placement fits.
     pub fn height_text(&self) -> String {
-        axis_text("h", &self.height)
+        if self.fit {
+            String::new()
+        } else {
+            axis_text("h", &self.height)
+        }
     }
 
     /// The row in one line, as errors name it: the keys first, then where
@@ -479,11 +516,7 @@ mod tests {
     #[test]
     fn a_saved_shortcut_comes_back_unchanged() {
         for s in Config::defaults().shortcuts {
-            assert_eq!(Draft::from_shortcut(&s).to_shortcut().unwrap().keys, s.keys);
-            let placement = Draft::from_shortcut(&s).to_shortcut().unwrap().placement;
-            assert_eq!(placement.anchor, s.placement.anchor);
-            assert_eq!(placement.width, s.placement.width);
-            assert_eq!(placement.height, s.placement.height);
+            assert_eq!(Draft::from_shortcut(&s).to_shortcut().unwrap(), s);
         }
     }
 
@@ -550,7 +583,7 @@ mod tests {
         let mut d = Draft::from_shortcut(&Config::defaults().shortcuts[0]);
         d.width = "  ".into();
         let s = d.to_shortcut().unwrap();
-        assert_eq!(s.placement.width, Size::Keep);
+        assert_eq!(s.placement.sizes().unwrap().0, Size::Keep);
         assert_eq!(d.placement_text(), "左 , h1");
 
         let back = Draft::from_shortcut(&s);
@@ -579,6 +612,30 @@ mod tests {
         assert_eq!(d.placement_text(), "左上 , w2/3");
         d.width = String::new();
         assert_eq!(d.placement_text(), "左上");
+    }
+
+    #[test]
+    fn a_row_that_fits_leaves_its_sizes_aside() {
+        let mut d = Draft::from_shortcut(&Config::defaults().shortcuts[1]);
+        d.width = "5".into();
+        d.fit = true;
+        // The width does not count while the row fits, and is not lost.
+        assert_eq!(d.size_problem(), None);
+        let s = d.to_shortcut().unwrap();
+        assert_eq!(s.placement.sizing, Sizing::Fit);
+        assert_eq!(d.placement_text(), "右 , フィット");
+        assert_eq!(
+            (d.width_text().as_str(), d.height_text().as_str()),
+            ("フィット", "")
+        );
+        d.fit = false;
+        assert!(d.size_problem().unwrap().starts_with("幅:"));
+
+        // Read back from the file, it starts from the new row's sizes.
+        let back = Draft::from_shortcut(&s);
+        assert!(back.fit);
+        assert_eq!((back.width.as_str(), back.height.as_str()), ("1/2", "1/2"));
+        assert_eq!(back.to_shortcut().unwrap(), s);
     }
 
     #[test]
@@ -905,6 +962,20 @@ mod tests {
         assert_eq!(f.loose, sides(true, true, true, true));
         let f = frame(Anchor::BottomRight, "", "");
         assert_eq!(f.loose, sides(true, true, false, false));
+
+        // A row that fits is drawn as one that keeps both.
+        let d = Draft {
+            anchor: Anchor::Right,
+            fit: true,
+            ..Draft::new()
+        };
+        let f = d
+            .picture((1920, 1080), bounds, Anchor::Center)
+            .unwrap()
+            .window
+            .unwrap();
+        assert_eq!((f.rect.width(), f.rect.height()), (80, 45));
+        assert_eq!(f.loose, sides(true, true, false, true));
     }
 
     #[test]

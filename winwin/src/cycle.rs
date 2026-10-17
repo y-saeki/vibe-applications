@@ -268,8 +268,8 @@ mod tests {
         let left = &bindings[0];
         assert_eq!(left.keys.to_string(), "Ctrl+Alt+Left");
         assert!(left.cycles());
-        assert_eq!(left.placements[0].width.to_string(), "1/2");
-        assert_eq!(left.placements[1].width.to_string(), "2/3");
+        assert_eq!(left.placements[0].sizes().unwrap().0.to_string(), "1/2");
+        assert_eq!(left.placements[1].sizes().unwrap().0.to_string(), "2/3");
         // The others keep their order behind it.
         assert_eq!(bindings[1].keys.to_string(), "Ctrl+Alt+Right");
     }
@@ -405,7 +405,12 @@ mod tests {
     fn a_shorter_shortcut_cycles_and_still_leads_on() {
         let mut config = config_with_a_prefix();
         let mut two_thirds = config.shortcuts[0].clone();
-        two_thirds.placement.width = Size::Ratio("2/3".parse().unwrap());
+        let (_, height) = two_thirds.placement.sizes().unwrap();
+        two_thirds.placement = Placement::given(
+            two_thirds.placement.anchor,
+            Size::Ratio("2/3".parse().unwrap()),
+            height,
+        );
         config.shortcuts.push(two_thirds);
         let bindings = bindings(&config);
         let mut presses = Presses::default();

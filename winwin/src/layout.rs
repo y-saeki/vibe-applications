@@ -268,15 +268,112 @@ impl Rect {
     pub fn height(&self) -> i32 {
         self.bottom - self.top
     }
+
+    /// Whether `other` lies entirely inside this one.
+    fn contains(&self, other: Rect) -> bool {
+        self.left <= other.left
+            && self.top <= other.top
+            && self.right >= other.right
+            && self.bottom >= other.bottom
+    }
+
+    /// Where the two overlap, if they do.
+    fn intersection(&self, other: Rect) -> Option<Rect> {
+        let r = Rect {
+            left: self.left.max(other.left),
+            top: self.top.max(other.top),
+            right: self.right.min(other.right),
+            bottom: self.bottom.min(other.bottom),
+        };
+        (r.left < r.right && r.top < r.bottom).then_some(r)
+    }
+
+    /// The point of the rectangle that `anchor` names.
+    fn point(&self, anchor: Anchor) -> (f64, f64) {
+        let at = |start: i32, end: i32, align: Align| match align {
+            Align::Start => f64::from(start),
+            Align::Middle => (f64::from(start) + f64::from(end)) / 2.0,
+            Align::End => f64::from(end),
+        };
+        (
+            at(self.left, self.right, anchor.horizontal()),
+            at(self.top, self.bottom, anchor.vertical()),
+        )
+    }
 }
 
 /// A window's size and position relative to the work area of the monitor it
 /// is on.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "PlacementFields", into = "PlacementFields")]
 pub struct Placement {
     pub anchor: Anchor,
-    pub width: Size,
-    pub height: Size,
+    pub sizing: Sizing,
+}
+
+/// How large a placement makes the window.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Sizing {
+    /// A width and a height of its own.
+    Given { width: Size, height: Size },
+    /// As large as the empty space at the anchor: see [`fit`].
+    Fit,
+}
+
+/// A placement as the file writes it: a width and a height, or `fit = true`
+/// in their place.
+#[derive(Serialize, Deserialize)]
+struct PlacementFields {
+    anchor: Anchor,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    width: Option<Size>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    height: Option<Size>,
+    #[serde(default, skip_serializing_if = "is_false")]
+    fit: bool,
+}
+
+fn is_false(b: &bool) -> bool {
+    !b
+}
+
+/// A placement in the file with neither a size nor `fit`.
+#[derive(Debug, PartialEq, Eq)]
+pub struct NoSizeError;
+
+impl fmt::Display for NoSizeError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("width と height を書くか、fit = true にしてください")
+    }
+}
+
+impl TryFrom<PlacementFields> for Placement {
+    type Error = NoSizeError;
+
+    /// With `fit`, a width or height written as well is ignored.
+    fn try_from(p: PlacementFields) -> Result<Self, Self::Error> {
+        let sizing = match (p.fit, p.width, p.height) {
+            (true, _, _) => Sizing::Fit,
+            (false, Some(width), Some(height)) => Sizing::Given { width, height },
+            _ => return Err(NoSizeError),
+        };
+        Ok(Placement {
+            anchor: p.anchor,
+            sizing,
+        })
+    }
+}
+
+impl From<Placement> for PlacementFields {
+    fn from(p: Placement) -> PlacementFields {
+        let (width, height) = p.sizes().unzip();
+        PlacementFields {
+            anchor: p.anchor,
+            width,
+            height,
+            fit: p.sizing == Sizing::Fit,
+        }
+    }
 }
 
 /// Places a span of `size` inside `[start, start + span]` and returns its two
@@ -292,31 +389,168 @@ fn place(start: f64, span: f64, size: f64, align: Align) -> (f64, f64) {
 }
 
 impl Placement {
-    /// The rectangle, in physical pixels, that the visible frame of the
-    /// window should occupy. Edges are rounded independently, so two
-    /// placements that meet at a fraction of a pixel still share an edge.
-    /// `current` is the size of the window's visible frame now, which a
-    /// [`Size::Keep`] carries over.
-    pub fn resolve(&self, work: Rect, current: (i32, i32)) -> Rect {
-        let (ww, wh) = (f64::from(work.width()), f64::from(work.height()));
-        let (left, right) = place(
-            f64::from(work.left),
-            ww,
-            self.width.resolve(ww, f64::from(current.0)),
-            self.anchor.horizontal(),
-        );
-        let (top, bottom) = place(
-            f64::from(work.top),
-            wh,
-            self.height.resolve(wh, f64::from(current.1)),
-            self.anchor.vertical(),
-        );
-        Rect {
-            left: left.round() as i32,
-            top: top.round() as i32,
-            right: right.round() as i32,
-            bottom: bottom.round() as i32,
+    pub const fn given(anchor: Anchor, width: Size, height: Size) -> Placement {
+        Placement {
+            anchor,
+            sizing: Sizing::Given { width, height },
         }
+    }
+
+    /// The width and the height, unless the placement fits.
+    pub fn sizes(&self) -> Option<(Size, Size)> {
+        match self.sizing {
+            Sizing::Given { width, height } => Some((width, height)),
+            Sizing::Fit => None,
+        }
+    }
+
+    /// The rectangle, in physical pixels, that the visible frame of the
+    /// window should occupy, or `None` when a placement that fits finds no
+    /// room. `current` is the size of the window's visible frame now, which a
+    /// [`Size::Keep`] carries over; `others` the visible frames of the other
+    /// windows, which only a placement that fits asks for (see [`fit`]).
+    pub fn resolve(
+        &self,
+        work: Rect,
+        current: (i32, i32),
+        others: impl FnOnce() -> Vec<Rect>,
+    ) -> Option<Rect> {
+        match self.sizing {
+            Sizing::Given { width, height } => {
+                Some(sized(self.anchor, width, height, work, current))
+            }
+            Sizing::Fit => fit(work, self.anchor, &others()),
+        }
+    }
+}
+
+/// The rectangle of a window `width` by `height` aligned to `anchor` in
+/// `work`, in physical pixels. Edges are rounded independently, so two
+/// placements that meet at a fraction of a pixel still share an edge.
+/// `current` is the size of the window's visible frame now, which a
+/// [`Size::Keep`] carries over.
+pub fn sized(anchor: Anchor, width: Size, height: Size, work: Rect, current: (i32, i32)) -> Rect {
+    let (ww, wh) = (f64::from(work.width()), f64::from(work.height()));
+    let (left, right) = place(
+        f64::from(work.left),
+        ww,
+        width.resolve(ww, f64::from(current.0)),
+        anchor.horizontal(),
+    );
+    let (top, bottom) = place(
+        f64::from(work.top),
+        wh,
+        height.resolve(wh, f64::from(current.1)),
+        anchor.vertical(),
+    );
+    Rect {
+        left: left.round() as i32,
+        top: top.round() as i32,
+        right: right.round() as i32,
+        bottom: bottom.round() as i32,
+    }
+}
+
+/// Below this share of the work area across or down, an empty space is a
+/// gap between windows rather than room for one.
+const MIN_FIT_SHARE: f64 = 1.0 / 12.0;
+
+/// The largest empty rectangle of `work` at `anchor`: one that touches the
+/// work area's edges on the anchor's sides (two for a corner, one for a side,
+/// none for the center) and overlaps none of `others`. Those are the visible
+/// frames of the other windows from the top of the z-order down; one that
+/// covers the whole work area, as a maximized window does, hides everything
+/// below it, so it and the rest are left out. A space narrower or shorter
+/// than [`MIN_FIT_SHARE`] of the work area does not count. Of two spaces as
+/// large, the one nearer the anchor wins. `None` when there is no room.
+pub fn fit(work: Rect, anchor: Anchor, others: &[Rect]) -> Option<Rect> {
+    let windows: Vec<Rect> = others
+        .iter()
+        .take_while(|o| !o.contains(work))
+        .filter_map(|o| o.intersection(work))
+        .collect();
+    let (horizontal, vertical) = (anchor.horizontal(), anchor.vertical());
+    let min_width = f64::from(work.width()) * MIN_FIT_SHARE;
+    let min_height = f64::from(work.height()) * MIN_FIT_SHARE;
+
+    // Every largest empty rectangle has its left edge on the work area's or
+    // on a window's right edge, and its right edge likewise. For each such
+    // pair, the gaps between the windows across it are the candidates.
+    let mut xs: Vec<i32> = windows
+        .iter()
+        .flat_map(|w| [w.left, w.right])
+        .chain([work.left, work.right])
+        .collect();
+    xs.sort_unstable();
+    xs.dedup();
+    let mut best: Option<Rect> = None;
+    for (i, &left) in xs.iter().enumerate() {
+        if horizontal == Align::Start && left != work.left {
+            continue;
+        }
+        for &right in &xs[i + 1..] {
+            if (horizontal == Align::End && right != work.right)
+                || f64::from(right - left) < min_width
+            {
+                continue;
+            }
+            let mut across: Vec<(i32, i32)> = windows
+                .iter()
+                .filter(|w| w.left < right && w.right > left)
+                .map(|w| (w.top, w.bottom))
+                .collect();
+            across.sort_unstable();
+            for (top, bottom) in gaps(work.top, work.bottom, &across) {
+                if (vertical == Align::Start && top != work.top)
+                    || (vertical == Align::End && bottom != work.bottom)
+                    || f64::from(bottom - top) < min_height
+                {
+                    continue;
+                }
+                let space = Rect {
+                    left,
+                    top,
+                    right,
+                    bottom,
+                };
+                if best.is_none_or(|b| fits_better(space, b, work, anchor)) {
+                    best = Some(space);
+                }
+            }
+        }
+    }
+    best
+}
+
+/// The parts of `[start, end]` that none of `taken`, sorted by where they
+/// start, covers.
+fn gaps(start: i32, end: i32, taken: &[(i32, i32)]) -> Vec<(i32, i32)> {
+    let mut gaps = Vec::new();
+    let mut from = start;
+    for &(a, b) in taken {
+        if a > from {
+            gaps.push((from, a));
+        }
+        from = from.max(b);
+    }
+    if from < end {
+        gaps.push((from, end));
+    }
+    gaps
+}
+
+/// Whether `a` is a better space to fit into than `b`: larger, or as large
+/// and nearer the anchor.
+fn fits_better(a: Rect, b: Rect, work: Rect, anchor: Anchor) -> bool {
+    let area = |r: Rect| i64::from(r.width()) * i64::from(r.height());
+    let distance = |r: Rect| {
+        let (x, y) = r.point(anchor);
+        let (wx, wy) = work.point(anchor);
+        (x - wx).powi(2) + (y - wy).powi(2)
+    };
+    match area(a).cmp(&area(b)) {
+        std::cmp::Ordering::Equal => distance(a) < distance(b),
+        order => order.is_gt(),
     }
 }
 
@@ -354,10 +588,13 @@ mod tests {
 
     fn p(anchor: Anchor, width: &str, height: &str) -> Placement {
         let size = |s: &str| Size::try_from(s.to_string()).unwrap();
-        Placement {
-            anchor,
-            width: size(width),
-            height: size(height),
+        Placement::given(anchor, size(width), size(height))
+    }
+
+    impl Placement {
+        /// Where a placement that does not fit puts a window.
+        fn rect(&self, work: Rect, current: (i32, i32)) -> Rect {
+            self.resolve(work, current, || unreachable!()).unwrap()
         }
     }
 
@@ -429,20 +666,20 @@ mod tests {
         let current = (800, 600);
         // The width stays, the height becomes a third, from the top left.
         assert_eq!(
-            p(Anchor::TopLeft, "keep", "1/3").resolve(FHD, current),
+            p(Anchor::TopLeft, "keep", "1/3").rect(FHD, current),
             r(0, 0, 800, 347)
         );
         assert_eq!(
-            p(Anchor::Center, "1/2", "keep").resolve(FHD, current),
+            p(Anchor::Center, "1/2", "keep").rect(FHD, current),
             r(480, 220, 1440, 820)
         );
         assert_eq!(
-            p(Anchor::BottomRight, "keep", "keep").resolve(FHD, current),
+            p(Anchor::BottomRight, "keep", "keep").rect(FHD, current),
             r(1120, 440, 1920, 1040)
         );
         // A window larger than the work area is shrunk to fit it.
         assert_eq!(
-            p(Anchor::Left, "keep", "1").resolve(FHD, (2400, 600)),
+            p(Anchor::Left, "keep", "1").rect(FHD, (2400, 600)),
             r(0, 0, 1920, 1040)
         );
     }
@@ -450,19 +687,19 @@ mod tests {
     #[test]
     fn halves_and_quarters() {
         assert_eq!(
-            p(Anchor::Left, "1/2", "1").resolve(FHD, ANY),
+            p(Anchor::Left, "1/2", "1").rect(FHD, ANY),
             r(0, 0, 960, 1040)
         );
         assert_eq!(
-            p(Anchor::Right, "1/2", "1").resolve(FHD, ANY),
+            p(Anchor::Right, "1/2", "1").rect(FHD, ANY),
             r(960, 0, 1920, 1040)
         );
         assert_eq!(
-            p(Anchor::Top, "1", "1/2").resolve(FHD, ANY),
+            p(Anchor::Top, "1", "1/2").rect(FHD, ANY),
             r(0, 0, 1920, 520)
         );
         assert_eq!(
-            p(Anchor::BottomRight, "1/2", "1/2").resolve(FHD, ANY),
+            p(Anchor::BottomRight, "1/2", "1/2").rect(FHD, ANY),
             r(960, 520, 1920, 1040)
         );
     }
@@ -470,8 +707,8 @@ mod tests {
     #[test]
     fn neighbours_share_an_edge_on_odd_sizes() {
         let work = r(0, 0, 1921, 1041);
-        let thirds = [Anchor::Left, Anchor::Center, Anchor::Right]
-            .map(|a| p(a, "1/3", "1").resolve(work, ANY));
+        let thirds =
+            [Anchor::Left, Anchor::Center, Anchor::Right].map(|a| p(a, "1/3", "1").rect(work, ANY));
         assert_eq!(thirds[0].left, 0);
         assert_eq!(thirds[0].right, thirds[1].left);
         assert_eq!(thirds[1].right, thirds[2].left);
@@ -483,17 +720,14 @@ mod tests {
         // A monitor to the left of the primary one, below its top edge.
         let work = r(-2560, 200, 0, 1600);
         assert_eq!(
-            p(Anchor::Right, "1/2", "1").resolve(work, ANY),
+            p(Anchor::Right, "1/2", "1").rect(work, ANY),
             r(-1280, 200, 0, 1600)
         );
     }
 
     #[test]
     fn keeps_at_least_a_pixel() {
-        assert_eq!(
-            p(Anchor::Center, "0.0001", "1").resolve(FHD, ANY).width(),
-            1
-        );
+        assert_eq!(p(Anchor::Center, "0.0001", "1").rect(FHD, ANY).width(), 1);
     }
 
     #[test]
@@ -529,17 +763,104 @@ mod tests {
     fn placements_resolve_on_a_miniature() {
         let screen = miniature((1920, 1080), r(0, 0, 32, 18), Anchor::TopLeft).unwrap();
         assert_eq!(
-            p(Anchor::Left, "1/2", "1").resolve(screen, ANY),
+            p(Anchor::Left, "1/2", "1").rect(screen, ANY),
             r(0, 0, 16, 18)
         );
         assert_eq!(
-            p(Anchor::BottomRight, "1/2", "1/2").resolve(screen, ANY),
+            p(Anchor::BottomRight, "1/2", "1/2").rect(screen, ANY),
             r(16, 9, 32, 18)
         );
         // However small, the window stays visible.
+        assert_eq!(p(Anchor::Center, "0.01", "1").rect(screen, ANY).width(), 1);
+    }
+
+    fn fits(anchor: Anchor, others: &[Rect]) -> Option<Rect> {
+        let placement = Placement {
+            anchor,
+            sizing: Sizing::Fit,
+        };
+        placement.resolve(FHD, ANY, || others.to_vec())
+    }
+
+    #[test]
+    fn fits_the_whole_work_area_when_it_is_empty() {
+        for anchor in Anchor::ALL {
+            assert_eq!(fits(anchor, &[]), Some(FHD), "{anchor:?}");
+        }
+    }
+
+    #[test]
+    fn fits_the_empty_space_beside_a_window() {
+        let left_half = r(0, 0, 960, 1040);
         assert_eq!(
-            p(Anchor::Center, "0.01", "1").resolve(screen, ANY).width(),
-            1
+            fits(Anchor::Right, &[left_half]),
+            Some(r(960, 0, 1920, 1040))
         );
+        assert_eq!(
+            fits(Anchor::Center, &[left_half]),
+            fits(Anchor::Right, &[left_half])
+        );
+        // Nothing is empty at the left edge.
+        assert_eq!(fits(Anchor::Left, &[left_half]), None);
+        assert_eq!(fits(Anchor::TopLeft, &[left_half]), None);
+    }
+
+    #[test]
+    fn fits_the_largest_space_that_touches_the_anchor_sides() {
+        // The left half taken, and a small window at the bottom right.
+        let others = [r(0, 0, 960, 1040), r(1600, 800, 1920, 1040)];
+        // At the right edge: above the small window.
+        assert_eq!(fits(Anchor::Right, &others), Some(r(960, 0, 1920, 800)));
+        assert_eq!(fits(Anchor::TopRight, &others), Some(r(960, 0, 1920, 800)));
+        // At the bottom edge: beside it.
+        assert_eq!(fits(Anchor::Bottom, &others), Some(r(960, 0, 1600, 1040)));
+        // The corner itself is taken.
+        assert_eq!(fits(Anchor::BottomRight, &others), None);
+        // The center goes wherever is largest.
+        assert_eq!(fits(Anchor::Center, &others), Some(r(960, 0, 1920, 800)));
+    }
+
+    #[test]
+    fn fits_around_windows_that_overlap() {
+        let others = [r(0, 0, 800, 600), r(400, 300, 1200, 1040)];
+        assert_eq!(fits(Anchor::Right, &others), Some(r(1200, 0, 1920, 1040)));
+        assert_eq!(
+            fits(Anchor::BottomLeft, &others),
+            Some(r(0, 600, 400, 1040))
+        );
+    }
+
+    #[test]
+    fn a_window_over_the_whole_work_area_hides_those_below_it() {
+        let others = [r(0, 0, 480, 1040), FHD, r(1440, 0, 1920, 1040)];
+        assert_eq!(fits(Anchor::Right, &others), Some(r(480, 0, 1920, 1040)));
+        // A maximized window's frame may reach past the work area.
+        let others = [r(-8, -8, 1928, 1048), r(0, 0, 960, 1040)];
+        assert_eq!(fits(Anchor::Left, &others), Some(FHD));
+    }
+
+    #[test]
+    fn windows_on_other_monitors_are_cut_to_the_work_area() {
+        let others = [r(-500, 0, 480, 1040), r(-2560, 0, 0, 1440)];
+        assert_eq!(fits(Anchor::Right, &others), Some(r(480, 0, 1920, 1040)));
+    }
+
+    #[test]
+    fn gaps_between_windows_are_no_room() {
+        // 20px across, and 40px down, are less than a twelfth.
+        assert_eq!(fits(Anchor::Right, &[r(0, 0, 1900, 1040)]), None);
+        assert_eq!(fits(Anchor::Bottom, &[r(0, 0, 1920, 1000)]), None);
+        assert_eq!(
+            fits(Anchor::Right, &[r(0, 0, 1700, 1040)]),
+            Some(r(1700, 0, 1920, 1040))
+        );
+    }
+
+    #[test]
+    fn of_two_spaces_as_large_the_one_nearer_the_anchor_fits() {
+        // Two spaces 400px across: at the left edge, and right of center.
+        let others = [r(400, 0, 1120, 1040), r(1520, 0, 1920, 1040)];
+        assert_eq!(fits(Anchor::Center, &others), Some(r(1120, 0, 1520, 1040)));
+        assert_eq!(fits(Anchor::Left, &others), Some(r(0, 0, 400, 1040)));
     }
 }

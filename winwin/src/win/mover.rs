@@ -1,7 +1,9 @@
 //! Moving and resizing the foreground window.
 
 use windows::Win32::Foundation::{ERROR_ACCESS_DENIED, HWND, LPARAM, RECT, WPARAM};
-use windows::Win32::Graphics::Dwm::{DWMWA_EXTENDED_FRAME_BOUNDS, DwmGetWindowAttribute};
+use windows::Win32::Graphics::Dwm::{
+    DWMWA_CLOAKED, DWMWA_EXTENDED_FRAME_BOUNDS, DwmGetWindowAttribute,
+};
 use windows::Win32::Graphics::Gdi::{
     GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromWindow,
 };
@@ -9,13 +11,14 @@ use windows::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress};
 use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
 use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON, VK_RBUTTON};
 use windows::Win32::UI::WindowsAndMessaging::{
-    CURSORINFO, GA_ROOT, GetAncestor, GetClassNameW, GetCursorInfo, GetForegroundWindow,
-    GetShellWindow, GetSystemMetrics, GetWindowRect, HTCAPTION, IDC_SIZENESW, IDC_SIZENS,
-    IDC_SIZENWSE, IDC_SIZEWE, IsHungAppWindow, IsIconic, IsWindowVisible, IsZoomed, LoadCursorW,
-    PostMessageW, SC_MOVE, SM_SWAPBUTTON, SW_RESTORE, SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE,
-    SWP_NOOWNERZORDER, SWP_NOZORDER, SetWindowPos, ShowWindow, WM_CANCELMODE, WM_SYSCOMMAND,
+    CURSORINFO, EnumWindows, GA_ROOT, GWL_EXSTYLE, GetAncestor, GetClassNameW, GetCursorInfo,
+    GetForegroundWindow, GetShellWindow, GetSystemMetrics, GetWindowLongPtrW, GetWindowRect,
+    HTCAPTION, IDC_SIZENESW, IDC_SIZENS, IDC_SIZENWSE, IDC_SIZEWE, IsHungAppWindow, IsIconic,
+    IsWindowVisible, IsZoomed, LoadCursorW, PostMessageW, SC_MOVE, SM_SWAPBUTTON, SW_MAXIMIZE,
+    SW_RESTORE, SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE, SWP_NOOWNERZORDER, SWP_NOZORDER, SetWindowPos,
+    ShowWindow, WM_CANCELMODE, WM_SYSCOMMAND, WS_EX_TOOLWINDOW,
 };
-use windows::core::{s, w};
+use windows::core::{BOOL, s, w};
 
 use crate::layout::{Placement, Rect};
 
@@ -133,7 +136,8 @@ pub fn place_foreground(placement: &Placement) -> Result<Option<Placed>, MoveErr
         return Ok(None);
     }
 
-    if unsafe { IsZoomed(hwnd) }.as_bool() {
+    let zoomed = unsafe { IsZoomed(hwnd) }.as_bool();
+    if zoomed {
         let _ = unsafe { ShowWindow(hwnd, SW_RESTORE) };
     }
     // After the restore, so that a maximized window keeps the size it has
@@ -142,7 +146,13 @@ pub fn place_foreground(placement: &Placement) -> Result<Option<Placed>, MoveErr
         return Ok(None);
     };
     let dpi = monitor_dpi(hwnd);
-    place(hwnd, placement)?;
+    if !place(hwnd, placement)? {
+        // A placement that fits found no room: the window stays as it was.
+        if zoomed {
+            let _ = unsafe { ShowWindow(hwnd, SW_MAXIMIZE) };
+        }
+        return Ok(None);
+    }
     Ok(window_rect(hwnd).map(|after| Placed {
         hwnd,
         before,
@@ -264,20 +274,79 @@ pub fn put(hwnd: HWND, rect: Rect) {
     };
 }
 
-/// Puts `hwnd` where `placement` says on the monitor it is on.
-pub fn place(hwnd: HWND, placement: &Placement) -> Result<(), MoveError> {
+/// The work area of the monitor `hwnd` is on.
+fn work_area(hwnd: HWND) -> Option<Rect> {
     let monitor = unsafe { MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST) };
     let mut info = MONITORINFO {
         cbSize: size_of::<MONITORINFO>() as u32,
         ..Default::default()
     };
-    if !unsafe { GetMonitorInfoW(monitor, &mut info) }.as_bool() {
-        return Ok(());
+    unsafe { GetMonitorInfoW(monitor, &mut info) }
+        .as_bool()
+        .then(|| to_rect(info.rcWork))
+}
+
+/// Whether `hwnd` is a window the user sees on screen and works with: shown,
+/// not minimized, not hidden by Windows (as one on another virtual desktop
+/// is), and neither a tool window, such as a tooltip or a floating toolbar,
+/// nor the desktop or the taskbar.
+fn is_on_screen(hwnd: HWND) -> bool {
+    if !unsafe { IsWindowVisible(hwnd) }.as_bool() || unsafe { IsIconic(hwnd) }.as_bool() {
+        return false;
     }
-    let Some((_, frame)) = measure(hwnd) else {
-        return Ok(());
+    let ex_style = unsafe { GetWindowLongPtrW(hwnd, GWL_EXSTYLE) } as u32;
+    if ex_style & WS_EX_TOOLWINDOW.0 != 0 || is_shell_window(hwnd) {
+        return false;
+    }
+    let mut cloaked = 0u32;
+    let got = unsafe {
+        DwmGetWindowAttribute(
+            hwnd,
+            DWMWA_CLOAKED,
+            (&mut cloaked as *mut u32).cast(),
+            size_of::<u32>() as u32,
+        )
     };
-    let target = placement.resolve(to_rect(info.rcWork), (frame.width(), frame.height()));
+    !(got.is_ok() && cloaked != 0)
+}
+
+/// The visible frames of the windows on screen other than `hwnd`, from the
+/// top of the z-order down, as `layout::fit` takes them. A maximized window
+/// is given as the whole work area of its monitor, which it covers.
+fn other_frames(hwnd: HWND) -> Vec<Rect> {
+    unsafe extern "system" fn collect(other: HWND, found: LPARAM) -> BOOL {
+        let (skip, frames) = unsafe { &mut *(found.0 as *mut (HWND, Vec<Rect>)) };
+        if other != *skip && is_on_screen(other) {
+            let frame = if unsafe { IsZoomed(other) }.as_bool() {
+                work_area(other)
+            } else {
+                measure(other).map(|(_, frame)| frame)
+            };
+            frames.extend(frame);
+        }
+        true.into()
+    }
+    let mut found = (hwnd, Vec::new());
+    let _ = unsafe {
+        EnumWindows(
+            Some(collect),
+            LPARAM(&mut found as *mut (HWND, Vec<Rect>) as isize),
+        )
+    };
+    found.1
+}
+
+/// Puts `hwnd` where `placement` says on the monitor it is on. False when a
+/// placement that fits finds no room, and the window is left where it is.
+pub fn place(hwnd: HWND, placement: &Placement) -> Result<bool, MoveError> {
+    let (Some(work), Some((_, frame))) = (work_area(hwnd), measure(hwnd)) else {
+        return Ok(true);
+    };
+    let Some(target) =
+        placement.resolve(work, (frame.width(), frame.height()), || other_frames(hwnd))
+    else {
+        return Ok(false);
+    };
 
     set_frame(hwnd, target)?;
     // The invisible borders can change with the size (a window that reached
@@ -288,5 +357,5 @@ pub fn place(hwnd: HWND, placement: &Placement) -> Result<(), MoveError> {
     {
         set_frame(hwnd, target)?;
     }
-    Ok(())
+    Ok(true)
 }

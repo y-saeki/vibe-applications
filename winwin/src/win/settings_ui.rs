@@ -141,6 +141,7 @@ enum Msg {
     Anchor(Anchor),
     Width(String),
     Height(String),
+    Fit(bool),
     Autostart(bool),
     Theme(Option<usize>),
     Save,
@@ -239,6 +240,7 @@ impl Component for Settings {
             Msg::Anchor(a) => self.editor.edit(|d| d.anchor = a),
             Msg::Width(text) => self.editor.edit(|d| d.width = text),
             Msg::Height(text) => self.editor.edit(|d| d.height = text),
+            Msg::Fit(on) => self.editor.edit(|d| d.fit = on),
             Msg::Autostart(on) => self.autostart = on,
             Msg::Theme(i) => {
                 if let Some(&theme) = i.and_then(|i| Theme::ALL.get(i)) {
@@ -563,7 +565,8 @@ impl Settings {
                         .vertical_alignment(VerticalAlignment::Center)
                         .content(shortcut_view(row, Caps::SMALL)),
                     cell(row.anchor.label().to_string(), 1),
-                    cell(row.width_text(), 2),
+                    // フィット takes the room of both sizes.
+                    cell(row.width_text(), 2).grid_column_span(if row.fit { 2 } else { 1 }),
                     cell(row.height_text(), 3),
                 ));
             let selected = self.editor.is_selected(id);
@@ -678,12 +681,22 @@ impl Settings {
                     ),
             ));
 
-        let anchor = anchor_picker(d.anchor, enabled, context);
+        let anchor = StackPanel::new()
+            .orientation(Orientation::Horizontal)
+            .spacing(16.0)
+            .children((
+                anchor_picker(d.anchor, enabled, context),
+                CheckBox::new()
+                    .is_enabled(enabled)
+                    .is_checked(d.fit)
+                    .on_is_checked_changed(context.callback(Msg::Fit))
+                    .content(draft::FIT_LABEL),
+            ));
 
         // Wide enough for the placeholder, which an empty field shows.
         let ratio = |value: &str, kept: &str, on_change: fn(String) -> Msg| {
             TextBox::new()
-                .is_enabled(enabled)
+                .is_enabled(enabled && !d.fit)
                 .text(value.to_string())
                 .placeholder_text(kept)
                 .width(144.0)

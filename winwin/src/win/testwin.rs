@@ -37,7 +37,7 @@ use windows::core::{HSTRING, PCWSTR};
 use super::{icon, mover, shortcuts::Shortcuts};
 use crate::config::Config;
 use crate::cycle;
-use crate::layout::{Anchor, Placement, Ratio, Rect, Size};
+use crate::layout::{self, Anchor, Ratio, Rect, Size};
 
 /// settings.rs tells this window from the settings window by it.
 pub const CLASS_NAME: &str = "winwin.test";
@@ -45,11 +45,11 @@ const TITLE: &str = "winwin テスト用ウィンドウ";
 /// How far in from its edges the window can be resized, in DIPs.
 const RESIZE_BORDER: i32 = 8;
 /// Where the window first appears on the monitor the pointer is on.
-const FIRST_PLACEMENT: Placement = Placement {
-    anchor: Anchor::Center,
-    width: Size::Ratio(Ratio::HALF),
-    height: Size::Ratio(Ratio::HALF),
-};
+const FIRST_PLACEMENT: (Anchor, Size, Size) = (
+    Anchor::Center,
+    Size::Ratio(Ratio::HALF),
+    Size::Ratio(Ratio::HALF),
+);
 /// Where Windows has no glass to offer (Windows 10), the window is a plain
 /// color this see-through instead (of 255).
 const PLAIN_ALPHA: u8 = 216;
@@ -103,7 +103,8 @@ pub fn open(on_close: impl Fn() + 'static) -> Result<(), String> {
     dress(hwnd);
     set_icon(hwnd);
     if let Some(work) = pointer_work_area() {
-        let r = FIRST_PLACEMENT.resolve(work, (0, 0));
+        let (anchor, width, height) = FIRST_PLACEMENT;
+        let r = layout::sized(anchor, width, height, work, (0, 0));
         let _ = unsafe {
             SetWindowPos(
                 hwnd,
