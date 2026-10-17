@@ -7,6 +7,9 @@
 //! application itself. Pressing shortcuts one after another keeps the size
 //! from before the first one.
 //!
+//! What it remembers also goes on the window itself (`Remembered::pack`), so
+//! that a winwin started again picks it up, and goes away with the window.
+//!
 //! The size comes back as soon as the window first moves in a drag, not
 //! when the drag starts: a click on the title bar starts one too. The
 //! system's move loop puts the size it started with back on every step, so
@@ -45,23 +48,77 @@ pub enum Ended {
     Resume(Rect),
 }
 
-struct Entry {
+/// What winwin remembers of a window it has placed.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Remembered {
     /// The window's outer size before winwin first placed it.
-    width: i32,
-    height: i32,
+    pub width: i32,
+    pub height: i32,
     /// The DPI of the monitor it was on then, to scale the size on a
     /// monitor with another one.
-    dpi: u32,
+    pub dpi: u32,
     /// Where winwin last put it.
-    placed: Rect,
-    drag: Drag,
+    pub placed: Rect,
 }
 
-impl Entry {
+/// Marks a packed value as winwin's, and as this layout of it.
+const PACKED: u64 = 1 << 48;
+
+impl Remembered {
     fn size_at(&self, dpi: u32) -> (i32, i32) {
         let scale = |v: i32| (f64::from(v) * f64::from(dpi) / f64::from(self.dpi)).round() as i32;
         (scale(self.width), scale(self.height))
     }
+
+    /// Two values of 64 bits, to keep on the window: the size and DPI, and
+    /// where winwin put it. None when something does not fit, which no
+    /// screen of today comes near: a size or DPI over 65535, a coordinate
+    /// outside ±32767.
+    pub fn pack(&self) -> Option<[u64; 2]> {
+        let unsigned = |v: i64| u16::try_from(v).ok().map(u64::from);
+        let signed = |v: i32| i16::try_from(v).ok().map(|v| u64::from(v as u16));
+        let size = unsigned(self.width.into())?
+            | unsigned(self.height.into())? << 16
+            | unsigned(self.dpi.into())? << 32
+            | PACKED;
+        let r = self.placed;
+        let placed = signed(r.left)?
+            | signed(r.top)? << 16
+            | signed(r.right)? << 32
+            | signed(r.bottom)? << 48;
+        Some([size, placed])
+    }
+
+    /// The other way round. None for anything `pack` did not write.
+    pub fn unpack([size, placed]: [u64; 2]) -> Option<Self> {
+        if size & !0xFFFF_FFFF_FFFF != PACKED {
+            return None;
+        }
+        let unsigned = |shift: u32| ((size >> shift) & 0xFFFF) as i32;
+        let signed = |shift: u32| i32::from((placed >> shift) as u16 as i16);
+        let remembered = Self {
+            width: unsigned(0),
+            height: unsigned(16),
+            dpi: unsigned(32) as u32,
+            placed: Rect {
+                left: signed(0),
+                top: signed(16),
+                right: signed(32),
+                bottom: signed(48),
+            },
+        };
+        let sane = remembered.width > 0
+            && remembered.height > 0
+            && remembered.dpi > 0
+            && remembered.placed.width() > 0
+            && remembered.placed.height() > 0;
+        sane.then_some(remembered)
+    }
+}
+
+struct Entry {
+    kept: Remembered,
+    drag: Drag,
 }
 
 fn same_size(a: Rect, b: Rect) -> bool {
@@ -85,30 +142,59 @@ fn share(rect: Rect, cursor: (i32, i32)) -> f64 {
 #[derive(Default)]
 pub struct Sizes {
     windows: HashMap<isize, Entry>,
+    /// Windows forgotten since `take_forgotten`, to take what winwin left on
+    /// them away too.
+    forgotten: Vec<isize>,
 }
 
 impl Sizes {
     /// A shortcut moved `window` from `before` to `after`, on a monitor of
     /// `dpi`. When the window was still where an earlier shortcut put it,
     /// the size from before that one is kept.
-    pub fn placed(&mut self, window: isize, before: Rect, dpi: u32, after: Rect) {
+    /// Returns what there now is to remember of the window.
+    pub fn placed(&mut self, window: isize, before: Rect, dpi: u32, after: Rect) -> Remembered {
         match self.windows.get_mut(&window) {
-            Some(entry) if entry.placed == before => {
-                entry.placed = after;
+            Some(entry) if entry.kept.placed == before => {
+                entry.kept.placed = after;
                 entry.drag = Drag::None;
+                entry.kept
             }
             _ => {
+                let kept = Remembered {
+                    width: before.width(),
+                    height: before.height(),
+                    dpi,
+                    placed: after,
+                };
                 self.windows.insert(
                     window,
                     Entry {
-                        width: before.width(),
-                        height: before.height(),
-                        dpi,
-                        placed: after,
+                        kept,
                         drag: Drag::None,
                     },
                 );
+                kept
             }
+        }
+    }
+
+    /// Picks up what an earlier winwin remembered of `window`, unless this
+    /// one already knows it.
+    pub fn adopt(&mut self, window: isize, kept: Remembered) {
+        self.windows.entry(window).or_insert(Entry {
+            kept,
+            drag: Drag::None,
+        });
+    }
+
+    /// The windows forgotten since the last call.
+    pub fn take_forgotten(&mut self) -> Vec<isize> {
+        std::mem::take(&mut self.forgotten)
+    }
+
+    fn forget(&mut self, window: isize) {
+        if self.windows.remove(&window).is_some() {
+            self.forgotten.push(window);
         }
     }
 
@@ -129,8 +215,8 @@ impl Sizes {
         if let Drag::Resumed { .. } = entry.drag {
             return false;
         }
-        if resizing || !same_size(entry.placed, current) {
-            self.windows.remove(&window);
+        if resizing || !same_size(entry.kept.placed, current) {
+            self.forget(window);
             return false;
         }
         entry.drag = Drag::Started;
@@ -144,11 +230,11 @@ impl Sizes {
         let Some(entry) = self.windows.get_mut(&window) else {
             return false;
         };
-        if entry.drag != Drag::Started || same_corner(entry.placed, current) {
+        if entry.drag != Drag::Started || same_corner(entry.kept.placed, current) {
             return false;
         }
-        if !same_size(entry.placed, current) {
-            self.windows.remove(&window);
+        if !same_size(entry.kept.placed, current) {
+            self.forget(window);
             return false;
         }
         entry.drag = Drag::Stopping {
@@ -182,7 +268,7 @@ impl Sizes {
             return Ended::Leave;
         };
         let drag = std::mem::replace(&mut entry.drag, Drag::None);
-        let (width, height) = entry.size_at(dpi);
+        let (width, height) = entry.kept.size_at(dpi);
         let under_cursor = |share: f64, top: i32| {
             let left = cursor.0 - (share * f64::from(width)).round() as i32;
             Rect {
@@ -198,15 +284,15 @@ impl Sizes {
                 entry.drag = Drag::Resumed { share };
                 return Ended::Resume(under_cursor(share, cursor.1 - dy));
             }
-            Drag::Started if !arranged && same_corner(entry.placed, current) => {
-                return match current != entry.placed {
-                    true => Ended::Put(entry.placed),
+            Drag::Started if !arranged && same_corner(entry.kept.placed, current) => {
+                return match current != entry.kept.placed {
+                    true => Ended::Put(entry.kept.placed),
                     false => Ended::Leave,
                 };
             }
             _ => {}
         }
-        self.windows.remove(&window);
+        self.forget(window);
         if arranged {
             return Ended::Leave;
         }
@@ -461,6 +547,85 @@ mod tests {
         sizes.drag_started(W, LEFT_HALF, false);
         assert!(!sizes.moved(W, rect(5, 0, 900, 1040), (0, 0)));
         assert!(!sizes.tracks(W));
+    }
+
+    #[test]
+    fn what_is_remembered_comes_back_from_the_window() {
+        let kept = Remembered {
+            width: 800,
+            height: 600,
+            dpi: 144,
+            placed: rect(-1928, -8, -952, 1040),
+        };
+        assert_eq!(Remembered::unpack(kept.pack().unwrap()), Some(kept));
+    }
+
+    #[test]
+    fn what_does_not_fit_is_not_kept_on_the_window() {
+        let kept = |width, left| Remembered {
+            width,
+            height: 600,
+            dpi: 96,
+            placed: rect(left, 0, left + 100, 100),
+        };
+        assert!(kept(70_000, 0).pack().is_none());
+        assert!(kept(800, 40_000).pack().is_none());
+        assert!(kept(800, -40_000).pack().is_none());
+    }
+
+    #[test]
+    fn values_winwin_did_not_write_are_ignored() {
+        assert_eq!(Remembered::unpack([0, 0]), None);
+        assert_eq!(Remembered::unpack([u64::MAX, 0]), None);
+        let packed = Remembered {
+            width: 800,
+            height: 600,
+            dpi: 96,
+            placed: LEFT_HALF,
+        }
+        .pack()
+        .unwrap();
+        // Another layout of the same thing.
+        assert_eq!(Remembered::unpack([packed[0] + (1 << 48), packed[1]]), None);
+        // A placed rectangle with no area.
+        assert_eq!(Remembered::unpack([packed[0], 0]), None);
+    }
+
+    #[test]
+    fn a_winwin_started_again_takes_over_what_was_remembered() {
+        let mut first = placed();
+        let kept = first.placed(W, LEFT_HALF, 96, rect(0, 0, 960, 520));
+        let mut again = Sizes::default();
+        again.adopt(W, kept);
+        assert_eq!(
+            resumed_size(&mut again, rect(0, 0, 960, 520), 96),
+            Some((800, 600))
+        );
+    }
+
+    #[test]
+    fn adopting_does_not_replace_what_is_known() {
+        let mut sizes = placed();
+        sizes.adopt(
+            W,
+            Remembered {
+                width: 100,
+                height: 100,
+                dpi: 96,
+                placed: LEFT_HALF,
+            },
+        );
+        assert_eq!(resumed_size(&mut sizes, LEFT_HALF, 96), Some((800, 600)));
+    }
+
+    #[test]
+    fn forgotten_windows_are_reported_once() {
+        let mut sizes = placed();
+        sizes.placed(2, ORIGINAL, 96, LEFT_HALF);
+        sizes.drag_started(W, LEFT_HALF, true);
+        sizes.drag_started(2, rect(0, 0, 10, 10), false);
+        assert_eq!(sizes.take_forgotten(), vec![W, 2]);
+        assert_eq!(sizes.take_forgotten(), Vec::<isize>::new());
     }
 
     #[test]

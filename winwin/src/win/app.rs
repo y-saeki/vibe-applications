@@ -28,7 +28,7 @@ use windows::core::{HSTRING, PCSTR, PCWSTR, w};
 
 use super::{
     APP_NAME, WM_APP_OPEN_SETTINGS, WM_APP_SETTINGS_CLOSED, WM_APP_TRAY, config_path,
-    copy_to_field, error_box, icon, loword, mover, settings, shortcuts::Shortcuts,
+    copy_to_field, error_box, icon, loword, marks, mover, settings, shortcuts::Shortcuts,
 };
 use crate::config::{Config, Theme};
 use crate::cycle;
@@ -240,16 +240,17 @@ fn on_hotkey(id: usize) {
     };
     match mover::place_foreground(&placement) {
         Ok(Some(placed)) => {
-            with_app(|app| {
+            let window = placed.hwnd.0 as isize;
+            adopt_marks(placed.hwnd);
+            let kept = with_app(|app| {
                 app.sizes
                     .retain(|window| unsafe { IsWindow(Some(HWND(window as _))) }.as_bool());
-                app.sizes.placed(
-                    placed.hwnd.0 as isize,
-                    placed.before,
-                    placed.dpi,
-                    placed.after,
-                );
+                app.sizes
+                    .placed(window, placed.before, placed.dpi, placed.after)
             });
+            if let Some(kept) = kept {
+                marks::write(placed.hwnd, &kept);
+            }
         }
         Ok(None) => {}
         Err(mover::MoveError::AccessDenied) => {
@@ -281,6 +282,25 @@ fn install_move_size_hook() -> HWINEVENTHOOK {
     }
 }
 
+/// Takes up what an earlier winwin left on `hwnd`, if this one does not
+/// know the window yet.
+fn adopt_marks(hwnd: HWND) {
+    let window = hwnd.0 as isize;
+    if with_app(|app| app.sizes.tracks(window)) != Some(false) {
+        return;
+    }
+    if let Some(kept) = marks::read(hwnd) {
+        with_app(|app| app.sizes.adopt(window, kept));
+    }
+}
+
+/// Takes what winwin left on the windows it has just forgotten away.
+fn clear_forgotten_marks() {
+    for window in with_app(|app| app.sizes.take_forgotten()).unwrap_or_default() {
+        marks::clear(HWND(window as _));
+    }
+}
+
 fn cursor_pos() -> (i32, i32) {
     let mut cursor = POINT::default();
     let _ = unsafe { GetCursorPos(&mut cursor) };
@@ -303,6 +323,7 @@ extern "system" fn on_move_size(
         return;
     }
     let window = hwnd.0 as isize;
+    adopt_marks(hwnd);
     if with_app(|app| app.sizes.tracks(window)) != Some(true) {
         return;
     }
@@ -336,6 +357,7 @@ extern "system" fn on_move_size(
         }
         _ => {}
     }
+    clear_forgotten_marks();
 }
 
 /// Hears `hwnd` move, through the location changes of its own thread only.
@@ -398,6 +420,7 @@ extern "system" fn on_drag_step(
         stop_watching_drag();
         mover::stop_drag(hwnd);
     }
+    clear_forgotten_marks();
 }
 
 fn open_settings() {

@@ -4,6 +4,7 @@ mod app;
 mod autostart;
 mod icon;
 mod keyhook;
+mod marks;
 mod mover;
 mod settings;
 mod settings_ui;

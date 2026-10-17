@@ -41,7 +41,7 @@ behaviour changes, the file that covers it changes in the same commit:
 | The config file's fields, defaults or validation | `mod tests` in `src/config.rs`, and the example in `DEVELOPMENT.md` |
 | Key names or which combinations are allowed | `mod tests` in `src/hotkey.rs` |
 | How entries that share a shortcut are grouped and take turns, or how a shortcut of several strokes waits for the next | `mod tests` in `src/cycle.rs` |
-| Which size a dragged window gets back, and where it lands | `mod tests` in `src/restore.rs` |
+| Which size a dragged window gets back, where it lands, and how it is kept on the window | `mod tests` in `src/restore.rs` |
 | What the settings window stores, checks on save, or shows in its list | `mod tests` in `src/draft.rs` |
 | The icon's picture, or how it is written into the executable | `mod tests` in `src/art.rs` or `src/icon_res.rs` |
 | The main window's class name, the config folder, or the `Run` value name | `installer/installer.nsi`, which closes winwin by that class and removes those on uninstall |
