@@ -138,7 +138,7 @@ enum Msg {
     RecordReset,
     RecordClear,
     RecordClosed(ContentDialogResult),
-    Anchor(Option<usize>),
+    Anchor(Anchor),
     Width(String),
     Height(String),
     Autostart(bool),
@@ -236,12 +236,7 @@ impl Component for Settings {
                     self.editor.edit(|d| d.keys = keys.strokes().to_vec());
                 }
             }
-            Msg::Anchor(Some(i)) => self.editor.edit(|d| {
-                if let Some(&a) = Anchor::ALL.get(i) {
-                    d.anchor = a;
-                }
-            }),
-            Msg::Anchor(None) => {}
+            Msg::Anchor(a) => self.editor.edit(|d| d.anchor = a),
             Msg::Width(text) => self.editor.edit(|d| d.width = text),
             Msg::Height(text) => self.editor.edit(|d| d.height = text),
             Msg::Autostart(on) => self.autostart = on,
@@ -683,12 +678,7 @@ impl Settings {
                     ),
             ));
 
-        let anchor = ComboBox::new()
-            .is_enabled(enabled)
-            .items_source(Anchor::ALL.map(Anchor::label))
-            .selected_index(Anchor::ALL.iter().position(|a| *a == d.anchor))
-            .min_width(160.0)
-            .on_selection_changed(context.callback(Msg::Anchor));
+        let anchor = anchor_picker(d.anchor, enabled, context);
 
         // Wide enough for the placeholder, which an empty field shows.
         let ratio = |value: &str, kept: &str, on_change: fn(String) -> Msg| {
@@ -970,6 +960,51 @@ fn chevron(arrow: Arrow, text_size: f64) -> View {
         .horizontal_alignment(HorizontalAlignment::Center)
         .vertical_alignment(VerticalAlignment::Center)
         .children((stroke(a), stroke(b)))
+}
+
+/// The anchor as a button that opens the nine anchors laid out as they sit
+/// on a screen, the current one accent colored. Choosing one leaves them
+/// open: windows-reactor has no way to close a flyout from code.
+fn anchor_picker(current: Anchor, enabled: bool, context: &mut ViewContext<Settings>) -> View {
+    let tiles = Anchor::ALL.into_iter().enumerate().map(|(i, a)| {
+        let tile = Button::new()
+            .style(if a == current {
+                ButtonStyle::Accent
+            } else {
+                ButtonStyle::Default
+            })
+            .width(64.0)
+            .height(40.0)
+            .on_click(context.message(Msg::Anchor(a)))
+            .content(a.label());
+        (
+            i,
+            Border::new()
+                .grid_row(i as i32 / 3)
+                .grid_column(i as i32 % 3)
+                .content(tile),
+        )
+    });
+    let tiles = Grid::new()
+        .rows([GridLength::Auto; 3])
+        .columns([GridLength::Auto; 3])
+        .row_spacing(4.0)
+        .column_spacing(4.0)
+        .keyed_children(tiles);
+    Button::new()
+        .is_enabled(enabled)
+        .min_width(160.0)
+        .horizontal_content_alignment(HorizontalAlignment::Stretch)
+        .content(
+            Grid::new()
+                .columns([GridLength::STAR, GridLength::Auto])
+                .column_spacing(8.0)
+                .children((
+                    TextBlock::new().text(current.label()),
+                    FontIcon::new().glyph("\u{E70D}").grid_column(1),
+                )),
+        )
+        .flyout_with(Flyout::rich(tiles).placement(FlyoutPlacement::BottomEdgeAlignedLeft))
 }
 
 /// A label above a control.
