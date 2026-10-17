@@ -172,6 +172,12 @@ CI では失敗したテストを 1 回だけ再実行します。1 回目の tr
 `draftpad-v<version>` タグの Release を作り、上記の 2 つを添付します。上げずにマージした場合、タグが既に存在するため
 Release は作られません。
 
+Pull Request でビルドしたものは、バージョンの後ろに Pull Request の先頭コミットの短いハッシュを semver の
+ビルドメタデータとして付けます(`0.28.0+047ba8f`)。環境設定パネルと About ウィンドウ、配布物のファイル名にこの形で
+出るので、手元で動かしているのがどの Pull Request のどのコミットか見分けられます。`tauri.conf.json` は書き換えず、
+`tauri build --config` で上書きしています。`main` のビルドは Release に載るものなので `0.28.0` のままです。
+macOS の `CFBundleVersion` は数字だけである必要があるため、ここにはメタデータを付けません。
+
 ### 上げ忘れを CI が止めます
 
 上げ忘れても Release ジョブは黙ってスキップするだけなので、`draftpad-version.yml` が Pull Request を赤くします。
