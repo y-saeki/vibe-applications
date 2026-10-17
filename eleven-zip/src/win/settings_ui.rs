@@ -84,6 +84,7 @@ enum Update {
 enum Msg {
     OpenInExplorer(bool),
     UnwrapSingleItem(bool),
+    TrashArchive(bool),
     ContextMenu(bool),
     AutoUpdate(bool),
     DefaultApps,
@@ -119,6 +120,9 @@ impl Component for Settings {
             }
             Msg::UnwrapSingleItem(on) => {
                 self.change(|c| c.unwrap_single_item = on);
+            }
+            Msg::TrashArchive(on) => {
+                self.change(|c| c.trash_archive = on);
             }
             Msg::ContextMenu(on) => {
                 if self.change(|c| c.context_menu = on) {
@@ -205,6 +209,11 @@ impl Component for Settings {
                 "中身が 1 つだけなら、フォルダーを作らずに展開する",
                 None,
                 toggle(c.unwrap_single_item, Msg::UnwrapSingleItem),
+            ),
+            card(
+                "展開したら書庫をごみ箱に入れる",
+                None,
+                toggle(c.trash_archive, Msg::TrashArchive),
             ),
             heading("エクスプローラー"),
             card(

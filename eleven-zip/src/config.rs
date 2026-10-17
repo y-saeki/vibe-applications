@@ -20,6 +20,9 @@ pub struct Config {
     /// archive, rather than into a folder named after the archive that would
     /// then hold nothing but it.
     pub unwrap_single_item: bool,
+    /// Puts the archive, or every volume of a split one, in the Recycle Bin once
+    /// it has extracted without errors or warnings.
+    pub trash_archive: bool,
     /// eleven-zip で展開 in the context menu of archives.
     pub context_menu: bool,
     /// Checks for a new 7-Zip once a day and installs it.
@@ -31,6 +34,7 @@ impl Default for Config {
         Config {
             open_in_explorer: true,
             unwrap_single_item: true,
+            trash_archive: false,
             context_menu: true,
             auto_update: true,
         }
@@ -99,9 +103,10 @@ mod tests {
     }
 
     #[test]
-    fn everything_is_on_by_default() {
+    fn everything_but_trashing_is_on_by_default() {
         let c = Config::default();
         assert!(c.open_in_explorer && c.unwrap_single_item && c.context_menu && c.auto_update);
+        assert!(!c.trash_archive);
     }
 
     #[test]
@@ -117,6 +122,7 @@ mod tests {
         let c = Config {
             open_in_explorer: false,
             unwrap_single_item: true,
+            trash_archive: true,
             context_menu: false,
             auto_update: false,
         };
