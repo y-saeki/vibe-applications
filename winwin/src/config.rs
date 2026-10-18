@@ -92,11 +92,11 @@ fn shortcut(keys: &str, anchor: Anchor, width: &str, height: &str) -> Shortcut {
     let valid = "default shortcuts are valid";
     Shortcut {
         keys: keys.parse().expect(valid),
-        placement: Placement {
+        placement: Placement::given(
             anchor,
-            width: Size::Ratio(width.parse().expect(valid)),
-            height: Size::Ratio(height.parse().expect(valid)),
-        },
+            Size::Ratio(width.parse().expect(valid)),
+            Size::Ratio(height.parse().expect(valid)),
+        ),
     }
 }
 
@@ -195,7 +195,7 @@ impl Config {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::layout::Ratio;
+    use crate::layout::{Ratio, Sizing};
 
     fn parse(text: &str) -> Result<Config, ConfigError> {
         Config::parse(text, Path::new("config.toml"))
@@ -236,8 +236,13 @@ mod tests {
         let s = &config.shortcuts[0];
         assert_eq!(s.keys.to_string(), "Win+Alt+1");
         assert_eq!(s.placement.anchor, Anchor::BottomRight);
-        assert_eq!(s.placement.width, Size::Ratio("2/3".parse().unwrap()));
-        assert_eq!(s.placement.height, Size::Ratio(Ratio::new(0.7).unwrap()));
+        assert_eq!(
+            s.placement.sizes(),
+            Some((
+                Size::Ratio("2/3".parse().unwrap()),
+                Size::Ratio(Ratio::new(0.7).unwrap())
+            ))
+        );
     }
 
     #[test]
@@ -253,10 +258,50 @@ mod tests {
         )
         .unwrap();
         let p = &config.shortcuts[0].placement;
-        assert_eq!(p.width, Size::Keep);
+        assert_eq!(p.sizes().unwrap().0, Size::Keep);
         let text = config.to_toml();
         assert!(text.contains(r#"width = "keep""#), "{text}");
         assert_eq!(parse(&text).unwrap(), config);
+    }
+
+    #[test]
+    fn reads_and_writes_a_placement_that_fits() {
+        let config = parse(
+            r#"
+            [[shortcut]]
+            keys = "Ctrl+Alt+R"
+            anchor = "right"
+            fit = true
+            "#,
+        )
+        .unwrap();
+        let p = config.shortcuts[0].placement;
+        assert_eq!((p.anchor, p.sizing), (Anchor::Right, Sizing::Fit));
+        let text = config.to_toml();
+        assert!(text.contains("fit = true"), "{text}");
+        assert!(!text.contains("width"), "{text}");
+        assert_eq!(parse(&text).unwrap(), config);
+
+        // Sizes written beside it are ignored; without it, they are needed.
+        let with_sizes = r#"
+            [[shortcut]]
+            keys = "Ctrl+Alt+R"
+            anchor = "right"
+            width = "1/2"
+            fit = true
+        "#;
+        assert_eq!(parse(with_sizes).unwrap(), config);
+        let e = parse(&with_sizes.replace("fit = true", "fit = false"))
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("fit = true"), "{e}");
+        assert!(!Config::defaults().to_toml().contains("fit"));
+
+        // Not at the center.
+        let e = parse(&with_sizes.replace("\"right\"", "\"center\""))
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("中央"), "{e}");
     }
 
     #[test]
@@ -271,9 +316,9 @@ mod tests {
             "#,
         )
         .unwrap();
-        let p = &config.shortcuts[0].placement;
+        let (width, height) = config.shortcuts[0].placement.sizes().unwrap();
         assert_eq!(
-            (p.width.to_string(), p.height.to_string()),
+            (width.to_string(), height.to_string()),
             ("2/3".into(), "1".into())
         );
     }
@@ -352,7 +397,7 @@ mod tests {
         let widths: Vec<String> = config
             .shortcuts
             .iter()
-            .map(|s| s.placement.width.to_string())
+            .map(|s| s.placement.sizes().unwrap().0.to_string())
             .collect();
         assert_eq!(widths, ["1/2", "2/3"]);
         assert_eq!(parse(&config.to_toml()).unwrap(), config);
