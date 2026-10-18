@@ -7,7 +7,8 @@ import SwiftUI
 /// keyboard focus.
 struct RecorderSheet: View {
     @ObservedObject var model: SettingsModel
-    /// The most keycaps drawn large; more would not fit.
+    /// The most keycaps drawn large, the plus between the modifiers and the
+    /// key counted as one; more would not fit.
     private static let largeCaps = 5
 
     var body: some View {

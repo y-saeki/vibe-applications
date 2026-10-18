@@ -47,7 +47,8 @@ const PLACEMENT_COLUMNS: [f64; 3] = [32.0, 44.0, 44.0];
 /// so that the picture's edges do not snap to whole DIPs.
 const SUBPIXEL: f64 = 4.0;
 
-/// The most keycaps the recording dialog draws large; more would not fit.
+/// The most keycaps the recording dialog draws large, the plus between the
+/// modifiers and the key counted as one; more would not fit.
 const LARGE_CAPS: usize = 5;
 
 const WINUI_WINDOW_CLASS: &str = "WinUIDesktopWin32WindowClass";
@@ -830,7 +831,7 @@ struct Caps {
     radius: f64,
     /// Inside a cap, at either side of its text.
     padding: f64,
-    /// Between caps, and around the comma between strokes.
+    /// Between caps, and around the plus and the comma between them.
     spacing: f64,
 }
 
@@ -857,17 +858,17 @@ impl Caps {
     /// beside the placement columns.
     const SMALL: Caps = Caps {
         height: 28.0,
-        min_width: 28.0,
+        min_width: 26.0,
         text_size: 13.0,
         radius: 4.0,
-        padding: 7.0,
+        padding: 6.0,
         spacing: 3.0,
     };
 }
 
 /// Strokes one after another as keycaps, with commas between them as the
-/// file writes them; the second without the modifiers it shares with the
-/// first. `dialog` is the recording dialog's: centered, and large caps as
+/// file writes them and a plus between the modifiers and the key; the
+/// second without the modifiers it shares with the first. `dialog` is the recording dialog's: centered, and large caps as
 /// long as they fit, whatever `size` says.
 fn strokes_view(strokes: &[Hotkey], size: Caps, dialog: bool) -> View {
     let groups = hotkey::strokes_caps(strokes);
@@ -909,8 +910,16 @@ fn strokes_view(strokes: &[Hotkey], size: Caps, dialog: bool) -> View {
 /// pictures, not buttons: they do nothing when clicked.
 fn keycaps(caps: Vec<Keycap>, size: Caps, centered: bool) -> View {
     let caps = caps.into_iter().enumerate().map(|(i, cap)| {
+        if cap == Keycap::Plus {
+            let plus: View = TextBlock::new()
+                .text("+")
+                .font_size(size.text_size)
+                .vertical_alignment(VerticalAlignment::Center)
+                .into();
+            return (i, plus);
+        }
         let face: View = match cap {
-            Keycap::Arrow(arrow) => chevron(arrow, size.text_size),
+            Keycap::Arrow(arrow) => arrow_face(arrow, size.text_size),
             _ => TextBlock::new()
                 .text(cap.label().unwrap_or_default())
                 .font_size(size.text_size)
@@ -974,38 +983,48 @@ fn critical_button() -> ResourceOverrides {
         .set("ButtonBorderBrushPressed", Color::transparent())
 }
 
-/// An arrow key's cap face: a chevron as tall as the text on the other caps,
-/// drawn as two strokes so that it takes the same color as that text.
-fn chevron(arrow: Arrow, text_size: f64) -> View {
-    // Half the chevron's length along the way it points, and its reach
-    // across that.
-    let size = text_size * 0.7;
-    let (depth, reach) = (size * 0.25, size * 0.5);
+/// An arrow key's cap face: an arrow as tall as the text on the other caps,
+/// drawn as three strokes so that it takes the same color as that text. A
+/// chevron would look like a Mac's ⌃.
+fn arrow_face(arrow: Arrow, text_size: f64) -> View {
+    let size = text_size * 0.8;
+    let thickness = text_size / 9.0;
+    // Half the arrow's length, and how far the head reaches back and
+    // across.
+    let (half, head) = (size / 2.0, size * 0.35);
     let (cx, cy) = (size / 2.0, size / 2.0);
-    // The tip, then the two ends, for a chevron pointing right.
-    let points = [(depth, 0.0), (-depth, -reach), (-depth, reach)];
+    // For an arrow pointing right: the tip, the two ends of the head, and
+    // the tail. The shaft stops short of the tip so that its flat end does
+    // not show past the head.
+    let points = [
+        (half, 0.0),
+        (half - head, -head),
+        (half - head, head),
+        (-half, 0.0),
+        (half - thickness, 0.0),
+    ];
     let turn = |(x, y): (f64, f64)| match arrow {
         Arrow::Right => (cx + x, cy + y),
         Arrow::Left => (cx - x, cy + y),
         Arrow::Down => (cx + y, cy + x),
         Arrow::Up => (cx + y, cy - x),
     };
-    let [tip, a, b] = points.map(turn);
-    let stroke = |from: (f64, f64)| {
+    let [tip, a, b, tail, shaft_end] = points.map(turn);
+    let stroke = |from: (f64, f64), to: (f64, f64)| {
         Line::new()
             .x1(from.0)
             .y1(from.1)
-            .x2(tip.0)
-            .y2(tip.1)
+            .x2(to.0)
+            .y2(to.1)
             .stroke(ON_ACCENT)
-            .stroke_thickness(text_size / 9.0)
+            .stroke_thickness(thickness)
     };
     Canvas::new()
         .width(size)
         .height(size)
         .horizontal_alignment(HorizontalAlignment::Center)
         .vertical_alignment(VerticalAlignment::Center)
-        .children((stroke(a), stroke(b)))
+        .children((stroke(a, tip), stroke(b, tip), stroke(tail, shaft_end)))
 }
 
 /// The anchor as a button that opens the nine anchors laid out as they sit

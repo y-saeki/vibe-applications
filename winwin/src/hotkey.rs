@@ -220,12 +220,14 @@ pub enum Look {
 }
 
 /// One key as the settings window draws it: its name, or for the arrow keys
-/// the direction, which reads better as a chevron than as a word.
+/// the direction, which reads better as an arrow than as a word. `Plus` is
+/// no key but the `+` drawn between the modifiers and the key.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Keycap {
     Name(&'static str),
     Key(Key),
     Arrow(Arrow),
+    Plus,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -243,13 +245,14 @@ impl Keycap {
             Keycap::Name(name) => Some(name.to_string()),
             Keycap::Key(key) => Some(key.to_string()),
             Keycap::Arrow(_) => None,
+            Keycap::Plus => Some("+".to_string()),
         }
     }
 }
 
 /// The keys of a combination as the settings window draws them, one cap
 /// each: the modifiers in the order they are written, then the key, if
-/// there is one yet.
+/// there is one yet, set off from the modifiers by a [`Keycap::Plus`].
 pub fn keycaps(modifiers: Modifiers, key: Option<Key>) -> Vec<Keycap> {
     keycaps_in(Look::Windows, modifiers, key)
 }
@@ -258,6 +261,9 @@ pub fn keycaps(modifiers: Modifiers, key: Option<Key>) -> Vec<Keycap> {
 pub fn keycaps_in(look: Look, modifiers: Modifiers, key: Option<Key>) -> Vec<Keycap> {
     let mut caps: Vec<Keycap> = modifiers.labels(look).map(Keycap::Name).collect();
     if let Some(key) = key {
+        if !caps.is_empty() {
+            caps.push(Keycap::Plus);
+        }
         caps.push(match key {
             Key::Left => Keycap::Arrow(Arrow::Left),
             Key::Up => Keycap::Arrow(Arrow::Up),
@@ -813,6 +819,7 @@ mod tests {
                 vec![
                     Keycap::Name("Ctrl"),
                     Keycap::Name("Shift"),
+                    Keycap::Plus,
                     Keycap::Arrow(Arrow::Left)
                 ],
                 vec![Keycap::Arrow(Arrow::Up)],
@@ -835,13 +842,14 @@ mod tests {
                 Keycap::Name("⌥"),
                 Keycap::Name("⇧"),
                 Keycap::Name("⌘"),
+                Keycap::Plus,
                 Keycap::Key(Key::Letter(b'K'))
             ]
         );
         assert_eq!(
             strokes_caps_in(Look::Mac, keys("Cmd+Left, Up").strokes()),
             [
-                vec![Keycap::Name("⌘"), Keycap::Arrow(Arrow::Left)],
+                vec![Keycap::Name("⌘"), Keycap::Plus, Keycap::Arrow(Arrow::Left)],
                 vec![Keycap::Arrow(Arrow::Up)],
             ]
         );
@@ -858,6 +866,7 @@ mod tests {
                 Keycap::Name("Win"),
                 Keycap::Name("Ctrl"),
                 Keycap::Name("Shift"),
+                Keycap::Plus,
                 Keycap::Arrow(Arrow::Left)
             ]
         );
@@ -865,7 +874,7 @@ mod tests {
             .into_iter()
             .map(|c| c.label().unwrap())
             .collect();
-        assert_eq!(labels, ["Ctrl", "Alt", "Enter"]);
+        assert_eq!(labels, ["Ctrl", "Alt", "+", "Enter"]);
         assert_eq!(keycaps(Modifiers::ALT, None), [Keycap::Name("Alt")]);
         assert_eq!(
             keycaps(Modifiers::NONE, Some(Key::Down)),
