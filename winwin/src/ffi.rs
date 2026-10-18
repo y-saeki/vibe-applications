@@ -6,13 +6,22 @@
 //!
 //! Built with the `ffi` feature only.
 
+mod settings;
+
 use std::path::Path;
 use std::sync::{Arc, Mutex, MutexGuard};
 
-use crate::config::Config;
+use settings::SettingsEditor;
+
+use crate::config::{Config, Theme};
 use crate::cycle::{self, Binding, Outcome, Presses};
-use crate::layout::{self, Placement, Rect, Sizing};
+use crate::layout::{self, Action, Placement, Rect, Sizing};
+use crate::restore::Sizes;
 use crate::{art, mac};
+
+/// What `restore::Sizes` takes as the DPI of a monitor. Points are the same
+/// size on every screen, so one value does for all of them.
+const POINTS_DPI: u32 = 96;
 
 /// A rectangle in the coordinates windows are moved in: points, counting
 /// down from the top left of the main screen.
@@ -56,6 +65,10 @@ pub enum KeyResult {
     /// It is one; keep it from the application, and place the frontmost
     /// window.
     Place { placement: Arc<Placing> },
+    /// It is one; keep it from the application, and give the frontmost
+    /// window back where it was before winwin first placed it (see
+    /// [`Resident::reset`]).
+    Reset,
 }
 
 /// Where a shortcut puts the window.
@@ -84,8 +97,10 @@ impl Placing {
     }
 }
 
-/// The resident part's state: the shortcuts of the config, and how far the
-/// presses of them have got.
+/// The resident part's state: the shortcuts of the config, how far the
+/// presses of them have got, and where the windows winwin placed were
+/// before. The app gives each window it places a number of its own, which
+/// stands for the window here.
 #[derive(Default, uniffi::Object)]
 pub struct Resident {
     state: Mutex<State>,
@@ -95,6 +110,8 @@ pub struct Resident {
 struct State {
     bindings: Vec<Binding>,
     presses: Presses,
+    sizes: Sizes,
+    theme: Theme,
 }
 
 impl Resident {
@@ -107,6 +124,7 @@ impl Resident {
         let mut state = self.state();
         state.bindings = cycle::bindings(config);
         state.presses = Presses::default();
+        state.theme = config.theme;
     }
 }
 
@@ -131,6 +149,19 @@ impl Resident {
         }
     }
 
+    /// Takes the shortcuts the settings window's rows make as they stand,
+    /// for the test window to answer to.
+    pub fn use_trial(&self, editor: Arc<SettingsEditor>) {
+        self.set(&editor.trial_config());
+    }
+
+    /// Which of the settings window's themes the config chose, for the
+    /// menu bar's menu.
+    pub fn theme(&self) -> u8 {
+        let theme = self.state().theme;
+        Theme::ALL.iter().position(|t| *t == theme).unwrap_or(0) as u8
+    }
+
     /// A key went down: its virtual key code, the event's modifier flags,
     /// and whether it is held down, repeating. Only the strokes that
     /// would be registered on Windows are taken, and a repeat does nothing,
@@ -152,15 +183,12 @@ impl Resident {
             return KeyResult::Take;
         }
         match state.presses.press(&state.bindings, stroke) {
-            Outcome::Place { binding, entry } => {
-                // A reset does nothing on macOS yet.
-                match state.bindings[binding].actions[entry].placement() {
-                    Some(p) => KeyResult::Place {
-                        placement: Arc::new(Placing(p)),
-                    },
-                    None => KeyResult::Take,
-                }
-            }
+            Outcome::Place { binding, entry } => match state.bindings[binding].actions[entry] {
+                Action::Place(p) => KeyResult::Place {
+                    placement: Arc::new(Placing(p)),
+                },
+                Action::Reset => KeyResult::Reset,
+            },
             Outcome::Pending | Outcome::Nothing => KeyResult::Take,
         }
     }
@@ -174,6 +202,42 @@ impl Resident {
         {
             state.presses.reset();
         }
+    }
+
+    /// A shortcut moved `window` from `before` to `after`. When the window
+    /// was still where an earlier shortcut put it, where it was before that
+    /// one is kept.
+    pub fn placed(&self, window: u64, before: Frame, after: Frame) {
+        self.state().sizes.placed(
+            window as isize,
+            before.into(),
+            false,
+            POINTS_DPI,
+            after.into(),
+        );
+    }
+
+    /// A reset shortcut was pressed on `window`, which is at `current`:
+    /// where it was before winwin first placed it, and winwin forgets it.
+    /// When none of the `screens` shows that place any more, the window gets
+    /// its size back where it is. `None` for a window winwin does not
+    /// remember.
+    pub fn reset(&self, window: u64, current: Frame, screens: Vec<Frame>) -> Option<Frame> {
+        let screens: Vec<Rect> = screens.into_iter().map(Rect::from).collect();
+        let shown = |r: Rect| screens.iter().any(|s| r.intersection(*s).is_some());
+        let reset = self
+            .state()
+            .sizes
+            .reset(window as isize, current.into(), POINTS_DPI, shown)?;
+        Some(reset.rect.into())
+    }
+
+    /// Forgets the windows that are not among `alive`, which have closed.
+    pub fn retain(&self, alive: Vec<u64>) {
+        let mut state = self.state();
+        state.sizes.retain(|w| alive.contains(&(w as u64)));
+        // Nothing is left on a window on macOS to take away.
+        state.sizes.take_forgotten();
     }
 }
 
@@ -189,6 +253,27 @@ pub fn area_of(window: Frame, areas: Vec<Frame>) -> Option<u32> {
 #[uniffi::export]
 pub fn from_appkit(x: f64, y: f64, width: f64, height: f64, main_height: f64) -> Frame {
     mac::from_appkit(x, y, width, height, main_height).into()
+}
+
+/// A `Frame` back in AppKit's coordinates, to set a window of winwin's own
+/// to it.
+#[derive(Clone, Copy, Debug, PartialEq, uniffi::Record)]
+pub struct AppKitRect {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+
+#[uniffi::export]
+pub fn to_appkit(frame: Frame, main_height: f64) -> AppKitRect {
+    let (x, y, width, height) = mac::to_appkit(frame.into(), main_height);
+    AppKitRect {
+        x,
+        y,
+        width,
+        height,
+    }
 }
 
 /// winwin's icon, `size` pixels square, as rows of RGBA bytes from the top,
@@ -236,7 +321,7 @@ mod tests {
                 let work = frame(0, 0, 1440, 900);
                 placement.resolve(work, frame(0, 0, 100, 100), vec![])
             }
-            KeyResult::Pass | KeyResult::Take => None,
+            KeyResult::Pass | KeyResult::Take | KeyResult::Reset => None,
         }
     }
 
@@ -291,7 +376,7 @@ mod tests {
     }
 
     #[test]
-    fn a_reset_is_taken_and_does_nothing_yet() {
+    fn a_reset_gives_a_window_back_where_it_was() {
         let r = resident(
             r#"
             [[shortcut]]
@@ -301,8 +386,46 @@ mod tests {
         );
         assert!(matches!(
             r.key_down(K, CONTROL | OPTION, false),
-            KeyResult::Take
+            KeyResult::Reset
         ));
+        let screen = frame(0, 0, 1440, 900);
+        let before = frame(100, 100, 600, 500);
+        let half = frame(0, 0, 720, 900);
+        let quarter = frame(0, 0, 720, 450);
+        r.placed(7, before, half);
+        // Placed again from where the first placement left it: still the
+        // place before the first one.
+        r.placed(7, half, quarter);
+        assert_eq!(r.reset(7, quarter, vec![screen]), Some(before));
+        // Forgotten once given back, and never known for another window.
+        assert_eq!(r.reset(7, before, vec![screen]), None);
+        assert_eq!(r.reset(8, before, vec![screen]), None);
+        // Where no screen shows it any more, only the size comes back.
+        r.placed(7, frame(2000, 100, 2500, 500), half);
+        assert_eq!(r.reset(7, half, vec![screen]), Some(frame(0, 0, 500, 400)));
+        // A closed window is forgotten.
+        r.placed(9, before, half);
+        r.retain(vec![]);
+        assert_eq!(r.reset(9, half, vec![screen]), None);
+    }
+
+    #[test]
+    fn the_test_window_answers_to_the_rows_as_they_stand() {
+        let r = Resident::new();
+        let editor = Arc::new(SettingsEditor::new());
+        assert!(matches!(
+            r.key_down(LEFT, CONTROL | OPTION, false),
+            KeyResult::Pass
+        ));
+        let path = std::env::temp_dir().join(format!("winwin-trial-{}.toml", std::process::id()));
+        assert_eq!(editor.load(path.to_string_lossy().into()), None);
+        r.use_trial(editor.clone());
+        assert!(matches!(
+            r.key_down(LEFT, CONTROL | OPTION, false),
+            KeyResult::Place { .. }
+        ));
+        assert_eq!(r.theme(), 0);
+        let _ = std::fs::remove_file(path);
     }
 
     #[test]

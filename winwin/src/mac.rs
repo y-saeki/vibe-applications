@@ -7,7 +7,7 @@
 //! Nothing here touches the operating system, so it is tested on every
 //! platform.
 
-use crate::hotkey::{Hotkey, Key, Modifiers};
+use crate::hotkey::{Hotkey, Key, Modifiers, Press};
 use crate::layout::Rect;
 
 // The modifier masks of CGEventFlags.
@@ -172,6 +172,36 @@ pub fn from_appkit(x: f64, y: f64, width: f64, height: f64, main_height: f64) ->
     }
 }
 
+/// A `Rect` back in AppKit's coordinates: origin and size, the origin
+/// counted up from the bottom of the main screen.
+pub fn to_appkit(rect: Rect, main_height: f64) -> (f64, f64, f64, f64) {
+    let (width, height) = (f64::from(rect.width()), f64::from(rect.height()));
+    let y = main_height - f64::from(rect.top) - height;
+    (f64::from(rect.left), y, width, height)
+}
+
+/// What a change of the modifier flags from `before` to `after` presses
+/// and lets go of, as a flags-changed event reports it: each modifier that
+/// went down or up, and whether it went down. Those let go of come first.
+pub fn modifier_changes(before: u64, after: u64) -> Vec<(Press, bool)> {
+    let (before, after) = (modifiers(before), modifiers(after));
+    let each = [
+        Modifiers::CTRL,
+        Modifiers::ALT,
+        Modifiers::SHIFT,
+        Modifiers::META,
+    ];
+    let up = each
+        .into_iter()
+        .filter(|m| before.contains(*m) && !after.contains(*m))
+        .map(|m| (Press::Modifier(m), false));
+    let down = each
+        .into_iter()
+        .filter(|m| after.contains(*m) && !before.contains(*m))
+        .map(|m| (Press::Modifier(m), true));
+    up.chain(down).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -252,6 +282,36 @@ mod tests {
         assert_eq!(
             from_appkit(-1920.0, -300.0, 1920.0, 1080.0, 900.0),
             rect(-1920, 120, 0, 1200)
+        );
+    }
+
+    #[test]
+    fn frames_go_back_to_appkit() {
+        for (x, y, w, h) in [
+            (0.0, 70.0, 1440.0, 805.0),
+            (0.0, 900.0, 1920.0, 1080.0),
+            (-1920.0, -300.0, 1920.0, 1080.0),
+        ] {
+            assert_eq!(
+                to_appkit(from_appkit(x, y, w, h, 900.0), 900.0),
+                (x, y, w, h)
+            );
+        }
+    }
+
+    #[test]
+    fn a_change_of_flags_is_modifiers_pressed_and_let_go() {
+        let control = Press::Modifier(Modifiers::CTRL);
+        let command = Press::Modifier(Modifiers::META);
+        assert_eq!(modifier_changes(0, FLAG_CONTROL), [(control, true)]);
+        assert_eq!(
+            modifier_changes(FLAG_CONTROL, FLAG_COMMAND),
+            [(control, false), (command, true)]
+        );
+        // Flags that are no modifiers change nothing.
+        assert_eq!(
+            modifier_changes(FLAG_CONTROL, FLAG_CONTROL | 0x0080_0000),
+            []
         );
     }
 }

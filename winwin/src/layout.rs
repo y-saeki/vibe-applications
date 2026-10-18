@@ -276,7 +276,7 @@ impl Rect {
     }
 
     /// Where the two overlap, if they do.
-    fn intersection(&self, other: Rect) -> Option<Rect> {
+    pub(crate) fn intersection(&self, other: Rect) -> Option<Rect> {
         let r = Rect {
             left: self.left.max(other.left),
             top: self.top.max(other.top),
