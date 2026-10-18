@@ -80,11 +80,9 @@ jobs:
           if-no-files-found: error
           path: winwin/target/release/winwin_*_x64-setup.exe
 
-  # The macOS app is not released yet. Building it shows that the library's
-  # bindings and the Swift side still fit together, and the pull request gets
-  # the app to try; the tests here also cover what the library only builds
-  # with the ffi feature. The app is for Apple silicon only (see the root
-  # CLAUDE.md), as the runner is.
+  # The macOS app: the library's tests with the ffi feature, which only the
+  # Mac builds, then the app and the disk image it ships in. The app is for
+  # Apple silicon only (see the root CLAUDE.md), as the runner is.
   build-macos:
     name: build (macos-latest)
     runs-on: macos-latest
@@ -108,17 +106,20 @@ jobs:
         run: cargo test --locked --features ffi
       - name: App
         run: macos/build.sh
-      # ditto keeps the bundle's permissions and ad hoc signature, which
-      # zipping the folder by other means can lose.
-      - name: Package
+      # The app beside a link to /Applications, to be dragged onto it.
+      - name: Disk image
         run: |
           version="$(awk '/^\[package\]/{p=1;next} /^\[/{p=0} p && /^version *=/{gsub(/[" ]/,"");sub(/^version=/,"");print;exit}' Cargo.toml)"
-          ditto -c -k --keepParent macos/winwin.app "macos/winwin_${version}_macos-arm64.zip"
+          staging="${RUNNER_TEMP}/dmg"
+          mkdir -p "${staging}"
+          ditto macos/winwin.app "${staging}/winwin.app"
+          ln -s /Applications "${staging}/Applications"
+          hdiutil create -volname winwin -srcfolder "${staging}" -format UDZO -ov "macos/winwin_${version}_macos-arm64.dmg"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: winwin-macos
           if-no-files-found: error
-          path: winwin/macos/winwin_*_macos-arm64.zip
+          path: winwin/macos/winwin_*_macos-arm64.dmg
 
   # The pull request itself only shows a check mark, so point at the installer
   # the run just uploaded instead of making the reader walk the Actions tab.
@@ -203,7 +204,7 @@ jobs:
             def megabytes: . / 1048576 * 100 | round / 100;
             def kind:
               if .name == "winwin-setup" then "Windows (-setup.exe)"
-              elif .name == "winwin-macos" then "macOS (Apple シリコン、.zip)"
+              elif .name == "winwin-macos" then "macOS (Apple シリコン、.dmg)"
               else .name end;
             "<!-- winwin-build-artifacts -->",
             "## ビルド成果物",
@@ -238,11 +239,11 @@ jobs:
               }' >/dev/null || echo "::warning::could not collapse the comment ${id}"
           done < "${RUNNER_TEMP}/previous-comments.txt"
 
-  # Publishes the installer built above whenever the version in Cargo.toml names
-  # a release that does not exist yet. Merging without a version bump is
-  # therefore a no-op.
+  # Publishes the installer and the disk image built above whenever the
+  # version in Cargo.toml names a release that does not exist yet. Merging
+  # without a version bump is therefore a no-op.
   release:
-    needs: build
+    needs: [build, build-macos]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -274,17 +275,26 @@ jobs:
           name: winwin-setup
           path: artifacts
       - if: steps.meta.outputs.exists == 'false'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: winwin-macos
+          path: artifacts
+      - if: steps.meta.outputs.exists == 'false'
         run: |
           setup="artifacts/winwin_${{ steps.meta.outputs.version }}_x64-setup.exe"
-          if [ ! -f "${setup}" ]; then
-            echo "::error::the build uploaded no ${setup#artifacts/}"
-            find artifacts -type f
-            exit 1
-          fi
+          dmg="artifacts/winwin_${{ steps.meta.outputs.version }}_macos-arm64.dmg"
+          for file in "${setup}" "${dmg}"; do
+            if [ ! -f "${file}" ]; then
+              echo "::error::the build uploaded no ${file#artifacts/}"
+              find artifacts -type f
+              exit 1
+            fi
+          done
           cat > notes.md <<'NOTES'
           ## ダウンロード
 
           - Windows 10 / 11 (x64): `-setup.exe`
+          - macOS 13 以降 (Apple シリコン): `.dmg`
 
           インストール手順は [README](${{ github.server_url }}/${{ github.repository }}/blob/${{ steps.meta.outputs.tag }}/winwin/README.md) を参照してください。
           NOTES
@@ -293,4 +303,4 @@ jobs:
             --notes-file notes.md \
             --generate-notes \
             --target "${GITHUB_SHA}" \
-            "${setup}"
+            "${setup}" "${dmg}"

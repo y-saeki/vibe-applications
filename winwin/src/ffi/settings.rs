@@ -111,10 +111,17 @@ pub fn anchors() -> Vec<AnchorChoice> {
         .collect()
 }
 
-/// The themes the settings window offers, in order, by name.
+/// The themes the settings window offers, in order, by name; the first
+/// follows macOS rather than Windows.
 #[uniffi::export]
 pub fn themes() -> Vec<String> {
-    Theme::ALL.iter().map(|t| t.label().to_string()).collect()
+    Theme::ALL
+        .iter()
+        .map(|t| match t {
+            Theme::System => "macOS の設定に合わせる".to_string(),
+            t => t.label().to_string(),
+        })
+        .collect()
 }
 
 /// A row's placement drawn on a shrunk screen: the screen, and the window
@@ -593,7 +600,7 @@ mod tests {
     #[test]
     fn the_theme_is_a_change_of_its_own() {
         let e = editor();
-        assert_eq!(themes()[usize::from(e.theme())], Theme::System.label());
+        assert_eq!(themes()[usize::from(e.theme())], "macOS の設定に合わせる");
         e.set_theme(2);
         assert!(e.is_changed());
         e.set_theme(9);
