@@ -22,9 +22,9 @@ permissions:
   contents: read
 
 jobs:
-  # winwin ships for Windows only, so one runner checks, tests and builds it.
-  # The platform-independent modules (config, layout, shortcuts) would also
-  # test on Linux, but the Win32 half only compiles here.
+  # The Windows application: checked, tested and built here, and the only
+  # one that ships so far. The library alone would also test elsewhere, but
+  # the Win32 half only compiles here.
   build:
     name: build (windows-latest)
     runs-on: windows-latest
@@ -80,11 +80,53 @@ jobs:
           if-no-files-found: error
           path: winwin/target/release/winwin_*_x64-setup.exe
 
+  # The macOS app is not released yet. Building it shows that the library's
+  # bindings and the Swift side still fit together, and the pull request gets
+  # the app to try; the tests here also cover what the library only builds
+  # with the ffi feature. The app is for Apple silicon only (see the root
+  # CLAUDE.md), as the runner is.
+  build-macos:
+    name: build (macos-latest)
+    runs-on: macos-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: winwin
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Rust toolchain
+        run: |
+          rustup update stable
+          rustup default stable
+          rustup component add clippy
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: winwin
+      - name: Rust lint
+        run: cargo clippy --all-targets --locked --features ffi-bindgen -- -D warnings
+      - name: Rust tests
+        run: cargo test --locked --features ffi
+      - name: App
+        run: macos/build.sh
+      # ditto keeps the bundle's permissions and ad hoc signature, which
+      # zipping the folder by other means can lose.
+      - name: Package
+        run: |
+          version="$(awk '/^\[package\]/{p=1;next} /^\[/{p=0} p && /^version *=/{gsub(/[" ]/,"");sub(/^version=/,"");print;exit}' Cargo.toml)"
+          ditto -c -k --keepParent macos/winwin.app "macos/winwin_${version}_macos-arm64.zip"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: winwin-macos
+          if-no-files-found: error
+          path: winwin/macos/winwin_*_macos-arm64.zip
+
   # The pull request itself only shows a check mark, so point at the installer
   # the run just uploaded instead of making the reader walk the Actions tab.
+  # The macOS build is listed when it succeeded, and does not hold back the
+  # Windows one when it did not.
   notify:
-    needs: build
-    if: github.event_name == 'pull_request' && needs.build.result == 'success'
+    needs: [build, build-macos]
+    if: always() && github.event_name == 'pull_request' && needs.build.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -159,14 +201,21 @@ jobs:
           fi
           jq -r --arg run_url "${RUN_URL}" --arg sha "${HEAD_SHA}" --arg version_note "${VERSION_NOTE}" '
             def megabytes: . / 1048576 * 100 | round / 100;
+            def kind:
+              if .name == "winwin-setup" then "Windows (-setup.exe)"
+              elif .name == "winwin-macos" then "macOS (Apple シリコン、.zip)"
+              else .name end;
             "<!-- winwin-build-artifacts -->",
             "## ビルド成果物",
             "",
-            (.artifacts[] | "- [ ] [Windows (-setup.exe)](\($run_url)/artifacts/\(.id)) — \(.size_in_bytes | megabytes) MB"),
+            (.artifacts | sort_by(.name != "winwin-setup") | .[] | "- [ ] [\(kind)](\($run_url)/artifacts/\(.id)) — \(.size_in_bytes | megabytes) MB"),
             "",
             "> [!TIP]",
             "> - ダウンロードには GitHub へのログインが必要です(保持期限: \(.artifacts[0].expires_at | fromdateiso8601 | strftime("%Y-%m-%d")))",
-            "> - インストーラは起動中の winwin を終了させてから上書きします。",
+            "> - Windows 版のインストーラは起動中の winwin を終了させてから上書きします。",
+            (if any(.artifacts[]; .name == "winwin-macos") then
+              "> - Mac 版は署名していないため、初めて開くときは macOS に止められます。システム設定の「プライバシーとセキュリティ」で「このまま開く」を選んでください。"
+            else empty end),
             "",
             "## ビルド情報",
             "",

@@ -5,9 +5,21 @@ edition = "2024"
 publish = false
 description = "A keyboard-driven window placer for Windows"
 
+[features]
+# The bindings the macOS app (macos/) calls the library through.
+ffi = ["dep:uniffi"]
+# The tool that writes the Swift side of those bindings.
+ffi-bindgen = ["ffi", "uniffi/cli"]
+
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 toml = "1"
+uniffi = { version = "0.32", optional = true }
+
+[[bin]]
+name = "uniffi-bindgen-swift"
+path = "src/bin/uniffi-bindgen-swift.rs"
+required-features = ["ffi-bindgen"]
 
 [build-dependencies]
 windows-reactor-setup = "0.100"
