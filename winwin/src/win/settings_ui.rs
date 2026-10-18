@@ -686,7 +686,12 @@ impl Settings {
             .spacing(16.0)
             .children((
                 anchor_picker(d.anchor, d.fit, enabled, context),
+                // WinUI gives a check box a minimum width of 120 and has it
+                // stretch to the row's height; both would make it take clicks
+                // well beyond its box and label.
                 CheckBox::new()
+                    .min_width(0.0)
+                    .vertical_alignment(VerticalAlignment::Center)
                     .is_enabled(enabled && d.anchor.can_fit())
                     .is_checked(d.fit)
                     .on_is_checked_changed(context.callback(Msg::Fit))
