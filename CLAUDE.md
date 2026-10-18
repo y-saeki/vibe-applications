@@ -27,6 +27,13 @@ current official documentation, not by recalling it. Versions move, and a habit 
 correct a few releases ago may no longer be. When a specific version is pinned, check that
 version's documentation.
 
+## macOS builds are for Apple silicon only
+
+An application that ships for macOS builds for Apple silicon (`arm64`) and nothing else: no
+Intel (`x86_64`) build, no universal binary, and no reliance on Rosetta. Apple is ending
+support for Intel Macs and Rosetta, so the effort is not spent. Say so where the platforms
+are stated, such as the README's requirements.
+
 ## Each application carries a README
 
 Every application directory has a `README.md` covering what the application does, how to

@@ -83,7 +83,8 @@ jobs:
   # The macOS app is not released yet. Building it shows that the library's
   # bindings and the Swift side still fit together, and the pull request gets
   # the app to try; the tests here also cover what the library only builds
-  # with the ffi feature. The runner is Apple silicon, and so is the app.
+  # with the ffi feature. The app is for Apple silicon only (see the root
+  # CLAUDE.md), as the runner is.
   build-macos:
     name: build (macos-latest)
     runs-on: macos-latest

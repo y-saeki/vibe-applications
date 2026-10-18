@@ -95,8 +95,8 @@ open winwin/macos/winwin.app
   あります。そのときは、システム設定の一覧から winwin を削除して、許可し直してください
 
 CI(`.github/workflows/winwin.yml` の `build-macos`)は `macos-latest` で、feature `ffi` を含めた clippy とテスト、
-`build.sh` を実行し、できた `winwin.app` を `ditto` で `.zip` に固めてアップロードします。ランナーが Apple シリコンなので、
-アプリも Apple シリコン用です。Intel Mac 用を含む universal binary と `.dmg` は、配布を始めるときに作ります。
+`build.sh` を実行し、できた `winwin.app` を `ditto` で `.zip` に固めてアップロードします。アプリは
+Apple シリコン用だけで、Intel Mac 用のビルドと universal binary は作りません(リポジトリの `CLAUDE.md`)。`.dmg` は配布を始めるときに作ります。
 
 ## 構成
 
