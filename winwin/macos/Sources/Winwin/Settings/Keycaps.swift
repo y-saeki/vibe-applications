@@ -8,7 +8,7 @@ struct CapSize {
     let radius: CGFloat
     /// Inside a cap, at either side of its text.
     let padding: CGFloat
-    /// Between caps, and around the comma between strokes.
+    /// Between caps, and around the plus and the comma between them.
     let spacing: CGFloat
 
     /// The recording dialog's, big enough to read at a glance.
@@ -21,8 +21,8 @@ struct CapSize {
 }
 
 /// Strokes one after another as keycaps, with commas between them as the
-/// file writes them; the second without the modifiers it shares with the
-/// first.
+/// file writes them and a plus between the modifiers and the key; the
+/// second without the modifiers it shares with the first.
 struct KeysView: View {
     let keys: [[Cap]]
     let size: CapSize
@@ -34,7 +34,12 @@ struct KeysView: View {
                     Text(",").font(.system(size: size.text))
                 }
                 ForEach(Array(group.enumerated()), id: \.offset) { _, cap in
-                    KeycapView(cap: cap, size: size)
+                    switch cap {
+                    case .plus:
+                        Text("+").font(.system(size: size.text))
+                    default:
+                        KeycapView(cap: cap, size: size)
+                    }
                 }
             }
         }
@@ -61,6 +66,9 @@ struct KeycapView: View {
             Text(label).font(.system(size: size.text, weight: .medium))
         case let .arrow(direction):
             Image(systemName: direction.symbol).font(.system(size: size.text * 0.8, weight: .bold))
+        case .plus:
+            // KeysView draws it between the caps, not on one.
+            EmptyView()
         }
     }
 }
@@ -68,10 +76,10 @@ struct KeycapView: View {
 extension Direction {
     var symbol: String {
         switch self {
-        case .left: return "chevron.left"
-        case .up: return "chevron.up"
-        case .right: return "chevron.right"
-        case .down: return "chevron.down"
+        case .left: return "arrow.left"
+        case .up: return "arrow.up"
+        case .right: return "arrow.right"
+        case .down: return "arrow.down"
         }
     }
 }

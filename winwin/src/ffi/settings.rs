@@ -14,10 +14,12 @@ use crate::layout::{Anchor, Rect};
 use crate::mac;
 
 /// One key as a keycap: its label, or for an arrow key the direction.
+/// `Plus` is no key but the `+` between the modifiers and the key.
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Enum)]
 pub enum Cap {
     Text { label: String },
     Arrow { direction: Direction },
+    Plus,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
@@ -46,6 +48,7 @@ fn cap(keycap: Keycap) -> Cap {
                 Arrow::Down => Direction::Down,
             },
         },
+        Keycap::Plus => Cap::Plus,
         other => Cap::Text {
             label: other.label().unwrap_or_default(),
         },
@@ -596,6 +599,7 @@ mod tests {
             [vec![
                 text("⌃"),
                 text("⌥"),
+                Cap::Plus,
                 Cap::Arrow {
                     direction: Direction::Left
                 }
@@ -736,7 +740,10 @@ mod tests {
         assert_eq!(r.recording().keys, [vec![text("⌃"), text("⇧")]]);
         assert!(!r.recording().complete);
         r.key_down(K);
-        assert_eq!(r.recording().keys, [vec![text("⌃"), text("⇧"), text("K")]]);
+        assert_eq!(
+            r.recording().keys,
+            [vec![text("⌃"), text("⇧"), Cap::Plus, text("K")]]
+        );
         e.take_recording(r.clone());
         assert_eq!(e.rows()[0].keys, r.recording().keys);
         // Shift alone cannot be a shortcut, and says so in a Mac's names.
@@ -752,6 +759,7 @@ mod tests {
             [vec![
                 text("⌃"),
                 text("⌥"),
+                Cap::Plus,
                 Cap::Arrow {
                     direction: Direction::Left
                 }
