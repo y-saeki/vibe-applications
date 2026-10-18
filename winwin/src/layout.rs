@@ -448,55 +448,47 @@ pub fn sized(anchor: Anchor, width: Size, height: Size, work: Rect, current: (i3
     }
 }
 
-/// Where a window fits at `anchor`: the largest rectangle of `work` that
-/// reaches out from the anchor's edge and stays clear of the frontmost
-/// window. `others` are the visible frames of the other windows from the top
-/// of the z-order down; the frontmost is the first that lies on `work` at
-/// all, and the windows behind it do not count. A window at the left or the
-/// right takes the whole height, one at the top or the bottom the whole
-/// width, and one in a corner whichever of the two is larger. `None` when
-/// the frontmost window reaches the anchor's edge, and for the center,
-/// which has no edge to reach out from.
+/// Where a window fits at `anchor`: it reaches out from the anchor's edges
+/// up to the frontmost window. `others` are the visible frames of the other
+/// windows from the top of the z-order down; the frontmost is the first that
+/// lies on `work` at all, and the windows behind it do not count.
+///
+/// Along each axis the anchor has an edge on, the window stops at the near
+/// side of the front window, unless that window reaches the edge itself;
+/// along the others it takes the whole work area. So a window at the left
+/// is as tall as the work area, and one in a corner stops at the front
+/// window both across and down, or at whichever side of it does not reach
+/// the edges. `None` when the front window takes the anchor's edge, or its
+/// corner, and for the center, which has no edge to reach out from.
 pub fn fit(work: Rect, anchor: Anchor, others: &[Rect]) -> Option<Rect> {
+    let (horizontal, vertical) = (anchor.horizontal(), anchor.vertical());
+    if horizontal == Align::Middle && vertical == Align::Middle {
+        return None;
+    }
     let Some(front) = others.iter().find_map(|o| o.intersection(work)) else {
-        return anchor.can_fit().then_some(work);
+        return Some(work);
     };
-    // The span from the anchor's edge up to the front window, along one
-    // axis; `None` when the window reaches that edge.
+    // The span from the anchor's edge up to the front window along one
+    // axis; `None` when the window reaches that edge, or the anchor has no
+    // edge there.
     let clear = |start: i32, end: i32, near: i32, far: i32, align: Align| match align {
         Align::Start => (near > start).then_some((start, near)),
         Align::End => (far < end).then_some((far, end)),
         Align::Middle => None,
     };
-    let beside = clear(
-        work.left,
-        work.right,
-        front.left,
-        front.right,
-        anchor.horizontal(),
-    )
-    .map(|(left, right)| Rect {
-        left,
-        right,
-        ..work
-    });
-    let above_or_below = clear(
-        work.top,
-        work.bottom,
-        front.top,
-        front.bottom,
-        anchor.vertical(),
-    )
-    .map(|(top, bottom)| Rect {
-        top,
-        bottom,
-        ..work
-    });
-    let area = |r: &Rect| i64::from(r.width()) * i64::from(r.height());
-    match (beside, above_or_below) {
-        (Some(a), Some(b)) => Some(if area(&b) > area(&a) { b } else { a }),
-        (a, b) => a.or(b),
+    let across = clear(work.left, work.right, front.left, front.right, horizontal);
+    let down = clear(work.top, work.bottom, front.top, front.bottom, vertical);
+    if across.is_none() && down.is_none() {
+        return None;
     }
+    let (left, right) = across.unwrap_or((work.left, work.right));
+    let (top, bottom) = down.unwrap_or((work.top, work.bottom));
+    Some(Rect {
+        left,
+        top,
+        right,
+        bottom,
+    })
 }
 
 /// A work area of `size` drawn as large as it fits inside `bounds` without
@@ -756,15 +748,19 @@ mod tests {
     }
 
     #[test]
-    fn corners_take_the_larger_of_the_two() {
-        // A window at the bottom right, wider than it is tall.
-        let others = [r(960, 780, 1920, 1040)];
-        // 960x1040 beside it against 1920x780 above it.
-        assert_eq!(fits(Anchor::TopRight, &others), Some(r(0, 0, 1920, 780)));
-        assert_eq!(fits(Anchor::BottomLeft, &others), Some(r(0, 0, 960, 1040)));
-        assert_eq!(fits(Anchor::TopLeft, &others), Some(r(0, 0, 1920, 780)));
+    fn corners_stop_at_the_front_window_both_ways() {
+        // The bottom right two thirds by a half.
+        let others = [r(640, 520, 1920, 1040)];
+        assert_eq!(fits(Anchor::TopLeft, &others), Some(r(0, 0, 640, 520)));
+        // Where the window reaches an edge, the other way takes it all.
+        assert_eq!(fits(Anchor::TopRight, &others), Some(r(0, 0, 1920, 520)));
+        assert_eq!(fits(Anchor::BottomLeft, &others), Some(r(0, 0, 640, 1040)));
         // The corner itself is taken.
         assert_eq!(fits(Anchor::BottomRight, &others), None);
+        // A band along the top takes both top corners.
+        let band = [r(0, 0, 1920, 300)];
+        assert_eq!(fits(Anchor::TopLeft, &band), None);
+        assert_eq!(fits(Anchor::BottomLeft, &band), Some(r(0, 300, 1920, 1040)));
     }
 
     #[test]
