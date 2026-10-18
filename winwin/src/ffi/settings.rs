@@ -417,8 +417,9 @@ impl SettingsEditor {
     }
 
     /// Where the row being edited puts a window on a screen of `work_width`
-    /// by `work_height`, shrunk into `width` by `height` and drawn at its
-    /// top left. `None` with no row being edited.
+    /// by `work_height`, shrunk into `width` by `height` and drawn in its
+    /// middle: a Mac's screens are seldom as wide as the preview, and the
+    /// space left over goes to both sides. `None` with no row being edited.
     pub fn preview(
         &self,
         work_width: i32,
@@ -437,7 +438,7 @@ impl SettingsEditor {
             state
                 .editor
                 .selected()?
-                .picture((work_width, work_height), bounds, Anchor::TopLeft)?;
+                .picture((work_width, work_height), bounds, Anchor::Center)?;
         Some(PlacementPreview {
             screen: picture.screen.into(),
             window: picture.window.map(|w| PreviewedWindow {
@@ -774,6 +775,18 @@ mod tests {
             }
         );
         assert_eq!(preview.window.unwrap().frame.right, 160);
+        // A screen narrower than the preview is drawn in its middle.
+        let preview = e.preview(1440, 900, 360, 200).unwrap();
+        assert_eq!(
+            preview.screen,
+            Frame {
+                left: 20,
+                top: 0,
+                right: 340,
+                bottom: 200
+            }
+        );
+        assert_eq!(preview.window.unwrap().frame.left, 20);
         e.click(1, false, true);
         assert_eq!(e.preview(1440, 900, 320, 200), None);
         assert_eq!(
