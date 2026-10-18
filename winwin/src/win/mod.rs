@@ -20,7 +20,7 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 use windows::Win32::UI::WindowsAndMessaging::{MB_ICONERROR, MB_OK, MESSAGEBOX_STYLE, MessageBoxW};
 use windows::core::HSTRING;
 
-use crate::hotkey::{MOD_ALT, MOD_CONTROL, MOD_SHIFT, MOD_WIN};
+use winwin::hotkey::Modifiers;
 
 pub const APP_NAME: &str = "winwin";
 
@@ -76,12 +76,12 @@ fn is_down(vk: VIRTUAL_KEY) -> bool {
     (unsafe { GetAsyncKeyState(i32::from(vk.0)) }) < 0
 }
 
-/// Whether every modifier in `modifiers` (MOD_*) is still held. A cycling
-/// shortcut watches this to hear that its modifiers were let go.
-pub fn modifiers_held(modifiers: u32) -> bool {
-    let held = |m: u32, down: bool| modifiers & m == 0 || down;
-    held(MOD_CONTROL, is_down(VK_CONTROL))
-        && held(MOD_ALT, is_down(VK_MENU))
-        && held(MOD_SHIFT, is_down(VK_SHIFT))
-        && held(MOD_WIN, is_down(VK_LWIN) || is_down(VK_RWIN))
+/// Whether every modifier in `modifiers` is still held. A cycling shortcut
+/// watches this to hear that its modifiers were let go.
+pub fn modifiers_held(modifiers: Modifiers) -> bool {
+    let held = |m: Modifiers, down: bool| !modifiers.contains(m) || down;
+    held(Modifiers::CTRL, is_down(VK_CONTROL))
+        && held(Modifiers::ALT, is_down(VK_MENU))
+        && held(Modifiers::SHIFT, is_down(VK_SHIFT))
+        && held(Modifiers::META, is_down(VK_LWIN) || is_down(VK_RWIN))
 }

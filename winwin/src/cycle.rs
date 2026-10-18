@@ -17,7 +17,7 @@
 //! Nothing here touches Win32, so it is tested on every platform.
 
 use crate::config::Config;
-use crate::hotkey::{Hotkey, Keys};
+use crate::hotkey::{Hotkey, Keys, Modifiers};
 use crate::layout::Action;
 
 /// One shortcut and every entry that uses it.
@@ -148,10 +148,10 @@ impl Presses {
         !self.pending.is_empty()
     }
 
-    /// The modifiers (MOD_*) that, once any of them is let go, end the wait
+    /// The modifiers that, once any of them is let go, end the wait
     /// for a next stroke and the cycle: `None` while there is neither. The
     /// strokes of a shortcut share their modifiers, so there is one set.
-    pub fn watching(&self, bindings: &[Binding]) -> Option<u32> {
+    pub fn watching(&self, bindings: &[Binding]) -> Option<Modifiers> {
         self.pending.first().map(|h| h.modifiers).or_else(|| {
             let (b, _) = self.cycling?;
             bindings.get(b).map(|b| b.keys.first().modifiers)
@@ -198,7 +198,6 @@ fn extended(bindings: &[Binding], strokes: &[Hotkey]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::hotkey::MOD_CONTROL;
     use crate::layout::{Placement, Size};
 
     fn hk(s: &str) -> Hotkey {
@@ -453,13 +452,13 @@ mod tests {
         let mut presses = Presses::default();
         assert_eq!(presses.watching(&bindings), None);
         presses.press(&bindings, hk("Ctrl+Left"));
-        assert_eq!(presses.watching(&bindings), Some(MOD_CONTROL));
+        assert_eq!(presses.watching(&bindings), Some(Modifiers::CTRL));
         presses.press(&bindings, hk("Ctrl+Right"));
         // 右半分 does not cycle: nothing is left to wait for.
         assert_eq!(presses.watching(&bindings), None);
         presses.press(&bindings, hk("Ctrl+Left"));
         presses.press(&bindings, hk("Ctrl+Up"));
-        assert_eq!(presses.watching(&bindings), Some(MOD_CONTROL));
+        assert_eq!(presses.watching(&bindings), Some(Modifiers::CTRL));
         presses.reset();
         assert_eq!(presses.watching(&bindings), None);
     }

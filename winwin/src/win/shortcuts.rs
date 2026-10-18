@@ -12,9 +12,10 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 use windows::Win32::UI::WindowsAndMessaging::{KillTimer, SetTimer};
 
 use super::modifiers_held;
-use crate::cycle::{self, Binding, Outcome, Presses};
-use crate::hotkey::Hotkey;
-use crate::layout::Action;
+use winwin::cycle::{self, Binding, Outcome, Presses};
+use winwin::hotkey::Hotkey;
+use winwin::layout::Action;
+use winwin::vk;
 
 /// Watches for the modifiers of a shortcut under way (waiting for its second
 /// stroke, or cycling) to be let go. It runs only between such a press and
@@ -126,8 +127,8 @@ impl Shortcuts {
         for h in strokes {
             self.registered.push(h);
             let id = self.registered.len() as i32;
-            let modifiers = HOT_KEY_MODIFIERS(h.modifiers) | MOD_NOREPEAT;
-            if unsafe { RegisterHotKey(Some(self.hwnd), id, modifiers, h.vk) }.is_err() {
+            let modifiers = HOT_KEY_MODIFIERS(vk::mod_flags(h.modifiers)) | MOD_NOREPEAT;
+            if unsafe { RegisterHotKey(Some(self.hwnd), id, modifiers, vk::code(h.key)) }.is_err() {
                 failed.push(h.to_string());
             }
         }

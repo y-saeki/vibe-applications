@@ -1,18 +1,6 @@
 // A release build is a tray application: no console window.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
-// Off Windows only the tests use these modules.
-#![cfg_attr(not(windows), allow(dead_code))]
 
-mod art;
-mod config;
-mod cycle;
-mod draft;
-mod hotkey;
-// Used by build.rs; the crate only tests it.
-#[cfg(test)]
-mod icon_res;
-mod layout;
-mod restore;
 #[cfg(windows)]
 mod win;
 
@@ -21,8 +9,8 @@ fn main() {
     win::main();
 }
 
-// The platform-independent modules are built and tested anywhere; the
-// application itself only exists on Windows.
+// The platform-independent part is the library, built and tested anywhere;
+// the application itself only exists on Windows.
 #[cfg(not(windows))]
 fn main() {
     eprintln!("winwin runs on Windows only.");

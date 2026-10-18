@@ -37,10 +37,10 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use windows::core::{HSTRING, PCWSTR};
 
 use super::{icon, mover, shortcuts::Shortcuts};
-use crate::config::Config;
-use crate::cycle;
-use crate::layout::{self, Action, Anchor, Ratio, Rect, Size};
-use crate::restore::Reset;
+use winwin::config::Config;
+use winwin::cycle;
+use winwin::layout::{self, Action, Anchor, Ratio, Rect, Size};
+use winwin::restore::Reset;
 
 /// settings.rs tells this window from the settings window by it.
 pub const CLASS_NAME: &str = "winwin.test";

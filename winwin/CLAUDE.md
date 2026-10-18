@@ -9,10 +9,15 @@ build or change it. The root `CLAUDE.md` describes what goes where.
 
 ## Keep logic out of `src/win/`
 
-`config.rs`, `layout.rs`, `hotkey.rs`, `cycle.rs`, `restore.rs`, `draft.rs`, `art.rs` and `icon_res.rs` do not touch Win32, so they build and
-test on any platform. Anything that decides behaviour — what a placement resolves to, what a
-config accepts, what the settings window checks before saving — belongs there, with its
-tests. `src/win/` passes values between those modules and Win32 and should stay thin.
+`config.rs`, `layout.rs`, `hotkey.rs`, `vk.rs`, `cycle.rs`, `restore.rs`, `draft.rs`, `art.rs`
+and `icon_res.rs` do not touch Win32, so they build and test on any platform. All but
+`icon_res.rs` make up the library (`src/lib.rs`); `main.rs` and `src/win/` are the binary built
+on it. Anything that decides behaviour — what a placement resolves to, what a config accepts,
+what the settings window checks before saving — belongs there, with its tests. `src/win/`
+passes values between those modules and Win32 and should stay thin.
+
+Keys and modifiers are `hotkey::Key` and `hotkey::Modifiers`, never Windows' codes: `vk.rs` is
+the one place that converts between them and virtual-key codes or `MOD_*` flags.
 
 ## The state borrow rule
 
@@ -40,6 +45,7 @@ behaviour changes, the file that covers it changes in the same commit:
 | How a placement turns into a rectangle | `mod tests` in `src/layout.rs` |
 | The config file's fields, defaults or validation | `mod tests` in `src/config.rs`, and the example in `DEVELOPMENT.md` |
 | Key names or which combinations are allowed | `mod tests` in `src/hotkey.rs` |
+| Which virtual-key code or `MOD_*` flag a key or modifier is | `mod tests` in `src/vk.rs` |
 | How entries that share a shortcut are grouped and take turns, or how a shortcut of several strokes waits for the next | `mod tests` in `src/cycle.rs` |
 | Which size a dragged window gets back, where it lands, and how it is kept on the window | `mod tests` in `src/restore.rs` |
 | What the settings window stores, checks on save, or shows in its list | `mod tests` in `src/draft.rs` |

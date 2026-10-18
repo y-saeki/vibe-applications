@@ -12,7 +12,7 @@ use windows::Win32::Foundation::{HANDLE, HWND};
 use windows::Win32::UI::WindowsAndMessaging::{GetPropW, RemovePropW, SetPropW};
 use windows::core::{PCWSTR, w};
 
-use crate::restore::Remembered;
+use winwin::restore::Remembered;
 
 const SIZE: PCWSTR = w!("winwin.size");
 const PLACED: PCWSTR = w!("winwin.placed");
