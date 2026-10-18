@@ -142,6 +142,8 @@ enum Msg {
     Width(String),
     Height(String),
     Fit(bool),
+    /// リセット was chosen (true) or 配置 (false).
+    Reset(bool),
     Autostart(bool),
     Theme(Option<usize>),
     Save,
@@ -241,6 +243,7 @@ impl Component for Settings {
             Msg::Width(text) => self.editor.edit(|d| d.width = text),
             Msg::Height(text) => self.editor.edit(|d| d.height = text),
             Msg::Fit(on) => self.editor.edit(|d| d.fit = on),
+            Msg::Reset(on) => self.editor.edit(|d| d.reset = on),
             Msg::Autostart(on) => self.autostart = on,
             Msg::Theme(i) => {
                 if let Some(&theme) = i.and_then(|i| Theme::ALL.get(i)) {
@@ -564,8 +567,9 @@ impl Settings {
                     Border::new()
                         .vertical_alignment(VerticalAlignment::Center)
                         .content(shortcut_view(row, Caps::SMALL)),
-                    cell(row.anchor.label().to_string(), 1),
-                    // フィット takes the room of both sizes.
+                    // リセット takes the room of the anchor and both sizes,
+                    // フィット that of both sizes.
+                    cell(row.anchor_text(), 1).grid_column_span(if row.reset { 3 } else { 1 }),
                     cell(row.width_text(), 2).grid_column_span(if row.fit { 2 } else { 1 }),
                     cell(row.height_text(), 3),
                 ));
@@ -681,18 +685,40 @@ impl Settings {
                     ),
             ));
 
+        // As the fit check box below, kept to the size of the circle and
+        // the label.
+        let choice = |checked: bool| {
+            RadioButton::new()
+                .group_name("action")
+                .min_width(0.0)
+                .vertical_alignment(VerticalAlignment::Center)
+                .is_enabled(enabled)
+                .is_checked(checked)
+        };
+        let action = StackPanel::new()
+            .orientation(Orientation::Horizontal)
+            .spacing(24.0)
+            .children((
+                choice(!d.reset).content("配置"),
+                // Checking one unchecks the other, so this one hears both.
+                choice(d.reset)
+                    .on_checked(context.callback(Msg::Reset))
+                    .content(draft::RESET_LABEL),
+            ));
+
+        let placing = enabled && !d.reset;
         let anchor = StackPanel::new()
             .orientation(Orientation::Horizontal)
             .spacing(16.0)
             .children((
-                anchor_picker(d.anchor, d.fit, enabled, context),
+                anchor_picker(d.anchor, d.fit, placing, context),
                 // WinUI gives a check box a minimum width of 120 and has it
                 // stretch to the row's height; both would make it take clicks
                 // well beyond its box and label.
                 CheckBox::new()
                     .min_width(0.0)
                     .vertical_alignment(VerticalAlignment::Center)
-                    .is_enabled(enabled && d.anchor.can_fit())
+                    .is_enabled(placing && d.anchor.can_fit())
                     .is_checked(d.fit)
                     .on_is_checked_changed(context.callback(Msg::Fit))
                     .content(draft::FIT_LABEL),
@@ -701,7 +727,7 @@ impl Settings {
         // Wide enough for the placeholder, which an empty field shows.
         let ratio = |value: &str, kept: &str, on_change: fn(String) -> Msg| {
             TextBox::new()
-                .is_enabled(enabled && !d.fit)
+                .is_enabled(placing && !d.fit)
                 .text(value.to_string())
                 .placeholder_text(kept)
                 .width(144.0)
@@ -739,6 +765,7 @@ impl Settings {
 
         StackPanel::new().spacing(16.0).grid_column(1).children((
             field("ショートカット", shortcut),
+            field("動作", action),
             field("基準位置", anchor),
             size,
             field("プレビュー", preview),

@@ -10,14 +10,14 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::hotkey::Keys;
-use crate::layout::{Anchor, Placement, Size};
+use crate::layout::{Action, Anchor, Placement, Size};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Shortcut {
     #[serde(with = "keys_string")]
     pub keys: Keys,
     #[serde(flatten)]
-    pub placement: Placement,
+    pub action: Action,
 }
 
 // Keys are kept free of serde; the file spells them the way Display writes
@@ -92,11 +92,11 @@ fn shortcut(keys: &str, anchor: Anchor, width: &str, height: &str) -> Shortcut {
     let valid = "default shortcuts are valid";
     Shortcut {
         keys: keys.parse().expect(valid),
-        placement: Placement::given(
+        action: Action::Place(Placement::given(
             anchor,
             Size::Ratio(width.parse().expect(valid)),
             Size::Ratio(height.parse().expect(valid)),
-        ),
+        )),
     }
 }
 
@@ -201,6 +201,10 @@ mod tests {
         Config::parse(text, Path::new("config.toml"))
     }
 
+    fn placement(s: &Shortcut) -> Placement {
+        s.action.placement().expect("a placement")
+    }
+
     #[test]
     fn defaults_are_valid_and_round_trip() {
         let config = Config::defaults();
@@ -235,9 +239,9 @@ mod tests {
         .unwrap();
         let s = &config.shortcuts[0];
         assert_eq!(s.keys.to_string(), "Win+Alt+1");
-        assert_eq!(s.placement.anchor, Anchor::BottomRight);
+        assert_eq!(placement(s).anchor, Anchor::BottomRight);
         assert_eq!(
-            s.placement.sizes(),
+            placement(s).sizes(),
             Some((
                 Size::Ratio("2/3".parse().unwrap()),
                 Size::Ratio(Ratio::new(0.7).unwrap())
@@ -257,7 +261,7 @@ mod tests {
             "#,
         )
         .unwrap();
-        let p = &config.shortcuts[0].placement;
+        let p = placement(&config.shortcuts[0]);
         assert_eq!(p.sizes().unwrap().0, Size::Keep);
         let text = config.to_toml();
         assert!(text.contains(r#"width = "keep""#), "{text}");
@@ -275,7 +279,7 @@ mod tests {
             "#,
         )
         .unwrap();
-        let p = config.shortcuts[0].placement;
+        let p = placement(&config.shortcuts[0]);
         assert_eq!((p.anchor, p.sizing), (Anchor::Right, Sizing::Fit));
         let text = config.to_toml();
         assert!(text.contains("fit = true"), "{text}");
@@ -305,6 +309,44 @@ mod tests {
     }
 
     #[test]
+    fn reads_and_writes_a_reset() {
+        let config = parse(
+            r#"
+            [[shortcut]]
+            keys = "Ctrl+Alt+Backspace"
+            reset = true
+            "#,
+        )
+        .unwrap();
+        assert_eq!(config.shortcuts[0].action, Action::Reset);
+        let text = config.to_toml();
+        assert!(text.contains("reset = true"), "{text}");
+        assert!(!text.contains("anchor"), "{text}");
+        assert_eq!(parse(&text).unwrap(), config);
+        assert!(!Config::defaults().to_toml().contains("reset"));
+
+        // A placement written beside it is ignored; without it, an anchor is
+        // needed.
+        let with_placement = r#"
+            [[shortcut]]
+            keys = "Ctrl+Alt+Backspace"
+            anchor = "left"
+            width = "1/2"
+            height = "1"
+            reset = true
+        "#;
+        assert_eq!(parse(with_placement).unwrap(), config);
+        let e = parse("[[shortcut]]\nkeys = \"Ctrl+Alt+Backspace\"\n")
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("reset = true"), "{e}");
+        let e = parse("[[shortcut]]\nkeys = \"Ctrl+Alt+Backspace\"\nreset = false\n")
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("anchor"), "{e}");
+    }
+
+    #[test]
     fn reads_percent_from_earlier_versions_as_ratios() {
         let config = parse(
             r#"
@@ -316,7 +358,7 @@ mod tests {
             "#,
         )
         .unwrap();
-        let (width, height) = config.shortcuts[0].placement.sizes().unwrap();
+        let (width, height) = placement(&config.shortcuts[0]).sizes().unwrap();
         assert_eq!(
             (width.to_string(), height.to_string()),
             ("2/3".into(), "1".into())
@@ -397,7 +439,7 @@ mod tests {
         let widths: Vec<String> = config
             .shortcuts
             .iter()
-            .map(|s| s.placement.sizes().unwrap().0.to_string())
+            .map(|s| placement(s).sizes().unwrap().0.to_string())
             .collect();
         assert_eq!(widths, ["1/2", "2/3"]);
         assert_eq!(parse(&config.to_toml()).unwrap(), config);

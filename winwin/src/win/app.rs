@@ -32,6 +32,7 @@ use super::{
 };
 use crate::config::{Config, Theme};
 use crate::cycle;
+use crate::layout::{Action, Placement};
 use crate::restore::{Ended, Sizes};
 
 /// The installer finds a running winwin by this name to close it
@@ -235,24 +236,15 @@ fn register_hotkeys() {
 }
 
 fn on_hotkey(id: usize) {
-    let Some(placement) = with_app(|app| app.shortcuts.on_hotkey(id)).flatten() else {
+    let Some(action) = with_app(|app| app.shortcuts.on_hotkey(id)).flatten() else {
         return;
     };
-    match mover::place_foreground(&placement) {
-        Ok(Some(placed)) => {
-            let window = placed.hwnd.0 as isize;
-            adopt_marks(placed.hwnd);
-            let kept = with_app(|app| {
-                app.sizes
-                    .retain(|window| unsafe { IsWindow(Some(HWND(window as _))) }.as_bool());
-                app.sizes
-                    .placed(window, placed.before, placed.dpi, placed.after)
-            });
-            if let Some(kept) = kept {
-                marks::write(placed.hwnd, &kept);
-            }
-        }
-        Ok(None) => {}
+    let result = match action {
+        Action::Place(placement) => place(&placement),
+        Action::Reset => reset(),
+    };
+    match result {
+        Ok(()) => {}
         Err(mover::MoveError::AccessDenied) => {
             let first = with_app(|app| !std::mem::replace(&mut app.told_access_denied, true));
             if first == Some(true) {
@@ -262,6 +254,49 @@ fn on_hotkey(id: usize) {
                 );
             }
         }
+    }
+}
+
+fn place(placement: &Placement) -> Result<(), mover::MoveError> {
+    let Some(placed) = mover::place_foreground(placement)? else {
+        return Ok(());
+    };
+    let window = placed.hwnd.0 as isize;
+    adopt_marks(placed.hwnd);
+    let kept = with_app(|app| {
+        app.sizes
+            .retain(|window| unsafe { IsWindow(Some(HWND(window as _))) }.as_bool());
+        app.sizes.placed(
+            window,
+            placed.before,
+            placed.maximized,
+            placed.dpi,
+            placed.after,
+        )
+    });
+    if let Some(kept) = kept {
+        marks::write(placed.hwnd, &kept);
+    }
+    Ok(())
+}
+
+/// Puts the foreground window back where it was before a shortcut first
+/// placed it; a window winwin has not placed, or has forgotten, stays.
+fn reset() -> Result<(), mover::MoveError> {
+    let Some(hwnd) = mover::foreground() else {
+        return Ok(());
+    };
+    let Some(current) = mover::window_rect(hwnd) else {
+        return Ok(());
+    };
+    let window = hwnd.0 as isize;
+    adopt_marks(hwnd);
+    let dpi = mover::monitor_dpi(hwnd);
+    let to = with_app(|app| app.sizes.reset(window, current, dpi, mover::is_shown)).flatten();
+    clear_forgotten_marks();
+    match to {
+        Some(to) => mover::reset(hwnd, to),
+        None => Ok(()),
     }
 }
 

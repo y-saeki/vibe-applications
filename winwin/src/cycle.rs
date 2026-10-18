@@ -18,19 +18,19 @@
 
 use crate::config::Config;
 use crate::hotkey::{Hotkey, Keys};
-use crate::layout::Placement;
+use crate::layout::Action;
 
 /// One shortcut and every entry that uses it.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Binding {
     pub keys: Keys,
-    pub placements: Vec<Placement>,
+    pub actions: Vec<Action>,
 }
 
 impl Binding {
     /// Whether pressing it again can lead somewhere else.
     pub fn cycles(&self) -> bool {
-        self.placements.len() > 1
+        self.actions.len() > 1
     }
 }
 
@@ -41,11 +41,11 @@ pub fn bindings(config: &Config) -> Vec<Binding> {
     for s in &config.shortcuts {
         match out.iter_mut().find(|b| b.keys == s.keys) {
             Some(b) => {
-                b.placements.push(s.placement);
+                b.actions.push(s.action);
             }
             None => out.push(Binding {
                 keys: s.keys.clone(),
-                placements: vec![s.placement],
+                actions: vec![s.action],
             }),
         }
     }
@@ -105,7 +105,7 @@ impl Presses {
             && let Some(b) = bindings.get(binding)
             && b.keys.last() == stroke
         {
-            let entry = (entry + 1) % b.placements.len();
+            let entry = (entry + 1) % b.actions.len();
             self.cycling = Some((binding, entry));
             // Still the start of the longer ones, whichever entry it is on.
             if extended(bindings, b.keys.strokes()) {
@@ -199,7 +199,7 @@ fn extended(bindings: &[Binding], strokes: &[Hotkey]) -> bool {
 mod tests {
     use super::*;
     use crate::hotkey::MOD_CONTROL;
-    use crate::layout::Size;
+    use crate::layout::{Placement, Size};
 
     fn hk(s: &str) -> Hotkey {
         s.parse().unwrap()
@@ -268,8 +268,26 @@ mod tests {
         let left = &bindings[0];
         assert_eq!(left.keys.to_string(), "Ctrl+Alt+Left");
         assert!(left.cycles());
-        assert_eq!(left.placements[0].sizes().unwrap().0.to_string(), "1/2");
-        assert_eq!(left.placements[1].sizes().unwrap().0.to_string(), "2/3");
+        assert_eq!(
+            left.actions[0]
+                .placement()
+                .unwrap()
+                .sizes()
+                .unwrap()
+                .0
+                .to_string(),
+            "1/2"
+        );
+        assert_eq!(
+            left.actions[1]
+                .placement()
+                .unwrap()
+                .sizes()
+                .unwrap()
+                .0
+                .to_string(),
+            "2/3"
+        );
         // The others keep their order behind it.
         assert_eq!(bindings[1].keys.to_string(), "Ctrl+Alt+Right");
     }
@@ -405,12 +423,13 @@ mod tests {
     fn a_shorter_shortcut_cycles_and_still_leads_on() {
         let mut config = config_with_a_prefix();
         let mut two_thirds = config.shortcuts[0].clone();
-        let (_, height) = two_thirds.placement.sizes().unwrap();
-        two_thirds.placement = Placement::given(
-            two_thirds.placement.anchor,
+        let placement = two_thirds.action.placement().unwrap();
+        let (_, height) = placement.sizes().unwrap();
+        two_thirds.action = Action::Place(Placement::given(
+            placement.anchor,
             Size::Ratio("2/3".parse().unwrap()),
             height,
-        );
+        ));
         config.shortcuts.push(two_thirds);
         let bindings = bindings(&config);
         let mut presses = Presses::default();

@@ -5,7 +5,9 @@
 //! them while the settings window is open).
 //!
 //! It has no title bar or buttons. It can be dragged anywhere on it and
-//! resized from its edges, and it takes any size a placement asks for.
+//! resized from its edges, and it takes any size a placement asks for. A
+//! reset puts it back where it was before the first placement since it
+//! opened or was last reset.
 
 use std::cell::{Cell, RefCell};
 
@@ -37,7 +39,8 @@ use windows::core::{HSTRING, PCWSTR};
 use super::{icon, mover, shortcuts::Shortcuts};
 use crate::config::Config;
 use crate::cycle;
-use crate::layout::{self, Anchor, Ratio, Rect, Size};
+use crate::layout::{self, Action, Anchor, Ratio, Rect, Size};
+use crate::restore::Reset;
 
 /// settings.rs tells this window from the settings window by it.
 pub const CLASS_NAME: &str = "winwin.test";
@@ -61,6 +64,9 @@ struct TestWindow {
     /// The combinations another application holds, from the last time the
     /// shortcuts changed.
     failed: Vec<String>,
+    /// Where the window was before the first placement since it opened or
+    /// was last reset.
+    origin: Option<Rect>,
 }
 
 thread_local! {
@@ -98,6 +104,7 @@ pub fn open(on_close: impl Fn() + 'static) -> Result<(), String> {
             hwnd,
             shortcuts: Shortcuts::new(hwnd),
             failed: Vec::new(),
+            origin: None,
         })
     });
     dress(hwnd);
@@ -270,10 +277,25 @@ fn pointer_work_area() -> Option<Rect> {
 /// so that the result can be seen, without taking the focus.
 fn on_hotkey(id: usize) {
     let picked = with_window(|w| Some((w.hwnd, w.shortcuts.on_hotkey(id)?))).flatten();
-    let Some((hwnd, placement)) = picked else {
+    let Some((hwnd, action)) = picked else {
         return;
     };
-    let _ = mover::place(hwnd, &placement);
+    match action {
+        Action::Place(placement) => {
+            let before = mover::window_rect(hwnd);
+            with_window(|w| w.origin = w.origin.or(before));
+            let _ = mover::place(hwnd, &placement);
+        }
+        Action::Reset => {
+            if let Some(rect) = with_window(|w| w.origin.take()).flatten() {
+                let to = Reset {
+                    rect,
+                    maximized: false,
+                };
+                let _ = mover::reset(hwnd, to);
+            }
+        }
+    }
     let _ = unsafe {
         SetWindowPos(
             hwnd,
