@@ -61,8 +61,9 @@ CI(`.github/workflows/winwin.yml`)は `windows-latest` でこの 3 つとリリ�
 
 ## Pull Request のビルド
 
-`winwin/` を変更する Pull Request では、GitHub Actions が Windows 版をビルドし、成功するとインストーラへの
-ダウンロードリンクを Pull Request にコメントします。push のたびに新しいコメントを投稿し、前回までのコメントは outdated として畳みます。
+`winwin/` を変更する Pull Request では、GitHub Actions が Windows 版と macOS 版をビルドし、Windows 版が成功すると
+インストーラへのダウンロードリンクを Pull Request にコメントします。macOS 版も成功していれば、`winwin.app` を固めた
+`.zip`(Apple シリコン用)へのリンクも並べます。push のたびに新しいコメントを投稿し、前回までのコメントは outdated として畳みます。
 リンク先のダウンロードには GitHub へのログインが必要で、成果物には保持期限があります(期限はコメントに書かれます)。
 
 ## macOS 版
@@ -94,7 +95,8 @@ open winwin/macos/winwin.app
   あります。そのときは、システム設定の一覧から winwin を削除して、許可し直してください
 
 CI(`.github/workflows/winwin.yml` の `build-macos`)は `macos-latest` で、feature `ffi` を含めた clippy とテスト、
-`build.sh` を実行します。成果物はまだアップロードしません。
+`build.sh` を実行し、できた `winwin.app` を `ditto` で `.zip` に固めてアップロードします。ランナーが Apple シリコンなので、
+アプリも Apple シリコン用です。Intel Mac 用を含む universal binary と `.dmg` は、配布を始めるときに作ります。
 
 ## 構成
 
