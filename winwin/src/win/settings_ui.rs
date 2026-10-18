@@ -24,10 +24,11 @@ use windows::core::BOOL;
 use windows_reactor::*;
 
 use super::{autostart, config_path, error_box, icon, keyhook, modifiers_held, testwin};
-use crate::config::{Config, Theme};
-use crate::draft::{self, Click, Draft, Editor, Frame, Picture};
-use crate::hotkey::{self, Arrow, Hotkey, Keycap, MOD_CONTROL, MOD_SHIFT, Recorder};
-use crate::layout::{Anchor, Rect};
+use winwin::config::{Config, Theme};
+use winwin::draft::{self, Click, Draft, Editor, Frame, Picture};
+use winwin::hotkey::{self, Arrow, Hotkey, Keycap, Modifiers, Recorder};
+use winwin::layout::{Anchor, Rect};
+use winwin::vk;
 
 /// The client area in DIPs, which is also as small as the window goes: the
 /// fields and the whole preview fit in it. Its width is fixed, since a wider
@@ -133,7 +134,7 @@ enum Msg {
     Reorder(Vec<String>),
     /// 変更 beside the shortcut: opens the dialog that records one.
     Record,
-    /// A key went down or up while recording.
+    /// A key went down or up while recording: its virtual-key code.
     Key(u32, bool),
     RecordReset,
     RecordClear,
@@ -194,8 +195,8 @@ impl Component for Settings {
             Msg::Select(Some(i)) => self.editor.click(
                 i,
                 Click {
-                    shift: modifiers_held(MOD_SHIFT),
-                    ctrl: modifiers_held(MOD_CONTROL),
+                    shift: modifiers_held(Modifiers::SHIFT),
+                    ctrl: modifiers_held(Modifiers::CTRL),
                 },
             ),
             Msg::Select(None) => {}
@@ -211,12 +212,12 @@ impl Component for Settings {
             }
             Msg::Record => self.start_recording(context),
 
-            Msg::Key(vk, down) => {
-                if let Some(r) = &mut self.recording {
+            Msg::Key(code, down) => {
+                if let (Some(r), Some(press)) = (&mut self.recording, vk::press(code)) {
                     if down {
-                        r.key_down(vk);
+                        r.key_down(press);
                     } else {
-                        r.key_up(vk);
+                        r.key_up(press);
                     }
                 }
             }
@@ -453,7 +454,7 @@ impl Settings {
         let r = self.recording.clone().unwrap_or_default();
         let result = r.result();
         let strokes = r.strokes();
-        let keys: View = if strokes.is_empty() && r.modifiers == 0 {
+        let keys: View = if strokes.is_empty() && r.modifiers.is_empty() {
             TextBlock::new()
                 .text("キーを押してください")
                 .opacity(0.6)
@@ -461,7 +462,7 @@ impl Settings {
                 .vertical_alignment(VerticalAlignment::Center)
                 .into()
         } else if strokes.is_empty() {
-            keycaps(hotkey::keycaps(r.modifiers, 0), Caps::LARGE, true)
+            keycaps(hotkey::keycaps(r.modifiers, None), Caps::LARGE, true)
         } else {
             strokes_view(&strokes, Caps::LARGE, true)
         };

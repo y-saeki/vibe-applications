@@ -32,6 +32,12 @@ pub struct Draft {
     pub reset: bool,
 }
 
+impl Default for Draft {
+    fn default() -> Draft {
+        Draft::new()
+    }
+}
+
 impl Draft {
     /// What 追加 starts from.
     pub fn new() -> Draft {
@@ -563,7 +569,7 @@ pub fn moved(index: usize, len: usize, up: bool) -> Option<usize> {
 mod tests {
     use super::*;
     use crate::config::Config;
-    use crate::hotkey::{MOD_ALT, MOD_CONTROL, MOD_SHIFT};
+    use crate::hotkey::{Key, Modifiers};
 
     #[test]
     fn a_saved_shortcut_comes_back_unchanged() {
@@ -580,16 +586,16 @@ mod tests {
             "ショートカットを設定してください"
         );
         d.keys = vec![Hotkey {
-            modifiers: MOD_CONTROL | MOD_ALT,
-            vk: 0x41,
+            modifiers: Modifiers::CTRL | Modifiers::ALT,
+            key: Key::Letter(b'A'),
         }];
         assert_eq!(d.to_shortcut().unwrap().keys.to_string(), "Ctrl+Alt+A");
         d.keys.push(Hotkey {
-            modifiers: MOD_CONTROL | MOD_ALT,
-            vk: 0x26,
+            modifiers: Modifiers::CTRL | Modifiers::ALT,
+            key: Key::Up,
         });
         assert_eq!(d.to_shortcut().unwrap().keys.to_string(), "Ctrl+Alt+A, Up");
-        d.keys[1].modifiers = MOD_CONTROL;
+        d.keys[1].modifiers = Modifiers::CTRL;
         assert!(d.to_shortcut().unwrap_err().contains("修飾キー"));
     }
 
@@ -606,7 +612,7 @@ mod tests {
         assert!(d.to_shortcut().unwrap_err().starts_with("高さ:"));
 
         d = Draft::from_shortcut(&Config::defaults().shortcuts[0]);
-        d.keys[0].modifiers = MOD_SHIFT;
+        d.keys[0].modifiers = Modifiers::SHIFT;
         assert!(d.to_shortcut().unwrap_err().contains("Ctrl・Alt・Win"));
     }
 

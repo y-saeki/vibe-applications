@@ -21,8 +21,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 use windows::core::{BOOL, s, w};
 
-use crate::layout::{Placement, Rect};
-use crate::restore::Reset;
+use winwin::layout::{Placement, Rect};
+use winwin::restore::Reset;
 
 pub enum MoveError {
     /// The window belongs to a process running with higher privileges, which

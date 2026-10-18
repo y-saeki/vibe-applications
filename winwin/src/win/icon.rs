@@ -45,7 +45,7 @@ fn draw(size: i32) -> Option<HICON> {
     let mut bits = std::ptr::null_mut();
     let color =
         unsafe { CreateDIBSection(None, &info, DIB_RGB_COLORS, &mut bits, None, 0) }.ok()?;
-    let src = crate::art::pixels(size as usize);
+    let src = winwin::art::pixels(size as usize);
     // SAFETY: the section is size × size 32-bit pixels, as requested above.
     unsafe { std::ptr::copy_nonoverlapping(src.as_ptr(), bits.cast::<u32>(), src.len()) };
     // With a 32-bit color bitmap the alpha channel decides transparency; the

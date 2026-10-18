@@ -30,10 +30,10 @@ use super::{
     APP_NAME, WM_APP_OPEN_SETTINGS, WM_APP_SETTINGS_CLOSED, WM_APP_TRAY, config_path,
     copy_to_field, error_box, icon, loword, marks, mover, settings, shortcuts::Shortcuts,
 };
-use crate::config::{Config, Theme};
-use crate::cycle;
-use crate::layout::{Action, Placement};
-use crate::restore::{Ended, Sizes};
+use winwin::config::{Config, Theme};
+use winwin::cycle;
+use winwin::layout::{Action, Placement};
+use winwin::restore::{Ended, Sizes};
 
 /// The installer finds a running winwin by this name to close it
 /// (installer/installer.nsi, MAIN_CLASS).
