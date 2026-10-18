@@ -11,6 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// The shortcuts the test window answers to: the rows as they stand.
     private let trial = Resident()
     private let tap = KeyTap()
+    private lazy var drags = DragWatcher(resident: resident)
     private var statusItem: NSStatusItem?
     /// Watches for the Accessibility permission while it is not granted.
     private var trustTimer: Timer?
@@ -23,6 +24,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         .appendingPathComponent("winwin")
         .appendingPathComponent("config.toml")
 
+    /// Where winwin was asked to put the windows it placed, and where they
+    /// were before, for a winwin started again.
+    static let marksURL = configURL.deletingLastPathComponent().appendingPathComponent("placed-windows.txt")
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.mainMenu = makeMainMenu()
         statusItem = makeStatusItem()
@@ -30,6 +35,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             alert(problem, detail: "ショートカットは使えません。設定を開いて保存し直すか、ファイルを修正してください。")
         }
         applyTheme(resident.theme())
+        resident.rememberIn(path: Self.marksURL.path, windows: Windows.open())
+        drags.start()
         routeKeys()
         if Permission.isTrusted {
             startTap()

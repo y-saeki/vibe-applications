@@ -8,7 +8,8 @@
 
 mod settings;
 
-use std::path::Path;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use settings::SettingsEditor;
@@ -16,7 +17,7 @@ use settings::SettingsEditor;
 use crate::config::{Config, Theme};
 use crate::cycle::{self, Binding, Outcome, Presses};
 use crate::layout::{self, Action, Placement, Rect, Sizing};
-use crate::restore::Sizes;
+use crate::restore::{Ended, Remembered, Sizes};
 use crate::{art, mac};
 
 /// What `restore::Sizes` takes as the DPI of a monitor. Points are the same
@@ -97,10 +98,19 @@ impl Placing {
     }
 }
 
+/// A window that is open, as the app finds it when winwin starts: its
+/// number in the window server, and the application it belongs to.
+#[derive(uniffi::Record)]
+pub struct OpenWindow {
+    pub window: u64,
+    pub owner: String,
+}
+
 /// The resident part's state: the shortcuts of the config, how far the
 /// presses of them have got, and where the windows winwin placed were
-/// before. The app gives each window it places a number of its own, which
-/// stands for the window here.
+/// before. A window is its number in the window server, which stays the
+/// same while it is open, so what winwin remembers of it is kept in a file
+/// for a winwin started again.
 #[derive(Default, uniffi::Object)]
 pub struct Resident {
     state: Mutex<State>,
@@ -111,7 +121,44 @@ struct State {
     bindings: Vec<Binding>,
     presses: Presses,
     sizes: Sizes,
+    /// The application each window winwin remembers belongs to, as the app
+    /// tells it apart, so that a window number met again after a restart
+    /// is known to be the same window.
+    owners: HashMap<u64, String>,
+    /// Where what winwin remembers is kept; nowhere until `remember_in`.
+    marks: Option<PathBuf>,
+    drag: Option<MouseDrag>,
     theme: Theme,
+}
+
+/// A drag of a window winwin remembers, from the button going down to it
+/// coming up.
+struct MouseDrag {
+    window: u64,
+    /// Where the window was when the button went down.
+    start: Rect,
+    /// It has its own size back, and the drag carries it on.
+    restored: bool,
+}
+
+impl State {
+    /// Writes what winwin remembers to the file, for a winwin started
+    /// again. Nothing depends on it, so a file that cannot be written is
+    /// left at that.
+    fn save(&mut self) {
+        let sizes = &self.sizes;
+        self.owners
+            .retain(|&window, _| sizes.tracks(window as isize));
+        let Some(path) = &self.marks else { return };
+        let _ = std::fs::write(path, marks::write(sizes, &self.owners));
+    }
+
+    /// The window has been resized by hand, or by its application: winwin
+    /// is done with it.
+    fn forget(&mut self, window: u64) {
+        self.sizes.forget(window as isize);
+        self.save();
+    }
 }
 
 impl Resident {
@@ -204,17 +251,137 @@ impl Resident {
         }
     }
 
-    /// A shortcut moved `window` from `before` to `after`. When the window
-    /// was still where an earlier shortcut put it, where it was before that
-    /// one is kept.
-    pub fn placed(&self, window: u64, before: Frame, after: Frame) {
-        self.state().sizes.placed(
+    /// Keeps what winwin remembers in the file at `path` from now on, and
+    /// takes back what a winwin before this one left there of the
+    /// `windows` still open in the same application.
+    pub fn remember_in(&self, path: String, windows: Vec<OpenWindow>) {
+        let state = &mut *self.state();
+        let open: HashMap<u64, String> = windows.into_iter().map(|w| (w.window, w.owner)).collect();
+        for (window, owner, kept) in
+            marks::read(&std::fs::read_to_string(&path).unwrap_or_default())
+        {
+            if open.get(&window) == Some(&owner) {
+                state.sizes.adopt(window as isize, kept);
+                state.owners.entry(window).or_insert(owner);
+            }
+        }
+        state.marks = Some(path.into());
+        state.save();
+    }
+
+    /// A shortcut moved `window`, of the application `owner`, from `before`
+    /// to `after`. When the window was still where an earlier shortcut put
+    /// it, where it was before that one is kept.
+    pub fn placed(&self, window: u64, owner: String, before: Frame, after: Frame) {
+        let state = &mut *self.state();
+        state.sizes.placed(
             window as isize,
             before.into(),
             false,
             POINTS_DPI,
             after.into(),
         );
+        state.owners.insert(window, owner);
+        state.save();
+    }
+
+    /// Whether winwin remembers `window`, which is when a click on it may
+    /// start a drag worth following.
+    pub fn tracks(&self, window: u64) -> bool {
+        self.state().sizes.tracks(window as isize)
+    }
+
+    /// The left button went down on `window`, which is at `current`.
+    /// Returns whether to follow the drag: winwin placed the window, and it
+    /// is still the size winwin made it.
+    pub fn mouse_down(&self, window: u64, current: Frame) -> bool {
+        let state = &mut *self.state();
+        state.drag = None;
+        let current = Rect::from(current);
+        let known = state.sizes.tracks(window as isize);
+        let follow = state.sizes.drag_started(window as isize, current, false);
+        if follow {
+            state.drag = Some(MouseDrag {
+                window,
+                start: current,
+                restored: false,
+            });
+        } else if known {
+            // A window of another size than winwin made it is forgotten.
+            state.save();
+        }
+        follow
+    }
+
+    /// The drag goes on, with `window` at `current` and the cursor at
+    /// `cursor_x`, `cursor_y`. The first time the window has moved from
+    /// where winwin put it, returns where to put it at its own size, the
+    /// cursor holding it where it did. A window that changes size instead
+    /// is being resized, and winwin forgets it.
+    pub fn mouse_dragged(
+        &self,
+        window: u64,
+        current: Frame,
+        cursor_x: i32,
+        cursor_y: i32,
+    ) -> Option<Frame> {
+        let state = &mut *self.state();
+        let drag = state
+            .drag
+            .as_mut()
+            .filter(|d| d.window == window && !d.restored)?;
+        let current = Rect::from(current);
+        if !same_size(drag.start, current) {
+            state.drag = None;
+            state.forget(window);
+            return None;
+        }
+        let w = window as isize;
+        if !state.sizes.moved(w, current, (cursor_x, cursor_y)) {
+            return None;
+        }
+        match state
+            .sizes
+            .drag_ended(w, current, POINTS_DPI, (cursor_x, cursor_y), false, true)
+        {
+            Ended::Resume(r) | Ended::Put(r) => {
+                drag.restored = true;
+                Some(r.into())
+            }
+            Ended::Leave => None,
+        }
+    }
+
+    /// The button came up, with `window` at `current` and the cursor at
+    /// `cursor_x`, `cursor_y`. Where to put the window, when the drag did not
+    /// leave it at its own size under the cursor.
+    pub fn mouse_up(
+        &self,
+        window: u64,
+        current: Frame,
+        cursor_x: i32,
+        cursor_y: i32,
+    ) -> Option<Frame> {
+        let state = &mut *self.state();
+        let drag = state.drag.take().filter(|d| d.window == window)?;
+        let current = Rect::from(current);
+        if !drag.restored && !same_size(drag.start, current) {
+            state.forget(window);
+            return None;
+        }
+        let ended = state.sizes.drag_ended(
+            window as isize,
+            current,
+            POINTS_DPI,
+            (cursor_x, cursor_y),
+            false,
+            false,
+        );
+        state.save();
+        match ended {
+            Ended::Put(r) | Ended::Resume(r) => Some(r.into()),
+            Ended::Leave => None,
+        }
     }
 
     /// A reset shortcut was pressed on `window`, which is at `current`:
@@ -225,19 +392,61 @@ impl Resident {
     pub fn reset(&self, window: u64, current: Frame, screens: Vec<Frame>) -> Option<Frame> {
         let screens: Vec<Rect> = screens.into_iter().map(Rect::from).collect();
         let shown = |r: Rect| screens.iter().any(|s| r.intersection(*s).is_some());
-        let reset = self
-            .state()
+        let state = &mut *self.state();
+        let reset = state
             .sizes
             .reset(window as isize, current.into(), POINTS_DPI, shown)?;
+        state.save();
         Some(reset.rect.into())
     }
 
     /// Forgets the windows that are not among `alive`, which have closed.
     pub fn retain(&self, alive: Vec<u64>) {
-        let mut state = self.state();
+        let state = &mut *self.state();
         state.sizes.retain(|w| alive.contains(&(w as u64)));
-        // Nothing is left on a window on macOS to take away.
+        // The file is all there is to take away, and `save` rewrites it.
         state.sizes.take_forgotten();
+        state.save();
+    }
+}
+
+fn same_size(a: Rect, b: Rect) -> bool {
+    a.width() == b.width() && a.height() == b.height()
+}
+
+/// The file that keeps what winwin remembers: a line for each window, with
+/// its number, the three values `Remembered::pack` makes of it, and its
+/// application.
+mod marks {
+    use std::collections::HashMap;
+
+    use super::{Remembered, Sizes};
+
+    pub fn write(sizes: &Sizes, owners: &HashMap<u64, String>) -> String {
+        let mut lines: Vec<String> = sizes
+            .remembered()
+            .filter_map(|(window, kept)| {
+                let owner = owners.get(&(window as u64))?;
+                let [a, b, c] = kept.pack()?;
+                Some(format!("{window} {a:016x} {b:016x} {c:016x} {owner}\n"))
+            })
+            .collect();
+        lines.sort();
+        lines.concat()
+    }
+
+    /// The windows in `text`, skipping any line `write` did not make.
+    pub fn read(text: &str) -> Vec<(u64, String, Remembered)> {
+        text.lines()
+            .filter_map(|line| {
+                let mut parts = line.splitn(5, ' ');
+                let window = parts.next()?.parse().ok()?;
+                let mut value = || u64::from_str_radix(parts.next()?, 16).ok();
+                let packed = [value()?, value()?, value()?];
+                let owner = parts.next().filter(|o| !o.is_empty())?;
+                Some((window, owner.to_owned(), Remembered::unpack(packed)?))
+            })
+            .collect()
     }
 }
 
@@ -392,21 +601,177 @@ mod tests {
         let before = frame(100, 100, 600, 500);
         let half = frame(0, 0, 720, 900);
         let quarter = frame(0, 0, 720, 450);
-        r.placed(7, before, half);
+        r.placed(7, "a".into(), before, half);
         // Placed again from where the first placement left it: still the
         // place before the first one.
-        r.placed(7, half, quarter);
+        r.placed(7, "a".into(), half, quarter);
         assert_eq!(r.reset(7, quarter, vec![screen]), Some(before));
         // Forgotten once given back, and never known for another window.
         assert_eq!(r.reset(7, before, vec![screen]), None);
         assert_eq!(r.reset(8, before, vec![screen]), None);
         // Where no screen shows it any more, only the size comes back.
-        r.placed(7, frame(2000, 100, 2500, 500), half);
+        r.placed(7, "a".into(), frame(2000, 100, 2500, 500), half);
         assert_eq!(r.reset(7, half, vec![screen]), Some(frame(0, 0, 500, 400)));
         // A closed window is forgotten.
-        r.placed(9, before, half);
+        r.placed(9, "a".into(), before, half);
         r.retain(vec![]);
         assert_eq!(r.reset(9, half, vec![screen]), None);
+    }
+
+    const BEFORE: Frame = Frame {
+        left: 100,
+        top: 100,
+        right: 900,
+        bottom: 700,
+    };
+    const HALF: Frame = Frame {
+        left: 0,
+        top: 25,
+        right: 720,
+        bottom: 900,
+    };
+
+    fn shifted(f: Frame, dx: i32, dy: i32) -> Frame {
+        frame(f.left + dx, f.top + dy, f.right + dx, f.bottom + dy)
+    }
+
+    /// A window placed on the left half.
+    fn placed_half() -> Resident {
+        let r = Resident::new();
+        assert!(!r.tracks(7));
+        r.placed(7, "a".into(), BEFORE, HALF);
+        assert!(r.tracks(7));
+        r
+    }
+
+    #[test]
+    fn a_dragged_window_gets_its_size_back_under_the_cursor() {
+        let r = placed_half();
+        assert!(r.mouse_down(7, HALF));
+        // The button down on the title bar, a quarter of the way across.
+        assert_eq!(r.mouse_dragged(7, HALF, 180, 35), None);
+        assert_eq!(
+            r.mouse_dragged(7, shifted(HALF, 4, 0), 184, 35),
+            Some(frame(-16, 25, 784, 625))
+        );
+        // Once only: the drag carries the window on.
+        assert_eq!(r.mouse_dragged(7, frame(30, 25, 830, 625), 230, 35), None);
+        // Dropped at its own size under the cursor: nothing more to do.
+        assert_eq!(r.mouse_up(7, frame(300, 200, 1100, 800), 500, 210), None);
+        assert!(!r.tracks(7));
+    }
+
+    #[test]
+    fn a_drag_that_did_not_take_the_size_is_settled_on_the_drop() {
+        let r = placed_half();
+        r.mouse_down(7, HALF);
+        r.mouse_dragged(7, shifted(HALF, 4, 0), 184, 35);
+        // The application kept its size through the drag.
+        assert_eq!(
+            r.mouse_up(7, shifted(HALF, 400, 0), 580, 35),
+            Some(frame(380, 25, 1180, 625))
+        );
+        assert!(!r.tracks(7));
+    }
+
+    #[test]
+    fn a_click_keeps_the_window_remembered() {
+        let r = placed_half();
+        r.mouse_down(7, HALF);
+        assert_eq!(r.mouse_up(7, HALF, 180, 35), None);
+        assert!(r.tracks(7));
+        // Windows winwin does not remember, and a button that came up on
+        // another window, are left alone.
+        assert!(!r.mouse_down(8, HALF));
+        assert_eq!(r.mouse_dragged(8, shifted(HALF, 4, 0), 184, 35), None);
+        assert_eq!(r.mouse_up(8, shifted(HALF, 4, 0), 184, 35), None);
+        assert!(r.tracks(7));
+    }
+
+    #[test]
+    fn resizing_a_window_by_hand_forgets_it() {
+        let screen = frame(0, 0, 1440, 900);
+        // By its right edge, which leaves the corner where it was.
+        let r = placed_half();
+        r.mouse_down(7, HALF);
+        assert_eq!(r.mouse_dragged(7, frame(0, 25, 760, 900), 760, 400), None);
+        assert_eq!(r.mouse_up(7, frame(0, 25, 800, 900), 800, 400), None);
+        assert_eq!(r.reset(7, HALF, vec![screen]), None);
+        // By its left edge, which moves it too.
+        let r = placed_half();
+        r.mouse_down(7, HALF);
+        assert_eq!(r.mouse_dragged(7, frame(40, 25, 720, 900), 40, 400), None);
+        assert!(!r.tracks(7));
+        // Without news of the drag on the way.
+        let r = placed_half();
+        r.mouse_down(7, HALF);
+        assert_eq!(r.mouse_up(7, frame(0, 25, 800, 900), 800, 400), None);
+        assert!(!r.tracks(7));
+        // Or with no drag at all: the window is not the size winwin made it
+        // when the button goes down on it.
+        let r = placed_half();
+        assert!(!r.mouse_down(7, frame(0, 25, 800, 900)));
+        assert!(!r.tracks(7));
+    }
+
+    #[test]
+    fn a_winwin_started_again_takes_back_what_was_remembered() {
+        let path = std::env::temp_dir().join(format!("winwin-marks-{}", std::process::id()));
+        let path_text: String = path.to_string_lossy().into();
+        let _ = std::fs::remove_file(&path);
+        let r = Resident::new();
+        r.remember_in(path_text.clone(), vec![]);
+        r.placed(7, "100-5".into(), BEFORE, HALF);
+        r.placed(8, "100-5".into(), BEFORE, HALF);
+        r.placed(9, "200-6".into(), BEFORE, HALF);
+        let screen = frame(0, 0, 1440, 900);
+
+        let again = Resident::new();
+        again.remember_in(
+            path_text.clone(),
+            vec![
+                OpenWindow {
+                    window: 7,
+                    owner: "100-5".into(),
+                },
+                // The same number, now another application's window.
+                OpenWindow {
+                    window: 9,
+                    owner: "300-7".into(),
+                },
+            ],
+        );
+        assert_eq!(again.reset(7, HALF, vec![screen]), Some(BEFORE));
+        assert_eq!(again.reset(8, HALF, vec![screen]), None);
+        assert_eq!(again.reset(9, HALF, vec![screen]), None);
+        // What was given back or has closed is gone from the file too.
+        let third = Resident::new();
+        third.remember_in(
+            path_text,
+            vec![OpenWindow {
+                window: 7,
+                owner: "100-5".into(),
+            }],
+        );
+        assert!(!third.tracks(7));
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn the_file_of_what_is_remembered_skips_what_it_cannot_read() {
+        let mut sizes = Sizes::default();
+        let kept = sizes.placed(7, BEFORE.into(), false, POINTS_DPI, HALF.into());
+        sizes.placed(8, BEFORE.into(), false, POINTS_DPI, HALF.into());
+        let owners = HashMap::from([(7, "100-5".to_owned())]);
+        let text = marks::write(&sizes, &owners);
+        // A window without an application is not written.
+        assert_eq!(text.lines().count(), 1);
+        // Nor read back: a line without one, one whose values are not
+        // winwin's, and one that is not a window's at all.
+        let values = text.trim_end().strip_suffix(" 100-5").unwrap();
+        let without_owner = values.replacen('7', "9", 1);
+        let text = format!("{text}{without_owner}\n8 1 2 3 x\ngarbage\n");
+        assert_eq!(marks::read(&text), vec![(7, "100-5".to_owned(), kept)]);
     }
 
     #[test]

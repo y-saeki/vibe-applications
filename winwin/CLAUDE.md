@@ -54,7 +54,7 @@ behaviour changes, the file that covers it changes in the same commit:
 | Key names or which combinations are allowed | `mod tests` in `src/hotkey.rs` |
 | Which virtual-key code or `MOD_*` flag a key or modifier is | `mod tests` in `src/vk.rs` |
 | Which macOS key code or event flag a key or modifier is, or how AppKit's frames are turned | `mod tests` in `src/mac.rs` |
-| Which key presses the macOS app takes, and what it is told to do with them, including resets | `mod tests` in `src/ffi.rs` |
+| Which key presses the macOS app takes, and what it is told to do with them, including resets; how it follows a drag of a placed window; what it keeps in `placed-windows.txt` and takes back on a restart | `mod tests` in `src/ffi.rs` |
 | What the macOS settings window shows, records or saves | `mod tests` in `src/ffi/settings.rs` |
 | How entries that share a shortcut are grouped and take turns, or how a shortcut of several strokes waits for the next | `mod tests` in `src/cycle.rs` |
 | Which size a dragged window gets back, where it lands, and how it is kept on the window | `mod tests` in `src/restore.rs` |
