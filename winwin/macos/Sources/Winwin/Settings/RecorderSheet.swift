@@ -3,7 +3,8 @@ import SwiftUI
 /// The dialog that records a shortcut: it shows the keys as they are
 /// pressed, and saves only a combination that can be a shortcut. While it is
 /// open, every key pressed in winwin comes here (see AppDelegate), so its
-/// buttons are clicked rather than pressed.
+/// buttons are clicked rather than pressed, and none of them takes the
+/// keyboard focus.
 struct RecorderSheet: View {
     @ObservedObject var model: SettingsModel
     /// The most keycaps drawn large; more would not fit.
@@ -32,15 +33,19 @@ struct RecorderSheet: View {
                 .frame(maxWidth: .infinity)
             HStack(spacing: 24) {
                 Button("リセット") { model.resetRecording() }
+                    .focusable(false)
                 Button("クリア") { model.clearRecording() }
+                    .focusable(false)
             }
             .buttonStyle(.link)
             .frame(maxWidth: .infinity)
             HStack {
                 Spacer()
                 Button("キャンセル") { model.endRecording(keep: false) }
+                    .focusable(false)
                 Button("決定") { model.endRecording(keep: true) }
                     .buttonStyle(.borderedProminent)
+                    .focusable(false)
                     .disabled(!(recording?.complete ?? false))
             }
         }
