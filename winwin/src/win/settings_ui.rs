@@ -3,8 +3,8 @@
 //! left, the selected one's fields on the right.
 //!
 //! Every edit goes into the [`Editor`] straight away; nothing is checked
-//! until 保存, which turns the rows into a config, writes it and closes. The
-//! resident part reads the file again when this process ends.
+//! until 保存して閉じる, which turns the rows into a config, writes it and
+//! closes. The resident part reads the file again when this process ends.
 
 use std::cell::{Cell, RefCell};
 
@@ -107,7 +107,7 @@ struct Settings {
     /// Applied to the window as soon as it is chosen; saved with the rest.
     theme: Theme,
     theme_was: Theme,
-    /// Shown above everything when 保存 fails.
+    /// Shown above everything when 保存して閉じる fails.
     error: Option<String>,
     /// The 変更を破棄しますか dialog is open.
     confirming: bool,
@@ -365,7 +365,7 @@ impl Component for Settings {
                             .style(ButtonStyle::Accent)
                             .min_width(96.0)
                             .on_click(context.message(Msg::Save))
-                            .content("保存"),
+                            .content("保存して閉じる"),
                         Button::new()
                             .min_width(96.0)
                             .on_click(context.message(Msg::Cancel))
@@ -474,7 +474,7 @@ impl Settings {
         ContentDialog::new()
             .is_open(self.recording.is_some())
             .title("ショートカットを設定")
-            .primary_button_text("保存")
+            .primary_button_text("決定")
             .close_button_text("キャンセル")
             .is_primary_button_enabled(matches!(result, Some(Ok(_))))
             .on_closed(context.callback(Msg::RecordClosed))

@@ -101,7 +101,7 @@ winwin/
 
 ## 設定ファイル
 
-`%APPDATA%\winwin\config.toml` です。初回起動時に初期値で作られ、設定画面の「保存」で上書きされます。
+`%APPDATA%\winwin\config.toml` です。初回起動時に初期値で作られ、設定画面の「保存して閉じる」で上書きされます。
 
 ```toml
 theme = "dark"            # system(既定。書かない)/ light / dark。設定画面とトレイメニューの明暗

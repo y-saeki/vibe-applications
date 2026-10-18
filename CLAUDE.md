@@ -101,6 +101,13 @@ A dependency update is not a release of its own. Dependabot's pull requests go l
 A Dependabot pull request whose checks fail stays open and is fixed by hand, in that pull
 request, still without raising the version.
 
+## An issue labelled `patch` raises the patch version
+
+When the issue a pull request works on carries the `patch` label, the pull request raises
+the application's patch version, even if the change is one the application's
+`DEVELOPMENT.md` would otherwise count as a minor one. The label is the issue author's call
+on how small the change is.
+
 ## Name the session after the issue
 
 A session that starts from a GitHub issue is renamed to `<issue title> #<issue number>` —
