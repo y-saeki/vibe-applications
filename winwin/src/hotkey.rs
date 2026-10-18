@@ -54,9 +54,27 @@ impl Modifiers {
         self.0 &= !other.0;
     }
 
+    /// The symbols a Mac draws its modifiers with, in the order it draws
+    /// them.
+    const SYMBOLS: [(Modifiers, &'static str); 4] = [
+        (Modifiers::CTRL, "⌃"),
+        (Modifiers::ALT, "⌥"),
+        (Modifiers::SHIFT, "⇧"),
+        (Modifiers::META, "⌘"),
+    ];
+
     /// The names of the modifiers in `self`, in the order they are written.
     fn names(self) -> impl Iterator<Item = &'static str> {
-        Modifiers::NAMED
+        self.labels(Look::Windows)
+    }
+
+    /// The modifiers in `self` as `look` draws them, in its order.
+    fn labels(self, look: Look) -> impl Iterator<Item = &'static str> {
+        let table = match look {
+            Look::Windows => Modifiers::NAMED,
+            Look::Mac => Modifiers::SYMBOLS,
+        };
+        table
             .into_iter()
             .filter(move |(m, _)| self.contains(*m))
             .map(|(_, name)| name)
@@ -192,6 +210,15 @@ pub enum Press {
     Key(Key),
 }
 
+/// How keycaps name the modifiers: by the names the config file writes, in
+/// the order it writes them, or by the symbols and order of a Mac.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Look {
+    #[default]
+    Windows,
+    Mac,
+}
+
 /// One key as the settings window draws it: its name, or for the arrow keys
 /// the direction, which reads better as a chevron than as a word.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -224,7 +251,12 @@ impl Keycap {
 /// each: the modifiers in the order they are written, then the key, if
 /// there is one yet.
 pub fn keycaps(modifiers: Modifiers, key: Option<Key>) -> Vec<Keycap> {
-    let mut caps: Vec<Keycap> = modifiers.names().map(Keycap::Name).collect();
+    keycaps_in(Look::Windows, modifiers, key)
+}
+
+/// [`keycaps`] with the modifiers as `look` draws them.
+pub fn keycaps_in(look: Look, modifiers: Modifiers, key: Option<Key>) -> Vec<Keycap> {
+    let mut caps: Vec<Keycap> = modifiers.labels(look).map(Keycap::Name).collect();
     if let Some(key) = key {
         caps.push(match key {
             Key::Left => Keycap::Arrow(Arrow::Left),
@@ -551,12 +583,17 @@ pub fn strokes_text(strokes: &[Hotkey]) -> String {
 /// Strokes as the settings window draws them, one group of caps each: the
 /// first with its modifiers, the ones after it as their keys alone.
 pub fn strokes_caps(strokes: &[Hotkey]) -> Vec<Vec<Keycap>> {
+    strokes_caps_in(Look::Windows, strokes)
+}
+
+/// [`strokes_caps`] with the modifiers as `look` draws them.
+pub fn strokes_caps_in(look: Look, strokes: &[Hotkey]) -> Vec<Vec<Keycap>> {
     strokes
         .iter()
         .enumerate()
         .map(|(i, h)| {
             let modifiers = if i == 0 { h.modifiers } else { Modifiers::NONE };
-            keycaps(modifiers, Some(h.key))
+            keycaps_in(look, modifiers, Some(h.key))
         })
         .collect()
 }
@@ -783,6 +820,31 @@ mod tests {
         );
         assert_eq!(strokes_text(k.strokes()), "Ctrl+Shift+Left, Up");
         assert_eq!(strokes_caps(&[]), Vec::<Vec<Keycap>>::new());
+    }
+
+    #[test]
+    fn a_mac_draws_its_own_symbols_in_its_own_order() {
+        assert_eq!(
+            keycaps_in(
+                Look::Mac,
+                Modifiers::META | Modifiers::SHIFT | Modifiers::ALT | Modifiers::CTRL,
+                Some(Key::Letter(b'K'))
+            ),
+            [
+                Keycap::Name("⌃"),
+                Keycap::Name("⌥"),
+                Keycap::Name("⇧"),
+                Keycap::Name("⌘"),
+                Keycap::Key(Key::Letter(b'K'))
+            ]
+        );
+        assert_eq!(
+            strokes_caps_in(Look::Mac, keys("Cmd+Left, Up").strokes()),
+            [
+                vec![Keycap::Name("⌘"), Keycap::Arrow(Arrow::Left)],
+                vec![Keycap::Arrow(Arrow::Up)],
+            ]
+        );
     }
 
     #[test]

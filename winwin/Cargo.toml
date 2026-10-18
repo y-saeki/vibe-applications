@@ -1,9 +1,9 @@
 [package]
 name = "winwin"
-version = "0.16.0"
+version = "0.17.0"
 edition = "2024"
 publish = false
-description = "A keyboard-driven window placer for Windows"
+description = "A keyboard-driven window placer for Windows and macOS"
 
 [features]
 # The bindings the macOS app (macos/) calls the library through.
