@@ -1,0 +1,5 @@
+module winwinFFI {
+    header "winwinFFI.h"
+    link "winwin"
+    export *
+}

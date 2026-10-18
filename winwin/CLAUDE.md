@@ -7,17 +7,23 @@ Repository-wide conventions are in the root `CLAUDE.md`; these apply on top of t
 `README.md` is for people who install and use winwin. `DEVELOPMENT.md` is for people who
 build or change it. The root `CLAUDE.md` describes what goes where.
 
-## Keep logic out of `src/win/`
+## Keep logic out of `src/win/` and `macos/`
 
-`config.rs`, `layout.rs`, `hotkey.rs`, `vk.rs`, `cycle.rs`, `restore.rs`, `draft.rs`, `art.rs`
-and `icon_res.rs` do not touch Win32, so they build and test on any platform. All but
-`icon_res.rs` make up the library (`src/lib.rs`); `main.rs` and `src/win/` are the binary built
-on it. Anything that decides behaviour — what a placement resolves to, what a config accepts,
-what the settings window checks before saving — belongs there, with its tests. `src/win/`
-passes values between those modules and Win32 and should stay thin.
+`config.rs`, `layout.rs`, `hotkey.rs`, `vk.rs`, `mac.rs`, `ffi.rs`, `cycle.rs`, `restore.rs`,
+`draft.rs`, `art.rs` and `icon_res.rs` do not touch the operating system, so they build and test
+on any platform (`ffi.rs` with the `ffi` feature). All but `icon_res.rs` make up the library
+(`src/lib.rs`); `main.rs` and `src/win/` are the Windows binary built on it, and the macOS app
+in `macos/` calls it through the bindings `ffi.rs` declares. Anything that decides behaviour —
+what a placement resolves to, what a config accepts, what the settings window checks before
+saving, which key presses a shortcut takes — belongs there, with its tests. `src/win/` and
+`macos/` pass values between the library and the operating system and should stay thin.
 
-Keys and modifiers are `hotkey::Key` and `hotkey::Modifiers`, never Windows' codes: `vk.rs` is
-the one place that converts between them and virtual-key codes or `MOD_*` flags.
+Keys and modifiers are `hotkey::Key` and `hotkey::Modifiers`, never an operating system's
+codes: `vk.rs` is the one place that converts between them and Windows' virtual-key codes or
+`MOD_*` flags, and `mac.rs` the one for macOS's key codes and event flags.
+
+The Swift bindings and the C header in `macos/` are written by `macos/build.sh` from the built
+library and are not committed. Change `ffi.rs`, never the generated files.
 
 ## The state borrow rule
 
@@ -42,15 +48,17 @@ behaviour changes, the file that covers it changes in the same commit:
 
 | Changed | Follow it in |
 |---|---|
-| How a placement turns into a rectangle | `mod tests` in `src/layout.rs` |
+| How a placement turns into a rectangle, or which screen a window is on | `mod tests` in `src/layout.rs` |
 | The config file's fields, defaults or validation | `mod tests` in `src/config.rs`, and the example in `DEVELOPMENT.md` |
 | Key names or which combinations are allowed | `mod tests` in `src/hotkey.rs` |
 | Which virtual-key code or `MOD_*` flag a key or modifier is | `mod tests` in `src/vk.rs` |
+| Which macOS key code or event flag a key or modifier is, or how AppKit's frames are turned | `mod tests` in `src/mac.rs` |
+| Which key presses the macOS app takes, and what it is told to do with them | `mod tests` in `src/ffi.rs` |
 | How entries that share a shortcut are grouped and take turns, or how a shortcut of several strokes waits for the next | `mod tests` in `src/cycle.rs` |
 | Which size a dragged window gets back, where it lands, and how it is kept on the window | `mod tests` in `src/restore.rs` |
 | What the settings window stores, checks on save, or shows in its list | `mod tests` in `src/draft.rs` |
 | The icon's picture, or how it is written into the executable | `mod tests` in `src/art.rs` or `src/icon_res.rs` |
 | The main window's class name, the config folder, the `Run` value name, or a second start opening the settings | `installer/installer.nsi`, which closes winwin by that class, removes those on uninstall, and opens the settings from its finish page by starting winwin twice |
 
-Everything under `src/win/` is out of reach of `cargo test`; `DEVELOPMENT.md` lists the
-manual checks. Do not write a case that pretends to cover it.
+Everything under `src/win/` and `macos/` is out of reach of `cargo test`; `DEVELOPMENT.md`
+lists the manual checks. Do not write a case that pretends to cover it.

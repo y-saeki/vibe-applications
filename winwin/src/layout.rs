@@ -552,6 +552,31 @@ pub fn miniature(size: (i32, i32), bounds: Rect, anchor: Anchor) -> Option<Rect>
     })
 }
 
+/// Which of `areas` the window at `window` is on: the one it overlaps the
+/// most, or when it overlaps none, the nearest. `None` without areas.
+pub fn area_of(window: Rect, areas: &[Rect]) -> Option<usize> {
+    let overlap = |a: &Rect| {
+        window
+            .intersection(*a)
+            .map_or(0, |r| i64::from(r.width()) * i64::from(r.height()))
+    };
+    // From the window's center to the nearest point of the area, squared.
+    let (cx, cy) = (
+        (i64::from(window.left) + i64::from(window.right)) / 2,
+        (i64::from(window.top) + i64::from(window.bottom)) / 2,
+    );
+    let distance = |a: &Rect| {
+        let dx = (i64::from(a.left) - cx).max(cx - i64::from(a.right)).max(0);
+        let dy = (i64::from(a.top) - cy).max(cy - i64::from(a.bottom)).max(0);
+        dx * dx + dy * dy
+    };
+    let best = (0..areas.len()).max_by_key(|&i| overlap(&areas[i]))?;
+    if overlap(&areas[best]) > 0 {
+        return Some(best);
+    }
+    (0..areas.len()).min_by_key(|&i| distance(&areas[i]))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -821,5 +846,18 @@ mod tests {
         // In front, but on the monitor to the left.
         let others = [r(-2560, 0, 0, 1440), r(-500, 0, 480, 1040)];
         assert_eq!(fits(Anchor::Right, &others), Some(r(480, 0, 1920, 1040)));
+    }
+
+    #[test]
+    fn a_window_is_on_the_area_it_overlaps_most() {
+        let left = r(-2560, 0, 0, 1440);
+        let areas = [FHD, left];
+        assert_eq!(area_of(r(100, 100, 900, 700), &areas), Some(0));
+        assert_eq!(area_of(r(-600, 100, 200, 700), &areas), Some(1));
+        assert_eq!(area_of(r(-200, 100, 600, 700), &areas), Some(0));
+        // Off every area: the nearest.
+        assert_eq!(area_of(r(2000, 100, 2400, 700), &areas), Some(0));
+        assert_eq!(area_of(r(-3000, 2000, -2900, 2100), &areas), Some(1));
+        assert_eq!(area_of(FHD, &[]), None);
     }
 }

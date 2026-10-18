@@ -1,0 +1,5 @@
+# Written by build.sh.
+/.build/
+/Sources/winwinFFI/winwinFFI.h
+/Sources/Winwin/Generated/
+/winwin.app/

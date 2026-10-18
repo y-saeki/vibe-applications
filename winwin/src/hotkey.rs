@@ -412,9 +412,11 @@ fn parse_combination(s: &str) -> Result<(Modifiers, Key), HotkeyError> {
     for part in s.split('+').map(str::trim) {
         let modifier = match part.to_ascii_lowercase().as_str() {
             "ctrl" | "control" => Some(Modifiers::CTRL),
-            "alt" => Some(Modifiers::ALT),
+            // Option and Command are a Mac's names for the keys at the
+            // places of Alt and Win.
+            "alt" | "option" | "opt" => Some(Modifiers::ALT),
             "shift" => Some(Modifiers::SHIFT),
-            "win" => Some(Modifiers::META),
+            "win" | "cmd" | "command" => Some(Modifiers::META),
             _ => None,
         };
         if let Some(m) = modifier {
@@ -612,6 +614,14 @@ mod tests {
                 Err(HotkeyError::UnknownPart(code.into()))
             );
         }
+    }
+
+    #[test]
+    fn reads_the_mac_names_of_alt_and_win() {
+        assert_eq!(hk("Cmd+Option+Left"), hk("Win+Alt+Left"));
+        assert_eq!(hk("command+opt+K"), hk("Win+Alt+K"));
+        // They are written by the names the file has always used.
+        assert_eq!(hk("Ctrl+Option+Left").to_string(), "Ctrl+Alt+Left");
     }
 
     #[test]

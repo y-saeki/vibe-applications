@@ -22,9 +22,9 @@ permissions:
   contents: read
 
 jobs:
-  # winwin ships for Windows only, so one runner checks, tests and builds it.
-  # The platform-independent modules (config, layout, shortcuts) would also
-  # test on Linux, but the Win32 half only compiles here.
+  # The Windows application: checked, tested and built here, and the only
+  # one that ships so far. The library alone would also test elsewhere, but
+  # the Win32 half only compiles here.
   build:
     name: build (windows-latest)
     runs-on: windows-latest
@@ -79,6 +79,33 @@ jobs:
           name: winwin-setup
           if-no-files-found: error
           path: winwin/target/release/winwin_*_x64-setup.exe
+
+  # The macOS app is not released yet. Building it shows that the library's
+  # bindings and the Swift side still fit together; the tests here also cover
+  # what the library only builds with the ffi feature.
+  build-macos:
+    name: build (macos-latest)
+    runs-on: macos-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: winwin
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Rust toolchain
+        run: |
+          rustup update stable
+          rustup default stable
+          rustup component add clippy
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: winwin
+      - name: Rust lint
+        run: cargo clippy --all-targets --locked --features ffi-bindgen -- -D warnings
+      - name: Rust tests
+        run: cargo test --locked --features ffi
+      - name: App
+        run: macos/build.sh
 
   # The pull request itself only shows a check mark, so point at the installer
   # the run just uploaded instead of making the reader walk the Actions tab.
