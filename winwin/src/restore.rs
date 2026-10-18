@@ -223,7 +223,8 @@ impl Sizes {
         std::mem::take(&mut self.forgotten)
     }
 
-    fn forget(&mut self, window: isize) {
+    /// Forgets `window`, as when it has been resized by hand.
+    pub fn forget(&mut self, window: isize) {
         if self.windows.remove(&window).is_some() {
             self.forgotten.push(window);
         }
@@ -263,6 +264,13 @@ impl Sizes {
     /// Whether winwin has placed `window` and still remembers its size.
     pub fn tracks(&self, window: isize) -> bool {
         self.windows.contains_key(&window)
+    }
+
+    /// Every window winwin remembers, with what it remembers of it.
+    pub fn remembered(&self) -> impl Iterator<Item = (isize, Remembered)> + '_ {
+        self.windows
+            .iter()
+            .map(|(&window, entry)| (window, entry.kept))
     }
 
     /// The user started to move or resize `window`, which is at `current`.
@@ -763,5 +771,15 @@ mod tests {
         sizes.retain(|w| w == 2);
         assert!(!sizes.tracks(1));
         assert!(sizes.tracks(2));
+    }
+
+    #[test]
+    fn what_is_remembered_is_listed_and_can_be_forgotten() {
+        let mut sizes = Sizes::default();
+        let kept = sizes.placed(1, ORIGINAL, false, 96, LEFT_HALF);
+        assert_eq!(sizes.remembered().collect::<Vec<_>>(), vec![(1, kept)]);
+        sizes.forget(1);
+        assert!(!sizes.tracks(1));
+        assert_eq!(sizes.take_forgotten(), vec![1]);
     }
 }
