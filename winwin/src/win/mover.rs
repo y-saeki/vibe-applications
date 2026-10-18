@@ -16,7 +16,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     HTCAPTION, IDC_SIZENESW, IDC_SIZENS, IDC_SIZENWSE, IDC_SIZEWE, IsHungAppWindow, IsIconic,
     IsWindowVisible, IsZoomed, LoadCursorW, PostMessageW, SC_MOVE, SM_SWAPBUTTON, SW_MAXIMIZE,
     SW_RESTORE, SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE, SWP_NOOWNERZORDER, SWP_NOZORDER, SetWindowPos,
-    ShowWindow, WM_CANCELMODE, WM_SYSCOMMAND, WS_EX_TOOLWINDOW,
+    ShowWindow, WM_CANCELMODE, WM_SYSCOMMAND, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
 };
 use windows::core::{BOOL, s, w};
 
@@ -310,13 +310,21 @@ fn is_on_screen(hwnd: HWND) -> bool {
     !(got.is_ok() && cloaked != 0)
 }
 
-/// The visible frames of the windows on screen other than `hwnd`, from the
-/// top of the z-order down, as `layout::fit` takes them. A maximized window
-/// is given as the whole work area of its monitor, which it covers.
+/// Whether `hwnd` stays above every window that is not, as a window set to
+/// always on top does.
+fn is_topmost(hwnd: HWND) -> bool {
+    let ex_style = unsafe { GetWindowLongPtrW(hwnd, GWL_EXSTYLE) } as u32;
+    ex_style & WS_EX_TOPMOST.0 != 0
+}
+
+/// The visible frames of the windows on screen other than `hwnd` and those
+/// always on top, from the top of the z-order down, as `layout::fit` takes
+/// them. A maximized window is given as the whole work area of its monitor,
+/// which it covers.
 fn other_frames(hwnd: HWND) -> Vec<Rect> {
     unsafe extern "system" fn collect(other: HWND, found: LPARAM) -> BOOL {
         let (skip, frames) = unsafe { &mut *(found.0 as *mut (HWND, Vec<Rect>)) };
-        if other != *skip && is_on_screen(other) {
+        if other != *skip && is_on_screen(other) && !is_topmost(other) {
             let frame = if unsafe { IsZoomed(other) }.as_bool() {
                 work_area(other)
             } else {

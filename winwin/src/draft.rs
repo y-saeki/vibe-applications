@@ -59,6 +59,9 @@ impl Draft {
     }
 
     pub fn placement(&self) -> Result<Placement, String> {
+        if self.fit && !self.anchor.can_fit() {
+            return Err(layout::FIT_AT_CENTER.into());
+        }
         if self.fit {
             return Ok(Placement {
                 anchor: self.anchor,
@@ -100,13 +103,20 @@ impl Draft {
     /// A screen of `size` shrunk into `bounds`, and where on it this row puts
     /// a window; `None` for the window while the fields do not make a
     /// placement yet. A width or height that is kept is drawn as half the
-    /// screen, there being no window to take it from, and so is a
-    /// placement that fits, there being no windows to fit between.
+    /// screen, there being no window to take it from. A placement that fits
+    /// is drawn the same way along the axes its size depends on the windows
+    /// around: across for one at the left or the right, which is as tall as
+    /// the screen, down for one at the top or the bottom, and both for a
+    /// corner.
     pub fn picture(&self, size: (i32, i32), bounds: Rect, anchor: Anchor) -> Option<Picture> {
         let screen = layout::miniature(size, bounds, anchor)?;
         let stand_in = (screen.width() / 2, screen.height() / 2);
         let window = self.placement().ok().map(|p| {
-            let (width, height) = p.sizes().unwrap_or((Size::Keep, Size::Keep));
+            let (width, height) = p.sizes().unwrap_or(match p.anchor {
+                Anchor::Left | Anchor::Right => (Size::Keep, Size::Ratio(Ratio::WHOLE)),
+                Anchor::Top | Anchor::Bottom => (Size::Ratio(Ratio::WHOLE), Size::Keep),
+                _ => (Size::Keep, Size::Keep),
+            });
             let rect = layout::sized(p.anchor, width, height, screen, stand_in);
             let (w, h) = (width == Size::Keep, height == Size::Keep);
             Frame {
@@ -631,6 +641,14 @@ mod tests {
         d.fit = false;
         assert!(d.size_problem().unwrap().starts_with("幅:"));
 
+        // Not at the center.
+        let mut center = Draft::new();
+        center.fit = true;
+        assert_eq!(
+            center.size_problem().as_deref(),
+            Some("フィットでは基準位置に中央を選べません")
+        );
+
         // Read back from the file, it starts from the new row's sizes.
         let back = Draft::from_shortcut(&s);
         assert!(back.fit);
@@ -963,19 +981,27 @@ mod tests {
         let f = frame(Anchor::BottomRight, "", "");
         assert_eq!(f.loose, sides(true, true, false, false));
 
-        // A row that fits is drawn as one that keeps both.
-        let d = Draft {
-            anchor: Anchor::Right,
-            fit: true,
-            ..Draft::new()
+        // A row that fits keeps what depends on the windows around it.
+        let fitted = |anchor: Anchor| {
+            let d = Draft {
+                anchor,
+                fit: true,
+                ..Draft::new()
+            };
+            d.picture((1920, 1080), bounds, Anchor::Center)
+                .unwrap()
+                .window
+                .unwrap()
         };
-        let f = d
-            .picture((1920, 1080), bounds, Anchor::Center)
-            .unwrap()
-            .window
-            .unwrap();
+        let f = fitted(Anchor::Right);
+        assert_eq!((f.rect.width(), f.rect.height()), (80, 90));
+        assert_eq!(f.loose, sides(true, false, false, false));
+        let f = fitted(Anchor::Top);
+        assert_eq!((f.rect.width(), f.rect.height()), (160, 45));
+        assert_eq!(f.loose, sides(false, false, false, true));
+        let f = fitted(Anchor::BottomLeft);
         assert_eq!((f.rect.width(), f.rect.height()), (80, 45));
-        assert_eq!(f.loose, sides(true, true, false, true));
+        assert_eq!(f.loose, sides(false, true, true, false));
     }
 
     #[test]

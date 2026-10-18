@@ -296,6 +296,12 @@ mod tests {
             .to_string();
         assert!(e.contains("fit = true"), "{e}");
         assert!(!Config::defaults().to_toml().contains("fit"));
+
+        // Not at the center.
+        let e = parse(&with_sizes.replace("\"right\"", "\"center\""))
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("中央"), "{e}");
     }
 
     #[test]

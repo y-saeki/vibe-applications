@@ -685,9 +685,9 @@ impl Settings {
             .orientation(Orientation::Horizontal)
             .spacing(16.0)
             .children((
-                anchor_picker(d.anchor, enabled, context),
+                anchor_picker(d.anchor, d.fit, enabled, context),
                 CheckBox::new()
-                    .is_enabled(enabled)
+                    .is_enabled(enabled && d.anchor.can_fit())
                     .is_checked(d.fit)
                     .on_is_checked_changed(context.callback(Msg::Fit))
                     .content(draft::FIT_LABEL),
@@ -977,10 +977,17 @@ fn chevron(arrow: Arrow, text_size: f64) -> View {
 
 /// The anchor as a button that opens the nine anchors laid out as they sit
 /// on a screen, the current one accent colored. Choosing one leaves them
-/// open: windows-reactor has no way to close a flyout from code.
-fn anchor_picker(current: Anchor, enabled: bool, context: &mut ViewContext<Settings>) -> View {
+/// open: windows-reactor has no way to close a flyout from code. A row that
+/// fits cannot take the center, so it is disabled for one.
+fn anchor_picker(
+    current: Anchor,
+    fit: bool,
+    enabled: bool,
+    context: &mut ViewContext<Settings>,
+) -> View {
     let tiles = Anchor::ALL.into_iter().enumerate().map(|(i, a)| {
         let tile = Button::new()
+            .is_enabled(!fit || a.can_fit())
             .style(if a == current {
                 ButtonStyle::Accent
             } else {
