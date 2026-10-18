@@ -18,11 +18,12 @@
 
 ## インストール
 
-### Windows
+[Releases](https://github.com/y-saeki/vibe-applications/releases) の `winwin-v<version>` から、お使いの OS 向けのファイルをダウンロードしてください。
 
-[Releases](https://github.com/y-saeki/vibe-applications/releases) の `winwin-v<version>` から
-`winwin_<version>_x64-setup.exe` をダウンロードして実行し、インストーラの案内に従ってください。
-管理者権限は不要です。
+- Windows: `winwin_<version>_x64-setup.exe`
+  - 実行するとインストーラが起動します。インストーラの案内に従ってください。管理者権限は不要です
+- macOS: `winwin_<version>_macos-arm64.dmg`
+  - 開いて `winwin.app` を「アプリケーション」フォルダへ入れます
 
 ### Windows で「WindowsによってPCが保護されました」と表示される場合
 
@@ -32,16 +33,14 @@
 > [!CAUTION]
 > この操作に不安を感じる場合、無理に実行せず、本アプリケーションの利用を避けてください。
 
-### macOS
+### macOS で「壊れているため開けません」と表示される場合
 
-[Releases](https://github.com/y-saeki/vibe-applications/releases) の `winwin-v<version>` から
-`winwin_<version>_macos-arm64.dmg` をダウンロードして開き、winwin を「アプリケーション」フォルダへドラッグしてください。
+コード署名・公証を行っていないため、ダウンロードした `.app` の実行は Gatekeeper に拒否されます。  
+`.app` を「アプリケーション」フォルダに移したうえで、次のコマンドで隔離属性を外してください。
 
-### macOS で「winwin は開いていません」と表示される場合
-
-コード署名を行っていないため、初めて開くときは macOS に止められます。  
-「完了」を押して閉じたあと、「システム設定」→「プライバシーとセキュリティ」を開き、下の方にある winwin の
-「このまま開く」を押してください。もう一度確認が出たら「このまま開く」を選ぶと起動します。
+```sh
+xattr -dr com.apple.quarantine /Applications/winwin.app
+```
 
 > [!CAUTION]
 > この操作に不安を感じる場合、無理に実行せず、本アプリケーションの利用を避けてください。
@@ -111,8 +110,8 @@ Windows では通知領域のアイコンを右クリックし、「終了」を
 
 アンインストールは、Windows の「設定」→「アプリ」→「インストールされているアプリ」から winwin を選んで行います。
 
-macOS で更新するときは、winwin を終了してから、新しい `.dmg` の winwin を「アプリケーション」フォルダへドラッグして置き換えてください。
-設定はそのまま引き継がれます。  
+macOS で更新するときは、winwin を終了してから、新しい `.dmg` の `winwin.app` を「アプリケーション」フォルダへ入れて置き換え、
+インストールのときと同じコマンドで隔離属性を外してください。設定はそのまま引き継がれます。  
 更新したあとにショートカットが効かなくなったら、「システム設定」→「プライバシーとセキュリティ」→「アクセシビリティ」の一覧で winwin を選んで「−」で削除し、winwin を起動し直して許可し直してください。
 
 macOS でアンインストールするときは、winwin を終了してから「アプリケーション」フォルダの winwin をゴミ箱へ移します。
