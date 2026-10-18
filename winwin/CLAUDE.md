@@ -9,11 +9,12 @@ build or change it. The root `CLAUDE.md` describes what goes where.
 
 ## Keep logic out of `src/win/` and `macos/`
 
-`config.rs`, `layout.rs`, `hotkey.rs`, `vk.rs`, `mac.rs`, `ffi.rs`, `cycle.rs`, `restore.rs`,
-`draft.rs`, `art.rs` and `icon_res.rs` do not touch the operating system, so they build and test
-on any platform (`ffi.rs` with the `ffi` feature). All but `icon_res.rs` make up the library
-(`src/lib.rs`); `main.rs` and `src/win/` are the Windows binary built on it, and the macOS app
-in `macos/` calls it through the bindings `ffi.rs` declares. Anything that decides behaviour —
+`config.rs`, `layout.rs`, `hotkey.rs`, `vk.rs`, `mac.rs`, `ffi.rs` (with `ffi/settings.rs`),
+`cycle.rs`, `restore.rs`, `draft.rs`, `art.rs` and `icon_res.rs` do not touch the operating
+system, so they build and test on any platform (`ffi.rs` with the `ffi` feature). All but
+`icon_res.rs` make up the library (`src/lib.rs`); `main.rs` and `src/win/` are the Windows
+binary built on it, and the macOS app in `macos/` calls it through the bindings `ffi.rs`
+declares. Anything that decides behaviour —
 what a placement resolves to, what a config accepts, what the settings window checks before
 saving, which key presses a shortcut takes — belongs there, with its tests. `src/win/` and
 `macos/` pass values between the library and the operating system and should stay thin.
@@ -53,7 +54,8 @@ behaviour changes, the file that covers it changes in the same commit:
 | Key names or which combinations are allowed | `mod tests` in `src/hotkey.rs` |
 | Which virtual-key code or `MOD_*` flag a key or modifier is | `mod tests` in `src/vk.rs` |
 | Which macOS key code or event flag a key or modifier is, or how AppKit's frames are turned | `mod tests` in `src/mac.rs` |
-| Which key presses the macOS app takes, and what it is told to do with them | `mod tests` in `src/ffi.rs` |
+| Which key presses the macOS app takes, and what it is told to do with them, including resets | `mod tests` in `src/ffi.rs` |
+| What the macOS settings window shows, records or saves | `mod tests` in `src/ffi/settings.rs` |
 | How entries that share a shortcut are grouped and take turns, or how a shortcut of several strokes waits for the next | `mod tests` in `src/cycle.rs` |
 | Which size a dragged window gets back, where it lands, and how it is kept on the window | `mod tests` in `src/restore.rs` |
 | What the settings window stores, checks on save, or shows in its list | `mod tests` in `src/draft.rs` |

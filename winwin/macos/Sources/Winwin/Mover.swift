@@ -8,7 +8,7 @@ enum Screens {
     /// The main screen's height, which AppKit's coordinates count up from.
     static var mainHeight: Double {
         // The first screen is the main one.
-        NSScreen.screens.first?.frame.height ?? 0
+        Double(NSScreen.screens.first?.frame.height ?? 0)
     }
 
     static func frame(of rect: NSRect) -> Frame {
@@ -178,6 +178,6 @@ final class WindowIDs {
             return AXUIElementCopyAttributeValue(entry.element, kAXRoleAttribute as CFString, &role)
                 == .invalidUIElement
         }
-        resident.retain(alive: known.map(\.id))
+        resident.retain(alive: known.map { $0.id })
     }
 }

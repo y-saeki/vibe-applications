@@ -42,7 +42,8 @@ final class SettingsModel: ObservableObject {
     /// Reads the config file, or says why it cannot.
     init?(path: String, work: (width: Int32, height: Int32), problem: inout String?) {
         self.work = work
-        autostart = Autostart.isEnabled
+        let autostart = Autostart.isEnabled
+        self.autostart = autostart
         autostartWas = autostart
         if let e = editor.load(path: path) {
             problem = e

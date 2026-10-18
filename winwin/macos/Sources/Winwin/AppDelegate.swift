@@ -35,15 +35,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             startTap()
         } else {
             Permission.ask()
-            trustTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-                Task { @MainActor in
-                    guard let self, Permission.isTrusted else { return }
-                    self.trustTimer?.invalidate()
-                    self.trustTimer = nil
-                    self.startTap()
-                }
-            }
+            trustTimer = Timer.scheduledTimer(
+                timeInterval: 1, target: self, selector: #selector(checkTrust), userInfo: nil, repeats: true
+            )
         }
+    }
+
+    /// Starts taking keys once the permission is granted.
+    @objc private func checkTrust() {
+        guard Permission.isTrusted else { return }
+        trustTimer?.invalidate()
+        trustTimer = nil
+        startTap()
     }
 
     /// Opening winwin again while it runs opens the settings.
