@@ -80,6 +80,11 @@ final class SettingsModel: ObservableObject {
         change { editor.click(index: UInt32(index), shift: held.contains(.shift), command: held.contains(.command)) }
     }
 
+    /// ↑ or ↓ in the list, with Shift held or not.
+    func step(up: Bool, shift: Bool) {
+        change { editor.step(up: up, shift: shift) }
+    }
+
     func add() { change { editor.add() } }
     func duplicate() { change { editor.duplicate() } }
     func delete() { change { editor.delete() } }

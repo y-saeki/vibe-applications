@@ -8,6 +8,8 @@ import SwiftUI
 final class SettingsWindow: NSObject, NSWindowDelegate {
     let model: SettingsModel
     private let window: NSWindow
+    /// Takes ↑ and ↓ for the list.
+    private var keyMonitor: Any?
 
     init(model: SettingsModel, path: String) {
         self.model = model
@@ -21,6 +23,27 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
         window.isReleasedWhenClosed = false
         window.delegate = self
         window.center()
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self else { return event }
+            // Local monitors are called on the main thread.
+            let taken = MainActor.assumeIsolated { self.arrow(event) }
+            return taken ? nil : event
+        }
+    }
+
+    /// ↑ and ↓ move the list's selection, Shift+↑ and Shift+↓ widen it, as
+    /// on Windows; whatever field is focused, but for one being typed into,
+    /// which keeps them for its text. True when the key was taken.
+    private func arrow(_ event: NSEvent) -> Bool {
+        guard event.window === window, !model.isRecording, !(window.firstResponder is NSText) else { return false }
+        let held = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        guard held.subtracting([.shift, .numericPad, .function]).isEmpty else { return false }
+        switch event.keyCode {
+        case 126: model.step(up: true, shift: held.contains(.shift))
+        case 125: model.step(up: false, shift: held.contains(.shift))
+        default: return false
+        }
+        return true
     }
 
     func show() {
@@ -29,6 +52,10 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
     }
 
     func close() {
+        if let keyMonitor {
+            NSEvent.removeMonitor(keyMonitor)
+        }
+        keyMonitor = nil
         window.delegate = nil
         window.close()
     }

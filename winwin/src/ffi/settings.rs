@@ -169,6 +169,11 @@ struct EditorState {
     editor: Editor,
     theme: Theme,
     theme_was: Theme,
+    /// The row last clicked or moved to with an arrow key, which the next
+    /// arrow key moves on from. A Shift+click range is anchored elsewhere,
+    /// at the row last clicked without Shift (`Editor::click`). `None`
+    /// after a change to the rows, when the last selected row is used.
+    cursor: Option<usize>,
 }
 
 impl SettingsEditor {
@@ -205,6 +210,15 @@ impl SettingsEditor {
         );
         state.theme = config.theme;
         state.theme_was = config.theme;
+        state.cursor = None;
+    }
+
+    /// A change to the rows themselves: the next arrow key moves on from
+    /// the last selected row.
+    fn change(&self, f: impl FnOnce(&mut Editor)) {
+        let mut state = self.state();
+        f(&mut state.editor);
+        state.cursor = None;
     }
 }
 
@@ -272,34 +286,61 @@ impl SettingsEditor {
     /// Row `index` was clicked, with Shift held or not, and with Command,
     /// which adds to the selection as Ctrl does on Windows.
     pub fn click(&self, index: u32, shift: bool, command: bool) {
-        self.state().editor.click(
-            index as usize,
+        let mut state = self.state();
+        let index = index as usize;
+        state.editor.click(
+            index,
             Click {
                 shift,
                 ctrl: command,
             },
         );
+        state.cursor = Some(index);
+    }
+
+    /// ↑ (`up`) or ↓ in the list: the row above or below the one last
+    /// clicked or moved to is selected alone, or with Shift, the rows from
+    /// the one last clicked without Shift to it, as the list on Windows
+    /// does. It stops at either end. With nothing selected it starts at the
+    /// first row.
+    pub fn step(&self, up: bool, shift: bool) {
+        let mut state = self.state();
+        let len = state.editor.rows().count();
+        let Some(last) = len.checked_sub(1) else {
+            return;
+        };
+        let from = state
+            .cursor
+            .filter(|&c| c <= last)
+            .or_else(|| state.editor.selection().last().copied());
+        let to = match from {
+            None => 0,
+            Some(i) if up => i.saturating_sub(1),
+            Some(i) => (i + 1).min(last),
+        };
+        state.editor.click(to, Click { shift, ctrl: false });
+        state.cursor = Some(to);
     }
 
     pub fn add(&self) {
-        self.state().editor.add();
+        self.change(Editor::add);
     }
 
     pub fn duplicate(&self) {
-        self.state().editor.duplicate();
+        self.change(Editor::duplicate);
     }
 
     pub fn delete(&self) {
-        self.state().editor.delete();
+        self.change(Editor::delete);
     }
 
     pub fn move_selected(&self, up: bool) {
-        self.state().editor.move_selected(up);
+        self.change(|e| e.move_selected(up));
     }
 
     /// The list was dragged into the order of `ids`.
     pub fn reorder(&self, ids: Vec<u64>) {
-        self.state().editor.reorder(&ids);
+        self.change(|e| e.reorder(&ids));
     }
 
     pub fn set_anchor(&self, index: u8) {
@@ -595,6 +636,62 @@ mod tests {
         let ids: Vec<u64> = e.rows().iter().rev().map(|r| r.id).collect();
         e.reorder(ids.clone());
         assert_eq!(e.rows().iter().map(|r| r.id).collect::<Vec<_>>(), ids);
+    }
+
+    fn selected(e: &SettingsEditor) -> Vec<usize> {
+        e.rows()
+            .iter()
+            .enumerate()
+            .filter(|(_, r)| r.selected)
+            .map(|(i, _)| i)
+            .collect()
+    }
+
+    #[test]
+    fn arrow_keys_move_the_selection_and_shift_widens_it() {
+        let e = editor();
+        let last = e.rows().len() - 1;
+        e.step(false, false);
+        assert_eq!(selected(&e), [1]);
+        e.step(true, false);
+        e.step(true, false);
+        // It stops at the top.
+        assert_eq!(selected(&e), [0]);
+        e.click(3, false, false);
+        e.step(false, true);
+        e.step(false, true);
+        assert_eq!(selected(&e), [3, 4, 5]);
+        // Back past where the range began, it turns around there.
+        e.step(true, true);
+        e.step(true, true);
+        e.step(true, true);
+        assert_eq!(selected(&e), [2, 3]);
+        e.click(last as u32, false, false);
+        e.step(false, false);
+        assert_eq!(selected(&e), [last]);
+        // After a change to the rows, from the last selected row.
+        e.click(1, false, false);
+        e.click(2, false, true);
+        e.duplicate();
+        let copies = selected(&e);
+        e.step(false, false);
+        assert_eq!(selected(&e), [copies.last().unwrap() + 1]);
+    }
+
+    #[test]
+    fn arrow_keys_start_at_the_top_with_nothing_selected() {
+        let e = editor();
+        e.click(0, false, true);
+        assert_eq!(selected(&e), Vec::<usize>::new());
+        e.delete();
+        let e = SettingsEditor::with(&Config::default());
+        e.step(false, false);
+        assert_eq!(selected(&e), Vec::<usize>::new());
+        e.add();
+        e.click(0, false, true);
+        e.reorder(e.rows().iter().map(|r| r.id).collect());
+        e.step(true, false);
+        assert_eq!(selected(&e), [0]);
     }
 
     #[test]
