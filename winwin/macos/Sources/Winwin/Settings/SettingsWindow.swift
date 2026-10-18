@@ -8,7 +8,7 @@ import SwiftUI
 final class SettingsWindow: NSObject, NSWindowDelegate {
     let model: SettingsModel
     private let window: NSWindow
-    /// Takes ↑ and ↓ for the list.
+    /// Takes ↑ and ↓ for the list, and the keys for the recording dialog.
     private var keyMonitor: Any?
 
     init(model: SettingsModel, path: String) {
@@ -23,19 +23,29 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
         window.isReleasedWhenClosed = false
         window.delegate = self
         window.center()
-        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp, .flagsChanged]) { [weak self] event in
             guard let self else { return event }
             // Local monitors are called on the main thread.
-            let taken = MainActor.assumeIsolated { self.arrow(event) }
+            let taken = MainActor.assumeIsolated { self.take(event) }
             return taken ? nil : event
         }
+    }
+
+    /// True when the event was taken: by the recording dialog while it is
+    /// open, which gets every key typed into winwin, or by the list.
+    private func take(_ event: NSEvent) -> Bool {
+        if model.isRecording {
+            model.record(event)
+            return true
+        }
+        return event.type == .keyDown && arrow(event)
     }
 
     /// ↑ and ↓ move the list's selection, Shift+↑ and Shift+↓ widen it, as
     /// on Windows; whatever field is focused, but for one being typed into,
     /// which keeps them for its text. True when the key was taken.
     private func arrow(_ event: NSEvent) -> Bool {
-        guard event.window === window, !model.isRecording, !(window.firstResponder is NSText) else { return false }
+        guard event.window === window, !(window.firstResponder is NSText) else { return false }
         let held = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         guard held.subtracting([.shift, .numericPad, .function]).isEmpty else { return false }
         switch event.keyCode {

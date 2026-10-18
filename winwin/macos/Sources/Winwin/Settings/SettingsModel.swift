@@ -123,13 +123,35 @@ final class SettingsModel: ObservableObject {
         onChange()
     }
 
-    /// A key event while the dialog is open.
+    /// A key event while the dialog is open, as the event tap hears it.
     func record(_ type: CGEventType, _ event: CGEvent) {
         switch type {
-        case .keyDown: recorder.keyDown(code: event.keyCode)
-        case .keyUp: recorder.keyUp(code: event.keyCode)
-        case .flagsChanged: recorder.flagsChanged(flags: event.flags.rawValue)
+        case .keyDown: record(.keyDown, code: event.keyCode, flags: event.flags.rawValue)
+        case .keyUp: record(.keyUp, code: event.keyCode, flags: event.flags.rawValue)
+        case .flagsChanged: record(.flagsChanged, code: event.keyCode, flags: event.flags.rawValue)
         default: return
+        }
+    }
+
+    /// A key event while the dialog is open, as the window hears it: the
+    /// keys typed into winwin reach it even when the event tap does not
+    /// run, as without the Accessibility permission. Its modifier flags
+    /// have the same bits as an event tap's.
+    func record(_ event: NSEvent) {
+        let flags = UInt64(event.modifierFlags.rawValue)
+        switch event.type {
+        case .keyDown: record(.keyDown, code: event.keyCode, flags: flags)
+        case .keyUp: record(.keyUp, code: event.keyCode, flags: flags)
+        case .flagsChanged: record(.flagsChanged, code: event.keyCode, flags: flags)
+        default: return
+        }
+    }
+
+    private func record(_ type: CGEventType, code: UInt16, flags: UInt64) {
+        switch type {
+        case .keyDown: recorder.keyDown(code: code)
+        case .keyUp: recorder.keyUp(code: code)
+        default: recorder.flagsChanged(flags: flags)
         }
         recording = recorder.recording()
     }
