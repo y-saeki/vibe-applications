@@ -5,7 +5,8 @@ use windows::Win32::Graphics::Dwm::{
     DWMWA_CLOAKED, DWMWA_EXTENDED_FRAME_BOUNDS, DwmGetWindowAttribute,
 };
 use windows::Win32::Graphics::Gdi::{
-    GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromWindow,
+    GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITOR_DEFAULTTONULL, MONITORINFO, MonitorFromRect,
+    MonitorFromWindow,
 };
 use windows::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress};
 use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
@@ -21,6 +22,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use windows::core::{BOOL, s, w};
 
 use crate::layout::{Placement, Rect};
+use crate::restore::Reset;
 
 pub enum MoveError {
     /// The window belongs to a process running with higher privileges, which
@@ -87,14 +89,27 @@ fn set_frame(hwnd: HWND, target: Rect) -> Result<(), MoveError> {
     let top = frame.top - window.top;
     let right = window.right - frame.right;
     let bottom = window.bottom - frame.bottom;
+    set_window(
+        hwnd,
+        Rect {
+            left: target.left - left,
+            top: target.top - top,
+            right: target.right + right,
+            bottom: target.bottom + bottom,
+        },
+    )
+}
+
+/// Places the window's outer rectangle on `target`.
+fn set_window(hwnd: HWND, target: Rect) -> Result<(), MoveError> {
     let result = unsafe {
         SetWindowPos(
             hwnd,
             None,
-            target.left - left,
-            target.top - top,
-            target.width() + left + right,
-            target.height() + top + bottom,
+            target.left,
+            target.top,
+            target.width(),
+            target.height(),
             SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOOWNERZORDER,
         )
     };
@@ -106,21 +121,22 @@ fn set_frame(hwnd: HWND, target: Rect) -> Result<(), MoveError> {
     }
 }
 
-/// A window a shortcut has moved: where it was and where it went, and the
-/// DPI of its monitor.
+/// A window a shortcut has moved: where it was, whether it was maximized,
+/// where it went, and the DPI of its monitor.
 pub struct Placed {
     pub hwnd: HWND,
     pub before: Rect,
+    pub maximized: bool,
     pub dpi: u32,
     pub after: Rect,
 }
 
-/// Places the foreground window, and says where it was and where it went
-/// when it moved.
-pub fn place_foreground(placement: &Placement) -> Result<Option<Placed>, MoveError> {
+/// The window a shortcut acts on: the foreground one, unless it is one to
+/// leave alone.
+pub fn foreground() -> Option<HWND> {
     let hwnd = unsafe { GetForegroundWindow() };
     if hwnd.is_invalid() {
-        return Ok(None);
+        return None;
     }
     let hwnd = unsafe { GetAncestor(hwnd, GA_ROOT) };
     if hwnd.is_invalid()
@@ -133,8 +149,17 @@ pub fn place_foreground(placement: &Placement) -> Result<Option<Placed>, MoveErr
         // does.
         || unsafe { IsHungAppWindow(hwnd) }.as_bool()
     {
-        return Ok(None);
+        return None;
     }
+    Some(hwnd)
+}
+
+/// Places the foreground window, and says where it was and where it went
+/// when it moved.
+pub fn place_foreground(placement: &Placement) -> Result<Option<Placed>, MoveError> {
+    let Some(hwnd) = foreground() else {
+        return Ok(None);
+    };
 
     let zoomed = unsafe { IsZoomed(hwnd) }.as_bool();
     if zoomed {
@@ -156,9 +181,38 @@ pub fn place_foreground(placement: &Placement) -> Result<Option<Placed>, MoveErr
     Ok(window_rect(hwnd).map(|after| Placed {
         hwnd,
         before,
+        maximized: zoomed,
         dpi,
         after,
     }))
+}
+
+/// Puts `hwnd` back where a reset says, and maximizes it again if it was.
+pub fn reset(hwnd: HWND, to: Reset) -> Result<(), MoveError> {
+    if unsafe { IsZoomed(hwnd) }.as_bool() {
+        let _ = unsafe { ShowWindow(hwnd, SW_RESTORE) };
+    }
+    set_window(hwnd, to.rect)?;
+    // A window that crossed onto a monitor of another DPI may have scaled
+    // itself on the way. One more pass settles it.
+    if window_rect(hwnd).is_some_and(|r| r != to.rect) {
+        set_window(hwnd, to.rect)?;
+    }
+    if to.maximized {
+        let _ = unsafe { ShowWindow(hwnd, SW_MAXIMIZE) };
+    }
+    Ok(())
+}
+
+/// Whether some monitor shows part of `rect`.
+pub fn is_shown(rect: Rect) -> bool {
+    let r = RECT {
+        left: rect.left,
+        top: rect.top,
+        right: rect.right,
+        bottom: rect.bottom,
+    };
+    !unsafe { MonitorFromRect(&r, MONITOR_DEFAULTTONULL) }.is_invalid()
 }
 
 pub fn window_rect(hwnd: HWND) -> Option<Rect> {

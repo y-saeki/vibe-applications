@@ -289,8 +289,7 @@ impl Rect {
 
 /// A window's size and position relative to the work area of the monitor it
 /// is on.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "PlacementFields", into = "PlacementFields")]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Placement {
     pub anchor: Anchor,
     pub sizing: Sizing,
@@ -305,26 +304,41 @@ pub enum Sizing {
     Fit,
 }
 
-/// A placement as the file writes it: a width and a height, or `fit = true`
-/// in their place.
+/// What a shortcut does to the window.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "ActionFields", into = "ActionFields")]
+pub enum Action {
+    Place(Placement),
+    /// Gives the window back the size and position it had before winwin
+    /// first placed it (see restore.rs).
+    Reset,
+}
+
+/// An action as the file writes it: an anchor with a width and a height, or
+/// with `fit = true` in their place, or `reset = true` on its own.
 #[derive(Serialize, Deserialize)]
-struct PlacementFields {
-    anchor: Anchor,
+struct ActionFields {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    anchor: Option<Anchor>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     width: Option<Size>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     height: Option<Size>,
     #[serde(default, skip_serializing_if = "is_false")]
     fit: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
+    reset: bool,
 }
 
 fn is_false(b: &bool) -> bool {
     !b
 }
 
-/// A placement in the file that does not make one.
+/// An entry in the file that does not make an action.
 #[derive(Debug, PartialEq, Eq)]
 pub enum PlacementError {
+    /// Neither an anchor nor `reset`.
+    NoAnchor,
     /// Neither a size nor `fit`.
     NoSize,
     /// `fit` at the center.
@@ -334,6 +348,7 @@ pub enum PlacementError {
 impl fmt::Display for PlacementError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
+            PlacementError::NoAnchor => "anchor を書くか、reset = true にしてください",
             PlacementError::NoSize => "width と height を書くか、fit = true にしてください",
             PlacementError::FitAtCenter => FIT_AT_CENTER,
         })
@@ -343,32 +358,56 @@ impl fmt::Display for PlacementError {
 /// Why a placement that fits cannot be at the center.
 pub const FIT_AT_CENTER: &str = "フィットでは基準位置に中央を選べません";
 
-impl TryFrom<PlacementFields> for Placement {
+impl TryFrom<ActionFields> for Action {
     type Error = PlacementError;
 
-    /// With `fit`, a width or height written as well is ignored.
-    fn try_from(p: PlacementFields) -> Result<Self, Self::Error> {
+    /// With `reset`, an anchor or size written as well is ignored, as a
+    /// width or height is with `fit`.
+    fn try_from(p: ActionFields) -> Result<Self, Self::Error> {
+        if p.reset {
+            return Ok(Action::Reset);
+        }
+        let anchor = p.anchor.ok_or(PlacementError::NoAnchor)?;
         let sizing = match (p.fit, p.width, p.height) {
-            (true, _, _) if !p.anchor.can_fit() => return Err(PlacementError::FitAtCenter),
+            (true, _, _) if !anchor.can_fit() => return Err(PlacementError::FitAtCenter),
             (true, _, _) => Sizing::Fit,
             (false, Some(width), Some(height)) => Sizing::Given { width, height },
             _ => return Err(PlacementError::NoSize),
         };
-        Ok(Placement {
-            anchor: p.anchor,
-            sizing,
-        })
+        Ok(Action::Place(Placement { anchor, sizing }))
     }
 }
 
-impl From<Placement> for PlacementFields {
-    fn from(p: Placement) -> PlacementFields {
-        let (width, height) = p.sizes().unzip();
-        PlacementFields {
-            anchor: p.anchor,
-            width,
-            height,
-            fit: p.sizing == Sizing::Fit,
+impl Action {
+    /// Where it puts the window, unless it is a reset.
+    pub fn placement(&self) -> Option<Placement> {
+        match self {
+            Action::Place(p) => Some(*p),
+            Action::Reset => None,
+        }
+    }
+}
+
+impl From<Action> for ActionFields {
+    fn from(a: Action) -> ActionFields {
+        match a {
+            Action::Place(p) => {
+                let (width, height) = p.sizes().unzip();
+                ActionFields {
+                    anchor: Some(p.anchor),
+                    width,
+                    height,
+                    fit: p.sizing == Sizing::Fit,
+                    reset: false,
+                }
+            }
+            Action::Reset => ActionFields {
+                anchor: None,
+                width: None,
+                height: None,
+                fit: false,
+                reset: true,
+            },
         }
     }
 }

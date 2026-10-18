@@ -8,10 +8,13 @@ use std::collections::BTreeSet;
 
 use crate::config::{Config, Shortcut};
 use crate::hotkey::{self, Hotkey, Keys};
-use crate::layout::{self, Anchor, Placement, Ratio, Rect, Size, Sizing};
+use crate::layout::{self, Action, Anchor, Placement, Ratio, Rect, Size, Sizing};
 
 /// How the list and errors name a placement that fits.
 pub const FIT_LABEL: &str = "フィット";
+
+/// How the settings window names a row that resets the window.
+pub const RESET_LABEL: &str = "リセット";
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Draft {
@@ -24,6 +27,9 @@ pub struct Draft {
     /// The window takes the empty space at the anchor; the width and the
     /// height stay as typed but do not count.
     pub fit: bool,
+    /// The row resets the window rather than placing it; the placement's
+    /// fields stay as they were but do not count.
+    pub reset: bool,
 }
 
 impl Draft {
@@ -35,12 +41,22 @@ impl Draft {
             width: "1/2".into(),
             height: "1/2".into(),
             fit: false,
+            reset: false,
         }
     }
 
     pub fn from_shortcut(s: &Shortcut) -> Draft {
-        let p = &s.placement;
         let keys = s.keys.strokes().to_vec();
+        let p = match s.action {
+            Action::Place(p) => p,
+            Action::Reset => {
+                return Draft {
+                    keys,
+                    reset: true,
+                    ..Draft::new()
+                };
+            }
+        };
         match p.sizes() {
             Some((width, height)) => Draft {
                 keys,
@@ -48,6 +64,7 @@ impl Draft {
                 width: size_text(width),
                 height: size_text(height),
                 fit: false,
+                reset: false,
             },
             None => Draft {
                 keys,
@@ -83,10 +100,19 @@ impl Draft {
         ))
     }
 
+    pub fn action(&self) -> Result<Action, String> {
+        if self.reset {
+            Ok(Action::Reset)
+        } else {
+            self.placement().map(Action::Place)
+        }
+    }
+
     /// Why the width or height does not make a placement, shown under the
-    /// fields while they are typed; `None` while both do.
+    /// fields while they are typed; `None` while both do, and for a reset,
+    /// which does not use them.
     pub fn size_problem(&self) -> Option<String> {
-        self.placement().err()
+        self.action().err()
     }
 
     pub fn to_shortcut(&self) -> Result<Shortcut, String> {
@@ -96,7 +122,7 @@ impl Draft {
         let keys = Keys::new(self.keys.clone()).map_err(|e| e.to_string())?;
         Ok(Shortcut {
             keys,
-            placement: self.placement()?,
+            action: self.action()?,
         })
     }
 
@@ -107,11 +133,12 @@ impl Draft {
     /// is drawn the same way along the axes its size depends on the windows
     /// around: across for one at the left or the right, which is as tall as
     /// the screen, down for one at the top or the bottom, and both for a
-    /// corner.
+    /// corner. A reset has no window to draw.
     pub fn picture(&self, size: (i32, i32), bounds: Rect, anchor: Anchor) -> Option<Picture> {
         let screen = layout::miniature(size, bounds, anchor)?;
         let stand_in = (screen.width() / 2, screen.height() / 2);
-        let window = self.placement().ok().map(|p| {
+        let placement = self.action().ok().and_then(|a| a.placement());
+        let window = placement.map(|p| {
             let (width, height) = p.sizes().unwrap_or(match p.anchor {
                 Anchor::Left | Anchor::Right => (Size::Keep, Size::Ratio(Ratio::WHOLE)),
                 Anchor::Top | Anchor::Bottom => (Size::Ratio(Ratio::WHOLE), Size::Keep),
@@ -134,8 +161,11 @@ impl Draft {
 
     /// Where the row puts a window, in words: 左 , w1/2 x h1. A kept width
     /// or height is left out (左上 , h1/3), and with both kept the anchor
-    /// stands alone. One that fits is 右 , フィット.
+    /// stands alone. One that fits is 右 , フィット, and a reset リセット.
     pub fn placement_text(&self) -> String {
+        if self.reset {
+            return RESET_LABEL.to_string();
+        }
         if self.fit {
             return format!("{} , {FIT_LABEL}", self.anchor.label());
         }
@@ -150,11 +180,23 @@ impl Draft {
         }
     }
 
+    /// The anchor as the list shows it in its own column. A reset says so
+    /// here and leaves the width's and the height's columns empty.
+    pub fn anchor_text(&self) -> String {
+        if self.reset {
+            RESET_LABEL.to_string()
+        } else {
+            self.anchor.label().to_string()
+        }
+    }
+
     /// The width as the list shows it in its own column: w1/2, or nothing
-    /// when it is kept. A placement that fits says so here and leaves the
-    /// height's column empty.
+    /// when it is kept or the row resets. A placement that fits says so here
+    /// and leaves the height's column empty.
     pub fn width_text(&self) -> String {
-        if self.fit {
+        if self.reset {
+            String::new()
+        } else if self.fit {
             FIT_LABEL.to_string()
         } else {
             axis_text("w", &self.width)
@@ -162,9 +204,9 @@ impl Draft {
     }
 
     /// The height as the list shows it in its own column: h1, or nothing
-    /// when it is kept or the placement fits.
+    /// when it is kept, the placement fits, or the row resets.
     pub fn height_text(&self) -> String {
-        if self.fit {
+        if self.fit || self.reset {
             String::new()
         } else {
             axis_text("h", &self.height)
@@ -593,7 +635,7 @@ mod tests {
         let mut d = Draft::from_shortcut(&Config::defaults().shortcuts[0]);
         d.width = "  ".into();
         let s = d.to_shortcut().unwrap();
-        assert_eq!(s.placement.sizes().unwrap().0, Size::Keep);
+        assert_eq!(s.action.placement().unwrap().sizes().unwrap().0, Size::Keep);
         assert_eq!(d.placement_text(), "左 , h1");
 
         let back = Draft::from_shortcut(&s);
@@ -632,7 +674,7 @@ mod tests {
         // The width does not count while the row fits, and is not lost.
         assert_eq!(d.size_problem(), None);
         let s = d.to_shortcut().unwrap();
-        assert_eq!(s.placement.sizing, Sizing::Fit);
+        assert_eq!(s.action.placement().unwrap().sizing, Sizing::Fit);
         assert_eq!(d.placement_text(), "右 , フィット");
         assert_eq!(
             (d.width_text().as_str(), d.height_text().as_str()),
@@ -653,6 +695,46 @@ mod tests {
         let back = Draft::from_shortcut(&s);
         assert!(back.fit);
         assert_eq!((back.width.as_str(), back.height.as_str()), ("1/2", "1/2"));
+        assert_eq!(back.to_shortcut().unwrap(), s);
+    }
+
+    #[test]
+    fn a_row_that_resets_leaves_its_placement_aside() {
+        let mut d = Draft::from_shortcut(&Config::defaults().shortcuts[1]);
+        d.width = "5".into();
+        d.fit = true;
+        d.reset = true;
+        // Neither the width nor fit counts while the row resets, and
+        // neither is lost.
+        assert_eq!(d.size_problem(), None);
+        let s = d.to_shortcut().unwrap();
+        assert_eq!(s.action, Action::Reset);
+        assert_eq!(d.placement_text(), "リセット");
+        assert_eq!(d.list_text(), "Ctrl+Alt+Right    リセット");
+        assert_eq!(
+            (
+                d.anchor_text().as_str(),
+                d.width_text().as_str(),
+                d.height_text().as_str()
+            ),
+            ("リセット", "", "")
+        );
+        let bounds = Rect {
+            left: 0,
+            top: 0,
+            right: 160,
+            bottom: 90,
+        };
+        let screen_only = d.picture((1920, 1080), bounds, Anchor::Center);
+        assert_eq!(screen_only.unwrap().window, None);
+        d.reset = false;
+        assert_eq!(d.anchor_text(), "右");
+        assert_eq!(d.width_text(), "フィット");
+
+        // Read back from the file, it starts from the new row's placement.
+        let back = Draft::from_shortcut(&s);
+        assert!(back.reset);
+        assert_eq!(back.placement(), Draft::new().placement());
         assert_eq!(back.to_shortcut().unwrap(), s);
     }
 

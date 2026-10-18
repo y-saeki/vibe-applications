@@ -14,7 +14,7 @@ use windows::Win32::UI::WindowsAndMessaging::{KillTimer, SetTimer};
 use super::modifiers_held;
 use crate::cycle::{self, Binding, Outcome, Presses};
 use crate::hotkey::Hotkey;
-use crate::layout::Placement;
+use crate::layout::Action;
 
 /// Watches for the modifiers of a shortcut under way (waiting for its second
 /// stroke, or cycling) to be let go. It runs only between such a press and
@@ -67,9 +67,9 @@ impl Shortcuts {
         self.firsts = 0;
     }
 
-    /// A WM_HOTKEY with `id`: the placement to apply, when the press
+    /// A WM_HOTKEY with `id`: what to do to the window, when the press
     /// completes a shortcut.
-    pub fn on_hotkey(&mut self, id: usize) -> Option<Placement> {
+    pub fn on_hotkey(&mut self, id: usize) -> Option<Action> {
         let stroke = *self.registered.get(id.wrapping_sub(1))?;
         let outcome = self.presses.press(&self.bindings, stroke);
         if self.presses.watching(&self.bindings).is_some() {
@@ -80,7 +80,7 @@ impl Shortcuts {
         }
         self.sync_next();
         match outcome {
-            Outcome::Place { binding, entry } => Some(self.bindings[binding].placements[entry]),
+            Outcome::Place { binding, entry } => Some(self.bindings[binding].actions[entry]),
             Outcome::Pending | Outcome::Nothing => None,
         }
     }
