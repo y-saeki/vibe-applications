@@ -104,8 +104,63 @@ jobs:
         run: cargo clippy --all-targets --locked --features ffi-bindgen -- -D warnings
       - name: Rust tests
         run: cargo test --locked --features ffi
+      # The certificate that keeps the accessibility permission across
+      # updates (DEVELOPMENT.md, "macOS 版の署名"). Pull requests from forks
+      # and Dependabot get no secrets and build ad hoc; a push to main must
+      # not, or the release would cost every user their permission.
+      - name: Signing certificate
+        env:
+          CERTIFICATE_P12: ${{ secrets.WINWIN_MACOS_CERTIFICATE_P12 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.WINWIN_MACOS_CERTIFICATE_PASSWORD }}
+        run: |
+          if [ -z "${CERTIFICATE_P12}" ]; then
+            if [ "${GITHUB_EVENT_NAME}" = push ]; then
+              echo "::error::WINWIN_MACOS_CERTIFICATE_P12 is not set; a release must not be signed ad hoc"
+              exit 1
+            fi
+            echo "::notice::no signing certificate; the app is signed ad hoc"
+            exit 0
+          fi
+          keychain="${RUNNER_TEMP}/winwin-signing.keychain-db"
+          keychain_password="$(openssl rand -base64 24)"
+          p12="${RUNNER_TEMP}/winwin-signing.p12"
+          printf '%s' "${CERTIFICATE_P12}" | base64 --decode > "${p12}"
+          security create-keychain -p "${keychain_password}" "${keychain}"
+          security set-keychain-settings -lut 21600 "${keychain}"
+          security unlock-keychain -p "${keychain_password}" "${keychain}"
+          security import "${p12}" -P "${CERTIFICATE_PASSWORD}" -A -t cert -f pkcs12 -k "${keychain}"
+          rm -f "${p12}"
+          security set-key-partition-list -S apple-tool:,apple: -k "${keychain_password}" "${keychain}" >/dev/null
+          security list-keychains -d user -s "${keychain}"
+          # Without -v: a self-signed certificate is not trusted, which
+          # codesign accepts but find-identity -v would filter out.
+          identity="$(security find-identity -p codesigning "${keychain}" | awk '/^ *1\)/{print $2; exit}')"
+          if [ -z "${identity}" ]; then
+            echo "::error::the certificate holds no identity for code signing"
+            security find-identity -p codesigning "${keychain}"
+            exit 1
+          fi
+          echo "WINWIN_SIGN_IDENTITY=${identity}" >> "${GITHUB_ENV}"
       - name: App
         run: macos/build.sh
+      # A certificate's signature names the bundle and the certificate, and
+      # stays the same from one build to the next; an ad hoc one names the
+      # build itself (cdhash).
+      - name: Signature
+        run: |
+          codesign --verify --strict macos/winwin.app
+          requirement="$(codesign -d -r- macos/winwin.app 2>&1 | sed -n 's/^#* *designated => //p')"
+          echo "designated requirement: ${requirement}"
+          if [ -n "${WINWIN_SIGN_IDENTITY:-}" ]; then
+            case "${requirement}" in
+              *'certificate leaf'*) ;;
+              *)
+                echo "::error::the app is not signed with the certificate"
+                exit 1
+                ;;
+            esac
+          fi
+          echo "- 署名の要件: \`${requirement}\`" >> "${GITHUB_STEP_SUMMARY}"
       # The app beside a link to /Applications, to be dragged onto it.
       - name: Disk image
         run: |
@@ -120,6 +175,13 @@ jobs:
           name: winwin-macos
           if-no-files-found: error
           path: winwin/macos/winwin_*_macos-arm64.dmg
+      - name: Remove the signing keychain
+        if: always()
+        run: |
+          keychain="${RUNNER_TEMP}/winwin-signing.keychain-db"
+          if [ -f "${keychain}" ]; then
+            security delete-keychain "${keychain}"
+          fi
 
   # The pull request itself only shows a check mark, so point at the installer
   # the run just uploaded instead of making the reader walk the Actions tab.

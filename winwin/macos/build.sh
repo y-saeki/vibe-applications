@@ -1,7 +1,11 @@
 #!/bin/sh
 # Builds winwin.app here: the Rust library as a static library, the Swift
 # bindings to it, the Swift app linked against both, and the bundle around
-# it, signed ad hoc. Runs on a Mac with Rust and Xcode's command line tools.
+# it. Runs on a Mac with Rust and Xcode's command line tools.
+#
+# WINWIN_SIGN_IDENTITY names the certificate to sign with (its SHA-1 hash or
+# its name, as codesign takes it). Without it the app is signed ad hoc, which
+# macOS treats as a different app after every build.
 set -eu
 cd "$(dirname "$0")"
 
@@ -30,5 +34,5 @@ iconset="$(mktemp -d)/winwin.iconset"
 "$app/Contents/MacOS/winwin" --iconset "$iconset"
 iconutil -c icns -o "$app/Contents/Resources/winwin.icns" "$iconset"
 rm -rf "$(dirname "$iconset")"
-codesign --force --sign - "$app"
+codesign --force --sign "${WINWIN_SIGN_IDENTITY:--}" "$app"
 echo "built $(pwd)/$app"
