@@ -740,6 +740,13 @@ option {
   padding: 0 var(--space-3);
 }
 
+/* A long unbroken run such as a URL (src/long-words.ts marks it) breaks
+   between any two of its characters, so a wrapped line fills its row before
+   the run goes on to the next one instead of leaving the row half empty. */
+#editor .cm-longWord {
+  word-break: break-all;
+}
+
 /* The spaces and tabs, while the setting is on (src/whitespace.ts marks them).
    Both marks are drawn from the box the character already occupies and are
    sized as a fraction of it, so they follow the editor's font size without a

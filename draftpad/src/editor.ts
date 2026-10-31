@@ -24,6 +24,7 @@ import { darkTheme } from './dark-theme'
 import { editorKeymap } from './editor-keymap'
 import { indentGuides } from './indent-guides'
 import { languageExtension } from './languages'
+import { longWords } from './long-words'
 import { installLineDiff, wholeTexts } from './linediff'
 import { overlayScrollbar, type OverlayScrollbar } from './overlay-scrollbar'
 import { searchPanelExtras } from './search-panel'
@@ -469,6 +470,7 @@ export class Editor {
       // this pane alone, after the last line, so the lines stay level.
       searchPanelExtras(),
       EditorView.lineWrapping,
+      longWords,
       EditorView.contentAttributes.of({ spellcheck: 'false', autocorrect: 'off', autocapitalize: 'off' }),
       phrases,
       EditorView.updateListener.of((update) => {
