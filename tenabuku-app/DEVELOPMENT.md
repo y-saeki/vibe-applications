@@ -37,6 +37,15 @@ Xcode でスキーム `Tenabuku` を選び、シミュレーターか実機で�
 
 ファイルを足したり消したりしたときも `xcodegen generate` を実行します。`project.yml` の `sources` はディレクトリ単位で指定しているので、`Tenabuku/` の下に置いたファイルは自動で入ります。
 
+pull やブランチの切り替えのたびに生成し直すのが面倒なら、git のフックを一度だけ入れておきます。
+
+```bash
+cd tenabuku-app
+./scripts/install-git-hooks.sh
+```
+
+入れたあとは、pull（rebase を含む）とブランチの切り替えのあとに、`xcodegen generate` が自動で走ります。XcodeGen が見つからないときは生成せず、そのことを表示します。同じ名前のフックをすでに使っているときは、上書きせずに止まります。その場合は、そのフックに `xcodegen generate` の呼び出しを自分で足します。
+
 ## 検証コマンド
 
 ```bash
@@ -60,7 +69,9 @@ tenabuku-app/
 ├── Config/
 │   ├── Base.xcconfig        既定値。Secrets.xcconfig があれば読み込む
 │   └── Secrets.example.xcconfig
+├── Design/AppIcon/          アイコンの元の SVG
 ├── Tenabuku/                アプリ本体（SwiftUI）
+├── scripts/                 git のフックを入れるスクリプト
 └── Packages/TenabukuKit/    データ取得層（Swift Package）
     ├── Sources/
     │   ├── HatenaShared/      HTTP、エラー、日付、パーセントエンコード
@@ -94,6 +105,21 @@ tenabuku-app/
 はてなの応答が想定した形でないとき、各クライアントは `HatenaError.parseFailed(source:detail:)` を投げます。`source` は取得元の名前（`feed.hotentry`、`unofficial.entry-bookmarks` など）です。ホットエントリーが 0 件の場合も、フィードの形が変わったとみなしてこのエラーにします。
 
 アプリはこのエラーを赤いバナーで表示し、統合ログにも書きます。Mac のコンソール.app でサブシステム `io.github.y-saeki.tenabuku` を指定すると、詳細を読めます。通信の失敗や HTTP のエラーは別の表示にしています。
+
+## アイコン
+
+アイコンの元は `Design/AppIcon/` にある 3 つの SVG です。`AppIcon.svg` が通常、`AppIcon-Dark.svg` がダーク、`AppIcon-Tinted.svg` がティントのアイコンです。ダークとティントは背景を透明にしています。ダークの背景はシステムが描き、ティントはグレースケールの絵にシステムが色を付けるためです。
+
+「て」の字は M PLUS Rounded 1c ExtraBold（SIL Open Font License）の字形をパスにしたものです。書き出すときにフォントは要りません。
+
+SVG を変えたら、1024×1024 の PNG に書き出し、`Tenabuku/Assets.xcassets/AppIcon.appiconset/` の同じ名前のファイルと置き換えます。書き出しには rsvg-convert（`brew install librsvg`）を使います。
+
+```bash
+cd tenabuku-app
+for n in AppIcon AppIcon-Dark AppIcon-Tinted; do
+  rsvg-convert -w 1024 -h 1024 "Design/AppIcon/$n.svg" -o "Tenabuku/Assets.xcassets/AppIcon.appiconset/$n.png"
+done
+```
 
 ## テスト
 
