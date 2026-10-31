@@ -109,6 +109,25 @@ updates:
           - minor
           - patch
 
+  # TenabukuKit has no dependencies today. The entry is here so that one added
+  # later is watched from the start.
+  - package-ecosystem: swift
+    directory: /tenabuku-app/Packages/TenabukuKit
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    labels:
+      - dependencies
+      - no-release
+    commit-message:
+      prefix: tenabuku-app
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+
   - package-ecosystem: github-actions
     directory: /
     schedule:

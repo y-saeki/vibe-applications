@@ -1,0 +1,70 @@
+name: tenabuku-app
+
+on:
+  push:
+    # Branches other than main are verified through their pull request, so that
+    # a single commit does not trigger two identical runs.
+    branches:
+      - main
+    paths:
+      - "tenabuku-app/**"
+      - ".github/workflows/tenabuku-app.yml"
+  pull_request:
+    paths:
+      - "tenabuku-app/**"
+      - ".github/workflows/tenabuku-app.yml"
+
+concurrency:
+  group: tenabuku-app-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # The data layer on Linux. It is meant to build there, so that a cloud
+  # session without Xcode can still run its tests; this keeps it that way.
+  kit-linux:
+    name: TenabukuKit (ubuntu-latest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: tenabuku-app/Packages/TenabukuKit
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Swift toolchain
+        run: swift --version
+      - name: Tests
+        run: swift test
+
+  # The data layer's tests again with Apple's Foundation, then the app itself
+  # built for the simulator. Nothing is signed or shipped: the app is installed
+  # from Xcode by whoever builds it.
+  app:
+    name: app (macos-latest)
+    runs-on: macos-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: tenabuku-app
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+      - name: TenabukuKit tests
+        working-directory: tenabuku-app/Packages/TenabukuKit
+        run: swift test
+      - name: XcodeGen
+        run: |
+          brew install xcodegen
+          xcodegen generate
+      - name: Build for the simulator
+        run: |
+          xcodebuild build \
+            -project Tenabuku.xcodeproj \
+            -scheme Tenabuku \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO

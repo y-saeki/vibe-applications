@@ -1,0 +1,56 @@
+# XcodeGen spec (https://github.com/yonaskolb/XcodeGen/blob/master/Docs/ProjectSpec.md).
+# Tenabuku.xcodeproj is generated from this file and is not committed:
+# run `xcodegen generate` in this directory after every pull.
+name: Tenabuku
+
+options:
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+  developmentLanguage: ja
+
+# Base.xcconfig holds the defaults and optionally includes Secrets.xcconfig,
+# which carries the Hatena consumer key and the signing team and stays local.
+configFiles:
+  Debug: Config/Base.xcconfig
+  Release: Config/Base.xcconfig
+
+settings:
+  base:
+    MARKETING_VERSION: 0.1.0
+    CURRENT_PROJECT_VERSION: 1
+    SWIFT_VERSION: "5.0"
+
+packages:
+  TenabukuKit:
+    path: Packages/TenabukuKit
+
+targets:
+  Tenabuku:
+    type: application
+    platform: iOS
+    sources:
+      - Tenabuku
+    info:
+      path: Tenabuku/Info.plist
+      properties:
+        CFBundleDisplayName: てなブク
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        HatenaConsumerKey: $(HATENA_CONSUMER_KEY)
+        HatenaConsumerSecret: $(HATENA_CONSUMER_SECRET)
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(TENABUKU_BUNDLE_ID)
+        TARGETED_DEVICE_FAMILY: "1"
+    dependencies:
+      - package: TenabukuKit
+        products:
+          - HatenaShared
+          - HatenaOfficial
+          - HatenaFeed
+          - HatenaUnofficial
+    scheme: {}
