@@ -23,7 +23,9 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use windows::core::BOOL;
 use windows_reactor::*;
 
-use super::{autostart, config_path, error_box, icon, keyhook, modifiers_held, testwin};
+use super::{
+    autostart, config_path, error_box, filedialog, icon, keyhook, modifiers_held, testwin,
+};
 use winwin::config::{Config, Theme};
 use winwin::draft::{self, Click, Draft, Editor, Frame, Picture};
 use winwin::hotkey::{self, Arrow, Hotkey, Keycap, Modifiers, Recorder};
@@ -52,6 +54,11 @@ const SUBPIXEL: f64 = 4.0;
 const LARGE_CAPS: usize = 5;
 
 const WINUI_WINDOW_CLASS: &str = "WinUIDesktopWin32WindowClass";
+
+/// The titles of the bar that says why something failed.
+const SAVE_FAILED: &str = "保存できませんでした";
+const EXPORT_FAILED: &str = "エクスポートできませんでした";
+const IMPORT_FAILED: &str = "インポートできませんでした";
 
 /// Runs the settings window until it closes.
 pub fn run() {
@@ -109,8 +116,9 @@ struct Settings {
     /// Applied to the window as soon as it is chosen; saved with the rest.
     theme: Theme,
     theme_was: Theme,
-    /// Shown above everything when 保存して閉じる fails.
-    error: Option<String>,
+    /// Shown above everything when 保存して閉じる, エクスポート or
+    /// インポート fails: what failed, and why.
+    error: Option<(&'static str, String)>,
     /// The 変更を破棄しますか dialog is open.
     confirming: bool,
     /// The ショートカットを設定 dialog is open, with what it has recorded.
@@ -149,6 +157,15 @@ enum Msg {
     Autostart(bool),
     Theme(Option<usize>),
     Save,
+    /// エクスポート: asks where to, then writes the settings as they stand.
+    Export,
+    /// The export was written, cancelled (`Ok`) or could not be.
+    Exported(Result<(), String>),
+    /// インポート: asks for a file, then puts it in place of the settings.
+    Import,
+    /// What the chosen file holds, nothing when the dialog was cancelled,
+    /// or why it could not be read.
+    Imported(Result<Option<Config>, String>),
     /// キャンセル, or the window's close button.
     Cancel,
     /// The 変更を破棄しますか dialog was answered: true to close without
@@ -253,6 +270,30 @@ impl Component for Settings {
                 }
             }
             Msg::Save => self.save(context),
+            Msg::Export => self.export(context),
+            Msg::Exported(result) => {
+                if let Err(e) = result {
+                    self.error = Some((EXPORT_FAILED, e));
+                }
+            }
+            Msg::Import => {
+                let owner = window_number();
+                context.spawn_background(move |_| {
+                    Msg::Imported(match filedialog::choose(owner, false) {
+                        Ok(Some(path)) => Config::read(&path).map(Some).map_err(|e| e.to_string()),
+                        Ok(None) => Ok(None),
+                        Err(e) => Err(e),
+                    })
+                });
+            }
+            Msg::Imported(Ok(Some(config))) => {
+                self.editor
+                    .replace(config.shortcuts.iter().map(Draft::from_shortcut).collect());
+                self.theme = config.theme;
+                self.error = None;
+            }
+            Msg::Imported(Ok(None)) => {}
+            Msg::Imported(Err(e)) => self.error = Some((IMPORT_FAILED, e)),
             // The close button while the recording dialog is open: WinUI
             // shows one dialog at a time, and that one has its own キャンセル.
             Msg::Cancel if self.recording.is_some() => {}
@@ -318,8 +359,13 @@ impl Component for Settings {
 
         let error = InfoBar::new()
             .severity(InfoBarSeverity::Error)
-            .title("保存できませんでした")
-            .message(self.error.clone().unwrap_or_default())
+            .title(self.error.as_ref().map_or("", |(title, _)| *title))
+            .message(
+                self.error
+                    .as_ref()
+                    .map(|(_, e)| e.clone())
+                    .unwrap_or_default(),
+            )
             .is_open(self.error.is_some())
             .is_closable(true)
             .on_closed(context.message(Msg::DismissError))
@@ -359,6 +405,17 @@ impl Component for Settings {
                         .is_checked(self.autostart)
                         .on_is_checked_changed(context.callback(Msg::Autostart))
                         .content("Windows へのサインイン時に winwin を起動する"),
+                    StackPanel::new()
+                        .orientation(Orientation::Horizontal)
+                        .spacing(8.0)
+                        .children((
+                            Button::new()
+                                .on_click(context.message(Msg::Export))
+                                .content("エクスポート..."),
+                            Button::new()
+                                .on_click(context.message(Msg::Import))
+                                .content("インポート..."),
+                        )),
                 )),
                 StackPanel::new()
                     .orientation(Orientation::Horizontal)
@@ -443,7 +500,7 @@ impl Settings {
         if let Err(e) = keyhook::start(move |vk, down| {
             sender.send(Msg::Key(vk, down));
         }) {
-            self.error = Some(format!("キー入力を受け取れませんでした。{e}"));
+            self.error = Some((SAVE_FAILED, format!("キー入力を受け取れませんでした。{e}")));
             return;
         }
         self.recording = Some(Recorder::showing(&d.keys));
@@ -524,22 +581,42 @@ impl Settings {
         let mut config = match self.editor.build_config() {
             Ok(config) => config,
             Err(e) => {
-                self.error = Some(e);
+                self.error = Some((SAVE_FAILED, e));
                 return;
             }
         };
         config.theme = self.theme;
         if let Err(e) = config.save(&config_path()) {
-            self.error = Some(e.to_string());
+            self.error = Some((SAVE_FAILED, e.to_string()));
             return;
         }
         if self.autostart != self.autostart_was
             && let Err(e) = autostart::set_enabled(self.autostart)
         {
-            self.error = Some(e);
+            self.error = Some((SAVE_FAILED, e));
             return;
         }
         close(context);
+    }
+
+    /// Checks every row as saving does, then asks where to write them.
+    fn export(&mut self, context: &ComponentContext<Self>) {
+        let mut config = match self.editor.build_config() {
+            Ok(config) => config,
+            Err(e) => {
+                self.error = Some((EXPORT_FAILED, e));
+                return;
+            }
+        };
+        config.theme = self.theme;
+        let owner = window_number();
+        context.spawn_background(move |_| {
+            Msg::Exported(match filedialog::choose(owner, true) {
+                Ok(Some(path)) => config.save(&path).map_err(|e| e.to_string()),
+                Ok(None) => Ok(()),
+                Err(e) => Err(e),
+            })
+        });
     }
 
     /// The shortcuts, each with where it puts a window, and the buttons that
@@ -1264,4 +1341,10 @@ unsafe extern "system" fn subclass(
         }
     }
     unsafe { DefSubclassProc(hwnd, msg, wparam, lparam) }
+}
+
+/// The settings window as a number that can cross to the thread a file
+/// dialog runs on, or 0 before `adopt_window` has found it.
+fn window_number() -> isize {
+    WINDOW.get().map_or(0, |hwnd| hwnd.0 as isize)
 }

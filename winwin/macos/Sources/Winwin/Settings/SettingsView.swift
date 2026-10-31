@@ -10,7 +10,7 @@ struct SettingsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             if let error = model.error {
-                ErrorBanner(message: error) { model.error = nil }
+                ErrorBanner(problem: error) { model.error = nil }
             }
             HStack(alignment: .top, spacing: 24) {
                 ShortcutList(model: model)
@@ -43,6 +43,10 @@ struct SettingsView: View {
                 .fixedSize()
                 Toggle("ログイン時に winwin を起動する", isOn: $model.autostart)
                     .toggleStyle(.checkbox)
+                HStack(spacing: 8) {
+                    Button("エクスポート...") { model.export() }
+                    Button("インポート...") { model.importFile() }
+                }
             }
             Spacer()
             Button("保存して閉じる") { model.save(path: path) }
@@ -54,17 +58,17 @@ struct SettingsView: View {
     }
 }
 
-/// Why 保存して閉じる failed, until it is closed.
+/// What failed and why, until it is closed.
 private struct ErrorBanner: View {
-    let message: String
+    let problem: Problem
     let dismiss: () -> Void
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
             Image(systemName: "xmark.octagon.fill").foregroundColor(.red)
             VStack(alignment: .leading, spacing: 2) {
-                Text("保存できませんでした").bold()
-                Text(message).fixedSize(horizontal: false, vertical: true)
+                Text(problem.title).bold()
+                Text(problem.message).fixedSize(horizontal: false, vertical: true)
             }
             Spacer()
             Button(action: dismiss) { Image(systemName: "xmark") }

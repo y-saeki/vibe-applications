@@ -406,7 +406,8 @@ impl SettingsEditor {
         state.editor.is_dirty() || state.theme != state.theme_was
     }
 
-    /// Checks every row and writes the config file at `path`. When a row
+    /// Checks every row and writes the config file at `path`, which is also
+    /// how the settings are exported. When a row
     /// does not make a shortcut, that row is selected alone and this says
     /// why; it also says why the file could not be written.
     pub fn save(&self, path: String) -> Option<String> {
@@ -417,6 +418,26 @@ impl SettingsEditor {
         };
         config.theme = state.theme;
         config.save(Path::new(&path)).err().map(|e| e.to_string())
+    }
+
+    /// インポート: the shortcuts and the theme of the file at `path` in
+    /// place of those being edited, unsaved, or why the file cannot be read.
+    pub fn import_file(&self, path: String) -> Option<String> {
+        let config = match Config::read(Path::new(&path)) {
+            Ok(config) => config,
+            Err(e) => return Some(e.to_string()),
+        };
+        let mut state = self.state();
+        state.editor.replace(
+            config
+                .shortcuts
+                .iter()
+                .map(draft::Draft::from_shortcut)
+                .collect(),
+        );
+        state.theme = config.theme;
+        state.cursor = None;
+        None
     }
 
     /// Where the row being edited puts a window on a screen of `work_width`
@@ -725,6 +746,30 @@ mod tests {
         assert_eq!(e.save(path.to_string_lossy().into()), None);
         let saved = Config::load_or_create(&path).unwrap();
         assert_eq!(saved.theme, Theme::ALL[1]);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn an_import_replaces_the_rows_and_the_theme_until_saved() {
+        let dir = std::env::temp_dir().join(format!("winwin-ffi-import-{}", std::process::id()));
+        let path = dir.join("exported.toml");
+        let path_text: String = path.to_string_lossy().into();
+
+        let e = editor();
+        assert!(e.import_file(path_text.clone()).is_some(), "no file yet");
+        assert!(!e.is_changed());
+
+        let exported = SettingsEditor::with(&Config {
+            theme: Theme::Dark,
+            shortcuts: Config::defaults().shortcuts[..2].to_vec(),
+        });
+        assert_eq!(exported.save(path_text.clone()), None);
+
+        assert_eq!(e.import_file(path_text), None);
+        assert!(e.is_changed());
+        assert_eq!(e.rows().len(), 2);
+        assert!(e.rows()[0].selected);
+        assert_eq!(Theme::ALL[usize::from(e.theme())], Theme::Dark);
         let _ = std::fs::remove_dir_all(dir);
     }
 

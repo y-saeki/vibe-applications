@@ -179,6 +179,13 @@ impl Config {
         }
     }
 
+    /// Reads a file that is expected to be there, such as one exported to
+    /// be imported elsewhere, without writing anything back.
+    pub fn read(path: &Path) -> Result<Config, ConfigError> {
+        let text = fs::read_to_string(path).map_err(|e| ConfigError::Io(path.into(), e))?;
+        Config::parse(&text, path)
+    }
+
     /// Writes through a temporary file, so that a crash halfway leaves the
     /// previous config rather than half of the new one.
     pub fn save(&self, path: &Path) -> Result<(), ConfigError> {
@@ -526,6 +533,29 @@ mod tests {
         let text = fs::read_to_string(&path).unwrap();
         assert!(text.contains(r#"width = "1/3""#), "{text}");
         assert_eq!(parse(&text).unwrap(), config);
+
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn reads_an_exported_file_without_touching_it() {
+        let dir = std::env::temp_dir().join(format!("winwin-test-read-{}", std::process::id()));
+        let path = dir.join("exported.toml");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+
+        assert!(matches!(Config::read(&path), Err(ConfigError::Io(..))));
+        assert!(!path.exists(), "a missing file is not created");
+
+        let percent = "theme = \"dark\"\n[[shortcut]]\nkeys = \"Ctrl+Alt+L\"\nanchor = \"left\"\nwidth = \"50%\"\nheight = \"1\"\n";
+        fs::write(&path, percent).unwrap();
+        let config = Config::read(&path).unwrap();
+        assert_eq!(config.theme, Theme::Dark);
+        assert_eq!(config.shortcuts.len(), 1);
+        assert_eq!(fs::read_to_string(&path).unwrap(), percent, "left alone");
+
+        fs::write(&path, "[[shortcut]]\nkeys = \"L\"\n").unwrap();
+        assert!(matches!(Config::read(&path), Err(ConfigError::Parse(..))));
 
         fs::remove_dir_all(&dir).unwrap();
     }

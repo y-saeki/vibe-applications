@@ -432,6 +432,19 @@ impl Editor {
         self.dirty = true;
     }
 
+    /// インポート: `rows` in place of every row, with the first selected.
+    /// It counts as a change, so that it is saved or discarded like any
+    /// other.
+    pub fn replace(&mut self, rows: Vec<Draft>) {
+        let next_id = self.next_id;
+        self.next_id += rows.len() as u64;
+        self.rows = (next_id..).zip(rows).collect();
+        self.selected.clear();
+        self.anchor = None;
+        self.dirty = true;
+        self.select(0);
+    }
+
     /// 追加: a new row below the selection.
     pub fn add(&mut self) {
         self.insert(vec![Draft::new()]);
@@ -812,6 +825,30 @@ mod tests {
         e.delete();
         assert_eq!(e.current(), Some(2));
         assert!(e.is_dirty());
+    }
+
+    #[test]
+    fn an_import_takes_the_place_of_every_row() {
+        let mut e = editor();
+        e.select(2);
+        let imported: Vec<Draft> = Config::defaults().shortcuts[..2]
+            .iter()
+            .map(Draft::from_shortcut)
+            .collect();
+        e.replace(imported.clone());
+        assert!(e.is_dirty());
+        assert_eq!(e.current(), Some(0));
+        let rows: Vec<Draft> = e.rows().map(|(_, d)| d.clone()).collect();
+        assert_eq!(rows, imported);
+        let before = ids(&e);
+        assert_eq!(before, [3, 4], "fresh ids, past the rows replaced");
+        e.add();
+        assert!(!before.contains(&ids(&e)[1]), "ids are not used twice");
+
+        e.replace(Vec::new());
+        assert_eq!(e.rows().count(), 0);
+        assert_eq!(e.current(), None);
+        assert_eq!(e.build_config().unwrap().shortcuts, []);
     }
 
     fn shift() -> Click {

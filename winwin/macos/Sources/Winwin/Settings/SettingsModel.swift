@@ -1,5 +1,12 @@
 import AppKit
 import Combine
+import UniformTypeIdentifiers
+
+/// What failed, and why: the banner above everything.
+struct Problem: Equatable {
+    let title: String
+    let message: String
+}
 
 /// What the settings window shows, read back from the library's editor after
 /// every change. The window reports clicks and typing here and draws what
@@ -20,8 +27,9 @@ final class SettingsModel: ObservableObject {
     @Published private(set) var theme: UInt8 = 0
     @Published var autostart: Bool
     private let autostartWas: Bool
-    /// Shown above everything when 保存して閉じる fails.
-    @Published var error: String?
+    /// Shown above everything when 保存して閉じる, エクスポート or インポート
+    /// fails.
+    @Published var error: Problem?
     /// The 変更を保存せずに閉じますか? dialog is open.
     @Published var confirming = false
     /// The recording dialog is open, with what it has recorded.
@@ -192,14 +200,47 @@ final class SettingsModel: ObservableObject {
     func save(path: String) {
         if let e = editor.save(path: path) {
             refresh()
-            error = e
+            error = Problem(title: "保存できませんでした", message: e)
             return
         }
         if autostart != autostartWas, let e = Autostart.set(autostart) {
-            error = e
+            error = Problem(title: "保存できませんでした", message: e)
             return
         }
         onClose()
+    }
+
+    // MARK: Export and import
+
+    private static let types = [UTType(filenameExtension: "toml") ?? .data]
+
+    /// エクスポート: asks where to, then writes the settings as they stand,
+    /// checked as saving checks them.
+    func export() {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = Self.types
+        panel.nameFieldStringValue = "winwin.toml"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        if let e = editor.save(path: url.path) {
+            refresh()
+            error = Problem(title: "エクスポートできませんでした", message: e)
+        }
+    }
+
+    /// インポート: asks for a file, then puts it in place of the settings,
+    /// unsaved.
+    func importFile() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = Self.types
+        panel.allowsOtherFileTypes = true
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        if let e = editor.importFile(path: url.path) {
+            error = Problem(title: "インポートできませんでした", message: e)
+            return
+        }
+        error = nil
+        refresh()
+        onTheme(theme)
     }
 
     /// キャンセル, or the window's close button.

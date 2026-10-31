@@ -2,6 +2,7 @@
 
 mod app;
 mod autostart;
+mod filedialog;
 mod icon;
 mod keyhook;
 mod marks;
