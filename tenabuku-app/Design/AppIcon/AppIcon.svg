@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#19B6EC"/>
+      <stop offset="1" stop-color="#0090C8"/>
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+  <!-- "て" from M PLUS Rounded 1c ExtraBold (SIL Open Font License), outlined -->
+  <path transform="translate(139 808) scale(0.72 -0.72)" fill="#FFFFFF" d="M144 573Q120 573 103.0 589.0Q86 605 86 629V661Q86 684 102.5 700.5Q119 717 142 717Q502 719 858 735Q881 736 898.0 720.0Q915 704 916 681L917 649Q918 625 902.5 607.5Q887 590 863 587Q661 564 559.0 488.0Q457 412 457 304Q457 212 520.0 157.5Q583 103 685 103Q718 103 749 107Q772 110 790.5 96.5Q809 83 812 60L817 25Q820 1 805.5 -18.5Q791 -38 767 -41Q731 -46 677 -46Q498 -46 390.0 45.0Q282 136 282 288Q282 368 331.0 445.5Q380 523 466 577Q467 577 467 579Q467 580 466 580Q320 575 144 573Z"/>
+  <path fill="#FF7A2F" d="M640 0H780V230L710 178L640 230Z"/>
+</svg>
