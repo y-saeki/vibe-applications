@@ -79,6 +79,11 @@ updates:
       # minor version. A minor update raises one side at a time and cannot
       # pass on its own, so these are kept apart from the updates that can,
       # and brought in line by hand together with the npm side's tauri group.
+      #
+      # minor-and-patch has to exclude them by name. Where a dependency matches
+      # two groups, Dependabot does not take the first one listed: it takes the
+      # more specific one, and a group with no patterns outranks a wildcard
+      # pattern such as tauri-*.
       tauri:
         patterns:
           - tauri
@@ -87,6 +92,9 @@ updates:
         update-types:
           - minor
           - patch
+        exclude-patterns:
+          - tauri
+          - tauri-*
 
   - package-ecosystem: npm
     directory: /draftpad
@@ -100,7 +108,8 @@ updates:
     commit-message:
       prefix: draftpad
     groups:
-      # See the tauri group of /draftpad/src-tauri.
+      # See the tauri group of /draftpad/src-tauri, including why
+      # minor-and-patch excludes it.
       tauri:
         patterns:
           - "@tauri-apps/*"
@@ -108,6 +117,8 @@ updates:
         update-types:
           - minor
           - patch
+        exclude-patterns:
+          - "@tauri-apps/*"
 
   - package-ecosystem: github-actions
     directory: /
