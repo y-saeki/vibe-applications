@@ -162,17 +162,18 @@ CI の `build-macos` は次のように署名します。
 
 ### 証明書の作り方
 
-OpenSSL 3 で作ります。macOS に入っている `openssl` は LibreSSL で `-legacy` を持たないため、Homebrew の `openssl@3`
-などを使ってください。`-legacy` は、macOS の `security import` が読める形式で `.p12` を書くために付けます。
+OpenSSL 3 以降で作ります。`pkcs12 -export` は何も指定しないと AES-256 の形式で書き出すので、`-certpbe`・`-keypbe`・
+`-macalg` で、macOS の `security import` が読める 3DES と SHA-1 の形式を指定します。
 
 ```sh
-openssl req -x509 -newkey rsa:2048 -nodes -days 7300 \
+openssl req -x509 -newkey rsa:2048 -noenc -days 7300 \
   -subj "/CN=winwin code signing" \
   -addext "basicConstraints=critical,CA:false" \
   -addext "keyUsage=critical,digitalSignature" \
   -addext "extendedKeyUsage=critical,codeSigning" \
   -keyout winwin-signing.key -out winwin-signing.crt
-openssl pkcs12 -export -legacy -name "winwin code signing" \
+openssl pkcs12 -export -certpbe PBE-SHA1-3DES -keypbe PBE-SHA1-3DES -macalg sha1 \
+  -name "winwin code signing" \
   -inkey winwin-signing.key -in winwin-signing.crt -out winwin-signing.p12
 base64 < winwin-signing.p12 | tr -d '\n'
 ```
