@@ -80,15 +80,18 @@ public struct OAuthSigner: Sendable {
     /// form body; the query is read from `url`.
     public static func signatureBaseString(method: String, url: URL, parameters: [(String, String)]) -> String {
         let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
-        let query = components?.percentEncodedQuery.map(PercentEncoding.decodeForm) ?? []
-        let normalized = (query + parameters)
-            .map { (PercentEncoding.encode($0.0), PercentEncoding.encode($0.1)) }
-            .sorted { $0.0 == $1.0 ? $0.1 < $1.1 : $0.0 < $1.0 }
-            .map { "\($0.0)=\($0.1)" }
-            .joined(separator: "&")
-        return [method.uppercased(), baseURI(components), normalized]
-            .map(PercentEncoding.encode)
-            .joined(separator: "&")
+        let query: [(String, String)] = components?.percentEncodedQuery.map(PercentEncoding.decodeForm) ?? []
+        // Typed one step at a time: as a single chain the expression is too
+        // much for the type checker.
+        let encoded: [(name: String, value: String)] = (query + parameters).map { pair in
+            (name: PercentEncoding.encode(pair.0), value: PercentEncoding.encode(pair.1))
+        }
+        let sorted = encoded.sorted { lhs, rhs in
+            lhs.name == rhs.name ? lhs.value < rhs.value : lhs.name < rhs.name
+        }
+        let normalized: String = sorted.map { "\($0.name)=\($0.value)" }.joined(separator: "&")
+        let parts: [String] = [method.uppercased(), baseURI(components), normalized]
+        return parts.map(PercentEncoding.encode).joined(separator: "&")
     }
 
     public static func signature(baseString: String, consumerSecret: String, tokenSecret: String?) -> String {

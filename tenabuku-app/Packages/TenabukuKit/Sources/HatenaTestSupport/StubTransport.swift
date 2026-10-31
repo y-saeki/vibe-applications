@@ -26,12 +26,17 @@ public final class StubTransport: HTTPTransport, @unchecked Sendable {
     }
 
     public func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
-        lock.lock()
-        sent.append(request)
-        lock.unlock()
+        record(request)
         let (status, body) = respond(request)
         let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: "HTTP/1.1", headerFields: nil)!
         return (body, response)
+    }
+
+    // Synchronous, since NSLock may not be taken in an async context.
+    private func record(_ request: URLRequest) {
+        lock.lock()
+        defer { lock.unlock() }
+        sent.append(request)
     }
 }
 
