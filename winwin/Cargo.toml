@@ -1,6 +1,6 @@
 [package]
 name = "winwin"
-version = "0.18.1"
+version = "0.19.0"
 edition = "2024"
 publish = false
 description = "A keyboard-driven window placer for Windows and macOS"
@@ -31,6 +31,7 @@ windows = { version = "0.62", features = [
   "Win32_Graphics_Dwm",
   "Win32_Graphics_Gdi",
   "Win32_Security",
+  "Win32_System_Com",
   "Win32_System_LibraryLoader",
   "Win32_System_Registry",
   "Win32_System_Threading",
@@ -39,6 +40,7 @@ windows = { version = "0.62", features = [
   "Win32_UI_HiDpi",
   "Win32_UI_Input_KeyboardAndMouse",
   "Win32_UI_Shell",
+  "Win32_UI_Shell_Common",
   "Win32_UI_WindowsAndMessaging",
 ] }
 
