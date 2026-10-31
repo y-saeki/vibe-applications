@@ -37,6 +37,15 @@ Xcode でスキーム `Tenabuku` を選び、シミュレーターか実機で�
 
 ファイルを足したり消したりしたときも `xcodegen generate` を実行します。`project.yml` の `sources` はディレクトリ単位で指定しているので、`Tenabuku/` の下に置いたファイルは自動で入ります。
 
+pull やブランチの切り替えのたびに生成し直すのが面倒なら、git のフックを一度だけ入れておきます。
+
+```bash
+cd tenabuku-app
+./scripts/install-git-hooks.sh
+```
+
+入れたあとは、pull（rebase を含む）とブランチの切り替えのあとに、`xcodegen generate` が自動で走ります。XcodeGen が見つからないときは生成せず、そのことを表示します。同じ名前のフックをすでに使っているときは、上書きせずに止まります。その場合は、そのフックに `xcodegen generate` の呼び出しを自分で足します。
+
 ## 検証コマンド
 
 ```bash
@@ -62,6 +71,7 @@ tenabuku-app/
 │   └── Secrets.example.xcconfig
 ├── Design/AppIcon/          アイコンの元の SVG
 ├── Tenabuku/                アプリ本体（SwiftUI）
+├── scripts/                 git のフックを入れるスクリプト
 └── Packages/TenabukuKit/    データ取得層（Swift Package）
     ├── Sources/
     │   ├── HatenaShared/      HTTP、エラー、日付、パーセントエンコード
