@@ -40,7 +40,7 @@ struct HotEntryListView: View {
             .listStyle(.plain)
             .navigationTitle(model.category.displayName)
             .navigationDestination(for: FeedItem.self) { item in
-                EntryDetailView(entry: item)
+                ArticleBrowserView(entry: item)
             }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {

@@ -81,20 +81,6 @@ struct EntryDetailView: View {
     var body: some View {
         List {
             Section {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(entry.title).font(.headline)
-                    if !entry.summary.isEmpty {
-                        Text(entry.summary).font(.subheadline).foregroundStyle(.secondary)
-                    }
-                    Button("記事を開く", systemImage: "safari") {
-                        openURL(entry.link)
-                    }
-                    .buttonStyle(.bordered)
-                }
-                .padding(.vertical, 4)
-            }
-
-            Section {
                 Picker("並び順", selection: $model.tab) {
                     ForEach(EntryCommentsModel.Tab.allCases) { tab in
                         Text(tab.rawValue).tag(tab)
@@ -118,6 +104,13 @@ struct EntryDetailView: View {
         .listStyle(.plain)
         .navigationTitle("\(entry.bookmarkCount) users")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button("Safari で開く", systemImage: "safari") {
+                    openURL(entry.link)
+                }
+            }
+        }
         .refreshable { await model.load() }
         .task(id: model.tab) { await model.load() }
     }
