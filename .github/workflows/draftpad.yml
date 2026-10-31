@@ -104,7 +104,7 @@ jobs:
       # its first push, and it is the later ones that pay for a rebuild.
       # Caches are evicted least-recently-used past 10 GB per repository, and
       # the ones a pull request wrote go away when it closes.
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: draftpad/src-tauri
       - run: pnpm install --frozen-lockfile
@@ -153,7 +153,7 @@ jobs:
         run: |
           rustup update stable
           rustup default stable
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: draftpad/src-tauri
       - run: pnpm install --frozen-lockfile
