@@ -1,5 +1,6 @@
 import type { Locator } from '@playwright/test'
 
+import { LONG_WORD_LENGTH } from '../../src/long-words'
 import { type App, expect, test } from './fixtures'
 
 test('counts what is typed', async ({ launch }) => {
@@ -562,6 +563,49 @@ test('wraps whatever is in the draft, so it never runs off to the side', async (
 
   const box = await scroller(app)
   expect(box.content).toBe(box.client)
+})
+
+test('fills the row before a long run such as a URL wraps, rather than leaving the start alone', async ({ launch }) => {
+  // With nowhere to break inside the URL, the browser would send all of it to
+  // the next row and leave "1:" on the first one by itself.
+  const app = await launch({ state: { text: `1: https://example.com/${'segment;'.repeat(100)}` } })
+  const run = app.page.locator('.cm-longWord')
+  await expect(run).toHaveCount(1)
+
+  const rows = await run.evaluate((element) => {
+    const label = document.createRange()
+    label.selectNodeContents(element.closest('.cm-line')!.firstChild!)
+    return { run: element.getClientRects()[0]!.top, label: label.getClientRects()[0]!.top }
+  })
+  expect(rows.run).toBe(rows.label)
+})
+
+test('still wraps ordinary words whole, and leaves Japanese to its own breaks', async ({ launch }) => {
+  // The run under the length stays a word like any other; the one at it is
+  // the shortest that breaks anywhere. Japanese text, English words and all,
+  // carries no mark: it already breaks between its characters.
+  const under = 'x'.repeat(LONG_WORD_LENGTH - 1)
+  const at = 'y'.repeat(LONG_WORD_LENGTH)
+  const app = await launch({
+    state: { text: [`${'wrapping words '.repeat(40)}${under}`, at, `${'これはJavaScriptの文章です。'.repeat(20)}`].join('\n') },
+  })
+  await expect(app.page.locator('.cm-longWord')).toHaveText([at])
+
+  // Every word on the wrapped line sits on one row.
+  const split = await app.page.locator('.cm-line').first().evaluate((line) => {
+    const text = line.firstChild!
+    const range = document.createRange()
+    let start = 0
+    let broken = 0
+    for (const word of text.textContent!.split(' ')) {
+      range.setStart(text, start)
+      range.setEnd(text, start + word.length)
+      if (word.length > 0 && range.getClientRects().length > 1) broken++
+      start += word.length + 1
+    }
+    return broken
+  })
+  expect(split).toBe(0)
 })
 
 test('brings the bar up while the draft scrolls, and takes it down after', async ({ launch }) => {
