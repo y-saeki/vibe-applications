@@ -132,8 +132,10 @@ struct ArticleBrowserView: View {
         // because that is what lets iPhone Duo lay it out vertically and leave the
         // height to the page. There is no title for the same reason: on iPhone Duo
         // it would take a bar of its own, and the page shows its title anyway.
+        // Vertical only: left to WebKit, the sides depend on each page's viewport
+        // and CSS, and many pages run under a toolbar on iPhone Duo's side.
         WebViewContainer(webView: model.webView)
-            .ignoresSafeArea()
+            .ignoresSafeArea(edges: .vertical)
             .overlay(alignment: .top) {
                 if model.isLoading {
                     ProgressView(value: model.progress).progressViewStyle(.linear)
