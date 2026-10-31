@@ -1,0 +1,9 @@
+// Defaults for every configuration. Values that belong to one person — the
+// Hatena consumer key and the signing team — go in Secrets.xcconfig next to
+// this file, which is not committed. Copy Secrets.example.xcconfig to start.
+
+TENABUKU_BUNDLE_ID = io.github.y-saeki.tenabuku
+HATENA_CONSUMER_KEY =
+HATENA_CONSUMER_SECRET =
+
+#include? "Secrets.xcconfig"
