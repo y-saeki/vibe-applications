@@ -91,8 +91,9 @@ open winwin/macos/winwin.app
   (⌃⌥⇧⌘)で描きます。ファイルには Windows 版と同じ名前で書きます
 - 矢印キーのキーキャップは、SF Symbols の線の矢印(`arrow.up` など)で描きます。山形(`chevron.up`)では ⌃ と見分けが
   つきません。⇧ は中が空いた太い矢印で線の矢印と形が違うため、記号を変えていません
-- `build.sh` はアプリにアドホック署名をします。ビルドし直すと署名が変わるため、アクセシビリティの許可が外れることが
-  あります。そのときは、システム設定の一覧から winwin を削除して、許可し直してください
+- `build.sh` は環境変数 `WINWIN_SIGN_IDENTITY` で証明書を指定するとその証明書で、指定しないとアドホックで署名します。
+  アドホック署名のアプリはビルドし直すたびに別のアプリとして扱われるため、アクセシビリティの許可が効かなくなります。
+  そのときは、システム設定の一覧から winwin を削除して、許可し直してください(「macOS 版の署名」の節)
 - アプリのアイコンは、`build.sh` がビルドしたアプリ自身に `--iconset` で書き出させ(Windows 版と同じ `art.rs` の絵)、
   `iconutil` で `.icns` にします
 
@@ -135,7 +136,65 @@ open winwin/macos/winwin.app
 
 CI(`.github/workflows/winwin.yml` の `build-macos`)は `macos-latest` で、feature `ffi` を含めた clippy とテスト、
 `build.sh` を実行し、できた `winwin.app` を `/Applications` へのリンクと一緒に `.dmg` にまとめてアップロードします。
+シークレットに署名用の証明書があれば、その証明書で署名します。
 アプリは Apple シリコン用だけで、Intel Mac 用のビルドと universal binary は作りません(リポジトリの `CLAUDE.md`)。
+
+## macOS 版の署名
+
+macOS はアクセシビリティの許可を、許可した時点のアプリの署名の要件(designated requirement)と結び付けて記録します。
+アドホック署名では、要件がアプリのハッシュ(`cdhash`)になります。そのため、ビルドし直すと要件が変わり、システム設定の
+一覧では winwin がオンのままなのに、新しいアプリには許可が効かず、イベントタップが動きません。
+
+配布するアプリは自己署名の証明書で署名します。要件はバンドル ID と証明書
+(`identifier "io.github.y-saeki.winwin" and certificate leaf = H"…"`)になり、同じ証明書で署名する限り、ビルドを
+またいでも変わりません。Apple Developer Program は使わず、公証もしないので、Gatekeeper の扱い(隔離属性を外す手順)は
+変わりません。
+
+CI の `build-macos` は次のように署名します。
+
+- 「Signing certificate」のステップが、シークレットの証明書を一時的なキーチェーンに読み込み、その SHA-1 ハッシュを
+  `WINWIN_SIGN_IDENTITY` に入れます
+- 「Signature」のステップが、`codesign -d -r-` で要件を読み、ジョブのサマリに書きます。証明書を読み込んだのに要件に
+  `certificate leaf` がなければ失敗します
+- シークレットを読めない Pull Request(フォークからのものと Dependabot のもの)は、アドホック署名でビルドします。
+  `main` への push でシークレットがなければ、アドホック署名のアプリをリリースしないよう、ジョブを失敗させます
+- キーチェーンはジョブの最後に削除します
+
+### 証明書の作り方
+
+OpenSSL 3 以降で作ります。`pkcs12 -export` は何も指定しないと AES-256 の形式で書き出すので、`-certpbe`・`-keypbe`・
+`-macalg` で、macOS の `security import` が読める 3DES と SHA-1 の形式を指定します。
+
+```sh
+openssl req -x509 -newkey rsa:2048 -noenc -days 7300 \
+  -subj "/CN=winwin code signing" \
+  -addext "basicConstraints=critical,CA:false" \
+  -addext "keyUsage=critical,digitalSignature" \
+  -addext "extendedKeyUsage=critical,codeSigning" \
+  -keyout winwin-signing.key -out winwin-signing.crt
+openssl pkcs12 -export -certpbe PBE-SHA1-3DES -keypbe PBE-SHA1-3DES -macalg sha1 \
+  -name "winwin code signing" \
+  -inkey winwin-signing.key -in winwin-signing.crt -out winwin-signing.p12
+base64 < winwin-signing.p12 | tr -d '\n'
+```
+
+`pkcs12 -export` で決めたパスワードと、最後のコマンドが出力する文字列を、リポジトリのシークレットに登録します。
+
+| シークレット | 値 |
+|---|---|
+| `WINWIN_MACOS_CERTIFICATE_P12` | `.p12` を base64 にした文字列 |
+| `WINWIN_MACOS_CERTIFICATE_PASSWORD` | `.p12` のパスワード |
+
+鍵(`.key` と `.p12`)はリポジトリに入れません。作り直すと要件が変わるので、パスワードマネージャーなどに保管してください。
+
+手元でも、同じ証明書をキーチェーンに読み込んで `WINWIN_SIGN_IDENTITY="winwin code signing" winwin/macos/build.sh` と
+すると、許可を保ったままビルドし直せます。
+
+### 証明書を変えるとき
+
+有効期限は 20 年(7300 日)です。期限が来る前に作り直す必要がありますが、そのほかに作り直すのは鍵が漏れたときなどに
+限ります。作り直すと要件が変わるので、利用者は一度だけ許可し直す必要があります。そのリリースではリリースノートに
+そのことを書いてください。README の「更新・アンインストール」節は、リリースノートの案内に従うよう書いてあります。
 
 ## 構成
 
@@ -634,7 +693,7 @@ Command+Q や Command+Tab もダイアログに入る。Shift だけでは理由
 ライト・ダークにすると設定画面とメニューがすぐ切り替わる / 「テスト用ウィンドウを開く」ですりガラスのウィンドウが開き、
 保存前のショートカットでそれだけが動いて、設定画面が上に残る。Command+W で閉じる / 変更してから閉じると確認が出て、
 「戻る」で戻れる / 保存すると新しいショートカットが効く / 「ログイン時に winwin を起動する」をオンにして保存すると、
-システム設定の「ログイン項目」に winwin が載り、ログインし直すと起動する / 「エクスポート...」「インポート...」が Windows 版と同じに動き、Windows 版で書き出したファイルを読み込める / 更新したあとの許可の状態
+システム設定の「ログイン項目」に winwin が載り、ログインし直すと起動する / 「エクスポート...」「インポート...」が Windows 版と同じに動き、Windows 版で書き出したファイルを読み込める / 更新したあとの許可の状態(証明書で署名した 2 つのビルドで、古いビルドに許可を与えたまま新しいビルドで上書きしても、許可し直さずにショートカットが効く)
 
 手で確かめるときは、少なくとも次を通してください: 初回起動で設定ファイルができる / 既定のショートカットで左右半分・
 四隅・中央に動く / 最大化中のウィンドウが解除されて動く / ショートカットで左半分にしたあと 1/4 に切り替え、タイトルバーをドラッグすると動き出した時点で最初の大きさに戻り、カーソルがタイトルバーをつかんだまま動く(タイトルバーの右端寄りをつかんだときは、離したときにカーソルの下へ移る)。タイトルバーをクリックしただけでは変わらない。ドラッグ中に Esc を押すと配置した位置と大きさに戻る。縁をドラッグしてサイズを変えたあとは戻らない。画面の端や上端へドラッグして Windows にスナップ・最大化させると、それが保たれる。DPI の違うモニターへドラッグしても同じ見た目の大きさに戻る。配置したあと winwin を終了して起動し直しても、ドラッグで元の大きさに戻る / 同じショートカットを 3 つの配置に設定し、修飾キーを押したまま 4 回押すと 1→2→3→1 と切り替わり、修飾キーを離して押し直すと 1 つ目に戻る / `Ctrl+Left, Up` を 2 つの配置に、`Ctrl+Up` を別の配置に設定し、`Ctrl` を押したまま `←` `↑` `↑` で 1→2 と切り替わり、`Ctrl` を離してから `Ctrl+Up` を押すと単独の配置になる。`Ctrl+Left` のあと `Ctrl` を離して `Ctrl+Up` を押すと単独の配置になる。`Ctrl+Left` と `Ctrl+Left, Right` を設定し、`Ctrl+Left` のあと `Ctrl` を離すと、ほかのアプリで `Ctrl+Right` がすぐ普通に使える / `Ctrl+Left` と `Ctrl+Left, Up` を別の配置に設定し、`Ctrl+Left` ですぐ動き、続けて `Ctrl+Up` を押すと長い方の配置に変わる / 「変更」のダイアログで `Ctrl` を押したまま `←` `↑` と押すと 2 つ並んで記録され、`Ctrl` を離して押し直すと最初から記録される。2 つ目はキーだけで表示され、ダイアログでは中央に、一覧では行からはみ出さずに並ぶ / 設定画面のタイトルバーに `Cargo.toml` のバージョンが出る / 設定画面の縁をドラッグすると、高さは変わって一覧が伸び、幅は変わらない / 設定画面の幅に `-1`・`2`・`1.1`・`0` を入れると、欄の下に赤字で理由が出て、保存できない。欄を空にするか `1/2` にすると消える / 設定画面で追加・複製・削除・保存ができ、閉じたあと新しい
@@ -682,5 +741,5 @@ eleven-zip のインストーラが、ファイル名にハッシュを付けた
 
 依存ライブラリの新しいバージョンは Dependabot が週に 1 回確かめ、見つかると Pull Request を作ります(設定は `.github/dependabot.yml`)。この Pull Request には `no-release` ラベルが付き、ビルドとテストがすべて通ると `.github/workflows/dependabot-merge.yml` がマージします。バージョンは上げず、更新は次のリリースに含めて出します。手で確かめる項目は次にこのアプリを変更する Pull Request でまとめて確認し、その Pull Request の本文に、取り込んだ更新を書きます。
 
-配布物はコード署名をしていないため、ダウンロードしたインストーラの実行時に SmartScreen の警告が出ます。
+配布物のうち、Windows のインストーラはコード署名をしていないため、ダウンロードしたインストーラの実行時に SmartScreen の警告が出ます。
 手順は README.md に書いてあります。
