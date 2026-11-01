@@ -219,7 +219,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func makeStatusItem() -> NSStatusItem {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        item.button?.image = Icon.image(points: 18)
+        item.button?.image = Icon.menuBarImage(points: 18)
         item.button?.toolTip = "winwin"
         let menu = NSMenu()
         let open = menu.addItem(withTitle: "設定を開く", action: #selector(openSettings), keyEquivalent: "")

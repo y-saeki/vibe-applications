@@ -485,11 +485,22 @@ pub fn to_appkit(frame: Frame, main_height: f64) -> AppKitRect {
     }
 }
 
-/// winwin's icon, `size` pixels square, as rows of RGBA bytes from the top,
-/// not premultiplied.
+/// winwin's app icon, `size` pixels square with the margin macOS app icons
+/// keep, as rows of RGBA bytes from the top, not premultiplied.
 #[uniffi::export]
-pub fn icon_rgba(size: u32) -> Vec<u8> {
-    art::pixels(size as usize)
+pub fn app_icon_rgba(size: u32) -> Vec<u8> {
+    to_rgba(art::mac_pixels(size as usize))
+}
+
+/// The menu-bar glyph, `size` pixels square, as `app_icon_rgba` lays it out.
+/// Black throughout: it is a template image, coloured by the menu bar.
+#[uniffi::export]
+pub fn menu_bar_icon_rgba(size: u32) -> Vec<u8> {
+    to_rgba(art::menu_bar_pixels(size as usize))
+}
+
+fn to_rgba(pixels: Vec<u32>) -> Vec<u8> {
+    pixels
         .into_iter()
         .flat_map(|argb| {
             let [a, r, g, b] = argb.to_be_bytes();
@@ -794,12 +805,21 @@ mod tests {
     }
 
     #[test]
-    fn the_icon_is_rgba() {
-        let icon = icon_rgba(16);
-        assert_eq!(icon.len(), 16 * 16 * 4);
-        // The corner is transparent; the middle of the left half is white.
-        assert_eq!(icon[3], 0);
-        let at = |x: usize, y: usize| &icon[(y * 16 + x) * 4..][..4];
-        assert_eq!(at(5, 8), [0xFF, 0xFF, 0xFF, 0xFF]);
+    fn the_icons_are_rgba() {
+        let icon = app_icon_rgba(64);
+        assert_eq!(icon.len(), 64 * 64 * 4);
+        let at = |x: usize, y: usize| &icon[(y * 64 + x) * 4..][..4];
+        // The margin is transparent; the tile's top middle is opaque and
+        // off-white, red before alpha.
+        assert_eq!(at(3, 32)[3], 0);
+        let top = at(32, 8);
+        assert_eq!(top[3], 0xFF);
+        assert!(top[0] > 0xE0 && top[0] > top[2]);
+
+        let glyph = menu_bar_icon_rgba(18);
+        assert_eq!(glyph.len(), 18 * 18 * 4);
+        // Alpha last: the opaque left half is [0, 0, 0, 255].
+        let at = |x: usize, y: usize| &glyph[(y * 18 + x) * 4..][..4];
+        assert_eq!(at(5, 13), [0, 0, 0, 0xFF]);
     }
 }
