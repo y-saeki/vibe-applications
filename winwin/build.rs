@@ -1,5 +1,6 @@
 // The executable's icon is drawn from the same pixels as the tray icon.
 #[path = "src/art.rs"]
+#[allow(dead_code)] // The macOS pictures are not used here.
 mod art;
 #[path = "src/icon_res.rs"]
 mod icon_res;
