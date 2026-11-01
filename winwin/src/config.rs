@@ -119,7 +119,7 @@ impl fmt::Display for ConfigError {
             ConfigError::Parse(path, e) => write!(f, "{} を読めません。\n{e}", path.display()),
             ConfigError::NotExported(path) => write!(
                 f,
-                "{} は、winwin v0.21.0 以降の「エクスポート」で書き出したファイルではありません。",
+                "{} は、winwin v0.20.1 以降の「エクスポート」で書き出したファイルではありません。",
                 path.display()
             ),
             ConfigError::OtherPlatform(path, from) => write!(
