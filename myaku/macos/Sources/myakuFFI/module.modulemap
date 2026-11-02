@@ -1,0 +1,5 @@
+module myakuFFI {
+    header "myakuFFI.h"
+    link "myaku"
+    export *
+}

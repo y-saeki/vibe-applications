@@ -1,0 +1,6 @@
+/target
+/macos/.build
+/macos/myaku.app
+/macos/*.dmg
+/macos/Sources/myakuFFI/myakuFFI.h
+/macos/Sources/Myaku/Generated
