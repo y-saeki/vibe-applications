@@ -114,10 +114,8 @@ pub fn add_nettop(samples: &mut Samples, output: &str) {
 #[cfg(target_os = "macos")]
 pub fn read(network: bool) -> Option<Samples> {
     let mut samples = parse_ps(&run("/bin/ps", &PS_ARGS)?);
-    if network {
-        if let Some(output) = run("/usr/bin/nettop", &NETTOP_ARGS) {
-            add_nettop(&mut samples, &output);
-        }
+    if network && let Some(output) = run("/usr/bin/nettop", &NETTOP_ARGS) {
+        add_nettop(&mut samples, &output);
     }
     Some(samples)
 }
