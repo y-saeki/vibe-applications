@@ -1,19 +1,21 @@
 import AppKit
 
-/// winwin's icon, drawn by the library from the same pixels as on Windows.
+/// winwin's icons, drawn by the library: the app icon from the same drawing
+/// as on Windows, and the menu-bar glyph.
 enum Icon {
-    /// The icon `points` square, sharp on a Retina screen.
-    static func image(points: Int) -> NSImage {
+    /// The menu-bar glyph `points` square, sharp on a Retina screen. A
+    /// template image: the menu bar colours it for light, dark and selected.
+    static func menuBarImage(points: Int) -> NSImage {
         let image = NSImage(size: NSSize(width: points, height: points))
-        if let rep = bitmap(pixels: points * 2) {
+        if let rep = bitmap(menuBarIconRgba(size: UInt32(points * 2)), pixels: points * 2) {
             rep.size = image.size
             image.addRepresentation(rep)
         }
+        image.isTemplate = true
         return image
     }
 
-    private static func bitmap(pixels: Int) -> NSBitmapImageRep? {
-        let rgba = iconRgba(size: UInt32(pixels))
+    private static func bitmap(_ rgba: Data, pixels: Int) -> NSBitmapImageRep? {
         guard let rep = NSBitmapImageRep(
             bitmapDataPlanes: nil,
             pixelsWide: pixels,
@@ -38,7 +40,9 @@ enum Icon {
         for points in [16, 32, 128, 256, 512] {
             for scale in [1, 2] {
                 let name = scale == 1 ? "icon_\(points)x\(points).png" : "icon_\(points)x\(points)@2x.png"
-                guard let png = bitmap(pixels: points * scale)?.representation(using: .png, properties: [:]) else {
+                let pixels = points * scale
+                guard let png = bitmap(appIconRgba(size: UInt32(pixels)), pixels: pixels)?
+                    .representation(using: .png, properties: [:]) else {
                     continue
                 }
                 try png.write(to: folder.appendingPathComponent(name))
