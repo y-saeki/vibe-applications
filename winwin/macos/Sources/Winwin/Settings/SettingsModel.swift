@@ -221,7 +221,7 @@ final class SettingsModel: ObservableObject {
         panel.allowedContentTypes = Self.types
         panel.nameFieldStringValue = "winwin.toml"
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        if let e = editor.save(path: url.path) {
+        if let e = editor.export(path: url.path) {
             refresh()
             error = Problem(title: "エクスポートできませんでした", message: e)
         }

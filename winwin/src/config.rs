@@ -73,10 +73,43 @@ impl Theme {
     }
 }
 
+/// Which build of winwin wrote an exported file. An export is read back
+/// only by the same one, since a shortcut that works on one may be taken by
+/// the system on the other (`Win+Ctrl+Left` is Command+Control+Left on a
+/// Mac, but switches virtual desktops on Windows).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Platform {
+    Windows,
+    Macos,
+}
+
+impl Platform {
+    fn label(self) -> &'static str {
+        match self {
+            Platform::Windows => "Windows",
+            Platform::Macos => "macOS",
+        }
+    }
+}
+
+/// What an exported file says about itself, ahead of the config. The
+/// version is kept for later; nothing reads it yet.
+#[derive(Serialize, Deserialize)]
+struct Exported {
+    exported_from: Option<Platform>,
+    exported_by: Option<String>,
+}
+
 #[derive(Debug)]
 pub enum ConfigError {
     Io(PathBuf, io::Error),
     Parse(PathBuf, String),
+    /// An import of a file that no export wrote: the config file itself, or
+    /// an export of a version that did not say where it came from.
+    NotExported(PathBuf),
+    /// An import of a file exported by the other platform's winwin.
+    OtherPlatform(PathBuf, Platform),
 }
 
 impl fmt::Display for ConfigError {
@@ -84,6 +117,17 @@ impl fmt::Display for ConfigError {
         match self {
             ConfigError::Io(path, e) => write!(f, "{}: {e}", path.display()),
             ConfigError::Parse(path, e) => write!(f, "{} を読めません。\n{e}", path.display()),
+            ConfigError::NotExported(path) => write!(
+                f,
+                "{} は、winwin v0.20.2 以降の「エクスポート」で書き出したファイルではありません。",
+                path.display()
+            ),
+            ConfigError::OtherPlatform(path, from) => write!(
+                f,
+                "{} は {} 版の winwin で書き出したファイルのため、読み込めません。",
+                path.display(),
+                from.label()
+            ),
         }
     }
 }
@@ -179,24 +223,51 @@ impl Config {
         }
     }
 
-    /// Reads a file that is expected to be there, such as one exported to
-    /// be imported elsewhere, without writing anything back.
-    pub fn read(path: &Path) -> Result<Config, ConfigError> {
+    /// The config as an export writes it: the config file's own text after
+    /// the platform that wrote it and winwin's version.
+    pub fn to_export(&self, from: Platform) -> String {
+        let header = Exported {
+            exported_from: Some(from),
+            exported_by: Some(env!("CARGO_PKG_VERSION").to_string()),
+        };
+        toml::to_string(&header).expect("the header always serializes") + &self.to_toml()
+    }
+
+    /// エクスポート: writes the config for [`Config::import`] on `from`.
+    pub fn export(&self, path: &Path, from: Platform) -> Result<(), ConfigError> {
+        write(path, &self.to_export(from))
+    }
+
+    /// インポート: reads a file that [`Config::export`] wrote on `to`, and
+    /// nothing else, without writing anything back.
+    pub fn import(path: &Path, to: Platform) -> Result<Config, ConfigError> {
         let text = fs::read_to_string(path).map_err(|e| ConfigError::Io(path.into(), e))?;
-        Config::parse(&text, path)
+        let header: Exported =
+            toml::from_str(&text).map_err(|e| ConfigError::Parse(path.into(), e.to_string()))?;
+        match header.exported_from {
+            None => Err(ConfigError::NotExported(path.into())),
+            Some(from) if from != to => Err(ConfigError::OtherPlatform(path.into(), from)),
+            Some(_) => Config::parse(&text, path),
+        }
     }
 
     /// Writes through a temporary file, so that a crash halfway leaves the
     /// previous config rather than half of the new one.
     pub fn save(&self, path: &Path) -> Result<(), ConfigError> {
-        let io_err = |e| ConfigError::Io(path.into(), e);
-        if let Some(dir) = path.parent() {
-            fs::create_dir_all(dir).map_err(io_err)?;
-        }
-        let tmp = path.with_extension("toml.tmp");
-        fs::write(&tmp, self.to_toml()).map_err(io_err)?;
-        fs::rename(&tmp, path).map_err(io_err)
+        write(path, &self.to_toml())
     }
+}
+
+/// Writes `text` through a temporary file next to `path`, so that a crash
+/// halfway leaves what was there rather than half of `text`.
+fn write(path: &Path, text: &str) -> Result<(), ConfigError> {
+    let io_err = |e| ConfigError::Io(path.into(), e);
+    if let Some(dir) = path.parent() {
+        fs::create_dir_all(dir).map_err(io_err)?;
+    }
+    let tmp = path.with_extension("toml.tmp");
+    fs::write(&tmp, text).map_err(io_err)?;
+    fs::rename(&tmp, path).map_err(io_err)
 }
 
 #[cfg(test)]
@@ -538,24 +609,68 @@ mod tests {
     }
 
     #[test]
-    fn reads_an_exported_file_without_touching_it() {
-        let dir = std::env::temp_dir().join(format!("winwin-test-read-{}", std::process::id()));
+    fn an_export_says_where_it_came_from_and_is_read_back_there_only() {
+        let dir = std::env::temp_dir().join(format!("winwin-test-export-{}", std::process::id()));
         let path = dir.join("exported.toml");
         let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
 
-        assert!(matches!(Config::read(&path), Err(ConfigError::Io(..))));
+        assert!(matches!(
+            Config::import(&path, Platform::Windows),
+            Err(ConfigError::Io(..))
+        ));
         assert!(!path.exists(), "a missing file is not created");
 
-        let percent = "theme = \"dark\"\n[[shortcut]]\nkeys = \"Ctrl+Alt+L\"\nanchor = \"left\"\nwidth = \"50%\"\nheight = \"1\"\n";
+        let config = Config {
+            theme: Theme::Dark,
+            shortcuts: Config::defaults().shortcuts[..2].to_vec(),
+        };
+        config.export(&path, Platform::Macos).unwrap();
+        let text = fs::read_to_string(&path).unwrap();
+        assert!(text.starts_with("exported_from = \"macos\"\n"), "{text}");
+        let version = format!("exported_by = \"{}\"\n", env!("CARGO_PKG_VERSION"));
+        assert!(text.contains(&version), "{text}");
+        assert_eq!(parse(&text).unwrap(), config, "still a config file");
+
+        assert_eq!(Config::import(&path, Platform::Macos).unwrap(), config);
+        let refused = Config::import(&path, Platform::Windows).unwrap_err();
+        assert!(matches!(
+            refused,
+            ConfigError::OtherPlatform(_, Platform::Macos)
+        ));
+        assert!(refused.to_string().contains("macOS 版"), "{refused}");
+        assert_eq!(fs::read_to_string(&path).unwrap(), text, "left alone");
+
+        config.save(&path).unwrap();
+        assert!(matches!(
+            Config::import(&path, Platform::Macos),
+            Err(ConfigError::NotExported(_))
+        ));
+
+        let percent = "exported_from = \"windows\"\n[[shortcut]]\nkeys = \"Ctrl+Alt+L\"\nanchor = \"left\"\nwidth = \"50%\"\nheight = \"1\"\n";
         fs::write(&path, percent).unwrap();
-        let config = Config::read(&path).unwrap();
-        assert_eq!(config.theme, Theme::Dark);
-        assert_eq!(config.shortcuts.len(), 1);
+        assert_eq!(
+            Config::import(&path, Platform::Windows)
+                .unwrap()
+                .shortcuts
+                .len(),
+            1
+        );
         assert_eq!(fs::read_to_string(&path).unwrap(), percent, "left alone");
 
-        fs::write(&path, "[[shortcut]]\nkeys = \"L\"\n").unwrap();
-        assert!(matches!(Config::read(&path), Err(ConfigError::Parse(..))));
+        fs::write(&path, "exported_from = \"linux\"\n").unwrap();
+        assert!(matches!(
+            Config::import(&path, Platform::Windows),
+            Err(ConfigError::Parse(..))
+        ));
+        fs::write(
+            &path,
+            "exported_from = \"windows\"\n[[shortcut]]\nkeys = \"L\"\n",
+        )
+        .unwrap();
+        assert!(matches!(
+            Config::import(&path, Platform::Windows),
+            Err(ConfigError::Parse(..))
+        ));
 
         fs::remove_dir_all(&dir).unwrap();
     }

@@ -7,7 +7,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use super::Frame;
-use crate::config::{Config, Theme};
+use crate::config::{Config, Platform, Theme};
 use crate::draft::{self, Click, Editor};
 use crate::hotkey::{self, Arrow, Hotkey, HotkeyError, Keycap, Keys, Look, Press, Recorder};
 use crate::layout::{Anchor, Rect};
@@ -406,8 +406,7 @@ impl SettingsEditor {
         state.editor.is_dirty() || state.theme != state.theme_was
     }
 
-    /// Checks every row and writes the config file at `path`, which is also
-    /// how the settings are exported. When a row
+    /// Checks every row and writes the config file at `path`. When a row
     /// does not make a shortcut, that row is selected alone and this says
     /// why; it also says why the file could not be written.
     pub fn save(&self, path: String) -> Option<String> {
@@ -420,10 +419,27 @@ impl SettingsEditor {
         config.save(Path::new(&path)).err().map(|e| e.to_string())
     }
 
-    /// インポート: the shortcuts and the theme of the file at `path` in
-    /// place of those being edited, unsaved, or why the file cannot be read.
+    /// エクスポート: checks every row as [`SettingsEditor::save`] does and
+    /// writes them and the theme to `path`, marked as the Mac's, or says
+    /// why it cannot.
+    pub fn export(&self, path: String) -> Option<String> {
+        let mut state = self.state();
+        let mut config = match state.editor.build_config() {
+            Ok(config) => config,
+            Err(e) => return Some(e),
+        };
+        config.theme = state.theme;
+        config
+            .export(Path::new(&path), Platform::Macos)
+            .err()
+            .map(|e| e.to_string())
+    }
+
+    /// インポート: the shortcuts and the theme of a file exported on a Mac
+    /// in place of those being edited, unsaved, or why the file cannot be
+    /// read.
     pub fn import_file(&self, path: String) -> Option<String> {
-        let config = match Config::read(Path::new(&path)) {
+        let config = match Config::import(Path::new(&path), Platform::Macos) {
             Ok(config) => config,
             Err(e) => return Some(e.to_string()),
         };
@@ -750,7 +766,7 @@ mod tests {
     }
 
     #[test]
-    fn an_import_replaces_the_rows_and_the_theme_until_saved() {
+    fn imports_a_macs_export_in_place_of_the_rows_and_the_theme_until_saved() {
         let dir = std::env::temp_dir().join(format!("winwin-ffi-import-{}", std::process::id()));
         let path = dir.join("exported.toml");
         let path_text: String = path.to_string_lossy().into();
@@ -764,12 +780,36 @@ mod tests {
             shortcuts: Config::defaults().shortcuts[..2].to_vec(),
         });
         assert_eq!(exported.save(path_text.clone()), None);
+        assert!(
+            e.import_file(path_text.clone()).is_some(),
+            "the config file is no export"
+        );
+        assert!(!e.is_changed());
+
+        assert_eq!(exported.export(path_text.clone()), None);
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(text.contains("exported_from = \"macos\""), "{text}");
 
         assert_eq!(e.import_file(path_text), None);
         assert!(e.is_changed());
         assert_eq!(e.rows().len(), 2);
         assert!(e.rows()[0].selected);
         assert_eq!(Theme::ALL[usize::from(e.theme())], Theme::Dark);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn an_export_checks_the_rows_as_saving_does() {
+        let e = editor();
+        e.click(1, false, false);
+        e.set_width("wide".into());
+        e.click(0, false, false);
+        let dir = std::env::temp_dir().join(format!("winwin-ffi-export-{}", std::process::id()));
+        let path = dir.join("exported.toml");
+        let problem = e.export(path.to_string_lossy().into()).unwrap();
+        assert!(problem.contains("幅"), "{problem}");
+        assert!(e.rows()[1].selected);
+        assert!(!path.exists());
         let _ = std::fs::remove_dir_all(dir);
     }
 
