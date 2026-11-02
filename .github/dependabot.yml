@@ -59,6 +59,23 @@ updates:
           - patch
 
   - package-ecosystem: cargo
+    directory: /myaku
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    labels:
+      - dependencies
+      - no-release
+    commit-message:
+      prefix: myaku
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: cargo
     directory: /draftpad/src-tauri
     schedule:
       interval: weekly
