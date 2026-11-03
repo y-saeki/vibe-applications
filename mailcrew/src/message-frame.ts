@@ -26,7 +26,9 @@
 // here and handed to `open_link`. WebKit runs none of this page's listeners
 // inside a frame that may not run scripts, so in WKWebView the click goes
 // ahead as a navigation of the frame, and src-tauri/src/links.rs turns that
-// navigation away and opens the link outside instead.
+// navigation away and opens the link outside instead. WebKit checks the app's
+// `frame-src` before it asks, so src-tauri/tauri.macos.conf.json lets web and
+// mail links through it on macOS; otherwise the click would do nothing.
 
 import type { CardBody } from './backend'
 

@@ -26,6 +26,11 @@ its own. `DEVELOPMENT.md` explains both. Changing either keeps these true:
   page's listeners do not run inside the frame, `src-tauri/src/links.rs` turns the navigation
   away and opens the link outside. Both open http, https and mailto only.
 - The webview is granted no opener permission. Only Rust opens URLs.
+- WebKit checks the app's `frame-src` before it asks `links.rs` about a frame's navigation, and
+  drops what the policy refuses without a word. `src-tauri/tauri.macos.conf.json` therefore lets
+  `http:`, `https:` and `mailto:` through on macOS, where the guard turns every one of them away.
+  Windows keeps `'self'`: WebView2 does not ask about frames, so the policy is all that stops one
+  there.
 
 `dangerousDisableAssetCspModification: ["style-src"]` in `tauri.conf.json` is deliberate:
 Tauri's style nonce would switch off `'unsafe-inline'`, and every message's inline styles
@@ -49,7 +54,7 @@ covers it changes in the same commit:
 | A toolbar button or まとめて完了 | `tests/e2e/actions.spec.ts` |
 | The tag picker | `tests/e2e/tags.spec.ts` |
 | How a body is shown: the frame, links, images, scaling, lazy mounting | `tests/e2e/message.spec.ts` |
-| The `csp` in `src-tauri/tauri.conf.json`, or anything the page loads from elsewhere | `tests/e2e/csp.spec.ts` |
+| The `csp` in `src-tauri/tauri.conf.json` or `tauri.macos.conf.json`, or anything the page loads from elsewhere | `tests/e2e/csp.spec.ts` |
 | A field on `Card` (`src-tauri/src/card.rs`) | `src/backend.ts`, `card()` in `tests/e2e/fixtures.ts`, and `mod tests` in `card.rs` |
 | A command the frontend invokes | `handle` in `tests/e2e/harness/backend.ts`. It throws on a command it does not know |
 | What the sanitiser removes or keeps | `mod tests` in `src-tauri/src/sanitize.rs` |

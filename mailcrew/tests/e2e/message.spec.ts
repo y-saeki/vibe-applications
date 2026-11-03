@@ -78,9 +78,13 @@ test('a message without remote images offers nothing to show', async ({ launch }
 // hands to src-tauri/src/links.rs to open outside instead. Each engine is held
 // to its own path: Chromium must never navigate, WebKit must navigate to
 // exactly the link (and nowhere the guard would not see).
+//
+// The page runs under the app's policy: WebKit checks `frame-src` before it
+// asks the guard, so a policy that refused the link would leave the click
+// doing nothing at all.
 test('a link leaves the frame by the path its engine takes', async ({ launch, browserName }) => {
   const html = '<p><a id="link" href="https://example.com/news?id=1">記事</a></p>'
-  const app = await launch({ inboxes: [[card(1, { body: { kind: 'html', html, remoteImages: false } })]] })
+  const app = await launch({ csp: true, inboxes: [[card(1, { body: { kind: 'html', html, remoteImages: false } })]] })
   const navigations: string[] = []
   await app.page.route('https://example.com/**', (route) => {
     if (route.request().isNavigationRequest()) navigations.push(route.request().url())
@@ -91,6 +95,7 @@ test('a link leaves the frame by the path its engine takes', async ({ launch, br
   if (browserName === 'webkit') {
     await expect.poll(() => navigations).toEqual(['https://example.com/news?id=1'])
     expect(await app.callsTo('open_link')).toEqual([])
+    expect(app.cspViolations).toEqual([])
   } else {
     await app.expectCalls('open_link', 1)
     expect(await app.callsTo('open_link')).toEqual([{ url: 'https://example.com/news?id=1' }])
