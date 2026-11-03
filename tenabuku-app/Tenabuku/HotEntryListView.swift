@@ -24,6 +24,8 @@ final class HotEntryListModel {
 
 struct HotEntryListView: View {
     @State private var model = HotEntryListModel()
+    @State private var isShowingSettings = false
+    @Environment(ReadHistoryStore.self) private var readHistory
 
     var body: some View {
         NavigationStack {
@@ -33,7 +35,7 @@ struct HotEntryListView: View {
                 }
                 ForEach(model.items) { item in
                     NavigationLink(value: item) {
-                        EntryRow(item: item)
+                        EntryRow(item: item, isRead: readHistory.isRead(item.link))
                     }
                 }
             }
@@ -43,6 +45,9 @@ struct HotEntryListView: View {
                 ArticleBrowserView(entry: item)
             }
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("設定", systemImage: "gearshape") { isShowingSettings = true }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
                         Picker("カテゴリー", selection: $model.category) {
@@ -53,6 +58,11 @@ struct HotEntryListView: View {
                     } label: {
                         Label("カテゴリー", systemImage: "square.grid.2x2")
                     }
+                }
+            }
+            .sheet(isPresented: $isShowingSettings) {
+                NavigationStack {
+                    SettingsView()
                 }
             }
             .overlay {
@@ -68,12 +78,15 @@ struct HotEntryListView: View {
 
 struct EntryRow: View {
     let item: FeedItem
+    /// Dims the title, the way the official app tells opened entries apart.
+    let isRead: Bool
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 6) {
                 Text(item.title)
                     .font(.body)
+                    .foregroundStyle(isRead ? .secondary : .primary)
                     .lineLimit(3)
                 HStack(spacing: 8) {
                     Text("\(item.bookmarkCount) users")
@@ -101,5 +114,7 @@ struct EntryRow: View {
             }
         }
         .padding(.vertical, 4)
+        .accessibilityElement(children: .combine)
+        .accessibilityValue(isRead ? Text("既読") : Text(""))
     }
 }

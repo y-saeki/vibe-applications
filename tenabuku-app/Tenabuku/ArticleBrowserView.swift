@@ -122,6 +122,7 @@ struct ArticleBrowserView: View {
     @State private var model: ArticleBrowserModel
     @State private var isShowingComments = false
     @State private var isShowingBookmarkNotice = false
+    @Environment(ReadHistoryStore.self) private var readHistory
 
     init(entry: FeedItem) {
         _model = State(initialValue: ArticleBrowserModel(entry: entry))
@@ -155,6 +156,9 @@ struct ArticleBrowserView: View {
                 }
             }
             .navigationBarTitleDisplayMode(.inline)
+            // The entry, not the page shown, so that following links inside the
+            // article still marks the row it was opened from.
+            .onAppear { readHistory.markRead(model.entry.link) }
             .toolbar {
                 ToolbarItemGroup(placement: .bottomBar) {
                     // Arrows, because the chevron is the system's button back to the list.
