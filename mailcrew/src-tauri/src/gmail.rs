@@ -38,6 +38,16 @@ const CONTENT_CACHE_LIMIT: usize = 200;
 /// The label "あとで読む" puts on a thread.
 pub const SET_ASIDE_LABEL: &str = "SetAside";
 
+/// Which pile the strip shows: the inbox, or what "あとで読む" set aside.
+/// Taking a card off the strip takes its thread out of that pile.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Mailbox {
+    #[default]
+    Inbox,
+    SetAside,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Label {
@@ -243,7 +253,7 @@ impl Gmail {
     /// The newest `PAGE_SIZE` threads in the inbox, newest first, narrowed
     /// by a Gmail search (`from:`, `is:unread` and the rest) when `query` is
     /// not empty.
-    pub async fn inbox(&self, query: &str) -> Result<Vec<Card>> {
+    pub async fn inbox(&self, mailbox: Mailbox, query: &str) -> Result<Vec<Card>> {
         #[derive(Deserialize)]
         struct ThreadList {
             #[serde(default)]
@@ -256,10 +266,18 @@ impl Gmail {
             #[serde(default)]
             history_id: String,
         }
+        let label = match mailbox {
+            Mailbox::Inbox => "INBOX".to_string(),
+            // Nothing has been set aside until the label exists.
+            Mailbox::SetAside => match self.find_set_aside_label().await? {
+                Some(id) => id,
+                None => return Ok(Vec::new()),
+            },
+        };
         let list: ThreadList = self
             .send(|http| {
                 let request = http.get(format!("{API}/threads")).query(&[
-                    ("labelIds", "INBOX"),
+                    ("labelIds", label.as_str()),
                     ("maxResults", &PAGE_SIZE.to_string()),
                 ]);
                 if query.trim().is_empty() {
@@ -399,6 +417,33 @@ impl Gmail {
         Ok(id)
     }
 
+    /// The id of the "SetAside" label, without making it when there is none.
+    async fn find_set_aside_label(&self) -> Result<Option<String>> {
+        if let Some(id) = self.set_aside.lock().await.clone() {
+            return Ok(Some(id));
+        }
+        let found = self
+            .labels()
+            .await?
+            .into_iter()
+            .find(|label| label.name.eq_ignore_ascii_case(SET_ASIDE_LABEL))
+            .map(|label| label.id);
+        if let Some(id) = &found {
+            *self.set_aside.lock().await = Some(id.clone());
+        }
+        Ok(found)
+    }
+
+    /// The labels that keep a thread in `mailbox`, to take off when it leaves.
+    /// `INBOX` goes either way, so that a set-aside thread that was moved back
+    /// to the inbox in Gmail leaves both.
+    pub async fn leaving(&self, mailbox: Mailbox) -> Result<Vec<String>> {
+        Ok(match mailbox {
+            Mailbox::Inbox => vec!["INBOX".to_string()],
+            Mailbox::SetAside => vec!["INBOX".to_string(), self.set_aside_label().await?],
+        })
+    }
+
     /// Adds and removes labels on the given messages.
     pub async fn modify(&self, ids: &[String], add: &[&str], remove: &[&str]) -> Result<()> {
         for chunk in ids.chunks(BATCH_LIMIT) {
@@ -418,6 +463,15 @@ impl Gmail {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_page_names_the_mailbox() {
+        let inbox: Mailbox = serde_json::from_str(r#""inbox""#).unwrap();
+        let set_aside: Mailbox = serde_json::from_str(r#""setAside""#).unwrap();
+        assert_eq!(inbox, Mailbox::Inbox);
+        assert_eq!(set_aside, Mailbox::SetAside);
+        assert_eq!(Mailbox::default(), Mailbox::Inbox);
+    }
 
     #[test]
     fn too_many_requests_is_a_rate_limit() {

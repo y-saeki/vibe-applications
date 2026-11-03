@@ -48,6 +48,9 @@ export interface Label {
   name: string
 }
 
+/** Which pile the strip shows. Mirrors `Mailbox` in src-tauri/src/gmail.rs. */
+export type Mailbox = 'inbox' | 'setAside'
+
 /** An account whose part of the inbox could not be fetched. */
 export interface AccountFailure {
   account: string
@@ -94,13 +97,17 @@ export const backend = {
     invoke<string>('sign_in', { clientId, clientSecret }),
   cancelSignIn: () => invoke<void>('cancel_sign_in'),
   signOut: (account: string) => invoke<void>('sign_out', { account }),
-  inbox: (accounts: string[], query: string) => invoke<InboxPage>('list_inbox', { accounts, query }),
+  inbox: (accounts: string[], mailbox: Mailbox, query: string) =>
+    invoke<InboxPage>('list_inbox', { accounts, mailbox, query }),
   message: (account: string, messageId: string) => invoke<MessageContent>('get_message', { account, messageId }),
   labels: (account: string) => invoke<Label[]>('list_labels', { account }),
   createLabel: (account: string, name: string) => invoke<Label>('create_label', { account, name }),
-  archive: (account: string, messageIds: string[]) => invoke<void>('archive', { account, messageIds }),
-  applyLabel: (account: string, messageIds: string[], labelId: string) =>
-    invoke<void>('apply_label', { account, messageIds, labelId }),
+  /** 完了: read, and out of `mailbox`. */
+  archive: (account: string, messageIds: string[], mailbox: Mailbox) =>
+    invoke<void>('archive', { account, messageIds, mailbox }),
+  /** タグ: tagged, and out of `mailbox`. */
+  applyLabel: (account: string, messageIds: string[], labelId: string, mailbox: Mailbox) =>
+    invoke<void>('apply_label', { account, messageIds, labelId, mailbox }),
   setAside: (account: string, messageIds: string[]) => invoke<void>('set_aside', { account, messageIds }),
   setStarred: (account: string, messageId: string, messageIds: string[], starred: boolean) =>
     invoke<void>('set_starred', { account, messageId, messageIds, starred }),

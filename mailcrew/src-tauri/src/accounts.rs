@@ -10,7 +10,7 @@ use crate::auth::AccessToken;
 use crate::card::Card;
 use crate::credentials::{self, Account};
 use crate::error::{CommandError, ErrorKind, Result};
-use crate::gmail::{self, Gmail, PAGE_SIZE};
+use crate::gmail::{self, Gmail, Mailbox, PAGE_SIZE};
 
 async fn blocking<T: Send + 'static>(f: impl FnOnce() -> Result<T> + Send + 'static) -> Result<T> {
     tauri::async_runtime::spawn_blocking(f)
@@ -138,9 +138,14 @@ impl Accounts {
         result
     }
 
-    /// The newest `PAGE_SIZE` threads across `emails` (every account when it
-    /// is empty), newest first.
-    pub async fn inbox(&self, emails: &[String], query: &str) -> Result<InboxPage> {
+    /// The newest `PAGE_SIZE` threads of `mailbox` across `emails` (every
+    /// account when it is empty), newest first.
+    pub async fn inbox(
+        &self,
+        emails: &[String],
+        mailbox: Mailbox,
+        query: &str,
+    ) -> Result<InboxPage> {
         let all = self.all().await?;
         if all.is_empty() {
             return Err(CommandError::signed_out());
@@ -150,7 +155,7 @@ impl Accounts {
             .filter(|gmail| emails.is_empty() || emails.iter().any(|email| email == gmail.email()))
             .collect();
         let results =
-            futures::future::join_all(chosen.iter().map(|gmail| gmail.inbox(query))).await;
+            futures::future::join_all(chosen.iter().map(|gmail| gmail.inbox(mailbox, query))).await;
         let mut pages = Vec::new();
         let mut failures = Vec::new();
         for (gmail, result) in chosen.iter().zip(results) {

@@ -1,19 +1,33 @@
-// The tabs above the strip: the whole inbox across every account, then each
-// custom view the user made in the settings.
+// The tabs above the strip: the inbox and what あとで読む set aside, across
+// every account, then each custom view the user made in the settings.
 
 import type { View } from './backend'
 import type { Filter } from './inbox'
 
-/** The id the tab for the whole inbox goes by. */
-export const ALL_VIEW = ''
+/** The id the tab for the inbox goes by. */
+export const INBOX_VIEW = ''
+/** The id the tab for what あとで読む set aside goes by. No saved view can have it. */
+export const SET_ASIDE_VIEW = '@set-aside'
 
-/** What the strip fetches for a view, given who is signed in now. */
-export function filterFor(view: View | undefined, accounts: string[]): Filter {
-  if (!view) return { accounts: [], query: '', custom: false }
+const FIXED_TABS = [
+  { id: INBOX_VIEW, name: '受信トレイ' },
+  { id: SET_ASIDE_VIEW, name: 'あとで読む' },
+]
+
+/** What the strip fetches for the tab with `id`, given the views and who is signed in now. */
+export function filterFor(id: string, views: View[], accounts: string[]): Filter {
+  if (id === SET_ASIDE_VIEW) return { mailbox: 'setAside', accounts: [], query: '', custom: false }
+  const view = views.find((known) => known.id === id)
+  if (!view) return { mailbox: 'inbox', accounts: [], query: '', custom: false }
   const chosen = view.accounts.filter((account) => accounts.includes(account))
   // Every account the view was made for has been removed since.
   if (view.accounts.length > 0 && chosen.length === 0) return null
-  return { accounts: chosen, query: view.query.trim(), custom: true }
+  return { mailbox: 'inbox', accounts: chosen, query: view.query.trim(), custom: true }
+}
+
+/** Whether a tab with `id` is still there once `views` are the saved ones. */
+export function tabExists(id: string, views: View[]): boolean {
+  return FIXED_TABS.some((tab) => tab.id === id) || views.some((view) => view.id === id)
 }
 
 /** One line on what a view shows, for the settings. */
@@ -30,12 +44,12 @@ export class ViewTabs {
     this.root.addEventListener('click', (event) => {
       const tab = (event.target as Element).closest<HTMLButtonElement>('button[data-view]')
       if (!tab || tab.getAttribute('aria-selected') === 'true') return
-      onSelect(tab.dataset.view ?? ALL_VIEW)
+      onSelect(tab.dataset.view ?? INBOX_VIEW)
     })
   }
 
   render(views: View[], active: string): void {
-    const tabs = [{ id: ALL_VIEW, name: 'すべて' }, ...views].map((view) => {
+    const tabs = [...FIXED_TABS, ...views].map((view) => {
       const tab = document.createElement('button')
       tab.type = 'button'
       tab.className = 'view-tab'

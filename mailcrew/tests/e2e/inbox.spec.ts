@@ -131,7 +131,7 @@ test('lays out the threads of every account together, as the Rust side orders th
   expect(await app.ids()).toEqual(['t1', 't2', 't3'])
   await expect(app.card('t1').locator('.card-account')).toHaveText('work@example.com')
   await expect(app.card('t2').locator('.card-account')).toHaveText(ME)
-  expect(await app.callsTo('list_inbox')).toEqual([{ accounts: [], query: '' }])
+  expect(await app.callsTo('list_inbox')).toEqual([{ accounts: [], mailbox: 'inbox', query: '' }])
 })
 
 test('an account that did not answer is named, and the others are shown', async ({ launch }) => {

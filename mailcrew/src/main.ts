@@ -4,7 +4,7 @@ import { backend, errorMessage, isCommandError, type Session, type View } from '
 import { Inbox } from './inbox'
 import { showNotice } from './notice'
 import { Settings } from './settings'
-import { ALL_VIEW, filterFor, ViewTabs } from './views'
+import { filterFor, INBOX_VIEW, tabExists, ViewTabs } from './views'
 
 const setup = document.querySelector<HTMLElement>('#setup')!
 const setupForm = document.querySelector<HTMLFormElement>('#setup-form')!
@@ -17,7 +17,7 @@ const loading = document.querySelector<HTMLElement>('#loading')!
 
 let session: Session | null = null
 let views: View[] = []
-let activeView = ALL_VIEW
+let activeView = INBOX_VIEW
 
 const accounts = () => session?.accounts ?? []
 
@@ -34,7 +34,7 @@ const settings = new Settings({
   },
   viewsChanged: (saved) => {
     views = saved
-    if (!views.some((view) => view.id === activeView)) activeView = ALL_VIEW
+    if (!tabExists(activeView, views)) activeView = INBOX_VIEW
     tabs.render(views, activeView)
   },
   close: () => {
@@ -65,12 +65,7 @@ function showInbox(): void {
 /** Lays out the tabs and fetches what the active one shows. */
 function showView(): void {
   tabs.render(views, activeView)
-  inbox.setFilter(
-    filterFor(
-      views.find((view) => view.id === activeView),
-      accounts(),
-    ),
-  )
+  inbox.setFilter(filterFor(activeView, views, accounts()))
   void inbox.load()
 }
 

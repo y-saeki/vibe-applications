@@ -3,12 +3,12 @@
 import { card, cards, expect, ME, test } from './fixtures'
 
 test('完了 archives the whole thread and takes the card off', async ({ launch }) => {
-  const app = await launch({ inboxes: [[card(1, { account: ME, messageIds: ['m0', 'm1'] }), card(2)]] })
+  const app = await launch({ inboxes: [[card(1, { messageIds: ['m0', 'm1'] }), card(2)]] })
   await app.tool('t1', 'done').click()
   await expect(app.card('t1')).toHaveCount(0)
   expect(await app.ids()).toEqual(['t2'])
   await expect(app.count).toHaveText('1 件')
-  expect(await app.callsTo('archive')).toEqual([{ account: ME, messageIds: ['m0', 'm1'] }])
+  expect(await app.callsTo('archive')).toEqual([{ account: ME, messageIds: ['m0', 'm1'], mailbox: 'inbox' }])
 })
 
 test('あとで読む sets the thread aside and takes the card off', async ({ launch }) => {
@@ -19,7 +19,7 @@ test('あとで読む sets the thread aside and takes the card off', async ({ la
 })
 
 test('スター stars the shown message and unstars the thread', async ({ launch }) => {
-  const app = await launch({ inboxes: [[card(1, { account: ME, messageIds: ['m0', 'm1'] })]] })
+  const app = await launch({ inboxes: [[card(1, { messageIds: ['m0', 'm1'] })]] })
   const star = app.tool('t1', 'star')
   await expect(star).toHaveAttribute('aria-pressed', 'false')
   await star.click()
@@ -74,7 +74,10 @@ test('まとめて完了 archives everything on the strip and fetches the next p
   await app.doneAll.click()
   await expect(app.cards).toHaveCount(1)
   expect(await app.ids()).toEqual(['t60'])
-  expect(await app.callsTo('archive')).toEqual([{ account: ME, messageIds: ['m2'] }, { account: ME, messageIds: ['m1', 'm3'] }])
+  expect(await app.callsTo('archive')).toEqual([
+    { account: ME, messageIds: ['m2'], mailbox: 'inbox' },
+    { account: ME, messageIds: ['m1', 'm3'], mailbox: 'inbox' },
+  ])
 })
 
 test('まとめて完了 shows the empty inbox once nothing is left', async ({ launch }) => {
@@ -105,7 +108,7 @@ test('each card acts on the account its thread is in', async ({ launch }) => {
   await app.tool('t2', 'done').click()
   await app.tool('t1', 'later').click()
   await app.expectCalls('set_aside', 1)
-  expect(await app.callsTo('archive')).toEqual([{ account: 'work@example.com', messageIds: ['m2'] }])
+  expect(await app.callsTo('archive')).toEqual([{ account: 'work@example.com', messageIds: ['m2'], mailbox: 'inbox' }])
   expect(await app.callsTo('set_aside')).toEqual([{ account: ME, messageIds: ['m1'] }])
 })
 
@@ -118,7 +121,7 @@ test('まとめて完了 archives each account’s threads with that account', a
   await app.doneAll.click()
   await expect(app.empty).toBeVisible()
   expect(await app.callsTo('archive')).toEqual([
-    { account: ME, messageIds: ['m1', 'm3'] },
-    { account: 'work@example.com', messageIds: ['m2'] },
+    { account: ME, messageIds: ['m1', 'm3'], mailbox: 'inbox' },
+    { account: 'work@example.com', messageIds: ['m2'], mailbox: 'inbox' },
   ])
 })

@@ -18,7 +18,7 @@ test('lists the labels and tags the thread with the one picked', async ({ launch
 
   await expect(app.tagPicker).toBeHidden()
   await expect(app.card('t1')).toHaveCount(0)
-  expect(await app.callsTo('apply_label')).toEqual([{ account: ME, messageIds: ['m1'], labelId: 'Label_2' }])
+  expect(await app.callsTo('apply_label')).toEqual([{ account: ME, messageIds: ['m1'], labelId: 'Label_2', mailbox: 'inbox' }])
 })
 
 test('typing narrows the list, and Enter takes the highlighted row', async ({ launch }) => {
@@ -27,7 +27,7 @@ test('typing narrows the list, and Enter takes the highlighted row', async ({ la
   await app.tagFilter.fill('tra')
   await expect(app.tagPicker.locator('.tag-row')).toHaveText(['Travel', '「tra」を作成'])
   await app.page.keyboard.press('Enter')
-  expect(await app.callsTo('apply_label')).toEqual([{ account: ME, messageIds: ['m1'], labelId: 'Label_3' }])
+  expect(await app.callsTo('apply_label')).toEqual([{ account: ME, messageIds: ['m1'], labelId: 'Label_3', mailbox: 'inbox' }])
 })
 
 test('a new name creates the label first', async ({ launch }) => {
@@ -38,7 +38,7 @@ test('a new name creates the label first', async ({ launch }) => {
   await app.page.keyboard.press('Enter')
   await expect(app.card('t1')).toHaveCount(0)
   expect(await app.callsTo('create_label')).toEqual([{ account: ME, name: '新しいタグ' }])
-  expect(await app.callsTo('apply_label')).toEqual([{ account: ME, messageIds: ['m1'], labelId: 'Label_新しいタグ' }])
+  expect(await app.callsTo('apply_label')).toEqual([{ account: ME, messageIds: ['m1'], labelId: 'Label_新しいタグ', mailbox: 'inbox' }])
 })
 
 test('an exact name offers no create row', async ({ launch }) => {
@@ -74,6 +74,6 @@ test('offers the labels of the account the card is in', async ({ launch }) => {
     expect.arrayContaining([{ account: ME }, { account: 'work@example.com' }]),
   )
   expect(await app.callsTo('apply_label')).toEqual([
-    { account: 'work@example.com', messageIds: ['m2'], labelId: 'Label_1' },
+    { account: 'work@example.com', messageIds: ['m2'], labelId: 'Label_1', mailbox: 'inbox' },
   ])
 })

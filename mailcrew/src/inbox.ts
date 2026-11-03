@@ -11,6 +11,7 @@ import {
   type Card,
   type InboxPage,
   type Label,
+  type Mailbox,
   type MessageContent,
 } from './backend'
 import { formatDate } from './format'
@@ -32,18 +33,22 @@ const TOOLS: { action: Action; label: string }[] = [
   { action: 'star', label: 'スター' },
 ]
 
-/** What the strip shows: the accounts (all of them when empty) and a Gmail search. */
+/**
+ * What the strip shows: a pile (the inbox, or what あとで読む set aside), the
+ * accounts (all of them when empty) and a Gmail search.
+ */
 export interface InboxFilter {
+  mailbox: Mailbox
   accounts: string[]
   query: string
-  /** A custom view rather than the whole inbox, which changes what "empty" says. */
+  /** A custom view rather than a whole pile, which changes what "empty" says. */
   custom: boolean
 }
 
 /** A view whose accounts have all been removed shows nothing at all. */
 export type Filter = InboxFilter | null
 
-const ALL: InboxFilter = { accounts: [], query: '', custom: false }
+const INBOX: InboxFilter = { mailbox: 'inbox', accounts: [], query: '', custom: false }
 
 /** Thread ids are only unique within one account. */
 function keyOf(card: Card): string {
@@ -70,7 +75,9 @@ export class Inbox {
   private readonly mounted = new Map<string, Mounted>()
   /** Each account's labels, as last fetched. */
   private readonly labels = new Map<string, Label[]>()
-  private filter: Filter = ALL
+  private filter: Filter = INBOX
+  /** The pile the cards on the strip came from; every action takes a card out of it. */
+  private mailbox: Mailbox = 'inbox'
   private loadingNow = false
   /** Set when a load is asked for while one is running, so the newer filter wins. */
   private loadAgain = false
@@ -149,7 +156,9 @@ export class Inbox {
       do {
         this.loadAgain = false
         const filter = this.filter
-        const page: InboxPage = filter ? await backend.inbox(filter.accounts, filter.query) : { cards: [], failures: [] }
+        const page: InboxPage = filter
+          ? await backend.inbox(filter.accounts, filter.mailbox, filter.query)
+          : { cards: [], failures: [] }
         if (this.loadAgain) continue
         this.render(page.cards)
         this.refreshLabels()
@@ -180,11 +189,18 @@ export class Inbox {
 
   private render(cards: Card[]): void {
     this.clear()
+    this.mailbox = this.filter?.mailbox ?? 'inbox'
     const custom = this.filter?.custom ?? true
-    this.emptyTitle.textContent = custom ? 'このビューに当てはまるメールはありません' : '受信トレイは空です'
-    this.emptyLead.textContent = custom
-      ? '条件に合うメールが届いたら、再読み込みで表示されます。'
-      : '新しいメールが届いたら、再読み込みで表示されます。'
+    if (custom) {
+      this.emptyTitle.textContent = 'このビューに当てはまるメールはありません'
+      this.emptyLead.textContent = '条件に合うメールが届いたら、再読み込みで表示されます。'
+    } else if (this.mailbox === 'setAside') {
+      this.emptyTitle.textContent = 'あとで読むメールはありません'
+      this.emptyLead.textContent = '受信トレイで「あとで読む」を押したメールが、ここに並びます。'
+    } else {
+      this.emptyTitle.textContent = '受信トレイは空です'
+      this.emptyLead.textContent = '新しいメールが届いたら、再読み込みで表示されます。'
+    }
     for (const card of cards) {
       const element = this.buildCard(card)
       this.mounted.set(keyOf(card), { card, element, body: null, fetching: false })
@@ -202,7 +218,12 @@ export class Inbox {
     this.empty.hidden = count > 0
     this.strip.hidden = count === 0
     const summary = this.strip.querySelector('.end-summary')
-    if (summary) summary.textContent = `ここまでの ${count} 件を既読にしてアーカイブし、次の受信トレイを読み込みます。`
+    if (summary) {
+      summary.textContent =
+        this.mailbox === 'setAside'
+          ? `ここまでの ${count} 件を既読にして「あとで読む」から外し、続きを読み込みます。`
+          : `ここまでの ${count} 件を既読にしてアーカイブし、次の受信トレイを読み込みます。`
+    }
   }
 
   /** Fetches the labels of every account on the strip. */
@@ -296,6 +317,8 @@ export class Inbox {
     const toolbar = document.createElement('footer')
     toolbar.className = 'card-toolbar'
     for (const tool of TOOLS) {
+      // A thread already set aside cannot be set aside again.
+      if (tool.action === 'later' && this.mailbox === 'setAside') continue
       const button = document.createElement('button')
       button.type = 'button'
       button.className = `tool tool-${tool.action}`
@@ -399,7 +422,7 @@ export class Inbox {
     const { card } = mounted
     switch (button.dataset.action) {
       case 'done':
-        void this.takeOff(mounted, () => backend.archive(card.account, card.messageIds))
+        void this.takeOff(mounted, () => backend.archive(card.account, card.messageIds, this.mailbox))
         break
       case 'later':
         void this.takeOff(mounted, () => backend.setAside(card.account, card.messageIds))
@@ -451,7 +474,7 @@ export class Inbox {
         this.labels.set(account, labels)
         this.picker.setLabels(account, labels)
       }
-      await backend.applyLabel(account, mounted.card.messageIds, label.id)
+      await backend.applyLabel(account, mounted.card.messageIds, label.id, this.mailbox)
     })
   }
 
@@ -481,7 +504,7 @@ export class Inbox {
     if (byAccount.size === 0) return
     button.disabled = true
     const results = await Promise.allSettled(
-      [...byAccount].map(([account, ids]) => backend.archive(account, ids)),
+      [...byAccount].map(([account, ids]) => backend.archive(account, ids, this.mailbox)),
     )
     const failure = results.find((result): result is PromiseRejectedResult => result.status === 'rejected')
     if (failure && results.every((result) => result.status === 'rejected')) {

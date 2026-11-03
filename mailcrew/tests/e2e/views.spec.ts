@@ -4,12 +4,12 @@ import { card, expect, ME, test } from './fixtures'
 
 const WORK = 'work@example.com'
 
-test('starts on the whole inbox across every account', async ({ launch }) => {
+test('starts on the inbox across every account, with あとで読む beside it', async ({ launch }) => {
   const app = await launch({ accounts: [ME, WORK], inboxes: [[card(1)]] })
   await expect(app.cards).toHaveCount(1)
-  await expect(app.tabs).toHaveText(['すべて'])
-  await expect(app.tab('すべて')).toHaveAttribute('aria-selected', 'true')
-  expect(await app.callsTo('list_inbox')).toEqual([{ accounts: [], query: '' }])
+  await expect(app.tabs).toHaveText(['受信トレイ', 'あとで読む'])
+  await expect(app.tab('受信トレイ')).toHaveAttribute('aria-selected', 'true')
+  expect(await app.callsTo('list_inbox')).toEqual([{ accounts: [], mailbox: 'inbox', query: '' }])
 })
 
 test('a view fetches its accounts with its search, and すべて goes back', async ({ launch }) => {
@@ -18,17 +18,17 @@ test('a view fetches its accounts with its search, and すべて goes back', asy
     views: [{ id: 'v1', name: '仕事', accounts: [WORK], query: 'is:unread' }],
     inboxes: [[card(1), card(2, { account: WORK })], [card(2, { account: WORK })], [card(1)]],
   })
-  await expect(app.tabs).toHaveText(['すべて', '仕事'])
+  await expect(app.tabs).toHaveText(['受信トレイ', 'あとで読む', '仕事'])
   await expect(app.cards).toHaveCount(2)
   await app.tab('仕事').click()
   await expect(app.cards).toHaveCount(1)
   await expect(app.tab('仕事')).toHaveAttribute('aria-selected', 'true')
-  await app.tab('すべて').click()
+  await app.tab('受信トレイ').click()
   await app.expectCalls('list_inbox', 3)
   expect(await app.callsTo('list_inbox')).toEqual([
-    { accounts: [], query: '' },
-    { accounts: [WORK], query: 'is:unread' },
-    { accounts: [], query: '' },
+    { accounts: [], mailbox: 'inbox', query: '' },
+    { accounts: [WORK], mailbox: 'inbox', query: 'is:unread' },
+    { accounts: [], mailbox: 'inbox', query: '' },
   ])
 })
 
@@ -67,7 +67,7 @@ test('makes a view in the settings and shows it as a tab', async ({ launch }) =>
     { id: expect.any(String), name: '仕事', accounts: [WORK], query: 'from:boss@example.com' },
   ])
   await app.page.locator('#close-settings').click()
-  await expect(app.tabs).toHaveText(['すべて', '仕事'])
+  await expect(app.tabs).toHaveText(['受信トレイ', 'あとで読む', '仕事'])
 })
 
 test('a view needs a name', async ({ launch }) => {
@@ -107,10 +107,10 @@ test('deleting the view on screen goes back to すべて', async ({ launch }) =>
   await app.openSettings()
   await app.page.locator('button[data-delete-view="v1"]').click()
   await app.page.locator('#close-settings').click()
-  await expect(app.tabs).toHaveText(['すべて'])
-  await expect(app.tab('すべて')).toHaveAttribute('aria-selected', 'true')
+  await expect(app.tabs).toHaveText(['受信トレイ', 'あとで読む'])
+  await expect(app.tab('受信トレイ')).toHaveAttribute('aria-selected', 'true')
   const calls = await app.callsTo('list_inbox')
-  expect(calls.at(-1)).toEqual({ accounts: [], query: '' })
+  expect(calls.at(-1)).toEqual({ accounts: [], mailbox: 'inbox', query: '' })
 })
 
 test('a failed save says why and keeps the views', async ({ launch }) => {
@@ -122,4 +122,50 @@ test('a failed save says why and keeps the views', async ({ launch }) => {
   await app.page.locator('button[data-delete-view="v1"]').click()
   await expect(app.page.locator('#view-error')).toHaveText('ビューを保存できませんでした: disk full')
   await expect(app.page.locator('#view-list .settings-row-name')).toHaveText(['仕事'])
+})
+
+test('あとで読む shows what was set aside, across every account', async ({ launch }) => {
+  const app = await launch({
+    accounts: [ME, WORK],
+    views: [{ id: 'v1', name: '仕事', accounts: [WORK], query: '' }],
+    inboxes: [[card(1)], [card(2, { account: WORK })]],
+  })
+  await expect(app.tabs).toHaveText(['受信トレイ', 'あとで読む', '仕事'])
+  await expect(app.cards).toHaveCount(1)
+  await app.tab('あとで読む').click()
+  await expect(app.card('t2')).toBeVisible()
+  await expect(app.tab('あとで読む')).toHaveAttribute('aria-selected', 'true')
+  const calls = await app.callsTo('list_inbox')
+  expect(calls.at(-1)).toEqual({ accounts: [], mailbox: 'setAside', query: '' })
+})
+
+test('in あとで読む, 完了 and タグ take the thread out of it, and あとで読む is not offered', async ({ launch }) => {
+  const app = await launch({
+    labels: [{ id: 'Label_1', name: '仕事' }],
+    inboxes: [[], [card(1), card(2), card(3)]],
+  })
+  await app.tab('あとで読む').click()
+  await expect(app.cards).toHaveCount(3)
+  await expect(app.tool('t1', 'later')).toHaveCount(0)
+  await app.tool('t1', 'done').click()
+  await app.tool('t2', 'tag').click()
+  await app.tagPicker.getByText('仕事').click()
+  await expect(app.cards).toHaveCount(1)
+  expect(await app.callsTo('archive')).toEqual([{ account: ME, messageIds: ['m1'], mailbox: 'setAside' }])
+  expect(await app.callsTo('apply_label')).toEqual([
+    { account: ME, messageIds: ['m2'], labelId: 'Label_1', mailbox: 'setAside' },
+  ])
+  await expect(app.page.locator('.end-summary')).toContainText('「あとで読む」から外し')
+  await app.doneAll.scrollIntoViewIfNeeded()
+  await app.doneAll.click()
+  await app.expectCalls('archive', 2)
+  expect((await app.callsTo('archive')).at(-1)).toEqual({ account: ME, messageIds: ['m3'], mailbox: 'setAside' })
+})
+
+test('an empty あとで読む says so', async ({ launch }) => {
+  const app = await launch({ inboxes: [[card(1)], []] })
+  await expect(app.cards).toHaveCount(1)
+  await app.tab('あとで読む').click()
+  await expect(app.empty).toBeVisible()
+  await expect(app.empty).toContainText('あとで読むメールはありません')
 })

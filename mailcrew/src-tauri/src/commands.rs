@@ -13,7 +13,7 @@ use crate::auth::{self, AccessToken, Pkce};
 use crate::card::MessageContent;
 use crate::credentials::Account;
 use crate::error::{CommandError, ErrorKind, Result};
-use crate::gmail::{Gmail, Label};
+use crate::gmail::{Gmail, Label, Mailbox};
 use crate::views::{self, View};
 use crate::AppState;
 
@@ -158,15 +158,19 @@ pub async fn sign_out(state: State<'_, AppState>, account: String) -> Result<()>
     state.accounts.remove(&account).await
 }
 
-/// The inbox across `accounts` (every account when empty), narrowed by a
-/// Gmail search when `query` is not empty.
+/// The threads of `mailbox` across `accounts` (every account when empty),
+/// narrowed by a Gmail search when `query` is not empty.
 #[tauri::command]
 pub async fn list_inbox(
     state: State<'_, AppState>,
     accounts: Vec<String>,
+    mailbox: Option<Mailbox>,
     query: String,
 ) -> Result<InboxPage> {
-    state.accounts.inbox(&accounts, &query).await
+    state
+        .accounts
+        .inbox(&accounts, mailbox.unwrap_or_default(), &query)
+        .await
 }
 
 /// The body and attachments of the message a card shows.
@@ -202,28 +206,41 @@ pub async fn create_label(
         .await
 }
 
-/// "完了": read, and out of the inbox.
+/// "完了": read, and out of `mailbox` (the inbox when not given).
 #[tauri::command]
 pub async fn archive(
     state: State<'_, AppState>,
     account: String,
     message_ids: Vec<String>,
+    mailbox: Option<Mailbox>,
 ) -> Result<()> {
     let gmail = state.accounts.get(&account).await?;
-    let result = gmail.modify(&message_ids, &[], &["INBOX", "UNREAD"]).await;
+    let result = async {
+        let mut remove = gmail.leaving(mailbox.unwrap_or_default()).await?;
+        remove.push("UNREAD".to_string());
+        let remove: Vec<&str> = remove.iter().map(String::as_str).collect();
+        gmail.modify(&message_ids, &[], &remove).await
+    }
+    .await;
     state.accounts.check(&account, result).await
 }
 
-/// "タグを追加": tagged, and out of the inbox.
+/// "タグを追加": tagged, and out of `mailbox` (the inbox when not given).
 #[tauri::command]
 pub async fn apply_label(
     state: State<'_, AppState>,
     account: String,
     message_ids: Vec<String>,
     label_id: String,
+    mailbox: Option<Mailbox>,
 ) -> Result<()> {
     let gmail = state.accounts.get(&account).await?;
-    let result = gmail.modify(&message_ids, &[&label_id], &["INBOX"]).await;
+    let result = async {
+        let remove = gmail.leaving(mailbox.unwrap_or_default()).await?;
+        let remove: Vec<&str> = remove.iter().map(String::as_str).collect();
+        gmail.modify(&message_ids, &[&label_id], &remove).await
+    }
+    .await;
     state.accounts.check(&account, result).await
 }
 
