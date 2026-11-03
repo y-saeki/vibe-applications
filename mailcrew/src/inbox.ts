@@ -7,6 +7,7 @@ import { formatDate } from './format'
 import { ICONS } from './icons'
 import { mountBody, type MountedBody } from './message-frame'
 import { showNotice } from './notice'
+import { OverlayScrollbar } from './overlay-scrollbar'
 import { TagPicker, type TagChoice } from './tag-picker'
 
 /** How far beyond the visible strip a card's body is already rendered. */
@@ -44,6 +45,11 @@ export class Inbox {
 
   constructor(private readonly onSignedOut: (message: string) => void) {
     this.strip.addEventListener('click', (event) => this.onClick(event))
+    // A card is narrower than its usual width only when the window is, so a
+    // message is laid out again when the window changes size.
+    window.addEventListener('resize', () => {
+      for (const mounted of this.mounted.values()) mounted.body?.refit()
+    })
     // A mouse wheel scrolls the strip sideways; inside a message it still
     // scrolls the message, since the frame keeps its own events.
     this.strip.addEventListener(
@@ -168,7 +174,8 @@ export class Inbox {
       attachments.title = card.attachments.join('\n')
       meta.append(attachments)
     }
-    if (meta.childElementCount > 0) head.append(meta)
+    // Always there, empty or not, so that every card's head is the same height.
+    head.append(meta)
 
     const images = document.createElement('div')
     images.className = 'card-images'
@@ -182,12 +189,15 @@ export class Inbox {
     imagesButton.textContent = '表示する'
     images.append(imagesText, imagesButton)
 
+    const bodyWrap = document.createElement('div')
+    bodyWrap.className = 'card-body-wrap'
     const body = document.createElement('div')
     body.className = 'card-body'
     const snippet = document.createElement('p')
     snippet.className = 'card-snippet'
     snippet.textContent = card.snippet
     body.append(snippet)
+    bodyWrap.append(body)
 
     const toolbar = document.createElement('footer')
     toolbar.className = 'card-toolbar'
@@ -205,7 +215,7 @@ export class Inbox {
       toolbar.append(button)
     }
 
-    element.append(head, images, body, toolbar)
+    element.append(head, images, bodyWrap, toolbar)
     return element
   }
 
@@ -234,6 +244,8 @@ export class Inbox {
       if (!mounted || mounted.body) continue
       const container = element.querySelector<HTMLElement>('.card-body')!
       mounted.body = mountBody(container, mounted.card.body, (url) => this.openLink(url))
+      const scrollbar = new OverlayScrollbar(container, container.parentElement!)
+      for (const child of container.children) scrollbar.watch(child)
       const body = mounted.card.body
       if (body.kind === 'html' && body.remoteImages) {
         element.querySelector<HTMLElement>('.card-images')!.hidden = false

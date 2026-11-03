@@ -1,4 +1,4 @@
-# mailcrew
+# Mail Crew
 
 Gmail の受信トレイを、スレッドごとの縦長のカードにして横に並べて読むメーラーです。  
 macOS / Windows 対応。
@@ -18,9 +18,9 @@ macOS / Windows 対応。
 
 [Releases](https://github.com/y-saeki/vibe-applications/releases) の `mailcrew-v<version>` から、お使いの OS 向けのファイルをダウンロードしてください。
 
-- macOS: `mailcrew_<version>_aarch64.dmg`
-  - 開いて `mailcrew.app` を「アプリケーション」フォルダへ入れます
-- Windows: `mailcrew_<version>_x64-setup.exe`
+- macOS: `Mail.Crew_<version>_aarch64.dmg`
+  - 開いて `Mail Crew.app` を「アプリケーション」フォルダへ入れます
+- Windows: `Mail.Crew_<version>_x64-setup.exe`
   - 実行するとインストーラが起動します。インストーラの案内に従ってください
 
 ### macOS で「壊れているため開けません」と表示される場合
@@ -29,7 +29,7 @@ macOS / Windows 対応。
 `.app` を「アプリケーション」フォルダに移したうえで、次のコマンドで隔離属性を外してください。
 
 ```sh
-xattr -dr com.apple.quarantine /Applications/mailcrew.app
+xattr -dr com.apple.quarantine "/Applications/Mail Crew.app"
 ```
 
 > [!CAUTION]
@@ -45,16 +45,16 @@ xattr -dr com.apple.quarantine /Applications/mailcrew.app
 
 ## 初回の準備
 
-mailcrew は Gmail に接続するための OAuth クライアントを、利用者自身の Google Cloud プロジェクトで作って使います。一度作れば、あとは起動するだけです。
+Mail Crew は Gmail に接続するための OAuth クライアントを、利用者自身の Google Cloud プロジェクトで作って使います。一度作れば、あとは起動するだけです。
 
 1. [Google Cloud コンソール](https://console.cloud.google.com/)でプロジェクトを作ります
 2. 「API とサービス」の「ライブラリ」で **Gmail API** を有効にします
 3. OAuth 同意画面（Google Auth Platform）を設定します
    - ユーザーの種類は「外部」にします
    - アプリ名とサポート用のメールアドレスは、自分で分かるものなら何でも構いません
-   - テストユーザーに、mailcrew で読む Gmail のアドレスを追加します
+   - テストユーザーに、Mail Crew で読む Gmail のアドレスを追加します
 4. 「クライアント」で OAuth クライアントを作ります。アプリケーションの種類は「**デスクトップ アプリ**」を選びます
-5. 表示されたクライアント ID とクライアント シークレットを、mailcrew の最初の画面に入力して「Google でログイン」を押します
+5. 表示されたクライアント ID とクライアント シークレットを、Mail Crew の最初の画面に入力して「Google でログイン」を押します
 6. ブラウザで Google のログイン画面が開きます。「Google はこのアプリを確認していません」と表示されたら、「続行」を選んで Gmail へのアクセスを許可します
 
 同意画面の公開ステータスが「テスト」のままだと、7 日ごとにログインし直す必要があります。続けて使うなら、同意画面の「対象」で公開ステータスを「本番環境」に切り替えてください。確認の審査を受けていないアプリのままでも、自分のアカウントで使うぶんには、上の 6 の警告画面が出るだけです。

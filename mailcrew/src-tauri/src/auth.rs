@@ -111,10 +111,10 @@ pub fn parse_redirect(request_line: &str, expected_state: &str) -> Redirect {
     Redirect::Denied(param("error").unwrap_or_else(|| "unknown".into()))
 }
 
-const DONE_PAGE: &str = "<!doctype html><meta charset=utf-8><title>mailcrew</title>\
-<p style=\"font: 15px system-ui; margin: 3em\">ログインが完了しました。このタブを閉じて mailcrew に戻ってください。</p>";
-const DENIED_PAGE: &str = "<!doctype html><meta charset=utf-8><title>mailcrew</title>\
-<p style=\"font: 15px system-ui; margin: 3em\">ログインできませんでした。mailcrew に戻ってやり直してください。</p>";
+const DONE_PAGE: &str = "<!doctype html><meta charset=utf-8><title>Mail Crew</title>\
+<p style=\"font: 15px system-ui; margin: 3em\">ログインが完了しました。このタブを閉じて Mail Crew に戻ってください。</p>";
+const DENIED_PAGE: &str = "<!doctype html><meta charset=utf-8><title>Mail Crew</title>\
+<p style=\"font: 15px system-ui; margin: 3em\">ログインできませんでした。Mail Crew に戻ってやり直してください。</p>";
 
 /// Answers requests on `listener` until one of them is the redirect.
 pub async fn wait_for_code(listener: TcpListener, state: &str) -> Result<String> {

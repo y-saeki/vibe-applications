@@ -15,6 +15,12 @@
 //   user asks, card by card, so opening a message tells no sender it was read.
 // - `no-referrer`, so even an allowed image does not say where it was seen.
 //
+// The frame never scrolls itself. It is made as tall as the message and the
+// card body around it does the scrolling, so there is one scrollbar to draw
+// (src/overlay-scrollbar.ts) and a sideways swipe over a card always reaches
+// the strip: the document hides its overflow, and a message laid out wider
+// than the card is scaled down to fit rather than left to scroll.
+//
 // Links leave through the Rust side, which opens http, https and mailto links
 // in the default browser and refuses the rest. In WebView2 a click is caught
 // here and handed to `open_link`. WebKit runs none of this page's listeners
@@ -25,7 +31,7 @@
 import type { CardBody } from './backend'
 
 const BASE_STYLE = `
-html { color-scheme: light; background: #fff; }
+html { color-scheme: light; background: #fff; overflow: hidden; }
 body {
   margin: 16px;
   color: #1d1d1f;
@@ -79,21 +85,43 @@ function catchLinks(root: Document | HTMLElement, openLink: OpenLink): void {
 }
 
 /**
- * Scales a message down when it is laid out wider than the card, as
- * newsletters built for a 600-pixel column are. Narrower ones are left alone.
+ * How tall the document is, in the frame's pixels with the zoom applied. The
+ * two readings agree in Chromium; the larger is taken so that an engine that
+ * reports one of them before the zoom leaves room to spare rather than cutting
+ * the end of the message off.
  */
-function fitWidth(frame: HTMLIFrameElement): void {
+function contentHeight(root: HTMLElement): number {
+  return Math.ceil(Math.max(root.getBoundingClientRect().height, root.scrollHeight))
+}
+
+/**
+ * Scales a message down when it is laid out wider than the card, as
+ * newsletters built for a 600-pixel column are, and makes the frame as tall as
+ * what it then holds. Narrower messages are left at their own size.
+ *
+ * The frame is shrunk to nothing for a moment to read the height, since a
+ * document is never shorter than the frame showing it; the card body's scroll
+ * position is put back afterwards, before anything is painted.
+ */
+function fit(frame: HTMLIFrameElement): void {
   const root = frame.contentDocument?.documentElement
   if (!root) return
+  const scroller = frame.parentElement
+  const scrollTop = scroller?.scrollTop ?? 0
   root.style.removeProperty('zoom')
   const available = frame.clientWidth
   const wanted = root.scrollWidth
   if (available > 0 && wanted > available + 1) root.style.setProperty('zoom', String(available / wanted))
+  frame.style.height = '0px'
+  frame.style.height = `${contentHeight(root)}px`
+  if (scroller) scroller.scrollTop = scrollTop
 }
 
 export interface MountedBody {
   /** Reloads the frame with images from the network let through. */
   allowRemoteImages(): void
+  /** Lays the message out again for the card's current width. */
+  refit(): void
 }
 
 const URL_PATTERN = /\b(https?:\/\/[^\s<>"'）」】]+)/g
@@ -123,14 +151,14 @@ export function mountBody(container: HTMLElement, body: CardBody, openLink: Open
   container.replaceChildren()
   if (body.kind === 'text') {
     renderText(container, body.text, openLink)
-    return { allowRemoteImages() {} }
+    return { allowRemoteImages() {}, refit() {} }
   }
   if (body.kind === 'empty') {
     const empty = document.createElement('p')
     empty.className = 'message-empty'
     empty.textContent = '本文はありません'
     container.append(empty)
-    return { allowRemoteImages() {} }
+    return { allowRemoteImages() {}, refit() {} }
   }
   const frame = document.createElement('iframe')
   frame.className = 'message-frame'
@@ -141,13 +169,16 @@ export function mountBody(container: HTMLElement, body: CardBody, openLink: Open
     const doc = frame.contentDocument
     if (!doc) return
     catchLinks(doc, openLink)
-    fitWidth(frame)
+    fit(frame)
   })
   frame.srcdoc = frameDocument(body.html, false)
   container.append(frame)
   return {
     allowRemoteImages() {
       frame.srcdoc = frameDocument(body.html, true)
+    },
+    refit() {
+      fit(frame)
     },
   }
 }

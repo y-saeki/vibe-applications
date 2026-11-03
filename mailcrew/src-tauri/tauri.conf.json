@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "mailcrew",
+  "productName": "Mail Crew",
   "version": "0.1.0",
   "identifier": "com.ysaeki.mailcrew",
   "build": {
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "mailcrew",
+        "title": "Mail Crew",
         "width": 1280,
         "height": 800,
         "minWidth": 480,

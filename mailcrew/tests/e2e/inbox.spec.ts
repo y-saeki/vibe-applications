@@ -50,6 +50,36 @@ test('every toolbar sits on the same line', async ({ launch }) => {
   expect(new Set(tops).size).toBe(1)
 })
 
+test("every card's head is the same height, whatever it holds", async ({ launch }) => {
+  const app = await launch({
+    inboxes: [
+      [
+        card(1, { subject: '短い件名' }),
+        card(2, {
+          subject: 'とても長い件名が二行にわたって折り返されるくらいの長さで続いていく、さらにもう少し長いスレッドの件名です',
+          messageCount: 4,
+          attachments: ['a.pdf'],
+        }),
+        card(3, { subject: '' }),
+      ],
+    ],
+  })
+  await expect(app.cards).toHaveCount(3)
+  const heights = await app.page
+    .locator('.card[data-thread-id] .card-head')
+    .evaluateAll((heads) => heads.map((head) => Math.round(head.getBoundingClientRect().height)))
+  expect(new Set(heights).size).toBe(1)
+})
+
+test('a card is half again as wide as it used to be, and narrows only with the window', async ({ launch }) => {
+  const app = await launch({ inboxes: [[card(1)]] })
+  await app.page.setViewportSize({ width: 1280, height: 800 })
+  expect(await app.card('t1').evaluate((element) => element.getBoundingClientRect().width)).toBe(570)
+  await app.page.setViewportSize({ width: 480, height: 800 })
+  const width = await app.card('t1').evaluate((element) => element.getBoundingClientRect().width)
+  expect(width).toBeLessThanOrEqual(480)
+})
+
 test('ends the strip with the button that clears it', async ({ launch }) => {
   const app = await launch({ inboxes: [cards(3)] })
   await expect(app.cards).toHaveCount(3)

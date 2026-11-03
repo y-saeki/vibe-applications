@@ -136,6 +136,71 @@ test('a message laid out wider than the card is scaled to fit', async ({ launch 
   expect(await zoomOf('t2')).toBe('')
 })
 
+test('a long message scrolls in the card, and its end can be reached', async ({ launch }) => {
+  const rows = Array.from({ length: 60 }, (_, i) => `<tr><td>行 ${i}</td></tr>`).join('')
+  const html = `<table width="1200" style="width: 1200px">${rows}</table><p id="end">終わり</p>`
+  const app = await launch({ inboxes: [[card(1, { body: { kind: 'html', html, remoteImages: false } })]] })
+  const body = app.card('t1').locator('.card-body')
+  const end = app.frame('t1').contentFrame().locator('#end')
+  await expect(end).toBeAttached()
+  // The frame is as tall as the message, so the card body is what scrolls.
+  await expect
+    .poll(() => body.evaluate((element) => element.scrollHeight > element.clientHeight))
+    .toBe(true)
+  await body.evaluate((element) => element.scrollTo(0, element.scrollHeight))
+  await expect(end).toBeInViewport()
+})
+
+test('nothing inside a card scrolls sideways', async ({ launch }) => {
+  const wide = '<table width="1400" style="width: 1400px"><tr><td>wide</td></tr></table><pre>' + 'x'.repeat(400) + '</pre>'
+  const longText = 'https://example.com/' + 'a'.repeat(300) + '\n' + 'あ'.repeat(500)
+  const app = await launch({
+    inboxes: [
+      [
+        card(1, { body: { kind: 'html', html: wide, remoteImages: false } }),
+        card(2, { body: { kind: 'text', text: longText } }),
+      ],
+    ],
+  })
+  await expect(app.frame('t1').contentFrame().locator('table')).toBeAttached()
+  await expect(app.card('t2').locator('.message-text')).toBeAttached()
+  for (const id of ['t1', 't2']) {
+    const body = app.card(id).locator('.card-body')
+    expect(await body.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true)
+    expect(await body.evaluate((element) => getComputedStyle(element).overflowX)).toBe('hidden')
+  }
+  // The frame's own document hides its overflow too, and is scaled to fit.
+  const root = app.frame('t1').contentFrame().locator('html')
+  expect(await root.evaluate((element) => getComputedStyle(element).overflowX)).toBe('hidden')
+  await expect
+    .poll(() =>
+      root.evaluate((element) => element.getBoundingClientRect().width <= (window.frameElement as HTMLElement).clientWidth + 1),
+    )
+    .toBe(true)
+})
+
+test('the scrollbar shows only while the body is scrolled', async ({ launch }) => {
+  const app = await launch({
+    inboxes: [
+      [
+        card(1, { body: { kind: 'text', text: '行\n'.repeat(300) } }),
+        card(2, { body: { kind: 'text', text: '短い本文' } }),
+      ],
+    ],
+  })
+  const body = app.card('t1').locator('.card-body')
+  const bar = app.card('t1').locator('.scrollbar')
+  await expect(app.card('t1').locator('.message-text')).toBeAttached()
+  // The platform's own bar takes no room.
+  expect(await body.evaluate((element: HTMLElement) => element.offsetWidth - element.clientWidth)).toBe(0)
+  await expect(bar).not.toHaveAttribute('data-shown')
+  await body.evaluate((element) => element.scrollBy(0, 200))
+  await expect(bar).toHaveAttribute('data-shown', '')
+  await expect(bar).not.toHaveAttribute('data-shown', { timeout: 3000 })
+  // A body with nothing to scroll has no bar at all.
+  await expect(app.card('t2').locator('.scrollbar')).toBeHidden()
+})
+
 test('bodies far off to the right wait until the strip comes near them', async ({ launch }) => {
   const app = await launch({ inboxes: [cards(30)] })
   await expect(app.frame('t1')).toBeAttached()

@@ -2,6 +2,14 @@
 
 Repository-wide conventions are in the root `CLAUDE.md`; these apply on top of them.
 
+## The name
+
+The application is called Mail Crew in everything a user reads: the window, the bundle
+(`productName`), `README.md`, release titles, strings in the UI. `mailcrew` stays where it is
+an identifier: the directory, the package names, `identifier`, the credential store's service
+name, the release tag and the workflow files. Changing `identifier` or the service name would
+strand every stored sign-in, so neither follows the display name.
+
 ## The message frame is a security boundary
 
 A message's HTML is untrusted, and two layers keep it from doing anything:
@@ -12,6 +20,8 @@ its own. `DEVELOPMENT.md` explains both. Changing either keeps these true:
 - The frame never gets `allow-scripts`. With `allow-same-origin` beside it, the sandbox
   would no longer hold.
 - Nothing from the network loads in a message until the user presses 表示する for it.
+- The frame never scrolls; the card body does, and nothing in a card overflows sideways,
+  so a horizontal swipe always moves the strip. `tests/e2e/message.spec.ts` holds both.
 - Links never navigate the frame. WebView2 hands them to `open_link`; in WKWebView, where the
   page's listeners do not run inside the frame, `src-tauri/src/links.rs` turns the navigation
   away and opens the link outside. Both open http, https and mailto only.

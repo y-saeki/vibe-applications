@@ -1,6 +1,6 @@
-# mailcrew の開発
+# Mail Crew の開発
 
-mailcrew をビルド・変更するための情報です。使い方やインストール方法は [README.md](./README.md) を参照してください。
+Mail Crew をビルド・変更するための情報です。使い方やインストール方法は [README.md](./README.md) を参照してください。
 
 フロントエンドはフレームワークを使わない TypeScript で、シェルは Tauri v2（Rust）です。Gmail との通信、ログイン、メール本文の解析とサニタイズは Rust 側が受け持ち、ページは受け取ったカードを並べるだけです。
 配布対象は macOS（Apple Silicon）と Windows（x64）の 2 つで、どちらも GitHub Actions でビルドします。
@@ -33,8 +33,10 @@ pnpm tauri build
 
 成果物は `src-tauri/target/release/bundle/` 以下に出力されます。
 
-- macOS: `macos/mailcrew.app`、`dmg/mailcrew_<version>_aarch64.dmg`（Apple Silicon 向け）
-- Windows: `nsis/mailcrew_<version>_x64-setup.exe`
+- macOS: `macos/Mail Crew.app`、`dmg/Mail Crew_<version>_aarch64.dmg`（Apple Silicon 向け）
+- Windows: `nsis/Mail Crew_<version>_x64-setup.exe`
+
+アプリの名前は「Mail Crew」で、`tauri.conf.json` の `productName` がこれを決めます。ディレクトリ名、Cargo と npm のパッケージ名、`identifier`（`com.ysaeki.mailcrew`）、Release のタグ（`mailcrew-v<version>`）は `mailcrew` のままです。Release に添付すると、ファイル名の空白は GitHub が `.` に置き換えます。
 
 ## 検証コマンド
 
@@ -65,6 +67,7 @@ pnpm exec playwright install chromium webkit
 | `src-tauri/src/links.rs` | webview がアプリ以外のページへ移動しないようにする。メール中のリンクは既定のアプリで開く |
 | `src/inbox.ts` | カードの列、ボタンの動作、まとめて完了 |
 | `src/message-frame.ts` | 本文の表示。HTML は iframe に入れる |
+| `src/overlay-scrollbar.ts` | カードの本文に重ねて描くスクロールバー |
 | `src/tag-picker.ts` | タグを選ぶポップアップ |
 
 ### ログインとアカウント情報
@@ -88,6 +91,14 @@ OAuth クライアントは利用者が自分の Google Cloud プロジェクト
 | スター（外す） | なし | スレッドの全メッセージから `STARRED` |
 
 ページはボタンを押した時点でカードを消し、Rust 側が失敗を返したら元の位置に戻します。
+
+### カードの本文
+
+本文の iframe は自分ではスクロールせず、メールの高さに合わせて伸ばします。スクロールするのはそれを包むカードの本文の領域だけです。
+
+- 横方向には何もスクロールしません。カードの本文の領域と iframe の文書は横のはみ出しを隠し、カードより幅の広いメールは CSS の `zoom` で縮めて収めます。カードの上で横にスワイプしても、カードの中ではなくカードの列が動きます。
+- OS のスクロールバーは隠し、`overlay-scrollbar.ts` が細いバーを本文の上に重ねて描きます。バーはスクロールしている間だけ表示されます。
+- 高さは iframe の `load` と、ウィンドウの大きさが変わったときに測り直します。
 
 ### HTML 本文の安全対策
 
