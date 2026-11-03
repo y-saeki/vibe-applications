@@ -14,6 +14,7 @@ Claude Code で作成したアプリケーションを集めたリポジトリ�
 
 - [draftpad](./draftpad/) — ファイルや保存の概念を持たない、下書き用テキストエディタ。2 つのテキストを左右に並べて比較することもできる(macOS / Windows)
 - [eleven-zip](./eleven-zip/) — エクスプローラーから書庫を展開し、展開先をそのまま開くツール。展開に使う 7-Zip は自動で取得・更新する(Windows)
+- [Mail Crew](./mailcrew/) — Gmail の受信トレイを、スレッドごとのカードにして横に並べて読むメーラー。完了・タグ・あとで読む・スターをカードのボタンで済ませられる(macOS / Windows)
 - [myaku](./myaku/) — プロセスごとの CPU・メモリ・ネットワークの使用量を、直近 1 分のグラフで並べて見せる常駐アプリ(macOS / Windows)
 - [tenabuku-app](./tenabuku-app/) — はてなブックマークを読むための、自分用の非公式アプリ「てなブク」(iOS)
 - [winwin](./winwin/) — キーボードショートカットで、前面のウィンドウを決まった位置・大きさに並べ直すツール(macOS / Windows)
