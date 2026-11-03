@@ -2,6 +2,7 @@
 //! labels, and changing which labels messages carry. One `Gmail` speaks for one
 //! signed-in account.
 
+use std::collections::HashMap;
 use std::time::Duration;
 
 use futures::{StreamExt, TryStreamExt};
@@ -23,6 +24,12 @@ const FETCH_CONCURRENCY: usize = 8;
 /// `messages.batchModify` takes at most this many ids per request.
 const BATCH_LIMIT: usize = 1000;
 
+/// How many times a request Google turned down for its rate limit is sent
+/// again, waiting longer each time.
+const RATE_LIMIT_RETRIES: u32 = 4;
+/// How many threads' cards each account keeps between loads.
+const CACHE_LIMIT: usize = 1000;
+
 /// The label "あとで読む" puts on a thread.
 pub const SET_ASIDE_LABEL: &str = "SetAside";
 
@@ -33,11 +40,22 @@ pub struct Label {
     pub name: String,
 }
 
+/// A thread's card as last fetched, with the `historyId` it was fetched at.
+/// Any change to the thread (a new message, a label) moves the id on.
+struct Cached {
+    history_id: String,
+    /// `None` for a thread of drafts only.
+    card: Option<Card>,
+}
+
 pub struct Gmail {
     http: reqwest::Client,
     account: Account,
     token: Mutex<Option<AccessToken>>,
     set_aside: Mutex<Option<String>>,
+    /// Threads already fetched, so that a reload or another view asks Gmail
+    /// only for the threads that changed.
+    cache: Mutex<HashMap<String, Cached>>,
 }
 
 #[derive(Deserialize)]
@@ -48,6 +66,43 @@ struct ApiError {
 #[derive(Deserialize)]
 struct ApiErrorBody {
     message: String,
+    #[serde(default)]
+    status: String,
+    #[serde(default)]
+    errors: Vec<ApiErrorItem>,
+}
+
+#[derive(Deserialize)]
+struct ApiErrorItem {
+    #[serde(default)]
+    reason: String,
+}
+
+/// Whether Google turned a request down for the per-user or per-project rate
+/// limit, which passes if the request waits and goes again.
+pub fn is_rate_limited(status: u16, body: &str) -> bool {
+    if status == 429 {
+        return true;
+    }
+    if status != 403 {
+        return false;
+    }
+    serde_json::from_str::<ApiError>(body).is_ok_and(|err| {
+        err.error.status == "RESOURCE_EXHAUSTED"
+            || err.error.errors.iter().any(|item| {
+                matches!(
+                    item.reason.as_str(),
+                    "rateLimitExceeded" | "userRateLimitExceeded"
+                )
+            })
+    })
+}
+
+/// How long to wait before the `attempt`-th retry (from 0): 1, 2, 4, 8 seconds,
+/// with up to a quarter more so that parallel requests do not all come back at once.
+fn backoff(attempt: u32) -> Duration {
+    let base = Duration::from_secs(1 << attempt.min(5));
+    base + base.mul_f64(rand::random::<f64>() / 4.0)
 }
 
 /// The one HTTP client every account's requests go through.
@@ -66,6 +121,7 @@ impl Gmail {
             account,
             token: Mutex::new(token),
             set_aside: Mutex::new(None),
+            cache: Mutex::new(HashMap::new()),
         }
     }
 
@@ -111,12 +167,14 @@ impl Gmail {
     }
 
     /// Sends a request built by `build`, renewing the token once if Google
-    /// turns the current one down.
+    /// turns the current one down, and waiting and sending it again while
+    /// Google says the rate limit is reached.
     async fn send<T: DeserializeOwned>(
         &self,
         build: impl Fn(&reqwest::Client) -> reqwest::RequestBuilder,
     ) -> Result<T> {
         let mut renew = false;
+        let mut retries = 0;
         loop {
             let token = self.token(renew).await?;
             let response = build(&self.http).bearer_auth(token).send().await?;
@@ -126,6 +184,17 @@ impl Gmail {
                 continue;
             }
             let body = response.text().await?;
+            if is_rate_limited(status.as_u16(), &body) {
+                if retries < RATE_LIMIT_RETRIES {
+                    tokio::time::sleep(backoff(retries)).await;
+                    retries += 1;
+                    continue;
+                }
+                return Err(CommandError::new(
+                    ErrorKind::Google,
+                    "Gmail の利用上限に達しました。1 分ほど待ってから再読み込みしてください",
+                ));
+            }
             if !status.is_success() {
                 let detail = serde_json::from_str::<ApiError>(&body)
                     .map(|err| err.error.message)
@@ -169,8 +238,11 @@ impl Gmail {
             threads: Vec<ThreadRef>,
         }
         #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
         struct ThreadRef {
             id: String,
+            #[serde(default)]
+            history_id: String,
         }
         let list: ThreadList = self
             .send(|http| {
@@ -185,20 +257,47 @@ impl Gmail {
                 }
             })
             .await?;
-        let threads: Vec<Thread> = futures::stream::iter(list.threads)
-            .map(|thread| async move {
-                self.send::<Thread>(|http| {
-                    http.get(format!("{API}/threads/{}", thread.id))
-                        .query(&[("format", "full")])
+        // Only the threads that changed since they were last fetched are
+        // fetched again; each full thread costs as much quota as the list.
+        let stale: Vec<(String, String)> = {
+            let cache = self.cache.lock().await;
+            list.threads
+                .iter()
+                .filter(|thread| {
+                    thread.history_id.is_empty()
+                        || cache
+                            .get(&thread.id)
+                            .is_none_or(|cached| cached.history_id != thread.history_id)
                 })
-                .await
+                .map(|thread| (thread.id.clone(), thread.history_id.clone()))
+                .collect()
+        };
+        let fetched: Vec<(Thread, String)> = futures::stream::iter(stale)
+            .map(|(id, history_id)| async move {
+                let thread = self
+                    .send::<Thread>(|http| {
+                        http.get(format!("{API}/threads/{id}"))
+                            .query(&[("format", "full")])
+                    })
+                    .await?;
+                Ok::<_, CommandError>((thread, history_id))
             })
             .buffered(FETCH_CONCURRENCY)
             .try_collect()
             .await?;
-        Ok(threads
+        let mut cache = self.cache.lock().await;
+        for (thread, history_id) in fetched {
+            let card = Card::from_thread(&thread, self.email());
+            cache.insert(thread.id, Cached { history_id, card });
+        }
+        if cache.len() > CACHE_LIMIT {
+            // Keeps what this page shows and lets the rest go.
+            cache.retain(|id, _| list.threads.iter().any(|thread| &thread.id == id));
+        }
+        Ok(list
+            .threads
             .iter()
-            .filter_map(|thread| Card::from_thread(thread, self.email()))
+            .filter_map(|thread| cache.get(&thread.id).and_then(|cached| cached.card.clone()))
             .collect())
     }
 
@@ -276,5 +375,41 @@ impl Gmail {
                 .await?;
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn too_many_requests_is_a_rate_limit() {
+        assert!(is_rate_limited(429, ""));
+    }
+
+    #[test]
+    fn a_forbidden_rate_limit_is_one_too() {
+        let body = r#"{"error":{"code":403,"message":"Quota exceeded","errors":[{"reason":"userRateLimitExceeded"}]}}"#;
+        assert!(is_rate_limited(403, body));
+        let exhausted =
+            r#"{"error":{"code":403,"message":"Quota exceeded","status":"RESOURCE_EXHAUSTED"}}"#;
+        assert!(is_rate_limited(403, exhausted));
+    }
+
+    #[test]
+    fn other_errors_are_not() {
+        let denied = r#"{"error":{"code":403,"message":"Insufficient Permission","errors":[{"reason":"insufficientPermissions"}]}}"#;
+        assert!(!is_rate_limited(403, denied));
+        assert!(!is_rate_limited(404, ""));
+        assert!(!is_rate_limited(500, ""));
+    }
+
+    #[test]
+    fn waits_longer_each_time() {
+        for attempt in 0..4 {
+            let wait = backoff(attempt);
+            let base = Duration::from_secs(1 << attempt);
+            assert!(wait >= base && wait <= base + base / 4);
+        }
     }
 }
