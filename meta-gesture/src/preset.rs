@@ -12,6 +12,7 @@
 //! - Safari: <https://support.apple.com/guide/safari/keyboard-and-other-shortcuts-cpsh003/mac>
 //! - Vivaldi: <https://help.vivaldi.com/desktop/tabs/tab-features/>, which lists only the keys
 //!   that switch tabs; its keyboard shortcuts page sends the reader to the list in the app
+//! - Wavebox: <https://hub.wavebox.io/keyboard-shortcuts/>, which lists the keys for tabs
 //! - Firefox: its documentation (support.mozilla.org) answers with a check for robots that
 //!   cannot be read here, so the keys are read from the keyset Firefox itself is built with,
 //!   in Mozilla's repository:
@@ -233,6 +234,27 @@ pub const BROWSERS: Preset = Preset {
             ],
         },
         Application {
+            label: "Wavebox",
+            word: "wavebox",
+            // The help lists Ctrl+Tab and Ctrl+Shift+Tab for the next and
+            // the previous tab, and on macOS Command+Option+Right and Left
+            // too, which are taken there.
+            windows: &[
+                ("new-tab", "Ctrl+T"),
+                ("close-tab", "Ctrl+W"),
+                ("reopen-tab", "Ctrl+Shift+T"),
+                ("previous-tab", "Ctrl+Shift+Tab"),
+                ("next-tab", "Ctrl+Tab"),
+            ],
+            macos: &[
+                ("new-tab", "Cmd+T"),
+                ("close-tab", "Cmd+W"),
+                ("reopen-tab", "Cmd+Shift+T"),
+                ("previous-tab", "Cmd+Option+Left"),
+                ("next-tab", "Cmd+Option+Right"),
+            ],
+        },
+        Application {
             label: "Safari",
             word: "safari",
             windows: &[],
@@ -328,6 +350,10 @@ mod tests {
         assert_eq!(
             BROWSERS.application(&app("Vivaldi")).unwrap().label,
             "Vivaldi"
+        );
+        assert_eq!(
+            BROWSERS.application(&app("Wavebox")).unwrap().label,
+            "Wavebox"
         );
         assert!(BROWSERS.application(&app("Notepad")).is_none());
     }
