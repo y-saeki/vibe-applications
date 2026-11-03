@@ -1,11 +1,14 @@
-// The settings screen: the accounts Mail Crew reads, and the custom views.
+// The settings screen: the accounts Mail Crew reads, the custom views, and the
+// senders whose images are shown without asking.
 
 import { backend, errorMessage, isCommandError, type View } from './backend'
+import type { ImageSenders } from './image-senders'
 import { describeView } from './views'
 
 export interface SettingsHost {
   accounts(): string[]
   views(): View[]
+  imageSenders: ImageSenders
   /** Asks who is signed in again, after an account came or went. */
   accountsChanged(): Promise<void>
   /** The views, once they are saved. */
@@ -34,6 +37,8 @@ export class Settings {
   private readonly viewQuery = document.querySelector<HTMLInputElement>('#view-query')!
   private readonly viewError = document.querySelector<HTMLElement>('#view-error')!
   private readonly addView = document.querySelector<HTMLButtonElement>('#add-view')!
+  private readonly senderList = document.querySelector<HTMLUListElement>('#image-sender-list')!
+  private readonly senderError = document.querySelector<HTMLElement>('#image-sender-error')!
   /** The view being edited; null while a new one is being made. */
   private editing: string | null = null
 
@@ -64,6 +69,11 @@ export class Settings {
       void this.submitView()
     })
     document.querySelector('#cancel-view')!.addEventListener('click', () => this.closeViewForm())
+
+    this.senderList.addEventListener('click', (event) => {
+      const button = (event.target as Element).closest<HTMLButtonElement>('button[data-remove-sender]')
+      if (button) void this.removeSender(button)
+    })
   }
 
   get isShown(): boolean {
@@ -73,6 +83,7 @@ export class Settings {
   open(): void {
     this.root.hidden = false
     this.accountError.hidden = true
+    this.senderError.hidden = true
     this.closeViewForm()
     this.render()
   }
@@ -81,7 +92,7 @@ export class Settings {
     this.root.hidden = true
   }
 
-  /** Lays out both lists again from what the host holds now. */
+  /** Lays out every list again from what the host holds now. */
   render(): void {
     const accounts = this.host.accounts()
     this.accountList.replaceChildren(
@@ -136,6 +147,44 @@ export class Settings {
       item.textContent = 'ビューはまだありません'
       this.viewList.append(item)
     }
+
+    const senders = this.host.imageSenders.list()
+    this.senderList.replaceChildren(
+      ...senders.map((sender) => {
+        const item = document.createElement('li')
+        item.className = 'settings-row'
+        const name = document.createElement('span')
+        name.className = 'settings-row-name'
+        name.textContent = sender
+        const remove = document.createElement('button')
+        remove.type = 'button'
+        remove.className = 'button button-quiet'
+        remove.dataset.removeSender = sender
+        remove.textContent = '削除'
+        item.append(name, remove)
+        return item
+      }),
+    )
+    if (senders.length === 0) {
+      const item = document.createElement('li')
+      item.className = 'settings-row settings-row-none'
+      item.textContent = '画像を常に表示する差出人はいません'
+      this.senderList.append(item)
+    }
+  }
+
+  private async removeSender(button: HTMLButtonElement): Promise<void> {
+    this.senderError.hidden = true
+    button.disabled = true
+    try {
+      await this.host.imageSenders.remove(button.dataset.removeSender!)
+    } catch (err) {
+      button.disabled = false
+      this.senderError.textContent = errorMessage(err)
+      this.senderError.hidden = false
+      return
+    }
+    this.render()
   }
 
   private async signIn(): Promise<void> {

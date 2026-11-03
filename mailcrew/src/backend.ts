@@ -113,5 +113,9 @@ export const backend = {
     invoke<void>('set_starred', { account, messageId, messageIds, starred }),
   views: () => invoke<View[]>('list_views'),
   saveViews: (views: View[]) => invoke<void>('save_views', { views }),
+  /** The senders whose images are shown without asking. */
+  imageSenders: () => invoke<string[]>('list_image_senders'),
+  /** Resolves with the senders as saved: in lower case, each once. */
+  saveImageSenders: (senders: string[]) => invoke<string[]>('save_image_senders', { senders }),
   openLink: (url: string) => invoke<void>('open_link', { url }),
 }

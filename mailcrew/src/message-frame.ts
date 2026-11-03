@@ -12,7 +12,8 @@
 //   safe only because scripts stay off.
 // - A Content-Security-Policy of its own that refuses every load but inline
 //   styles and `data:` images. Images from the network are added only when the
-//   user asks, card by card, so opening a message tells no sender it was read.
+//   user asks, card by card or for every message from a sender they chose, so
+//   opening a message tells no other sender it was read.
 // - `no-referrer`, so even an allowed image does not say where it was seen.
 //
 // The frame never scrolls itself. It is made as tall as the message and the
@@ -148,8 +149,16 @@ function renderText(container: HTMLElement, text: string, openLink: OpenLink): v
   container.append(body)
 }
 
-/** Puts a message's body into `container`, which it fills. */
-export function mountBody(container: HTMLElement, body: CardBody, openLink: OpenLink): MountedBody {
+/**
+ * Puts a message's body into `container`, which it fills. Images from the
+ * network load from the start only when `allowRemoteImages` says so.
+ */
+export function mountBody(
+  container: HTMLElement,
+  body: CardBody,
+  openLink: OpenLink,
+  allowRemoteImages = false,
+): MountedBody {
   container.replaceChildren()
   if (body.kind === 'text') {
     renderText(container, body.text, openLink)
@@ -173,7 +182,7 @@ export function mountBody(container: HTMLElement, body: CardBody, openLink: Open
     catchLinks(doc, openLink)
     fit(frame)
   })
-  frame.srcdoc = frameDocument(body.html, false)
+  frame.srcdoc = frameDocument(body.html, allowRemoteImages)
   container.append(frame)
   return {
     allowRemoteImages() {

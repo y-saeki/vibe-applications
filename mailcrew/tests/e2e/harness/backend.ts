@@ -27,6 +27,8 @@ export interface BackendConfig {
   labels: Label[]
   /** The views saved when the app starts. */
   views: View[]
+  /** The senders whose images show without asking, when the app starts. */
+  imageSenders: string[]
   /** Commands that reject, with the error they reject with. */
   failures: Record<string, CommandError>
   /** What `sign_in` resolves with, and adds to the accounts. */
@@ -49,6 +51,7 @@ const { config } = harness
 let inboxIndex = 0
 let accounts = [...config.accounts]
 let views = [...config.views]
+let imageSenders = [...config.imageSenders]
 
 function handle(cmd: string, args: unknown): unknown {
   harness.calls.push({ cmd, args })
@@ -88,6 +91,14 @@ function handle(cmd: string, args: unknown): unknown {
     case 'save_views':
       views = (args as { views: View[] }).views
       return null
+    case 'list_image_senders':
+      return imageSenders
+    case 'save_image_senders': {
+      // Lower case and each once, as the Rust side saves them.
+      const given = (args as { senders: string[] }).senders.map((sender) => sender.trim().toLowerCase())
+      imageSenders = [...new Set(given)].filter(Boolean)
+      return imageSenders
+    }
     case 'list_labels':
       return config.labels
     case 'create_label': {

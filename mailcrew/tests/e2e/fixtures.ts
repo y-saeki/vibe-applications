@@ -47,6 +47,7 @@ const DEFAULT_CONFIG: BackendConfig = {
   inboxFailures: [],
   labels: [],
   views: [],
+  imageSenders: [],
   failures: {},
   signInEmail: ME,
 }

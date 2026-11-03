@@ -14,6 +14,7 @@ use crate::card::MessageContent;
 use crate::credentials::Account;
 use crate::error::{CommandError, ErrorKind, Result};
 use crate::gmail::{Gmail, Label, Mailbox};
+use crate::image_senders;
 use crate::views::{self, View};
 use crate::AppState;
 
@@ -279,11 +280,15 @@ pub async fn set_starred(
     state.accounts.check(&account, result).await
 }
 
-fn views_path(app: &AppHandle) -> Result<PathBuf> {
+fn config_path(app: &AppHandle, file: &str) -> Result<PathBuf> {
     app.path()
         .app_config_dir()
-        .map(|dir| dir.join(views::FILE_NAME))
+        .map(|dir| dir.join(file))
         .map_err(|err| CommandError::new(ErrorKind::Internal, err.to_string()))
+}
+
+fn views_path(app: &AppHandle) -> Result<PathBuf> {
+    config_path(app, views::FILE_NAME)
 }
 
 #[tauri::command]
@@ -299,6 +304,25 @@ pub async fn list_views(app: AppHandle) -> Result<Vec<View>> {
 pub async fn save_views(app: AppHandle, views: Vec<View>) -> Result<()> {
     let path = views_path(&app)?;
     tauri::async_runtime::spawn_blocking(move || views::save(&path, &views))
+        .await
+        .map_err(|err| CommandError::new(ErrorKind::Internal, err.to_string()))?
+}
+
+/// The senders whose messages show images from the network without asking.
+#[tauri::command]
+pub async fn list_image_senders(app: AppHandle) -> Result<Vec<String>> {
+    let path = config_path(&app, image_senders::FILE_NAME)?;
+    tauri::async_runtime::spawn_blocking(move || image_senders::load(&path))
+        .await
+        .map_err(|err| CommandError::new(ErrorKind::Internal, err.to_string()))?
+}
+
+/// Replaces every such sender with `senders`, and returns them as saved: in
+/// lower case, each once.
+#[tauri::command]
+pub async fn save_image_senders(app: AppHandle, senders: Vec<String>) -> Result<Vec<String>> {
+    let path = config_path(&app, image_senders::FILE_NAME)?;
+    tauri::async_runtime::spawn_blocking(move || image_senders::save(&path, &senders))
         .await
         .map_err(|err| CommandError::new(ErrorKind::Internal, err.to_string()))?
 }
