@@ -487,6 +487,31 @@ mod tests {
         assert_eq!(decode_text(&iso, None), text);
     }
 
+    /// What the Gmail API was seen to hand over for two newsletters: the part
+    /// still says ISO-2022-JP (and the HTML says utf-8), but the bytes are
+    /// UTF-8. Read as ISO-2022-JP, every Japanese byte became U+FFFD.
+    #[test]
+    fn a_body_already_turned_into_utf8_under_its_old_label() {
+        let html = "<meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\"><p>【TOYOTA Wallet】残高500円分を当てよう！</p>";
+        let part = leaf(
+            "text/html",
+            "text/html; charset=\"ISO-2022-JP\"",
+            html.as_bytes(),
+        );
+        assert_eq!(part.body(), Body::Html(html.into()));
+        let text = "お客様の解約手続きを受領しました。";
+        assert_eq!(decode_text(text.as_bytes(), Some("ISO-2022-JP")), text);
+    }
+
+    /// The same mail as it left the sender: the label is right and the HTML's
+    /// own utf-8 is wrong, and the label wins.
+    #[test]
+    fn a_right_label_beats_a_wrong_meta() {
+        let html = "<meta charset=utf-8><p>お客様の解約手続きを受領しました。</p>";
+        let (iso, _, _) = encoding_rs::ISO_2022_JP.encode(html);
+        assert_eq!(decode_text(&iso, Some("ISO-2022-JP")), html);
+    }
+
     #[test]
     fn a_correct_label_is_taken_as_it_is() {
         assert_eq!(decode_text("café".as_bytes(), Some("utf-8")), "café");
