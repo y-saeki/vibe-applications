@@ -25,6 +25,7 @@ final class HotEntryListModel {
 struct HotEntryListView: View {
     @State private var model = HotEntryListModel()
     @State private var isShowingSettings = false
+    @State private var bookmarking: FeedItem?
     @Environment(ReadHistoryStore.self) private var readHistory
 
     var body: some View {
@@ -42,6 +43,10 @@ struct HotEntryListView: View {
                 ForEach(model.items) { item in
                     NavigationLink(value: item) {
                         EntryRow(item: item, isRead: readHistory.isRead(item.link))
+                    }
+                    .swipeActions(edge: .leading) {
+                        Button("ブクマする", systemImage: "bookmark") { bookmarking = item }
+                            .tint(.blue)
                     }
                 }
             }
@@ -75,6 +80,11 @@ struct HotEntryListView: View {
                     } label: {
                         Label("カテゴリー", systemImage: "square.grid.2x2")
                     }
+                }
+            }
+            .sheet(item: $bookmarking) { item in
+                NavigationStack {
+                    BookmarkEditorView(url: item.link, title: item.title)
                 }
             }
             .sheet(isPresented: $isShowingSettings) {
