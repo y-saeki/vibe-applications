@@ -2,7 +2,7 @@
 
 ## 開発に必要なもの
 
-- Apple シリコンの Mac と Xcode（iOS 17 以降の SDK を含むもの）
+- Apple シリコンの Mac と Xcode 27.1 以降（iOS 27.1 の SDK を含むもの。アプリが動くのは iOS 17 以降です）
 - [XcodeGen](https://github.com/yonaskolb/XcodeGen)（`brew install xcodegen`）
 - はてなの OAuth consumer key（ログインを使う機能を試すときだけ）
 
@@ -179,7 +179,7 @@ xcodegen generate
 xcodebuild build -project Tenabuku.xcodeproj -scheme Tenabuku -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO
 ```
 
-Pull Request では `.github/workflows/tenabuku-app.yml` が同じことを実行します。データ取得層のテストは Linux と macOS の両方で、アプリのビルドは macOS で行います。
+Pull Request では `.github/workflows/tenabuku-app.yml` が同じことを実行します。データ取得層のテストは Linux と macOS の両方で、アプリのビルドは macOS で行います。アプリのビルドには iOS 27.1 の SDK が要るので、Xcode 27.1 が入ったランナー（`xcode-27`）を使います。GitHub ではまだプレビューとして提供されているランナーです。
 
 ## 構成
 
