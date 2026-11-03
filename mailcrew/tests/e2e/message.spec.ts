@@ -72,6 +72,74 @@ test('a message without remote images offers nothing to show', async ({ launch }
   await expect(app.card('t1').locator('.card-images')).toBeHidden()
 })
 
+/** Records the path of every request that reaches the image host. */
+async function recordImageRequests(page: Page): Promise<string[]> {
+  const paths: string[] = []
+  await page.route(`${IMAGE_HOST}/**`, (route) => {
+    paths.push(new URL(route.request().url()).pathname)
+    return route.fulfill({ status: 200, contentType: 'image/png', body: PNG })
+  })
+  return paths
+}
+
+/** A card from `email` whose message shows `${IMAGE_HOST}/<n>.png`. */
+function cardWithImage(n: number, email: string) {
+  const html = `<img src="${IMAGE_HOST}/${n}.png" width="1" height="1">`
+  return card(n, { from: { name: email, email }, body: { kind: 'html', html, remoteImages: true } })
+}
+
+test('a sender whose images are always shown has them shown without asking', async ({ launch }) => {
+  const app = await launch({
+    imageSenders: ['news@example.com'],
+    inboxes: [[cardWithImage(1, 'News@Example.com'), cardWithImage(2, 'other@example.com')]],
+  })
+  const requests = await recordImageRequests(app.page)
+  await app.page.reload()
+  await expect(app.frame('t2')).toBeAttached()
+  await expect.poll(() => requests).toContain('/1.png')
+  await expect(app.card('t1').locator('.card-images')).toBeHidden()
+  await expect(app.card('t2').locator('.card-images')).toBeVisible()
+  await app.page.waitForTimeout(500)
+  expect(requests).not.toContain('/2.png')
+})
+
+test('この差出人は常に表示 remembers the sender and shows their images in every card', async ({ launch }) => {
+  const app = await launch({
+    inboxes: [[cardWithImage(1, 'news@example.com'), cardWithImage(2, 'news@example.com'), cardWithImage(3, 'other@example.com')]],
+  })
+  const requests = await recordImageRequests(app.page)
+  await app.page.reload()
+  await expect(app.frame('t3')).toBeAttached()
+  await app.page.waitForTimeout(500)
+  expect(requests).toEqual([])
+
+  await app.card('t1').getByRole('button', { name: 'この差出人は常に表示' }).click()
+  expect(await app.callsTo('save_image_senders')).toEqual([{ senders: ['news@example.com'] }])
+  await expect.poll(() => [...requests].sort()).toEqual(['/1.png', '/2.png'])
+  await expect(app.card('t1').locator('.card-images')).toBeHidden()
+  await expect(app.card('t2').locator('.card-images')).toBeHidden()
+  await expect(app.card('t3').locator('.card-images')).toBeVisible()
+
+  // The choice outlives the strip: loaded again, the sender's cards no longer ask.
+  await app.page.locator('#reload').click()
+  await app.expectCalls('list_inbox', 2)
+  await expect(app.card('t1').locator('.card-images')).toBeHidden()
+  await expect(app.card('t3').locator('.card-images')).toBeVisible()
+})
+
+test('a sender that could not be remembered says why and keeps asking', async ({ launch }) => {
+  const app = await launch({
+    inboxes: [[cardWithImage(1, 'news@example.com')]],
+    failures: { save_image_senders: { kind: 'internal', message: '保存できませんでした' } },
+  })
+  const requests = await recordImageRequests(app.page)
+  await app.page.reload()
+  await app.card('t1').getByRole('button', { name: 'この差出人は常に表示' }).click()
+  await expect(app.notice).toContainText('保存できませんでした')
+  await expect(app.card('t1').locator('.card-images')).toBeVisible()
+  expect(requests).toEqual([])
+})
+
 // The page catches a click inside the frame and hands the link to the Rust
 // side. WebKit runs no listener inside a frame that may not run scripts, so
 // there the click goes ahead as a navigation of the frame, which WKWebView

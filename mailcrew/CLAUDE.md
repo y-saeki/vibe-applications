@@ -19,7 +19,9 @@ its own. `DEVELOPMENT.md` explains both. Changing either keeps these true:
 
 - The frame never gets `allow-scripts`. With `allow-same-origin` beside it, the sandbox
   would no longer hold.
-- Nothing from the network loads in a message until the user presses 表示する for it.
+- Nothing from the network loads in a message until the user presses 表示する for it, or has
+  chosen この差出人は常に表示 for its sender (`src-tauri/src/image_senders.rs`). The choice is
+  kept per address, as Gmail keeps it, never per domain.
 - The frame never scrolls; the card body does, and nothing in a card overflows sideways,
   so a horizontal swipe always moves the strip. `tests/e2e/message.spec.ts` holds both.
 - Links never navigate the frame. WebView2 hands them to `open_link`; in WKWebView, where the
@@ -67,7 +69,7 @@ covers it changes in the same commit:
 | Changed | Follow it in |
 |---|---|
 | Sign-in, sign-out, or which screen shows at startup | `tests/e2e/sign-in.spec.ts` |
-| Adding or removing an account in the settings | `tests/e2e/settings.spec.ts` |
+| Adding or removing an account, or a sender whose images are always shown, in the settings | `tests/e2e/settings.spec.ts` |
 | The sidebar and the views in it, the toolbar's title, or making, editing and deleting a view | `tests/e2e/views.spec.ts` |
 | How cards are laid out, the end of the strip, the empty state, reloading | `tests/e2e/inbox.spec.ts` |
 | A toolbar button or まとめて完了 | `tests/e2e/actions.spec.ts` |
@@ -77,6 +79,7 @@ covers it changes in the same commit:
 | A field on `Card` or `MessageContent` (`src-tauri/src/card.rs`) | `src/backend.ts`, `card()` in `tests/e2e/fixtures.ts`, and `mod tests` in `card.rs` |
 | A command the frontend invokes | `handle` in `tests/e2e/harness/backend.ts`. It throws on a command it does not know |
 | How accounts are stored, or the inbox of several accounts is merged | `mod tests` in `src-tauri/src/credentials.rs` and `src-tauri/src/accounts.rs` |
+| How the senders whose images are always shown are stored | `mod tests` in `src-tauri/src/image_senders.rs` |
 | What the sanitiser removes or keeps | `mod tests` in `src-tauri/src/sanitize.rs` |
 | Which navigations the webview allows | `mod tests` in `src-tauri/src/links.rs` |
 

@@ -1,4 +1,5 @@
-// The settings screen: adding and removing accounts.
+// The settings screen: adding and removing accounts, and the senders whose
+// images are always shown.
 
 import { card, expect, ME, test } from './fixtures'
 
@@ -71,4 +72,27 @@ test('removing the last account goes back to the first screen', async ({ launch 
   await expect(app.setup).toBeVisible()
   await expect(app.settings).toBeHidden()
   await expect(app.cards).toHaveCount(0)
+})
+
+test('lists the senders whose images are always shown, and removes one', async ({ launch }) => {
+  const app = await launch({ imageSenders: ['news@example.com', 'shop@example.jp'] })
+  await app.openSettings()
+  const senders = app.page.locator('#image-sender-list .settings-row-name')
+  await expect(senders).toHaveText(['news@example.com', 'shop@example.jp'])
+  await app.page.locator('button[data-remove-sender="news@example.com"]').click()
+  await expect(senders).toHaveText(['shop@example.jp'])
+  expect(await app.callsTo('save_image_senders')).toEqual([{ senders: ['shop@example.jp'] }])
+  await app.page.locator('button[data-remove-sender="shop@example.jp"]').click()
+  await expect(app.page.locator('#image-sender-list')).toHaveText('画像を常に表示する差出人はいません')
+})
+
+test('a sender that could not be removed says why and stays', async ({ launch }) => {
+  const app = await launch({
+    imageSenders: ['news@example.com'],
+    failures: { save_image_senders: { kind: 'internal', message: '保存できませんでした' } },
+  })
+  await app.openSettings()
+  await app.page.locator('button[data-remove-sender="news@example.com"]').click()
+  await expect(app.page.locator('#image-sender-error')).toHaveText('保存できませんでした')
+  await expect(app.page.locator('#image-sender-list .settings-row-name')).toHaveText(['news@example.com'])
 })

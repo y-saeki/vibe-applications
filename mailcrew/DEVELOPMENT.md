@@ -62,6 +62,7 @@ pnpm exec playwright install chromium webkit
 | `src-tauri/src/accounts.rs` | ログイン中のアカウントの一覧と、全アカウントの受信トレイを 1 つの列にまとめる処理 |
 | `src-tauri/src/gmail.rs` | 1 アカウント分の Gmail API の呼び出し。受信トレイのスレッド、ラベル、ラベルの付け外し |
 | `src-tauri/src/views.rs` | カスタムビューの保存先（アプリの設定ディレクトリの `views.json`） |
+| `src-tauri/src/image_senders.rs` | 外部画像を常に表示する差出人の保存先（アプリの設定ディレクトリの `image-senders.json`） |
 | `src-tauri/src/card.rs` | スレッドから 1 枚のカードに載せる内容を組み立てる |
 | `src-tauri/src/mime.rs` | Gmail が返す MIME 構造の読み取り。本文の選択、文字コード（宣言がないか誤っているときは推測する）、RFC 2047 のヘッダー |
 | `src-tauri/src/sanitize.rs` | HTML 本文のサニタイズ（ammonia） |
@@ -70,7 +71,8 @@ pnpm exec playwright install chromium webkit
 | `src/inbox.ts` | カードの列、ボタンの動作、まとめて完了 |
 | `src/views.ts` | サイドバーに並ぶビューと、ビューから取得条件を作る処理 |
 | `src/sidebar.ts` | サイドバーの開閉。閉じたかどうかは `localStorage` に保存する |
-| `src/settings.ts` | 設定画面。アカウントの追加と削除、ビューの作成・編集・削除 |
+| `src/settings.ts` | 設定画面。アカウントの追加と削除、ビューの作成・編集・削除、画像を常に表示する差出人の削除 |
+| `src/image-senders.ts` | 画像を常に表示する差出人の一覧。受信トレイと設定画面が同じ一覧を使う |
 | `src/message-frame.ts` | 本文の表示。HTML は iframe に入れる |
 | `src/overlay-scrollbar.ts` | カードの本文に重ねて描くスクロールバー |
 | `src/tag-picker.ts` | タグを選ぶポップアップ |
@@ -166,7 +168,7 @@ Tauri の OS 別の設定ファイルは配列を丸ごと置き換えるので�
 HTML 本文は 2 段階で守ります。
 
 1. Rust 側（`sanitize.rs`）で、実行や送信につながるもの（`script`、イベントハンドラ、`form`、`iframe`、`object`、`embed`、`meta`、`base`、`link`、`svg`、`javascript:` のリンク、相対 URL）を取り除きます。メールのレイアウトに要る `style` 要素と `style` 属性、表組みの属性は残します。外部画像を読み込むかどうかも、ここで判定します。
-2. ページ側（`message-frame.ts`）で、`sandbox="allow-same-origin"` だけを付けた iframe に `srcdoc` で入れます。`allow-scripts` がないので、サニタイズをすり抜けたものがあってもスクリプトは動きません。iframe の文書には専用の Content-Security-Policy（`default-src 'none'; style-src 'unsafe-inline'; img-src data:`）を付け、利用者が「表示する」を押したときだけ `img-src` に `https:` と `http:` を加えます。`referrer` は送りません。
+2. ページ側（`message-frame.ts`）で、`sandbox="allow-same-origin"` だけを付けた iframe に `srcdoc` で入れます。`allow-scripts` がないので、サニタイズをすり抜けたものがあってもスクリプトは動きません。iframe の文書には専用の Content-Security-Policy（`default-src 'none'; style-src 'unsafe-inline'; img-src data:`）を付け、利用者が「表示する」を押したときと、差出人が「画像を常に表示する差出人」にあるときだけ、`img-src` に `https:` と `http:` を加えます。`referrer` は送りません。
 
 `allow-same-origin` は、ページが iframe の中のリンクのクリックを拾い、幅の広いメールを縮小するために付けています。`allow-scripts` と同時に付けると sandbox の意味がなくなるため、この 2 つは決して並べないでください。
 
@@ -178,6 +180,12 @@ HTML 本文は 2 段階で守ります。
 WebView2 はトップレベルの遷移しか問い合わせないため、ページの側でクリックを拾う処理も必要です。opener プラグインの権限はページに与えていません（`capabilities/default.json`）。
 
 `srcdoc` の文書はアプリ本体の CSP も引き継ぎます。Tauri は既定で `style-src` に nonce を足しますが、nonce があると `'unsafe-inline'` が無視され、メールのインラインスタイルがすべて効かなくなります。そのため `tauri.conf.json` の `dangerousDisableAssetCspModification` で `style-src` だけを対象から外しています。アプリ本体の `img-src` に `https:` と `http:` があるのも、許可した外部画像を通すためです。
+
+### 画像を常に表示する差出人
+
+「この差出人は常に表示」で覚えるのは、カードの差出人のメールアドレスです。Gmail の Web 版も画像を表示するかどうかを差出人のアドレスごとに覚えます。ドメインごとにしないのは、`gmail.com` のように大勢が使うドメインでは、1 人を許可すると同じドメインの全員の画像が読み込まれるためです。アドレスは小文字にそろえて比べ、アプリの設定ディレクトリの `image-senders.json` に保存します。一覧はアカウントごとに分けず、全アカウントで共有します。
+
+`From` ヘッダーは送り主が自由に書けるので、許可したアドレスを名乗るメールでも画像が読み込まれます。Mail Crew は SPF や DKIM の結果を確かめていません。名乗ったメールで画像が読み込まれても、送り主に伝わるのは開封したことと IP アドレスで、スクリプトが動かないことは変わりません。
 
 ## Pull Request のビルド
 
@@ -194,7 +202,7 @@ WebView2 はトップレベルの遷移しか問い合わせないため、ペ�
 | フロントエンド（`src/`）の E2E | `pnpm test:e2e` | `tests/e2e/` |
 | Rust 側の単体テスト | `cargo test` | 各ファイルの `mod tests` |
 
-`cargo test` が確かめるのは、ネットワークを使わない部分です。PKCE とリダイレクトの読み取り（`auth.rs`）、アカウントの一覧の更新と旧形式の読み取り（`credentials.rs`）、複数アカウントのカードを新しい順に並べて切る処理（`accounts.rs`）、ビューの保存と読み込み（`views.rs`）、MIME の解析と文字コード（ISO-2022-JP、Shift_JIS を含む）、文字コードの宣言がないか誤っているときの推測、RFC 2047 のヘッダー（`mime.rs`）、サニタイズで消えるものと残るもの（`sanitize.rs`）、スレッドからカードへの変換、メッセージから本文への変換と JSON の形（`card.rs`）、上限で断られたときの判定と待ち時間（`gmail.rs`）、開いてよいリンク（`commands.rs`）、webview に許す遷移（`links.rs`）を見ます。
+`cargo test` が確かめるのは、ネットワークを使わない部分です。PKCE とリダイレクトの読み取り（`auth.rs`）、アカウントの一覧の更新と旧形式の読み取り（`credentials.rs`）、複数アカウントのカードを新しい順に並べて切る処理（`accounts.rs`）、ビューの保存と読み込み（`views.rs`）、画像を常に表示する差出人の保存と読み込み（`image_senders.rs`）、MIME の解析と文字コード（ISO-2022-JP、Shift_JIS を含む）、文字コードの宣言がないか誤っているときの推測、RFC 2047 のヘッダー（`mime.rs`）、サニタイズで消えるものと残るもの（`sanitize.rs`）、スレッドからカードへの変換、メッセージから本文への変換と JSON の形（`card.rs`）、上限で断られたときの判定と待ち時間（`gmail.rs`）、開いてよいリンク（`commands.rs`）、webview に許す遷移（`links.rs`）を見ます。
 
 ### フロントエンドの E2E テスト
 
@@ -227,7 +235,7 @@ WebView2 はトップレベルの遷移しか問い合わせないため、ペ�
 3. まとめて完了で次の 50 件が表示されること
 4. ニュースレターなど HTML のメールのレイアウトと、「表示する」で外部画像が出ること
 5. 本文中のリンクが既定のブラウザで開くこと
-6. アプリを終了して起動し直しても、ログインとビューが続いていること
+6. アプリを終了して起動し直しても、ログイン、ビュー、画像を常に表示する差出人が続いていること
 7. macOS で前のバージョンから更新して起動しても、ログインが続いていること。2 回目以降の更新では、キーチェーンの確認が 1 回だけ出ること
 7. 設定から 2 つ目のアカウントを追加すると、両方のメールが新しい順に 1 つの列に並び、それぞれのボタンが正しいアカウントに反映されること
 8. ビューのアカウントと検索条件で、並ぶメールが絞り込まれること

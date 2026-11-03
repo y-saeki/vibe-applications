@@ -5,6 +5,7 @@ mod commands;
 mod credentials;
 mod error;
 mod gmail;
+mod image_senders;
 mod links;
 mod mime;
 mod sanitize;
@@ -41,6 +42,8 @@ pub fn run() {
             commands::set_starred,
             commands::list_views,
             commands::save_views,
+            commands::list_image_senders,
+            commands::save_image_senders,
             commands::open_link,
         ])
         .run(tauri::generate_context!())

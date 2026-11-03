@@ -2,6 +2,7 @@ import './style.css'
 
 import { backend, errorMessage, isCommandError, type Session, type View } from './backend'
 import { ICONS } from './icons'
+import { ImageSenders } from './image-senders'
 import { Inbox } from './inbox'
 import { showNotice } from './notice'
 import { Settings } from './settings'
@@ -27,7 +28,8 @@ for (const slot of document.querySelectorAll<HTMLElement>('[data-icon]')) {
   slot.innerHTML = ICONS[slot.dataset.icon as keyof typeof ICONS]
 }
 
-const inbox = new Inbox((message) => void signedOut(message))
+const imageSenders = new ImageSenders()
+const inbox = new Inbox((message) => void signedOut(message), imageSenders)
 const sidebar = new Sidebar()
 const tabs = new ViewTabs((id) => {
   activeView = id
@@ -46,6 +48,7 @@ function setPlatform(): void {
 const settings = new Settings({
   accounts,
   views: () => views,
+  imageSenders,
   accountsChanged: async () => {
     if (await refreshSession()) settings.render()
   },
@@ -166,6 +169,12 @@ async function main(): Promise<void> {
     views = await backend.views()
   } catch (err) {
     // The whole inbox does without them.
+    showNotice(errorMessage(err))
+  }
+  try {
+    await imageSenders.load()
+  } catch (err) {
+    // Every message then asks before it shows images, as it does for anyone else.
     showNotice(errorMessage(err))
   }
   if (accounts().length > 0) showInbox()

@@ -16,6 +16,7 @@ import {
 } from './backend'
 import { formatDate } from './format'
 import { ICONS } from './icons'
+import type { ImageSenders } from './image-senders'
 import { mountBody, type MountedBody } from './message-frame'
 import { showNotice } from './notice'
 import { OverlayScrollbar } from './overlay-scrollbar'
@@ -86,7 +87,10 @@ export class Inbox {
     rootMargin: PRELOAD_MARGIN,
   })
 
-  constructor(private readonly onSignedOut: (message: string) => void) {
+  constructor(
+    private readonly onSignedOut: (message: string) => void,
+    private readonly imageSenders: ImageSenders,
+  ) {
     this.strip.addEventListener('click', (event) => this.onClick(event))
     // A card is narrower than its usual width only when the window is, so a
     // message is laid out again when the window changes size.
@@ -301,7 +305,19 @@ export class Inbox {
     imagesButton.className = 'link-button'
     imagesButton.dataset.action = 'images'
     imagesButton.textContent = '表示する'
-    images.append(imagesText, imagesButton)
+    const imagesActions = document.createElement('span')
+    imagesActions.className = 'card-images-actions'
+    imagesActions.append(imagesButton)
+    if (card.from.email) {
+      const always = document.createElement('button')
+      always.type = 'button'
+      always.className = 'link-button'
+      always.dataset.action = 'images-always'
+      always.textContent = 'この差出人は常に表示'
+      always.title = `${card.from.email} からのメールでは、外部の画像を常に読み込みます`
+      imagesActions.append(always)
+    }
+    images.append(imagesText, imagesActions)
 
     const bodyWrap = document.createElement('div')
     bodyWrap.className = 'card-body-wrap'
@@ -390,12 +406,13 @@ export class Inbox {
   private showBody(mounted: Mounted, content: MessageContent): void {
     const { element } = mounted
     const container = element.querySelector<HTMLElement>('.card-body')!
-    mounted.body = mountBody(container, content.body, (url) => this.openLink(url))
+    const remote = content.body.kind === 'html' && content.body.remoteImages
+    // A sender the user chose to trust has their images shown from the start.
+    const trusted = remote && this.imageSenders.has(mounted.card.from.email)
+    mounted.body = mountBody(container, content.body, (url) => this.openLink(url), trusted)
     const scrollbar = new OverlayScrollbar(container, container.parentElement!)
     for (const child of container.children) scrollbar.watch(child)
-    if (content.body.kind === 'html' && content.body.remoteImages) {
-      element.querySelector<HTMLElement>('.card-images')!.hidden = false
-    }
+    if (remote && !trusted) element.querySelector<HTMLElement>('.card-images')!.hidden = false
     if (content.attachments.length > 0) {
       const attachments = element.querySelector<HTMLElement>('.card-attachments')!
       attachments.innerHTML = ICONS.attachment
@@ -434,9 +451,37 @@ export class Inbox {
         void this.toggleStar(mounted, button)
         break
       case 'images':
-        mounted.body?.allowRemoteImages()
-        button.closest<HTMLElement>('.card-images')!.hidden = true
+        this.showImages(mounted)
         break
+      case 'images-always':
+        void this.trustSender(card.from.email, button)
+        break
+    }
+  }
+
+  /** Loads the images from the network in one card's message. */
+  private showImages(mounted: Mounted): void {
+    mounted.body?.allowRemoteImages()
+    mounted.element.querySelector<HTMLElement>('.card-images')!.hidden = true
+  }
+
+  /**
+   * Remembers that messages from `email` show their images without asking,
+   * and shows them in every card from that sender still asking.
+   */
+  private async trustSender(email: string, button: HTMLButtonElement): Promise<void> {
+    button.disabled = true
+    try {
+      await this.imageSenders.allow(email)
+    } catch (err) {
+      showNotice(errorMessage(err))
+      return
+    } finally {
+      button.disabled = false
+    }
+    for (const mounted of this.mounted.values()) {
+      const asking = !mounted.element.querySelector<HTMLElement>('.card-images')!.hidden
+      if (asking && this.imageSenders.has(mounted.card.from.email)) this.showImages(mounted)
     }
   }
 
