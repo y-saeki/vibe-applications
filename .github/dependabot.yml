@@ -69,6 +69,11 @@ updates:
       - no-release
     commit-message:
       prefix: myaku
+    # windows-numerics has to be the version the windows crate itself depends
+    # on (Direct2D's calls take its Vector2 and Matrix3x2), so it moves only
+    # when windows does, by hand.
+    ignore:
+      - dependency-name: windows-numerics
     groups:
       minor-and-patch:
         update-types:
