@@ -73,6 +73,12 @@ public struct BookmarkAPI: Sendable {
         return try JSONDecoder.hatena(MyBookmarkSearchPage.self, from: data, source: "official.my-search")
     }
 
+    /// The query that lists every bookmark. No documented API lists the
+    /// user's bookmarks with the private ones among them, so the list is a
+    /// search for nothing in particular. The documentation does not say
+    /// whether an empty `q` is accepted, nor in which order hits come.
+    public static let everythingQuery = ""
+
     private func signed(_ method: String, _ url: URL, form: [(String, String)] = []) -> URLRequest {
         signer.request(method: method, url: url, form: form, token: token)
     }

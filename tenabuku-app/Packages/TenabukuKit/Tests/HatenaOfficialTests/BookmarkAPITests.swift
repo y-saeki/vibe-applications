@@ -78,6 +78,18 @@ final class BookmarkAPITests: XCTestCase {
         )
     }
 
+    func testListingSearchesWithAnEmptyQuery() async throws {
+        let transport = StubTransport(body: #"{"bookmarks":[],"meta":{"total":0}}"#)
+
+        let result = try await api(transport).search(BookmarkAPI.everythingQuery, offset: 40, limit: 20)
+
+        XCTAssertEqual(result.total, 0)
+        XCTAssertEqual(
+            transport.requests.first?.url?.absoluteString,
+            "https://b.hatena.ne.jp/my/search/json?q=&of=40&limit=20"
+        )
+    }
+
     func testTagsAcceptsABareArray() async throws {
         let transport = StubTransport(body: #"[{"tag":"swift","count":12},{"tag":"ios","count":"3"}]"#)
 
@@ -203,5 +215,74 @@ final class TagSuggestionTests: XCTestCase {
 
     func testNoMatchIsEmpty() {
         XCTAssertEqual(names("rust"), [])
+    }
+}
+
+final class MyBookmarkPagesTests: XCTestCase {
+    private func hit(_ path: String, comment: String = "") -> MyBookmarkSearchHit {
+        MyBookmarkSearchHit(
+            title: path,
+            url: URL(string: "https://example.com/\(path)")!,
+            bookmarkCount: 1,
+            snippet: "",
+            comment: comment,
+            isPrivate: false,
+            bookmarkedAt: nil
+        )
+    }
+
+    private func page(total: Int, _ paths: String...) -> MyBookmarkSearchPage {
+        MyBookmarkSearchPage(total: total, hits: paths.map { hit($0) })
+    }
+
+    func testReadsOnUntilTheTotal() {
+        var pages = MyBookmarkPages(query: "")
+        XCTAssertTrue(pages.hasMore)
+        XCTAssertNil(pages.total)
+
+        pages.append(page(total: 3, "a", "b"))
+        XCTAssertEqual(pages.nextOffset, 2)
+        XCTAssertTrue(pages.hasMore)
+
+        pages.append(page(total: 3, "c"))
+        XCTAssertEqual(pages.hits.map(\.title), ["a", "b", "c"])
+        XCTAssertFalse(pages.hasMore)
+    }
+
+    func testAnEmptyPageEndsTheList() {
+        var pages = MyBookmarkPages(query: "")
+        pages.append(page(total: 10, "a"))
+        pages.append(page(total: 10))
+        XCTAssertFalse(pages.hasMore)
+    }
+
+    func testRepeatedHitsAreShownOnceButStillAdvanceTheOffset() {
+        var pages = MyBookmarkPages(query: "")
+        pages.append(page(total: 4, "a", "b"))
+        pages.append(page(total: 4, "b", "c"))
+        XCTAssertEqual(pages.hits.map(\.title), ["a", "b", "c"])
+        XCTAssertEqual(pages.nextOffset, 4)
+    }
+
+    func testRemovingAHitPullsTheOffsetBack() {
+        var pages = MyBookmarkPages(query: "")
+        pages.append(page(total: 3, "a", "b"))
+        pages.remove(URL(string: "https://example.com/a")!)
+        XCTAssertEqual(pages.hits.map(\.title), ["b"])
+        XCTAssertEqual(pages.nextOffset, 1)
+        XCTAssertEqual(pages.total, 2)
+        XCTAssertTrue(pages.hasMore)
+    }
+
+    func testUpdatingAHitTakesTheSavedCommentAndPrivacy() {
+        var pages = MyBookmarkPages(query: "")
+        pages.append(page(total: 1, "a"))
+        let saved = MyBookmark(user: "sample", comment: "よい", tags: [], isPrivate: true, createdAt: nil, permalink: nil)
+
+        pages.update(URL(string: "https://example.com/a")!, with: saved)
+
+        XCTAssertEqual(pages.hits.first?.comment, "よい")
+        XCTAssertEqual(pages.hits.first?.isPrivate, true)
+        XCTAssertEqual(pages.hits.first?.title, "a")
     }
 }
