@@ -44,6 +44,9 @@
   --toolbar-start: 12px;
   --sidebar-inset: 8px;
   --sidebar-width: 220px;
+  --control-size: 34px;
+  /* The sidebar and what makes room for it move together. */
+  --sidebar-motion: 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
   /* The left edge of the strip's first card while the sidebar is open beside it. */
   --beside-sidebar: calc(var(--sidebar-inset) + var(--sidebar-width) + var(--gap));
   --font: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic UI", "Segoe UI", sans-serif;
@@ -186,21 +189,23 @@ button {
 
 .icon-button {
   flex: none;
-  width: 32px;
-  height: 30px;
+  width: var(--control-size);
+  height: var(--control-size);
   display: grid;
   place-items: center;
   padding: 0;
   border: none;
   border-radius: 999px;
   background: transparent;
-  color: var(--text);
-  opacity: 0.8;
+  color: color-mix(in srgb, var(--text) 80%, transparent);
 }
 
 .icon-button:hover {
+  color: var(--text);
+}
+
+.topbar-tools .icon-button:hover {
   background: var(--control);
-  opacity: 1;
 }
 
 .link-button {
@@ -342,8 +347,18 @@ button {
 @media (prefers-reduced-motion: no-preference) {
   .sidebar {
     transition:
-      transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1),
+      transform var(--sidebar-motion),
       visibility 0.25s;
+  }
+
+  #toggle-sidebar {
+    transition: left var(--sidebar-motion);
+  }
+
+  .topbar,
+  .strip,
+  .empty {
+    transition: padding-left var(--sidebar-motion);
   }
 }
 
@@ -408,14 +423,21 @@ button {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: var(--sidebar-inset) 12px 0 calc(var(--toolbar-start) + 40px);
+  padding: var(--sidebar-inset) 12px 0 calc(var(--toolbar-start) + var(--control-size) + 10px);
 }
 
-/* Stays in place whether the sidebar is open or not, like the window controls beside it. */
+/*
+ * Beside the window controls while the sidebar is closed, and at the open
+ * sidebar's trailing edge, as Mail places it.
+ */
 #toggle-sidebar {
   position: absolute;
   left: var(--toolbar-start);
-  top: calc(var(--sidebar-inset) + (var(--toolbar-height) - var(--sidebar-inset) - 30px) / 2);
+  top: calc(var(--sidebar-inset) + (var(--toolbar-height) - var(--sidebar-inset) - var(--control-size)) / 2);
+}
+
+.sidebar-open #toggle-sidebar {
+  left: calc(var(--sidebar-inset) + var(--sidebar-width) - 8px - var(--control-size));
 }
 
 .topbar-title {
@@ -444,7 +466,6 @@ button {
   display: flex;
   align-items: center;
   gap: 2px;
-  padding: 3px;
   border-radius: 999px;
 }
 
