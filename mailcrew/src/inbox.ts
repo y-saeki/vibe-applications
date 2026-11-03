@@ -264,12 +264,12 @@ export class Inbox {
     date.className = 'card-date'
     date.dateTime = new Date(card.date).toISOString()
     date.textContent = formatDate(card.date)
-    fromRow.append(from, date)
     const subject = document.createElement('h2')
     subject.className = 'card-subject'
     subject.textContent = card.subject || '(件名なし)'
     head.append(fromRow, subject)
 
+    // The badges sit on the sender's line, between the name and the date.
     const meta = document.createElement('div')
     meta.className = 'card-meta'
     // Shown only while more than one account is signed in.
@@ -289,8 +289,7 @@ export class Inbox {
     attachments.className = 'card-badge card-attachments'
     attachments.hidden = true
     meta.append(attachments)
-    // Always there, empty or not, so that every card's head is the same height.
-    head.append(meta)
+    fromRow.append(from, meta, date)
 
     const images = document.createElement('div')
     images.className = 'card-images'
@@ -326,6 +325,7 @@ export class Inbox {
       button.title = tool.label
       button.innerHTML = ICONS[tool.action]
       const text = document.createElement('span')
+      text.className = 'tool-label'
       text.textContent = tool.label
       button.append(text)
       if (tool.action === 'star') button.setAttribute('aria-pressed', String(card.starred))

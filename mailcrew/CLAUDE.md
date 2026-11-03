@@ -66,7 +66,7 @@ covers it changes in the same commit:
 |---|---|
 | Sign-in, sign-out, or which screen shows at startup | `tests/e2e/sign-in.spec.ts` |
 | Adding or removing an account in the settings | `tests/e2e/settings.spec.ts` |
-| The view tabs, or making, editing and deleting a view | `tests/e2e/views.spec.ts` |
+| The sidebar and the views in it, the toolbar's title, or making, editing and deleting a view | `tests/e2e/views.spec.ts` |
 | How cards are laid out, the end of the strip, the empty state, reloading | `tests/e2e/inbox.spec.ts` |
 | A toolbar button or まとめて完了 | `tests/e2e/actions.spec.ts` |
 | The tag picker | `tests/e2e/tags.spec.ts` |

@@ -1,9 +1,11 @@
 import './style.css'
 
 import { backend, errorMessage, isCommandError, type Session, type View } from './backend'
+import { ICONS } from './icons'
 import { Inbox } from './inbox'
 import { showNotice } from './notice'
 import { Settings } from './settings'
+import { Sidebar } from './sidebar'
 import { filterFor, INBOX_VIEW, tabExists, ViewTabs } from './views'
 
 const setup = document.querySelector<HTMLElement>('#setup')!
@@ -21,11 +23,26 @@ let activeView = INBOX_VIEW
 
 const accounts = () => session?.accounts ?? []
 
+for (const slot of document.querySelectorAll<HTMLElement>('[data-icon]')) {
+  slot.innerHTML = ICONS[slot.dataset.icon as keyof typeof ICONS]
+}
+
 const inbox = new Inbox((message) => void signedOut(message))
+const sidebar = new Sidebar()
 const tabs = new ViewTabs((id) => {
   activeView = id
+  sidebar.picked()
   showView()
 })
+
+/**
+ * Which platform the page is on, for what differs between them: on macOS the
+ * window's own material shows behind the page and the toolbar shares a row
+ * with the window controls.
+ */
+function setPlatform(): void {
+  if (session) document.documentElement.dataset.platform = session.platform
+}
 const settings = new Settings({
   accounts,
   views: () => views,
@@ -80,6 +97,7 @@ async function refreshSession(message?: string): Promise<boolean> {
     showNotice(errorMessage(err))
     return true
   }
+  setPlatform()
   if (accounts().length === 0) {
     showSetup(message)
     return false
@@ -143,6 +161,7 @@ async function main(): Promise<void> {
     showSetup(errorMessage(err))
     return
   }
+  setPlatform()
   try {
     views = await backend.views()
   } catch (err) {

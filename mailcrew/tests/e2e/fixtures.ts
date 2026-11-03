@@ -88,6 +88,9 @@ export class App {
   readonly tagFilter: Locator
   readonly settings: Locator
   readonly tabs: Locator
+  readonly sidebar: Locator
+  readonly toggleSidebar: Locator
+  readonly title: Locator
 
   constructor(
     readonly page: Page,
@@ -105,6 +108,9 @@ export class App {
     this.tagFilter = page.locator('#tag-filter')
     this.settings = page.locator('#settings')
     this.tabs = page.locator('#views .view-tab')
+    this.sidebar = page.locator('#sidebar')
+    this.toggleSidebar = page.locator('#toggle-sidebar')
+    this.title = page.locator('#view-title')
   }
 
   tab(name: string): Locator {

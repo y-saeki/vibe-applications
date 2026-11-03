@@ -11,7 +11,7 @@
     <div id="loading" class="screen-message" role="status">読み込み中…</div>
 
     <!-- Sign-in. The OAuth client is the user's own, so it is asked for here. -->
-    <main id="setup" class="setup" hidden>
+    <main id="setup" class="setup" data-tauri-drag-region hidden>
       <form id="setup-form" class="setup-form">
         <h1 class="setup-title">Mail Crew</h1>
         <p class="setup-lead">Gmail の受信トレイを、1 通ずつのカードで読むメーラーです。</p>
@@ -39,17 +39,26 @@
       </form>
     </main>
 
-    <!-- The inbox: one card per thread, newest at the left. -->
+    <!-- The inbox: the views in a sidebar, and one card per thread, newest at the left. -->
     <div id="inbox" class="inbox" hidden>
-      <header class="topbar">
+      <nav id="sidebar" class="sidebar glass" aria-label="サイドバー">
+        <div id="views" class="view-list" role="tablist" aria-orientation="vertical" aria-label="ビュー"></div>
+        <button type="button" id="open-settings" class="sidebar-item">
+          <span class="icon" data-icon="settings"></span><span>設定</span>
+        </button>
+      </nav>
+      <header class="topbar" data-tauri-drag-region="deep">
+        <button type="button" id="toggle-sidebar" class="icon-button glass" aria-controls="sidebar" title="サイドバー">
+          <span class="icon" data-icon="sidebar"></span><span class="visually-hidden">サイドバー</span>
+        </button>
         <div class="topbar-title">
-          <h1 class="visually-hidden">受信トレイ</h1>
-          <nav id="views" class="view-tabs" role="tablist" aria-label="ビュー"></nav>
+          <h1 id="view-title" class="view-title">受信トレイ</h1>
           <span id="inbox-count" class="topbar-count"></span>
         </div>
-        <div class="topbar-tools">
-          <button type="button" id="reload" class="button button-quiet" title="再読み込み">再読み込み</button>
-          <button type="button" id="open-settings" class="button button-quiet" title="設定">設定</button>
+        <div class="topbar-tools glass">
+          <button type="button" id="reload" class="icon-button" title="再読み込み">
+            <span class="icon" data-icon="reload"></span><span class="visually-hidden">再読み込み</span>
+          </button>
         </div>
       </header>
       <section id="strip" class="strip" aria-label="受信トレイのスレッド"></section>
@@ -60,9 +69,9 @@
     </div>
 
     <!-- Settings: the accounts, and the custom views. -->
-    <main id="settings" class="settings" hidden>
+    <main id="settings" class="settings" data-tauri-drag-region hidden>
       <div class="settings-panel">
-        <header class="settings-head">
+        <header class="settings-head" data-tauri-drag-region="deep">
           <h1 class="settings-title">設定</h1>
           <button type="button" id="close-settings" class="button">受信トレイに戻る</button>
         </header>
@@ -96,7 +105,7 @@
 
         <section class="settings-section" aria-labelledby="views-heading">
           <h2 id="views-heading" class="settings-heading">ビュー</h2>
-          <p class="setup-hint">受信トレイの中を絞り込んだ一覧です。受信トレイの上のタブで、「受信トレイ」「あとで読む」の右に並びます。</p>
+          <p class="setup-hint">受信トレイの中を絞り込んだ一覧です。サイドバーの「受信トレイ」「あとで読む」の下に並びます。</p>
           <ul id="view-list" class="settings-list"></ul>
           <p id="view-error" class="setup-error" role="alert" hidden></p>
           <form id="view-form" class="settings-form" hidden>
@@ -125,12 +134,12 @@
     </main>
 
     <!-- The tag picker, moved next to whichever card's button opened it. -->
-    <div id="tag-picker" class="tag-picker" role="dialog" aria-label="タグを追加" hidden>
+    <div id="tag-picker" class="tag-picker glass" role="dialog" aria-label="タグを追加" hidden>
       <input id="tag-filter" class="tag-filter" type="text" placeholder="タグを検索または作成" autocomplete="off" spellcheck="false" />
       <ul id="tag-list" class="tag-list" role="listbox" aria-label="タグ"></ul>
     </div>
 
-    <div id="notice" class="notice" role="alert" hidden></div>
+    <div id="notice" class="notice glass" role="alert" hidden></div>
 
     <script type="module" src="main.js"></script>
   </body>

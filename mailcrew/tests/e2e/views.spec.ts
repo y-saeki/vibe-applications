@@ -1,4 +1,4 @@
-// The tabs above the strip, and the custom views made in the settings.
+// The views in the sidebar, the sidebar itself, and the custom views made in the settings.
 
 import { card, expect, ME, test } from './fixtures'
 
@@ -168,4 +168,53 @@ test('an empty あとで読む says so', async ({ launch }) => {
   await app.tab('あとで読む').click()
   await expect(app.empty).toBeVisible()
   await expect(app.empty).toContainText('あとで読むメールはありません')
+})
+
+test('the toolbar names the view on screen and how many threads it holds', async ({ launch }) => {
+  const app = await launch({
+    views: [{ id: 'v1', name: '仕事', accounts: [], query: '' }],
+    inboxes: [[card(1), card(2)], [card(3)]],
+  })
+  await expect(app.title).toHaveText('受信トレイ')
+  await expect(app.count).toHaveText('2 件')
+  await app.tab('仕事').click()
+  await expect(app.title).toHaveText('仕事')
+  await expect(app.count).toHaveText('1 件')
+})
+
+test('the first card starts beside the open sidebar, and at the edge once it is hidden', async ({ launch }) => {
+  const app = await launch({ inboxes: [[card(1)]] })
+  await app.page.setViewportSize({ width: 1280, height: 800 })
+  await expect(app.sidebar).toBeVisible()
+  const sidebarRight = await app.sidebar.evaluate((element) => element.getBoundingClientRect().right)
+  expect(await app.card('t1').evaluate((element) => element.getBoundingClientRect().left)).toBeGreaterThan(sidebarRight)
+  await app.toggleSidebar.click()
+  await expect(app.sidebar).toBeHidden()
+  await expect(app.toggleSidebar).toHaveAttribute('aria-expanded', 'false')
+  await expect.poll(() => app.card('t1').evaluate((element) => element.getBoundingClientRect().left)).toBeLessThan(sidebarRight)
+})
+
+test('a hidden sidebar stays hidden the next time the app opens', async ({ launch }) => {
+  const app = await launch({ inboxes: [[card(1)], [card(1)]] })
+  await app.toggleSidebar.click()
+  await expect(app.sidebar).toBeHidden()
+  await app.page.reload()
+  await expect(app.cards).toHaveCount(1)
+  await expect(app.sidebar).toBeHidden()
+  await app.toggleSidebar.click()
+  await expect(app.sidebar).toBeVisible()
+})
+
+test('in a narrow window the sidebar opens over the cards and closes once a view is picked', async ({ launch }) => {
+  const app = await launch({
+    views: [{ id: 'v1', name: '仕事', accounts: [], query: '' }],
+    inboxes: [[card(1)], [card(2)]],
+  })
+  await app.page.setViewportSize({ width: 600, height: 800 })
+  await expect(app.sidebar).toBeHidden()
+  await app.toggleSidebar.click()
+  await expect(app.sidebar).toBeVisible()
+  await app.tab('仕事').click()
+  await expect(app.sidebar).toBeHidden()
+  await expect(app.title).toHaveText('仕事')
 })
