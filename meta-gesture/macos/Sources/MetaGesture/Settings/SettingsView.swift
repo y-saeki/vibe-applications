@@ -124,6 +124,11 @@ private struct SetList: View {
                 listButton("上へ", enabled: model.canMoveSet(up: true)) { model.moveSet(up: true) }
                 listButton("下へ", enabled: model.canMoveSet(up: false)) { model.moveSet(up: false) }
             }
+            Menu("プリセットから追加") {
+                ForEach(Array(model.presets.enumerated()), id: \.offset) { i, name in
+                    Button(name) { model.addPreset(i) }
+                }
+            }
         }
     }
 }

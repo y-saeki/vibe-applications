@@ -101,6 +101,10 @@ pub struct Command {
     pub keys: Option<Combo>,
     /// Keys for one application of the set, by its id.
     pub apps: BTreeMap<String, Combo>,
+    /// The command of a preset this one was made from
+    /// (`preset::Command::id`), which fills in the keys of an application
+    /// added to the set.
+    pub preset: Option<String>,
 }
 
 impl Command {
@@ -208,6 +212,8 @@ struct FileCommand {
     keys: Option<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     apps: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    preset: Option<String>,
 }
 
 impl FileCommand {
@@ -237,6 +243,7 @@ impl FileCommand {
             gesture,
             keys,
             apps,
+            preset: self.preset,
         })
     }
 
@@ -250,6 +257,7 @@ impl FileCommand {
                 .iter()
                 .map(|(app, k)| (app.clone(), k.text(look)))
                 .collect(),
+            preset: c.preset.clone(),
         }
     }
 }
@@ -587,6 +595,12 @@ gesture = "↓→"
         assert_eq!(parse(&config.to_toml()).unwrap(), config);
         let empty = Config::default();
         assert_eq!(parse(&empty.to_toml()).unwrap(), empty);
+        // The preset a command was made from is kept.
+        let mut config = config;
+        config.sets[0].commands[0].preset = Some("back".into());
+        let text = config.to_toml();
+        assert!(text.contains(r#"preset = "back""#));
+        assert_eq!(parse(&text).unwrap(), config);
     }
 
     #[test]
@@ -597,6 +611,7 @@ gesture = "↓→"
             gesture: g("↓→"),
             keys: Some(combo("Cmd+Option+W")),
             apps: BTreeMap::new(),
+            preset: None,
         });
         config.os = Os::Macos;
         assert!(config.to_toml().contains(r#"keys = "Option+Cmd+W""#));

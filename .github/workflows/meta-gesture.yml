@@ -106,15 +106,17 @@ jobs:
       # The certificate that keeps the accessibility permission across
       # updates (DEVELOPMENT.md, "macOS 版の署名"). Pull requests from forks
       # and Dependabot get no secrets and build ad hoc; a push to main must
-      # not, or the release would cost every user their permission.
+      # not, or the release would cost every user their permission. The
+      # certificate is the repository's, shared with winwin, and its secrets
+      # keep the names winwin gave them.
       - name: Signing certificate
         env:
-          CERTIFICATE_P12: ${{ secrets.META_GESTURE_MACOS_CERTIFICATE_P12 }}
-          CERTIFICATE_PASSWORD: ${{ secrets.META_GESTURE_MACOS_CERTIFICATE_PASSWORD }}
+          CERTIFICATE_P12: ${{ secrets.WINWIN_MACOS_CERTIFICATE_P12 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.WINWIN_MACOS_CERTIFICATE_PASSWORD }}
         run: |
           if [ -z "${CERTIFICATE_P12}" ]; then
             if [ "${GITHUB_EVENT_NAME}" = push ]; then
-              echo "::error::META_GESTURE_MACOS_CERTIFICATE_P12 is not set; a release must not be signed ad hoc"
+              echo "::error::WINWIN_MACOS_CERTIFICATE_P12 is not set; a release must not be signed ad hoc"
               exit 1
             fi
             echo "::notice::no signing certificate; the app is signed ad hoc"

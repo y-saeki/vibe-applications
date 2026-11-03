@@ -12,6 +12,7 @@
 use crate::config::{App, COMMON_NAME, Command, Config, GestureSet, Place, Problem};
 use crate::gesture::{Direction, Gesture};
 use crate::keys::Combo;
+use crate::preset::{self, Preset};
 
 /// A line of the list of sets.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -200,8 +201,45 @@ impl Editor {
                 app.name, self.config.sets[other].name
             ));
         }
+        fill_in(&mut self.config.sets[i], self.config.os, &app);
         self.config.sets[i].apps.push(app);
         Ok(())
+    }
+
+    /// Adds a set made from `preset` after the others and selects it: its
+    /// commands, and the applications of `running` it knows that are in no
+    /// set yet, with their keys.
+    pub fn add_preset(&mut self, preset: &Preset, running: &[App]) {
+        let name = self.unique(
+            preset.name,
+            self.config.sets.iter().map(|s| s.name.as_str()),
+        );
+        let mut set = GestureSet {
+            name,
+            apps: Vec::new(),
+            commands: preset
+                .commands
+                .iter()
+                .map(|c| Command {
+                    name: c.name.into(),
+                    gesture: c.gesture(),
+                    preset: Some(c.id.into()),
+                    ..Default::default()
+                })
+                .collect(),
+        };
+        for app in running {
+            if preset.application(app).is_some()
+                && self.config.set_of(&app.id).is_none()
+                && !set.apps.iter().any(|a| a.is(&app.id))
+            {
+                fill_in(&mut set, self.config.os, app);
+                set.apps.push(app.clone());
+            }
+        }
+        self.config.sets.push(set);
+        self.set = Some(self.config.sets.len() - 1);
+        self.command = None;
     }
 
     /// Takes the application at `index` out of the selected set, with the
@@ -435,6 +473,22 @@ impl Editor {
     }
 }
 
+/// Gives `app` the keys its preset knows for each command of `set` made
+/// from a preset, where it has none of its own yet.
+fn fill_in(set: &mut GestureSet, os: crate::config::Os, app: &App) {
+    for c in &mut set.commands {
+        let Some((preset, command)) = c.preset.as_deref().and_then(preset::command) else {
+            continue;
+        };
+        let Some(keys) = preset.application(app).and_then(|a| a.keys(os, command.id)) else {
+            continue;
+        };
+        if !c.apps.keys().any(|id| app.is(id)) {
+            c.apps.insert(app.id.clone(), keys);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -618,5 +672,66 @@ mod tests {
         assert!(e.is_changed());
         assert!(e.is_common());
         assert_eq!(e.set_rows().len(), 1);
+    }
+
+    #[test]
+    fn a_preset_makes_a_set_with_the_running_applications_it_knows() {
+        let mut e = Editor::new(Config::default());
+        let running = [
+            app("chrome.exe", "Google Chrome"),
+            app("notepad.exe", "メモ帳"),
+            app("msedge.exe", "Microsoft Edge"),
+        ];
+        e.add_preset(&preset::BROWSERS, &running);
+        assert_eq!(e.set_name(), "ブラウザ");
+        assert_eq!(e.apps().len(), 2);
+        let rows = e.command_rows();
+        assert_eq!(rows.len(), preset::BROWSERS.commands.len());
+        assert_eq!(rows[0].name, "戻る");
+        assert_eq!(rows[0].gesture, "←");
+        e.select_command(Some(0));
+        let os = e.config().os;
+        let keys = e.key_rows();
+        // The set has no keys of its own; each browser has its own.
+        assert_eq!(keys[0].keys, None);
+        assert!(keys[1].keys.is_some());
+        assert_eq!(
+            keys[1].keys,
+            preset::BROWSERS.applications[0].keys(os, "back")
+        );
+        // It saves as it is, and a second one takes another name and no
+        // application already in the first.
+        assert!(e.check().is_ok());
+        e.add_preset(&preset::BROWSERS, &running);
+        assert_eq!(e.set_name(), "ブラウザ 2");
+        assert!(e.apps().is_empty());
+    }
+
+    #[test]
+    fn an_application_added_to_a_preset_set_gets_its_keys() {
+        let mut e = Editor::new(Config::default());
+        e.add_preset(&preset::BROWSERS, &[]);
+        e.add_app(app("chrome.exe", "Google Chrome")).unwrap();
+        e.add_app(app("notepad.exe", "メモ帳")).unwrap();
+        e.select_command(Some(0));
+        let rows = e.key_rows();
+        assert_eq!(
+            rows[1].keys,
+            preset::BROWSERS.applications[0].keys(e.config().os, "back")
+        );
+        assert_eq!(rows[2].keys, None);
+        // Keys set by hand are not filled over.
+        e.set_keys(1, Some(combo("F1")));
+        let mut config = e.config().clone();
+        fill_in(
+            &mut config.sets[0],
+            config.os,
+            &app("chrome.exe", "Google Chrome"),
+        );
+        assert_eq!(config.sets[0].commands[0].apps["chrome.exe"], combo("F1"));
+        // A command made by hand has no preset to fill in from.
+        e.add_command();
+        e.add_app(app("msedge.exe", "Microsoft Edge")).unwrap();
+        assert!(e.command().unwrap().apps.is_empty());
     }
 }

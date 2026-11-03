@@ -25,6 +25,7 @@ use meta_gesture::config::{App as Application, Config};
 use meta_gesture::editor::Editor;
 use meta_gesture::gesture::Direction;
 use meta_gesture::keys::{Arrow, Keycap, Look, Recorder};
+use meta_gesture::preset;
 use meta_gesture::vk;
 
 /// The client area in DIPs, which is also as small as the window goes.
@@ -92,6 +93,8 @@ struct Settings {
 enum Msg {
     SelectSet(Option<usize>),
     AddSet,
+    /// One of `preset::ALL` was chosen to add as a set.
+    AddPreset(Option<usize>),
     DeleteSet,
     MoveSet(bool),
     RenameSet(String),
@@ -164,6 +167,12 @@ impl Component for Settings {
             Msg::SelectSet(Some(i)) => e.select_set_row(i),
             Msg::SelectSet(None) => {}
             Msg::AddSet => e.add_set(),
+            Msg::AddPreset(Some(i)) => {
+                if let Some(p) = preset::ALL.get(i) {
+                    e.add_preset(p, &self.running);
+                }
+            }
+            Msg::AddPreset(None) => {}
             Msg::DeleteSet => e.delete_set(),
             Msg::MoveSet(up) => e.move_set(up),
             Msg::RenameSet(name) => e.rename_set(&name),
@@ -514,8 +523,22 @@ impl Settings {
                     context,
                 )),
             ));
+        // A list that adds the chosen preset and keeps no choice of its
+        // own, as the one of running applications does.
+        let presets = ComboBox::new()
+            .items_source(preset::ALL.map(|p| p.name))
+            .selected_index(None)
+            .placeholder_text("プリセットから追加")
+            .horizontal_alignment(HorizontalAlignment::Stretch)
+            .grid_row(3)
+            .on_selection_changed(context.callback(Msg::AddPreset));
         Grid::new()
-            .rows([GridLength::Auto, GridLength::STAR, GridLength::Auto])
+            .rows([
+                GridLength::Auto,
+                GridLength::STAR,
+                GridLength::Auto,
+                GridLength::Auto,
+            ])
             .row_spacing(8.0)
             .children((
                 heading("セット"),
@@ -523,6 +546,7 @@ impl Settings {
                     .grid_row(1)
                     .content(list(rows, context.callback(Msg::SelectSet))),
                 buttons,
+                presets,
             ))
     }
 

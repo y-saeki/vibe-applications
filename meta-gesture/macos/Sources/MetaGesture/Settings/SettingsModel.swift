@@ -81,6 +81,13 @@ final class SettingsModel: ObservableObject {
 
     func selectSet(_ line: Int) { change { editor.selectSet(line: UInt32(line)) } }
     func addSet() { change { editor.addSet() } }
+    var presets: [String] { editor.presets() }
+    /// Adds a set made from preset `index`, with the running applications
+    /// it knows.
+    func addPreset(_ index: Int) {
+        let apps = running.map { AppEntry(id: $0.id, name: $0.name) }
+        change { editor.addPreset(index: UInt32(index), running: apps) }
+    }
     func deleteSet() { change { editor.deleteSet() } }
     func canMoveSet(up: Bool) -> Bool { editor.canMoveSet(up: up) }
     func moveSet(up: Bool) { change { editor.moveSet(up: up) } }

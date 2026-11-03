@@ -38,6 +38,18 @@ Intel (`x86_64`) build, no universal binary, and no reliance on Rosetta. Apple i
 support for Intel Macs and Rosetta, so the effort is not spent. Say so where the platforms
 are stated, such as the README's requirements.
 
+## One certificate signs every macOS app
+
+A macOS app that needs a permission such as Accessibility is signed with the repository's
+self-signed certificate, so that the permission survives updates. Every app uses the same one:
+the secrets `WINWIN_MACOS_CERTIFICATE_P12` and `WINWIN_MACOS_CERTIFICATE_PASSWORD`, named after
+the first app that used them. The designated requirement names the bundle identifier as well as
+the certificate, so sharing it does not let one app take another's permission.
+
+Each such app's `DEVELOPMENT.md` explains the signing in full, without pointing at another app's
+documentation: why the certificate is needed, how to create it step by step, how to register it
+as the secrets, how to sign a local build with it, and what replacing it costs the users.
+
 ## Each application carries a README
 
 Every application directory has a `README.md` covering what the application does, how to

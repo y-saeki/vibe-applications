@@ -64,6 +64,7 @@ behaviour changes, the file that covers it changes in the same commit:
 | Which virtual-key code a key or modifier is, or which keys are extended | `mod tests` in `src/vk.rs` |
 | Which macOS key code or event flag a key or modifier is | `mod tests` in `src/mac.rs` |
 | What the settings window edits, lists or checks | `mod tests` in `src/editor.rs` |
+| A preset's commands, its applications or their keys | `mod tests` in `src/preset.rs`, and the sources at its top: keys come only from an application's own documentation |
 | What the macOS app is told to do with a press, or what its settings window shows and saves | `mod tests` in `src/ffi.rs` |
 | The icon's picture, or how it is written into the executable | `mod tests` in `src/art.rs` or `src/icon_res.rs` |
 | The main window's class name, the config folder, the `Run` value name, or a second start opening the settings | `installer/installer.nsi`, which closes meta-gesture by that class, removes those on uninstall, and opens the settings from its finish page by starting meta-gesture twice |

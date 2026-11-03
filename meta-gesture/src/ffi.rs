@@ -13,7 +13,7 @@ use crate::config::{App, Config, Outcome};
 use crate::editor::Editor;
 use crate::gesture::{Direction, Tracker};
 use crate::keys::{Look, Press, Recorder};
-use crate::{art, mac};
+use crate::{art, mac, preset};
 
 /// A lock that is never poisoned: a panic aborts the process.
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -250,6 +250,27 @@ impl SettingsEditor {
     /// Adds an application to the selected set, or says why it cannot be.
     pub fn add_app(&self, id: String, name: String) -> Option<String> {
         self.editor().add_app(App { id, name }).err()
+    }
+
+    /// The presets that `add_preset` takes the number of, by name.
+    pub fn presets(&self) -> Vec<String> {
+        preset::ALL.iter().map(|p| p.name.to_string()).collect()
+    }
+
+    /// Adds a set made from preset `index`, with the applications of
+    /// `running` it knows.
+    pub fn add_preset(&self, index: u32, running: Vec<AppEntry>) {
+        let Some(p) = preset::ALL.get(index as usize) else {
+            return;
+        };
+        let running: Vec<App> = running
+            .into_iter()
+            .map(|a| App {
+                id: a.id,
+                name: a.name,
+            })
+            .collect();
+        self.editor().add_preset(p, &running);
     }
 
     pub fn remove_app(&self, line: u32) {
@@ -705,5 +726,28 @@ gesture = "↓→"
         let glyph = menu_bar_icon_rgba(18);
         assert_eq!(glyph.len(), 18 * 18 * 4);
         assert!(glyph.chunks(4).all(|p| p[..3] == [0, 0, 0]));
+    }
+
+    #[test]
+    fn adds_the_browsers_preset_with_safari_keys() {
+        let s = SettingsEditor::open(config_file("")).unwrap();
+        assert_eq!(s.presets(), vec!["ブラウザ".to_string()]);
+        s.add_preset(
+            0,
+            vec![AppEntry {
+                id: "com.apple.Safari".into(),
+                name: "Safari".into(),
+            }],
+        );
+        assert_eq!(s.set_name(), "ブラウザ");
+        s.select_command(Some(0));
+        assert_eq!(s.gesture(), "←");
+        // Safari's keys are only known on macOS.
+        let safari = &s.key_lines()[1];
+        assert_eq!(safari.label, "Safari");
+        match Os::CURRENT {
+            Os::Macos => assert_eq!(safari.caps, ["⌘", "Oem4"].map(String::from).to_vec()),
+            Os::Windows => assert!(safari.caps.is_empty()),
+        }
     }
 }
