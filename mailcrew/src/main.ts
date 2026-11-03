@@ -1,8 +1,10 @@
 import './style.css'
 
-import { backend, errorMessage, isCommandError, type Session } from './backend'
+import { backend, errorMessage, isCommandError, type Session, type View } from './backend'
 import { Inbox } from './inbox'
 import { showNotice } from './notice'
+import { Settings } from './settings'
+import { ALL_VIEW, filterFor, ViewTabs } from './views'
 
 const setup = document.querySelector<HTMLElement>('#setup')!
 const setupForm = document.querySelector<HTMLFormElement>('#setup-form')!
@@ -14,11 +16,36 @@ const clientSecret = document.querySelector<HTMLInputElement>('#client-secret')!
 const loading = document.querySelector<HTMLElement>('#loading')!
 
 let session: Session | null = null
+let views: View[] = []
+let activeView = ALL_VIEW
 
-const inbox = new Inbox((message) => showSetup(message))
+const accounts = () => session?.accounts ?? []
+
+const inbox = new Inbox((message) => void signedOut(message))
+const tabs = new ViewTabs((id) => {
+  activeView = id
+  showView()
+})
+const settings = new Settings({
+  accounts,
+  views: () => views,
+  accountsChanged: async () => {
+    if (await refreshSession()) settings.render()
+  },
+  viewsChanged: (saved) => {
+    views = saved
+    if (!views.some((view) => view.id === activeView)) activeView = ALL_VIEW
+    tabs.render(views, activeView)
+  },
+  close: () => {
+    settings.hide()
+    showInbox()
+  },
+})
 
 function showSetup(message?: string): void {
   inbox.hide()
+  settings.hide()
   loading.hidden = true
   setup.hidden = false
   setupWaiting.hidden = true
@@ -28,10 +55,47 @@ function showSetup(message?: string): void {
   clientId.focus()
 }
 
-function showInbox(email: string): void {
+function showInbox(): void {
   setup.hidden = true
-  inbox.show(email)
+  inbox.setAccounts(accounts())
+  inbox.show()
+  showView()
+}
+
+/** Lays out the tabs and fetches what the active one shows. */
+function showView(): void {
+  tabs.render(views, activeView)
+  inbox.setFilter(
+    filterFor(
+      views.find((view) => view.id === activeView),
+      accounts(),
+    ),
+  )
   void inbox.load()
+}
+
+/**
+ * Asks who is signed in now. Resolves with false, having gone back to the
+ * sign-in, when nobody is left.
+ */
+async function refreshSession(message?: string): Promise<boolean> {
+  try {
+    session = await backend.session()
+  } catch (err) {
+    showNotice(errorMessage(err))
+    return true
+  }
+  if (accounts().length === 0) {
+    showSetup(message)
+    return false
+  }
+  inbox.setAccounts(accounts())
+  return true
+}
+
+/** Google no longer accepts an account, which the Rust side has removed. */
+async function signedOut(message: string): Promise<void> {
+  if (await refreshSession(message)) showNotice(message)
 }
 
 setupForm.addEventListener('submit', (event) => {
@@ -41,9 +105,9 @@ setupForm.addEventListener('submit', (event) => {
   setupWaiting.hidden = false
   backend
     .signIn(clientId.value, clientSecret.value)
-    .then((email) => {
+    .then(async () => {
       clientSecret.value = ''
-      showInbox(email)
+      if (await refreshSession()) showInbox()
     })
     .catch((err: unknown) => {
       // A cancelled sign-in is what the user asked for; nothing to report.
@@ -63,11 +127,9 @@ document.querySelector('#setup-help')!.addEventListener('click', (event) => {
 
 document.querySelector('#reload')!.addEventListener('click', () => void inbox.load())
 
-document.querySelector('#sign-out')!.addEventListener('click', () => {
-  backend
-    .signOut()
-    .then(() => showSetup())
-    .catch((err: unknown) => showNotice(errorMessage(err)))
+document.querySelector('#open-settings')!.addEventListener('click', () => {
+  inbox.hide()
+  settings.open()
 })
 
 document.addEventListener('keydown', (event) => {
@@ -75,7 +137,7 @@ document.addEventListener('keydown', (event) => {
   // Reloading means the inbox, never the page itself.
   if (mod && event.key.toLowerCase() === 'r') {
     event.preventDefault()
-    if (!document.querySelector<HTMLElement>('#inbox')!.hidden) void inbox.load()
+    if (inbox.isShown) void inbox.load()
   }
 })
 
@@ -86,7 +148,13 @@ async function main(): Promise<void> {
     showSetup(errorMessage(err))
     return
   }
-  if (session.email) showInbox(session.email)
+  try {
+    views = await backend.views()
+  } catch (err) {
+    // The whole inbox does without them.
+    showNotice(errorMessage(err))
+  }
+  if (accounts().length > 0) showInbox()
   else showSetup()
 }
 

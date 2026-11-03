@@ -1,64 +1,75 @@
 //! Everything the page can ask of the Rust side.
 
+use std::path::PathBuf;
+
 use serde::Serialize;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
 use tauri_plugin_opener::OpenerExt;
 use tokio::net::TcpListener;
 use tokio::sync::oneshot;
 
+use crate::accounts::InboxPage;
 use crate::auth::{self, AccessToken, Pkce};
-use crate::card::Card;
-use crate::credentials::{self, Account};
+use crate::credentials::Account;
 use crate::error::{CommandError, ErrorKind, Result};
-use crate::gmail::Label;
+use crate::gmail::{Gmail, Label};
+use crate::views::{self, View};
 use crate::AppState;
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionInfo {
-    /// The signed-in address, or `None` when nobody is signed in.
-    pub email: Option<String>,
+    /// The signed-in addresses, in the order they were added; empty when
+    /// nobody is signed in.
+    pub accounts: Vec<String>,
     /// `std::env::consts::OS`, for the keyboard shortcuts' modifier.
     pub platform: &'static str,
     pub version: String,
 }
 
-async fn blocking<T: Send + 'static>(f: impl FnOnce() -> Result<T> + Send + 'static) -> Result<T> {
-    tauri::async_runtime::spawn_blocking(f)
-        .await
-        .map_err(|err| CommandError::new(ErrorKind::Internal, err.to_string()))?
-}
-
 #[tauri::command]
 pub async fn get_session(app: AppHandle, state: State<'_, AppState>) -> Result<SessionInfo> {
-    if state.gmail.account().await.is_none() {
-        let stored = blocking(credentials::load).await?;
-        state.gmail.set_account(stored, None).await;
-    }
     Ok(SessionInfo {
-        email: state.gmail.account().await.map(|account| account.email),
+        accounts: state.accounts.emails().await?,
         platform: std::env::consts::OS,
         version: app.package_info().version.to_string(),
     })
 }
 
-/// Signs in through the browser and keeps the account. Resolves with the
-/// address once Google has redirected back and the tokens are stored.
-#[tauri::command]
-pub async fn sign_in(
-    app: AppHandle,
-    state: State<'_, AppState>,
-    client_id: String,
-    client_secret: String,
-) -> Result<String> {
-    let client_id = client_id.trim().to_string();
-    let client_secret = client_secret.trim().to_string();
+/// The client to sign in with: the one given, or the first account's when
+/// both are left empty.
+async fn client_for(
+    state: &AppState,
+    client_id: Option<String>,
+    client_secret: Option<String>,
+) -> Result<(String, String)> {
+    let client_id = client_id.unwrap_or_default().trim().to_string();
+    let client_secret = client_secret.unwrap_or_default().trim().to_string();
+    if client_id.is_empty() && client_secret.is_empty() {
+        if let Some(client) = state.accounts.first_client().await? {
+            return Ok(client);
+        }
+    }
     if client_id.is_empty() || client_secret.is_empty() {
         return Err(CommandError::new(
             ErrorKind::Internal,
             "クライアント ID とクライアント シークレットを入力してください",
         ));
     }
+    Ok((client_id, client_secret))
+}
+
+/// Signs in through the browser and adds the account. Resolves with the
+/// address once Google has redirected back and the tokens are stored. Without
+/// a client, the one the first account signed in with is used.
+#[tauri::command]
+pub async fn sign_in(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    client_id: Option<String>,
+    client_secret: Option<String>,
+) -> Result<String> {
+    let (client_id, client_secret) = client_for(&state, client_id, client_secret).await?;
     let listener = TcpListener::bind(("127.0.0.1", 0)).await.map_err(|err| {
         CommandError::new(
             ErrorKind::Internal,
@@ -94,8 +105,9 @@ pub async fn sign_in(
     };
     state.cancel_sign_in.lock().await.take();
 
+    let http = state.accounts.http();
     let tokens = auth::exchange_code(
-        state.gmail.http(),
+        http,
         &client_id,
         &client_secret,
         &code,
@@ -115,27 +127,19 @@ pub async fn sign_in(
         refresh_token,
         email: String::new(),
     };
-    state
-        .gmail
-        .set_account(
-            Some(account.clone()),
-            Some(AccessToken::from_response(&tokens)),
-        )
-        .await;
-    let email = match state.gmail.email_address().await {
-        Ok(email) => email,
-        Err(err) => {
-            state.gmail.set_account(None, None).await;
-            return Err(err);
-        }
-    };
+    // Who signed in is only known by asking Gmail with the new token.
+    let email = Gmail::new(
+        http.clone(),
+        account.clone(),
+        Some(AccessToken::from_response(&tokens)),
+    )
+    .email_address()
+    .await?;
     account.email = email.clone();
-    let stored = account.clone();
-    blocking(move || credentials::store(&stored)).await?;
     state
-        .gmail
-        .set_account(Some(account), Some(AccessToken::from_response(&tokens)))
-        .await;
+        .accounts
+        .add(account, AccessToken::from_response(&tokens))
+        .await?;
     Ok(email)
 }
 
@@ -147,57 +151,81 @@ pub async fn cancel_sign_in(state: State<'_, AppState>) -> Result<()> {
     Ok(())
 }
 
+/// Removes one account from Mail Crew. Its mail on Gmail stays as it is.
 #[tauri::command]
-pub async fn sign_out(state: State<'_, AppState>) -> Result<()> {
-    state.gmail.set_account(None, None).await;
-    blocking(credentials::clear).await
+pub async fn sign_out(state: State<'_, AppState>, account: String) -> Result<()> {
+    state.accounts.remove(&account).await
+}
+
+/// The inbox across `accounts` (every account when empty), narrowed by a
+/// Gmail search when `query` is not empty.
+#[tauri::command]
+pub async fn list_inbox(
+    state: State<'_, AppState>,
+    accounts: Vec<String>,
+    query: String,
+) -> Result<InboxPage> {
+    state.accounts.inbox(&accounts, &query).await
 }
 
 #[tauri::command]
-pub async fn list_inbox(state: State<'_, AppState>) -> Result<Vec<Card>> {
-    state.gmail.inbox().await
+pub async fn list_labels(state: State<'_, AppState>, account: String) -> Result<Vec<Label>> {
+    let gmail = state.accounts.get(&account).await?;
+    state.accounts.check(&account, gmail.labels().await).await
 }
 
 #[tauri::command]
-pub async fn list_labels(state: State<'_, AppState>) -> Result<Vec<Label>> {
-    state.gmail.labels().await
-}
-
-#[tauri::command]
-pub async fn create_label(state: State<'_, AppState>, name: String) -> Result<Label> {
-    state.gmail.create_label(&name).await
+pub async fn create_label(
+    state: State<'_, AppState>,
+    account: String,
+    name: String,
+) -> Result<Label> {
+    let gmail = state.accounts.get(&account).await?;
+    state
+        .accounts
+        .check(&account, gmail.create_label(&name).await)
+        .await
 }
 
 /// "完了": read, and out of the inbox.
 #[tauri::command]
-pub async fn archive(state: State<'_, AppState>, message_ids: Vec<String>) -> Result<()> {
-    state
-        .gmail
-        .modify(&message_ids, &[], &["INBOX", "UNREAD"])
-        .await
+pub async fn archive(
+    state: State<'_, AppState>,
+    account: String,
+    message_ids: Vec<String>,
+) -> Result<()> {
+    let gmail = state.accounts.get(&account).await?;
+    let result = gmail.modify(&message_ids, &[], &["INBOX", "UNREAD"]).await;
+    state.accounts.check(&account, result).await
 }
 
 /// "タグを追加": tagged, and out of the inbox.
 #[tauri::command]
 pub async fn apply_label(
     state: State<'_, AppState>,
+    account: String,
     message_ids: Vec<String>,
     label_id: String,
 ) -> Result<()> {
-    state
-        .gmail
-        .modify(&message_ids, &[&label_id], &["INBOX"])
-        .await
+    let gmail = state.accounts.get(&account).await?;
+    let result = gmail.modify(&message_ids, &[&label_id], &["INBOX"]).await;
+    state.accounts.check(&account, result).await
 }
 
 /// "あとで読む": tagged SetAside, and out of the inbox.
 #[tauri::command]
-pub async fn set_aside(state: State<'_, AppState>, message_ids: Vec<String>) -> Result<()> {
-    let label = state.gmail.set_aside_label().await?;
-    state
-        .gmail
-        .modify(&message_ids, &[&label], &["INBOX"])
-        .await
+pub async fn set_aside(
+    state: State<'_, AppState>,
+    account: String,
+    message_ids: Vec<String>,
+) -> Result<()> {
+    let gmail = state.accounts.get(&account).await?;
+    let result = async {
+        let label = gmail.set_aside_label().await?;
+        gmail.modify(&message_ids, &[&label], &["INBOX"]).await
+    }
+    .await;
+    state.accounts.check(&account, result).await
 }
 
 /// Stars the message the card shows, or unstars the whole thread, which is
@@ -205,15 +233,42 @@ pub async fn set_aside(state: State<'_, AppState>, message_ids: Vec<String>) -> 
 #[tauri::command]
 pub async fn set_starred(
     state: State<'_, AppState>,
+    account: String,
     message_id: String,
     message_ids: Vec<String>,
     starred: bool,
 ) -> Result<()> {
-    if starred {
-        state.gmail.modify(&[message_id], &["STARRED"], &[]).await
+    let gmail = state.accounts.get(&account).await?;
+    let result = if starred {
+        gmail.modify(&[message_id], &["STARRED"], &[]).await
     } else {
-        state.gmail.modify(&message_ids, &[], &["STARRED"]).await
-    }
+        gmail.modify(&message_ids, &[], &["STARRED"]).await
+    };
+    state.accounts.check(&account, result).await
+}
+
+fn views_path(app: &AppHandle) -> Result<PathBuf> {
+    app.path()
+        .app_config_dir()
+        .map(|dir| dir.join(views::FILE_NAME))
+        .map_err(|err| CommandError::new(ErrorKind::Internal, err.to_string()))
+}
+
+#[tauri::command]
+pub async fn list_views(app: AppHandle) -> Result<Vec<View>> {
+    let path = views_path(&app)?;
+    tauri::async_runtime::spawn_blocking(move || views::load(&path))
+        .await
+        .map_err(|err| CommandError::new(ErrorKind::Internal, err.to_string()))?
+}
+
+/// Replaces every saved view with `views`.
+#[tauri::command]
+pub async fn save_views(app: AppHandle, views: Vec<View>) -> Result<()> {
+    let path = views_path(&app)?;
+    tauri::async_runtime::spawn_blocking(move || views::save(&path, &views))
+        .await
+        .map_err(|err| CommandError::new(ErrorKind::Internal, err.to_string()))?
 }
 
 /// Whether a link in a message may be handed to the OS.

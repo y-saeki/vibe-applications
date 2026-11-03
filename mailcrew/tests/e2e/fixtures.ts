@@ -38,13 +38,17 @@ function productionCsp(browserName: string): string {
     .join('; ')
 }
 
+export const ME = 'me@example.com'
+
 const DEFAULT_CONFIG: BackendConfig = {
-  email: 'me@example.com',
+  accounts: [ME],
   platform: 'windows',
   inboxes: [[]],
+  inboxFailures: [],
   labels: [],
+  views: [],
   failures: {},
-  signInEmail: 'me@example.com',
+  signInEmail: ME,
 }
 
 /** A thread as the Rust side would hand it over; `n` keeps the ids apart. */
@@ -52,6 +56,7 @@ export function card(n: number, overrides: Partial<Card> = {}): Card {
   const body: CardBody = { kind: 'html', html: `<p>本文 ${n}</p>`, remoteImages: false }
   return {
     id: `t${n}`,
+    account: ME,
     subject: `件名 ${n}`,
     from: { name: `送信者 ${n}`, email: `sender${n}@example.com` },
     date: Date.UTC(2026, 0, 1) - n * 60_000,
@@ -81,6 +86,8 @@ export class App {
   readonly doneAll: Locator
   readonly tagPicker: Locator
   readonly tagFilter: Locator
+  readonly settings: Locator
+  readonly tabs: Locator
 
   constructor(
     readonly page: Page,
@@ -96,6 +103,17 @@ export class App {
     this.doneAll = page.locator('#done-all')
     this.tagPicker = page.locator('#tag-picker')
     this.tagFilter = page.locator('#tag-filter')
+    this.settings = page.locator('#settings')
+    this.tabs = page.locator('#views .view-tab')
+  }
+
+  tab(name: string): Locator {
+    return this.page.locator('#views').getByRole('tab', { name, exact: true })
+  }
+
+  async openSettings(): Promise<void> {
+    await this.page.locator('#open-settings').click()
+    await expect(this.settings).toBeVisible()
   }
 
   card(id: string): Locator {
@@ -158,7 +176,7 @@ export const test = base.extend<{ launch: (options?: LaunchOptions) => Promise<A
       const app = new App(page, cspViolations)
       // The first thing the page does is ask who is signed in; the screen it
       // settles on follows from that.
-      await expect.poll(() => app.callsTo('get_session').then((calls) => calls.length)).toBe(1)
+      await expect.poll(() => app.callsTo('get_session').then((calls) => calls.length)).toBeGreaterThanOrEqual(1)
       return app
     })
   },

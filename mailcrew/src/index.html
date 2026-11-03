@@ -43,21 +43,86 @@
     <div id="inbox" class="inbox" hidden>
       <header class="topbar">
         <div class="topbar-title">
-          <h1>受信トレイ</h1>
+          <h1 class="visually-hidden">受信トレイ</h1>
+          <nav id="views" class="view-tabs" role="tablist" aria-label="ビュー"></nav>
           <span id="inbox-count" class="topbar-count"></span>
         </div>
         <div class="topbar-tools">
           <button type="button" id="reload" class="button button-quiet" title="再読み込み">再読み込み</button>
-          <span id="account" class="topbar-account"></span>
-          <button type="button" id="sign-out" class="button button-quiet" title="ログアウト">ログアウト</button>
+          <button type="button" id="open-settings" class="button button-quiet" title="設定">設定</button>
         </div>
       </header>
       <section id="strip" class="strip" aria-label="受信トレイのスレッド"></section>
       <div id="empty" class="empty" hidden>
-        <p class="empty-title">受信トレイは空です</p>
-        <p class="empty-lead">新しいメールが届いたら、再読み込みで表示されます。</p>
+        <p id="empty-title" class="empty-title">受信トレイは空です</p>
+        <p id="empty-lead" class="empty-lead">新しいメールが届いたら、再読み込みで表示されます。</p>
       </div>
     </div>
+
+    <!-- Settings: the accounts, and the custom views. -->
+    <main id="settings" class="settings" hidden>
+      <div class="settings-panel">
+        <header class="settings-head">
+          <h1 class="settings-title">設定</h1>
+          <button type="button" id="close-settings" class="button">受信トレイに戻る</button>
+        </header>
+
+        <section class="settings-section" aria-labelledby="accounts-heading">
+          <h2 id="accounts-heading" class="settings-heading">アカウント</h2>
+          <ul id="account-list" class="settings-list"></ul>
+          <form id="account-form" class="settings-form">
+            <details id="other-client" class="settings-details">
+              <summary>別の OAuth クライアントでログインする</summary>
+              <p class="setup-hint">空欄のままなら、最初のアカウントと同じクライアントを使います。</p>
+              <label class="field">
+                <span class="field-label">OAuth クライアント ID</span>
+                <input id="account-client-id" type="text" autocomplete="off" spellcheck="false" />
+              </label>
+              <label class="field">
+                <span class="field-label">クライアント シークレット</span>
+                <input id="account-client-secret" type="password" autocomplete="off" spellcheck="false" />
+              </label>
+            </details>
+            <p id="account-error" class="setup-error" role="alert" hidden></p>
+            <div class="setup-actions">
+              <button type="submit" id="add-account" class="button button-primary">Google でログインして追加</button>
+            </div>
+            <div id="account-waiting" class="setup-waiting" hidden>
+              <p>ブラウザで、追加する Google アカウントにログインしてください。</p>
+              <button type="button" id="cancel-add-account" class="button">中止</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="settings-section" aria-labelledby="views-heading">
+          <h2 id="views-heading" class="settings-heading">ビュー</h2>
+          <p class="setup-hint">受信トレイの上のタブで切り替えられる、絞り込んだ一覧です。「すべて」はいつも先頭にあります。</p>
+          <ul id="view-list" class="settings-list"></ul>
+          <p id="view-error" class="setup-error" role="alert" hidden></p>
+          <form id="view-form" class="settings-form" hidden>
+            <label class="field">
+              <span class="field-label">名前</span>
+              <input id="view-name" type="text" autocomplete="off" spellcheck="false" />
+            </label>
+            <fieldset class="field">
+              <legend class="field-label">アカウント（選ばなければすべて）</legend>
+              <div id="view-accounts" class="checks"></div>
+            </fieldset>
+            <label class="field">
+              <span class="field-label">検索条件（Gmail の検索と同じ書き方）</span>
+              <input id="view-query" type="text" autocomplete="off" spellcheck="false" placeholder="例: from:example.com is:unread" />
+            </label>
+            <div class="setup-actions">
+              <button type="button" id="cancel-view" class="button">キャンセル</button>
+              <button type="submit" id="save-view" class="button button-primary">保存</button>
+            </div>
+          </form>
+          <div class="setup-actions">
+            <button type="button" id="add-view" class="button">ビューを追加</button>
+          </div>
+        </section>
+      </div>
+    </main>
 
     <!-- The tag picker, moved next to whichever card's button opened it. -->
     <div id="tag-picker" class="tag-picker" role="dialog" aria-label="タグを追加" hidden>

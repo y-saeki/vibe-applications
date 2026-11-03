@@ -236,10 +236,54 @@ button {
   font-size: 16px;
 }
 
-.topbar-count,
-.topbar-account {
+.topbar-title {
+  min-width: 0;
+}
+
+.topbar-count {
+  flex: none;
   color: var(--text-muted);
   font-size: 13px;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.view-tabs {
+  display: flex;
+  gap: 4px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.view-tab {
+  flex: none;
+  border: 1px solid transparent;
+  background: transparent;
+  border-radius: var(--radius-small);
+  padding: 4px 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.view-tab:hover {
+  color: var(--text);
+  border-color: var(--border);
+}
+
+.view-tab[aria-selected="true"] {
+  color: var(--text);
+  background: var(--surface);
+  border-color: var(--border);
+  font-weight: 600;
+  cursor: default;
 }
 
 .topbar-tools {
@@ -343,6 +387,21 @@ button {
   background: var(--bg);
   border-radius: var(--radius-small);
   padding: 0 6px;
+}
+
+.card-account {
+  min-width: 0;
+  max-width: 50%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: block;
+  line-height: var(--meta-height);
+}
+
+/* Which account a card is in matters only while there is more than one. */
+.inbox:not(.inbox-multi) .card-account {
+  display: none;
 }
 
 .card-badge svg {
@@ -514,6 +573,129 @@ button {
 .empty-lead {
   margin: 0;
   color: var(--text-muted);
+}
+
+/* Settings */
+
+.settings {
+  height: 100%;
+  overflow: auto;
+  padding: var(--gap);
+}
+
+.settings-panel {
+  width: min(560px, 100%);
+  margin: 0 auto;
+  display: grid;
+  gap: 20px;
+}
+
+.settings-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap);
+}
+
+.settings-title {
+  margin: 0;
+  font-size: 22px;
+}
+
+.settings-section {
+  background: var(--surface);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 20px 24px;
+  display: grid;
+  gap: 12px;
+}
+
+.settings-heading {
+  margin: 0;
+  font-size: 16px;
+}
+
+.settings-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.settings-row:last-child {
+  border-bottom: none;
+}
+
+.settings-row-none {
+  color: var(--text-muted);
+}
+
+.settings-row-text {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+}
+
+.settings-row > .settings-row-name {
+  flex: 1;
+}
+
+.settings-row-name,
+.settings-row-summary {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-row-summary {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.settings-form {
+  display: grid;
+  gap: 12px;
+}
+
+.settings-details summary {
+  cursor: pointer;
+  color: var(--text-muted);
+}
+
+.settings-details > :not(summary) {
+  margin-top: 10px;
+}
+
+fieldset.field {
+  border: none;
+  margin: 0;
+  padding: 0;
+}
+
+.checks {
+  display: grid;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.setup-actions {
+  gap: 8px;
 }
 
 /* Tag picker */

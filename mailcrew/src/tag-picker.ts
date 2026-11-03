@@ -1,5 +1,6 @@
-// The list that opens from a card's "タグ" button: the user's labels, narrowed
-// by what is typed, with a row to create a new one when nothing matches.
+// The list that opens from a card's "タグ" button: the labels of the account
+// the card is in, narrowed by what is typed, with a row to create a new one
+// when nothing matches.
 
 import type { Label } from './backend'
 
@@ -27,7 +28,8 @@ export class TagPicker {
   private readonly root = document.querySelector<HTMLElement>('#tag-picker')!
   private readonly filter = document.querySelector<HTMLInputElement>('#tag-filter')!
   private readonly list = document.querySelector<HTMLUListElement>('#tag-list')!
-  private labels: Label[] = []
+  private readonly labels = new Map<string, Label[]>()
+  private account = ''
   private rows: Row[] = []
   private active = 0
   private resolve: ((choice: TagChoice | null) => void) | null = null
@@ -71,16 +73,17 @@ export class TagPicker {
     return !this.root.hidden
   }
 
-  /** Replaces the labels on offer, keeping the picker open if it is. */
-  setLabels(labels: Label[]): void {
-    this.labels = labels
-    if (this.isOpen) this.render()
+  /** Replaces one account's labels, keeping the picker open if it is. */
+  setLabels(account: string, labels: Label[]): void {
+    this.labels.set(account, labels)
+    if (this.isOpen && account === this.account) this.render()
   }
 
-  /** Opens next to `anchor` and resolves with what was picked, or null. */
-  open(anchor: HTMLElement): Promise<TagChoice | null> {
+  /** Opens next to `anchor` with `account`'s labels and resolves with what was picked, or null. */
+  open(anchor: HTMLElement, account: string): Promise<TagChoice | null> {
     this.finish(null)
     this.anchor = anchor
+    this.account = account
     this.filter.value = ''
     this.active = 0
     this.render()
@@ -117,7 +120,7 @@ export class TagPicker {
   }
 
   private render(): void {
-    this.rows = tagRows(this.labels, this.filter.value)
+    this.rows = tagRows(this.labels.get(this.account) ?? [], this.filter.value)
     this.list.replaceChildren(
       ...this.rows.map((row, index) => {
         const item = document.createElement('li')

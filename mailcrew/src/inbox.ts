@@ -1,8 +1,10 @@
 // The inbox: one card per thread, newest at the left, each with its toolbar.
-// Every action takes the card off the strip at once and puts it back if the
-// Rust side reports a failure.
+// The threads of every account the current view covers share the strip, and
+// each card's actions go to the account its thread is in. Every action takes
+// the card off the strip at once and puts it back if the Rust side reports a
+// failure.
 
-import { backend, errorMessage, isCommandError, type Card, type Label } from './backend'
+import { backend, errorMessage, isCommandError, type Card, type InboxPage, type Label } from './backend'
 import { formatDate } from './format'
 import { ICONS } from './icons'
 import { mountBody, type MountedBody } from './message-frame'
@@ -22,6 +24,24 @@ const TOOLS: { action: Action; label: string }[] = [
   { action: 'star', label: 'スター' },
 ]
 
+/** What the strip shows: the accounts (all of them when empty) and a Gmail search. */
+export interface InboxFilter {
+  accounts: string[]
+  query: string
+  /** A custom view rather than the whole inbox, which changes what "empty" says. */
+  custom: boolean
+}
+
+/** A view whose accounts have all been removed shows nothing at all. */
+export type Filter = InboxFilter | null
+
+const ALL: InboxFilter = { accounts: [], query: '', custom: false }
+
+/** Thread ids are only unique within one account. */
+function keyOf(card: Card): string {
+  return `${card.account}\n${card.id}`
+}
+
 interface Mounted {
   card: Card
   element: HTMLElement
@@ -34,10 +54,16 @@ export class Inbox {
   private readonly empty = document.querySelector<HTMLElement>('#empty')!
   private readonly count = document.querySelector<HTMLElement>('#inbox-count')!
   private readonly loading = document.querySelector<HTMLElement>('#loading')!
+  private readonly emptyTitle = document.querySelector<HTMLElement>('#empty-title')!
+  private readonly emptyLead = document.querySelector<HTMLElement>('#empty-lead')!
   private readonly picker = new TagPicker()
   private readonly mounted = new Map<string, Mounted>()
-  private labels: Label[] = []
+  /** Each account's labels, as last fetched. */
+  private readonly labels = new Map<string, Label[]>()
+  private filter: Filter = ALL
   private loadingNow = false
+  /** Set when a load is asked for while one is running, so the newer filter wins. */
+  private loadAgain = false
   private readonly observer = new IntersectionObserver((entries) => this.reveal(entries), {
     root: this.strip,
     rootMargin: PRELOAD_MARGIN,
@@ -65,8 +91,7 @@ export class Inbox {
     )
   }
 
-  show(email: string): void {
-    document.querySelector<HTMLElement>('#account')!.textContent = email
+  show(): void {
     this.root.hidden = false
   }
 
@@ -76,22 +101,65 @@ export class Inbox {
     this.clear()
   }
 
+  get isShown(): boolean {
+    return !this.root.hidden
+  }
+
+  /**
+   * The signed-in accounts. A card says which account it is in only when
+   * there is more than one, and the cards of an account that has gone leave
+   * the strip.
+   */
+  setAccounts(accounts: string[]): void {
+    this.root.classList.toggle('inbox-multi', accounts.length > 1)
+    for (const account of this.labels.keys()) if (!accounts.includes(account)) this.labels.delete(account)
+    for (const [key, mounted] of this.mounted) {
+      if (accounts.includes(mounted.card.account)) continue
+      this.mounted.delete(key)
+      mounted.element.remove()
+    }
+    this.updateCount()
+  }
+
+  /** What the next load fetches. */
+  setFilter(filter: Filter): void {
+    this.filter = filter
+  }
+
   /** Fetches the newest threads and lays them out from the start of the strip. */
   async load(): Promise<void> {
-    if (this.loadingNow) return
+    if (this.loadingNow) {
+      this.loadAgain = true
+      return
+    }
     this.loadingNow = true
     this.picker.close()
     this.loading.hidden = false
     try {
-      const cards = await backend.inbox()
-      this.render(cards)
-      this.refreshLabels()
+      do {
+        this.loadAgain = false
+        const filter = this.filter
+        const page: InboxPage = filter ? await backend.inbox(filter.accounts, filter.query) : { cards: [], failures: [] }
+        if (this.loadAgain) continue
+        this.render(page.cards)
+        this.refreshLabels()
+        this.reportFailures(page)
+      } while (this.loadAgain)
     } catch (err) {
       this.fail(err)
     } finally {
       this.loading.hidden = true
       this.loadingNow = false
     }
+  }
+
+  /** Says which accounts did not answer; the others' cards are on the strip all the same. */
+  private reportFailures(page: InboxPage): void {
+    if (page.failures.length === 0) return
+    const message = page.failures.map((failure) => `${failure.account}: ${failure.message}`).join('\n')
+    // An account Google no longer accepts has been removed on the Rust side.
+    if (page.failures.some((failure) => failure.kind === 'signedOut')) this.onSignedOut(message)
+    else showNotice(message)
   }
 
   private clear(): void {
@@ -102,9 +170,14 @@ export class Inbox {
 
   private render(cards: Card[]): void {
     this.clear()
+    const custom = this.filter?.custom ?? true
+    this.emptyTitle.textContent = custom ? 'このビューに当てはまるメールはありません' : '受信トレイは空です'
+    this.emptyLead.textContent = custom
+      ? '条件に合うメールが届いたら、再読み込みで表示されます。'
+      : '新しいメールが届いたら、再読み込みで表示されます。'
     for (const card of cards) {
       const element = this.buildCard(card)
-      this.mounted.set(card.id, { card, element, body: null })
+      this.mounted.set(keyOf(card), { card, element, body: null })
       this.strip.append(element)
       this.observer.observe(element)
     }
@@ -122,22 +195,30 @@ export class Inbox {
     if (summary) summary.textContent = `ここまでの ${count} 件を既読にしてアーカイブし、次の受信トレイを読み込みます。`
   }
 
+  /** Fetches the labels of every account on the strip. */
   private refreshLabels(): void {
-    backend
-      .labels()
-      .then((labels) => {
-        this.labels = labels
-        this.picker.setLabels(labels)
-      })
-      .catch(() => {
-        // The picker asks again when it opens; nothing to say yet.
-      })
+    const accounts = new Set([...this.mounted.values()].map((mounted) => mounted.card.account))
+    for (const account of accounts) void this.fetchLabels(account)
+  }
+
+  private async fetchLabels(account: string): Promise<Label[]> {
+    try {
+      const labels = await backend.labels(account)
+      this.labels.set(account, labels)
+      this.picker.setLabels(account, labels)
+      return labels
+    } catch {
+      // The picker asks again when it opens; nothing to say yet.
+      return []
+    }
   }
 
   private buildCard(card: Card): HTMLElement {
     const element = document.createElement('article')
     element.className = 'card'
     element.dataset.threadId = card.id
+    element.dataset.account = card.account
+    element.dataset.key = keyOf(card)
     if (card.unread) element.classList.add('card-unread')
 
     const head = document.createElement('header')
@@ -160,6 +241,12 @@ export class Inbox {
 
     const meta = document.createElement('div')
     meta.className = 'card-meta'
+    // Shown only while more than one account is signed in.
+    const account = document.createElement('span')
+    account.className = 'card-badge card-account'
+    account.textContent = card.account
+    account.title = card.account
+    meta.append(account)
     if (card.messageCount > 1) {
       const count = document.createElement('span')
       count.className = 'card-badge card-message-count'
@@ -240,7 +327,7 @@ export class Inbox {
       if (!entry.isIntersecting) continue
       const element = entry.target as HTMLElement
       this.observer.unobserve(element)
-      const mounted = this.mounted.get(element.dataset.threadId ?? '')
+      const mounted = this.mounted.get(element.dataset.key ?? '')
       if (!mounted || mounted.body) continue
       const container = element.querySelector<HTMLElement>('.card-body')!
       mounted.body = mountBody(container, mounted.card.body, (url) => this.openLink(url))
@@ -265,14 +352,15 @@ export class Inbox {
       return
     }
     const element = button.closest<HTMLElement>('.card')
-    const mounted = this.mounted.get(element?.dataset.threadId ?? '')
+    const mounted = this.mounted.get(element?.dataset.key ?? '')
     if (!mounted) return
+    const { card } = mounted
     switch (button.dataset.action) {
       case 'done':
-        void this.takeOff(mounted, () => backend.archive(mounted.card.messageIds))
+        void this.takeOff(mounted, () => backend.archive(card.account, card.messageIds))
         break
       case 'later':
-        void this.takeOff(mounted, () => backend.setAside(mounted.card.messageIds))
+        void this.takeOff(mounted, () => backend.setAside(card.account, card.messageIds))
         break
       case 'tag':
         void this.pickTag(mounted, button)
@@ -291,14 +379,14 @@ export class Inbox {
   private async takeOff(mounted: Mounted, action: () => Promise<void>): Promise<void> {
     const { element, card } = mounted
     const next = element.nextSibling
-    this.mounted.delete(card.id)
+    this.mounted.delete(keyOf(card))
     element.remove()
     this.updateCount()
     try {
       await action()
     } catch (err) {
       this.strip.insertBefore(element, next?.isConnected ? next : this.strip.querySelector('.card-end'))
-      this.mounted.set(card.id, mounted)
+      this.mounted.set(keyOf(card), mounted)
       this.updateCount()
       this.fail(err)
       return
@@ -309,18 +397,19 @@ export class Inbox {
   }
 
   private async pickTag(mounted: Mounted, button: HTMLButtonElement): Promise<void> {
-    if (this.labels.length === 0) this.refreshLabels()
-    const choice: TagChoice | null = await this.picker.open(button)
+    const { account } = mounted.card
+    if (!this.labels.get(account)?.length) void this.fetchLabels(account)
+    const choice: TagChoice | null = await this.picker.open(button, account)
     if (!choice) return
     await this.takeOff(mounted, async () => {
-      const label = choice.kind === 'existing' ? choice.label : await backend.createLabel(choice.name)
+      const label = choice.kind === 'existing' ? choice.label : await backend.createLabel(account, choice.name)
       if (choice.kind === 'new') {
-        this.labels = [...this.labels.filter((known) => known.id !== label.id), label].sort((a, b) =>
-          a.name.localeCompare(b.name),
-        )
-        this.picker.setLabels(this.labels)
+        const known = (this.labels.get(account) ?? []).filter((other) => other.id !== label.id)
+        const labels = [...known, label].sort((a, b) => a.name.localeCompare(b.name))
+        this.labels.set(account, labels)
+        this.picker.setLabels(account, labels)
       }
-      await backend.applyLabel(mounted.card.messageIds, label.id)
+      await backend.applyLabel(account, mounted.card.messageIds, label.id)
     })
   }
 
@@ -331,7 +420,7 @@ export class Inbox {
     button.setAttribute('aria-pressed', String(starred))
     button.disabled = true
     try {
-      await backend.setStarred(card.messageId, card.messageIds, starred)
+      await backend.setStarred(card.account, card.messageId, card.messageIds, starred)
     } catch (err) {
       card.starred = !starred
       button.setAttribute('aria-pressed', String(!starred))
@@ -341,19 +430,27 @@ export class Inbox {
     }
   }
 
-  /** Archives every card on the strip, then fetches the next page. */
+  /** Archives every card on the strip, one request per account, then fetches the next page. */
   private async doneAll(button: HTMLButtonElement): Promise<void> {
-    const ids = [...this.mounted.values()].flatMap((mounted) => mounted.card.messageIds)
-    if (ids.length === 0) return
+    const byAccount = new Map<string, string[]>()
+    for (const { card } of this.mounted.values()) {
+      byAccount.set(card.account, [...(byAccount.get(card.account) ?? []), ...card.messageIds])
+    }
+    if (byAccount.size === 0) return
     button.disabled = true
-    try {
-      await backend.archive(ids)
-    } catch (err) {
+    const results = await Promise.allSettled(
+      [...byAccount].map(([account, ids]) => backend.archive(account, ids)),
+    )
+    const failure = results.find((result): result is PromiseRejectedResult => result.status === 'rejected')
+    if (failure && results.every((result) => result.status === 'rejected')) {
       button.disabled = false
-      this.fail(err)
+      this.fail(failure.reason)
       return
     }
+    // Some accounts' threads are archived and some are not: the next page
+    // shows which are still there.
     await this.load()
+    if (failure) this.fail(failure.reason)
   }
 
   private fail(err: unknown): void {

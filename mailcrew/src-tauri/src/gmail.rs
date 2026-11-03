@@ -1,5 +1,6 @@
 //! The Gmail API, as far as mailcrew uses it: the inbox's threads, the user's
-//! labels, and changing which labels messages carry.
+//! labels, and changing which labels messages carry. One `Gmail` speaks for one
+//! signed-in account.
 
 use std::time::Duration;
 
@@ -10,7 +11,7 @@ use tokio::sync::Mutex;
 
 use crate::auth::{self, AccessToken};
 use crate::card::{Card, Thread};
-use crate::credentials::{self, Account};
+use crate::credentials::Account;
 use crate::error::{CommandError, ErrorKind, Result};
 
 const API: &str = "https://gmail.googleapis.com/gmail/v1/users/me";
@@ -32,14 +33,10 @@ pub struct Label {
     pub name: String,
 }
 
-struct Session {
-    account: Account,
-    token: Option<AccessToken>,
-}
-
 pub struct Gmail {
     http: reqwest::Client,
-    session: Mutex<Option<Session>>,
+    account: Account,
+    token: Mutex<Option<AccessToken>>,
     set_aside: Mutex<Option<String>>,
 }
 
@@ -53,72 +50,64 @@ struct ApiErrorBody {
     message: String,
 }
 
+/// The one HTTP client every account's requests go through.
+pub fn http_client() -> reqwest::Client {
+    reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(15))
+        .timeout(Duration::from_secs(60))
+        .build()
+        .expect("the HTTP client builds with the default TLS backend")
+}
+
 impl Gmail {
-    pub fn new() -> Self {
-        let http = reqwest::Client::builder()
-            .connect_timeout(Duration::from_secs(15))
-            .timeout(Duration::from_secs(60))
-            .build()
-            .expect("the HTTP client builds with the default TLS backend");
+    pub fn new(http: reqwest::Client, account: Account, token: Option<AccessToken>) -> Self {
         Self {
             http,
-            session: Mutex::new(None),
+            account,
+            token: Mutex::new(token),
             set_aside: Mutex::new(None),
         }
     }
 
-    pub fn http(&self) -> &reqwest::Client {
-        &self.http
+    pub fn account(&self) -> &Account {
+        &self.account
     }
 
-    /// Starts using `account`, or nobody's with `None`.
-    pub async fn set_account(&self, account: Option<Account>, token: Option<AccessToken>) {
-        *self.session.lock().await = account.map(|account| Session { account, token });
-        *self.set_aside.lock().await = None;
-    }
-
-    pub async fn account(&self) -> Option<Account> {
-        self.session
-            .lock()
-            .await
-            .as_ref()
-            .map(|session| session.account.clone())
+    pub fn email(&self) -> &str {
+        &self.account.email
     }
 
     /// An access token, renewed from the refresh token when it has run out or
     /// when `renew` asks for a new one regardless.
     async fn token(&self, renew: bool) -> Result<String> {
-        let mut guard = self.session.lock().await;
-        let session = guard.as_mut().ok_or_else(CommandError::signed_out)?;
+        let mut token = self.token.lock().await;
         if !renew {
-            if let Some(token) = session.token.as_ref().filter(|token| token.is_fresh()) {
+            if let Some(token) = token.as_ref().filter(|token| token.is_fresh()) {
                 return Ok(token.value.clone());
             }
         }
-        let account = &session.account;
-        match auth::refresh(
+        let account = &self.account;
+        let response = auth::refresh(
             &self.http,
             &account.client_id,
             &account.client_secret,
             &account.refresh_token,
         )
         .await
-        {
-            Ok(response) => {
-                let token = AccessToken::from_response(&response);
-                let value = token.value.clone();
-                session.token = Some(token);
-                Ok(value)
-            }
-            Err(err) => {
-                if err.kind == ErrorKind::SignedOut {
-                    // Google has dropped the grant; keeping it would only fail again.
-                    *guard = None;
-                    let _ = credentials::clear();
-                }
-                Err(err)
-            }
-        }
+        .map_err(|err| match err.kind {
+            ErrorKind::SignedOut if !account.email.is_empty() => CommandError::new(
+                ErrorKind::SignedOut,
+                format!(
+                    "{} のログインが切れました。もう一度ログインしてください",
+                    account.email
+                ),
+            ),
+            _ => err,
+        })?;
+        let fresh = AccessToken::from_response(&response);
+        let value = fresh.value.clone();
+        *token = Some(fresh);
+        Ok(value)
     }
 
     /// Sends a request built by `build`, renewing the token once if Google
@@ -170,8 +159,10 @@ impl Gmail {
         Ok(profile.email_address)
     }
 
-    /// The newest `PAGE_SIZE` threads in the inbox, newest first.
-    pub async fn inbox(&self) -> Result<Vec<Card>> {
+    /// The newest `PAGE_SIZE` threads in the inbox, newest first, narrowed
+    /// by a Gmail search (`from:`, `is:unread` and the rest) when `query` is
+    /// not empty.
+    pub async fn inbox(&self, query: &str) -> Result<Vec<Card>> {
         #[derive(Deserialize)]
         struct ThreadList {
             #[serde(default)]
@@ -183,10 +174,15 @@ impl Gmail {
         }
         let list: ThreadList = self
             .send(|http| {
-                http.get(format!("{API}/threads")).query(&[
+                let request = http.get(format!("{API}/threads")).query(&[
                     ("labelIds", "INBOX"),
                     ("maxResults", &PAGE_SIZE.to_string()),
-                ])
+                ]);
+                if query.trim().is_empty() {
+                    request
+                } else {
+                    request.query(&[("q", query.trim())])
+                }
             })
             .await?;
         let threads: Vec<Thread> = futures::stream::iter(list.threads)
@@ -200,7 +196,10 @@ impl Gmail {
             .buffered(FETCH_CONCURRENCY)
             .try_collect()
             .await?;
-        Ok(threads.iter().filter_map(Card::from_thread).collect())
+        Ok(threads
+            .iter()
+            .filter_map(|thread| Card::from_thread(thread, self.email()))
+            .collect())
     }
 
     /// The labels the user made, by name.

@@ -56,6 +56,9 @@ pub enum CardBody {
 #[serde(rename_all = "camelCase")]
 pub struct Card {
     pub id: String,
+    /// The address of the account the thread is in. Every action on the card
+    /// goes to this account.
+    pub account: String,
     pub subject: String,
     pub from: Person,
     /// Epoch milliseconds of the message shown.
@@ -76,7 +79,7 @@ pub struct Card {
 
 impl Card {
     /// `None` for a thread with nothing in it but drafts.
-    pub fn from_thread(thread: &Thread) -> Option<Self> {
+    pub fn from_thread(thread: &Thread, account: &str) -> Option<Self> {
         let messages: Vec<&Message> = thread.messages.iter().filter(|m| !m.is_draft()).collect();
         let shown = *messages.last()?;
         let payload = &shown.payload;
@@ -100,6 +103,7 @@ impl Card {
         };
         Some(Self {
             id: thread.id.clone(),
+            account: account.to_string(),
             subject: header("Subject").trim().to_string(),
             from: Person {
                 name: from.name,
@@ -198,34 +202,38 @@ mod tests {
 
     #[test]
     fn shows_the_newest_message_that_is_not_a_draft() {
-        let card = Card::from_thread(&thread(vec![
-            message(
-                "m1",
-                &["INBOX", "STARRED"],
-                "1000",
-                "A <a@example.com>",
-                "First",
-                Some("<p>one</p>"),
-            ),
-            message(
-                "m2",
-                &["INBOX", "UNREAD"],
-                "2000",
-                "\"B\" <b@example.com>",
-                "Re: First",
-                Some("<p onclick=x>two</p>"),
-            ),
-            message(
-                "m3",
-                &["DRAFT"],
-                "3000",
-                "Me <me@example.com>",
-                "Re: First",
-                Some("<p>draft</p>"),
-            ),
-        ]))
+        let card = Card::from_thread(
+            &thread(vec![
+                message(
+                    "m1",
+                    &["INBOX", "STARRED"],
+                    "1000",
+                    "A <a@example.com>",
+                    "First",
+                    Some("<p>one</p>"),
+                ),
+                message(
+                    "m2",
+                    &["INBOX", "UNREAD"],
+                    "2000",
+                    "\"B\" <b@example.com>",
+                    "Re: First",
+                    Some("<p onclick=x>two</p>"),
+                ),
+                message(
+                    "m3",
+                    &["DRAFT"],
+                    "3000",
+                    "Me <me@example.com>",
+                    "Re: First",
+                    Some("<p>draft</p>"),
+                ),
+            ]),
+            "me@example.com",
+        )
         .unwrap();
         assert_eq!(card.id, "t1");
+        assert_eq!(card.account, "me@example.com");
         assert_eq!(card.message_id, "m2");
         assert_eq!(card.message_ids, vec!["m1", "m2"]);
         assert_eq!(card.message_count, 2);
@@ -252,29 +260,29 @@ mod tests {
 
     #[test]
     fn a_thread_of_drafts_has_no_card() {
-        assert!(Card::from_thread(&thread(vec![message(
-            "m1",
-            &["DRAFT"],
-            "1",
-            "x",
-            "s",
-            None
-        )]))
+        assert!(Card::from_thread(
+            &thread(vec![message("m1", &["DRAFT"], "1", "x", "s", None)]),
+            "me@example.com"
+        )
         .is_none());
     }
 
     #[test]
     fn serialises_as_the_frontend_reads_it() {
-        let card = Card::from_thread(&thread(vec![message(
-            "m1",
-            &["INBOX"],
-            "5",
-            "a@example.com",
-            "S",
-            None,
-        )]))
+        let card = Card::from_thread(
+            &thread(vec![message(
+                "m1",
+                &["INBOX"],
+                "5",
+                "a@example.com",
+                "S",
+                None,
+            )]),
+            "me@example.com",
+        )
         .unwrap();
         let json = serde_json::to_value(&card).unwrap();
+        assert_eq!(json["account"], "me@example.com");
         assert_eq!(json["body"], serde_json::json!({ "kind": "empty" }));
         assert_eq!(json["messageIds"], serde_json::json!(["m1"]));
         assert_eq!(json["from"]["email"], "a@example.com");
