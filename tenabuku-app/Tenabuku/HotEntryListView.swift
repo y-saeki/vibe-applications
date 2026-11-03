@@ -28,6 +28,12 @@ struct HotEntryListView: View {
     @Environment(ReadHistoryStore.self) private var readHistory
 
     var body: some View {
+        VerticalBarReader { barsMayBeVertical in
+            list(barsMayBeVertical: barsMayBeVertical)
+        }
+    }
+
+    private func list(barsMayBeVertical: Bool) -> some View {
         NavigationStack {
             List {
                 if let error = model.error {
@@ -45,11 +51,19 @@ struct HotEntryListView: View {
                 ArticleBrowserView(entry: item)
             }
             .toolbar {
-                // Settings are rarely opened, so they stay out of the top bar,
-                // which keeps the category menu as its one action.
-                ToolbarItemGroup(placement: .bottomBar) {
-                    Button("設定", systemImage: "gearshape") { isShowingSettings = true }
-                    Spacer()
+                // Apple asks for the top of a vertical bar to hold navigation and
+                // prominent actions, so where bars can stand vertically, as on
+                // iPhone Duo's outer display, the rarely used settings go to the
+                // foot of it. Elsewhere they take the usual top leading corner.
+                if barsMayBeVertical {
+                    ToolbarItemGroup(placement: .bottomBar) {
+                        settingsButton
+                        Spacer()
+                    }
+                } else {
+                    ToolbarItem(placement: .topBarLeading) {
+                        settingsButton
+                    }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
@@ -75,6 +89,36 @@ struct HotEntryListView: View {
             }
             .refreshable { await model.load() }
             .task(id: model.category) { await model.load() }
+        }
+    }
+
+    private var settingsButton: some View {
+        Button("設定", systemImage: "gearshape") { isShowingSettings = true }
+    }
+}
+
+/// Tells its content whether the system may lay the bars out vertically here,
+/// by reading `toolbarVerticalEdge`: a trait of the context rather than the
+/// device model, as Apple's iPhone Duo guidance asks. The value only exists
+/// from iOS 27.1; earlier systems count as never placing a vertical bar.
+private struct VerticalBarReader<Content: View>: View {
+    @ViewBuilder let content: (Bool) -> Content
+
+    var body: some View {
+        if #available(iOS 27.1, *) {
+            Reading(content: content)
+        } else {
+            content(false)
+        }
+    }
+
+    @available(iOS 27.1, *)
+    private struct Reading: View {
+        @Environment(\.toolbarVerticalEdge) private var verticalEdge
+        let content: (Bool) -> Content
+
+        var body: some View {
+            content(verticalEdge != nil)
         }
     }
 }
