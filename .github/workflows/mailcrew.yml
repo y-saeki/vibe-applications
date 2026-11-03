@@ -192,8 +192,9 @@ jobs:
         run: |
           version="$(jq -re .version mailcrew/src-tauri/tauri.conf.json)"
           git fetch --depth=1 origin "${BASE_REF}"
-          base="$(git show FETCH_HEAD:mailcrew/src-tauri/tauri.conf.json | jq -re .version)"
-          if [ "${version}" = "${base}" ]; then
+          if ! git cat-file -e FETCH_HEAD:mailcrew/src-tauri/tauri.conf.json 2>/dev/null; then
+            note="✅ 最初のリリースとして \`${version}\` が作られます。"
+          elif base="$(git show FETCH_HEAD:mailcrew/src-tauri/tauri.conf.json | jq -re .version)" && [ "${version}" = "${base}" ]; then
             note="⚠️ バージョンは \`${version}\` のままです。**このままマージしても Release は作られません。**"
           else
             note="✅ バージョンは \`${base}\` から \`${version}\` に上がります。"
