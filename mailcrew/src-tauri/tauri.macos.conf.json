@@ -12,7 +12,7 @@
         "center": true,
         "titleBarStyle": "Overlay",
         "hiddenTitle": true,
-        "trafficLightPosition": { "x": 20, "y": 23 },
+        "trafficLightPosition": { "x": 20, "y": 32 },
         "transparent": true,
         "windowEffects": {
           "effects": ["underWindowBackground"]
