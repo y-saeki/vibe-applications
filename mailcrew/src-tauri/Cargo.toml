@@ -1,0 +1,58 @@
+[package]
+name = "mailcrew"
+version = "0.6.0"
+description = "A card-based Gmail inbox"
+edition = "2021"
+publish = false
+
+[lib]
+# The `_lib` suffix keeps the library name distinct from the binary name on Windows.
+name = "mailcrew_lib"
+crate-type = ["rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+# Opens the sign-in page and the links in a message in the default browser.
+# Only the Rust side calls it; the webview is granted none of its commands.
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# The Gmail API and Google's token endpoint, over the OS TLS stack (Security.framework
+# on macOS, SChannel on Windows) rather than a bundled one.
+reqwest = { version = "0.13", default-features = false, features = ["native-tls", "http2", "json", "form", "query", "system-proxy"] }
+tokio = { version = "1", features = ["net", "io-util", "time", "sync", "macros"] }
+futures = "0.3"
+# The refresh token lives in the macOS Keychain / Windows Credential Manager.
+keyring = "4"
+# Message bodies: HTML sanitising, charset decoding, base64url.
+ammonia = "4"
+encoding_rs = "0.8"
+# Guessing the charset of a body that names none, or names one it is not in.
+chardetng = "1"
+base64 = "0.23"
+# PKCE for the sign-in.
+sha2 = "0.11"
+rand = "0.10"
+url = "2"
+# BIMI: the sender's DMARC and BIMI records in DNS, and the mark certificate
+# they point to, checked against the BIMI roots.
+hickory-resolver = "0.26"
+psl = "2"
+rustls-webpki = { version = "0.103", features = ["ring"] }
+rustls-pki-types = { version = "1", features = ["std"] }
+x509-parser = "0.18"
+flate2 = "1"
+
+[dev-dependencies]
+# Mark certificates made up for the tests of the BIMI checks.
+rcgen = { version = "0.14", default-features = false, features = ["crypto", "ring", "pem"] }
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+panic = "abort"
+strip = true

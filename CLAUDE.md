@@ -27,6 +27,10 @@ current official documentation, not by recalling it. Versions move, and a habit 
 correct a few releases ago may no longer be. When a specific version is pinned, check that
 version's documentation.
 
+When the documentation cannot be read because the session's network policy blocks its host,
+do not fall back on recollection or guesswork. Stop the part of the work that depends on it,
+tell the user which domain to allow (e.g. `developers.google.com`), and carry on with the rest.
+
 ## macOS builds are for Apple silicon only
 
 An application that ships for macOS builds for Apple silicon (`arm64`) and nothing else: no

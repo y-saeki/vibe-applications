@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Mail Crew</title>
+    <link rel="stylesheet" href="main.css" />
+  </head>
+  <body>
+    <!-- Shown until the session is known, and while the inbox loads. -->
+    <div id="loading" class="screen-message" role="status">読み込み中…</div>
+
+    <!-- Sign-in. The OAuth client is the user's own, so it is asked for here. -->
+    <main id="setup" class="setup" data-tauri-drag-region hidden>
+      <form id="setup-form" class="setup-form">
+        <h1 class="setup-title">Mail Crew</h1>
+        <p class="setup-lead">Gmail の受信トレイを、1 通ずつのカードで読むメーラーです。</p>
+        <label class="field">
+          <span class="field-label">OAuth クライアント ID</span>
+          <input id="client-id" name="client-id" type="text" autocomplete="off" spellcheck="false" required />
+        </label>
+        <label class="field">
+          <span class="field-label">クライアント シークレット</span>
+          <input id="client-secret" name="client-secret" type="password" autocomplete="off" spellcheck="false" required />
+        </label>
+        <p class="setup-hint">
+          どちらも Google Cloud で作ったものを使います。作り方は
+          <a href="https://github.com/y-saeki/vibe-applications/blob/main/mailcrew/README.md" id="setup-help">README</a>
+          にあります。
+        </p>
+        <p id="setup-error" class="setup-error" role="alert" hidden></p>
+        <div class="setup-actions">
+          <button type="submit" id="sign-in" class="button button-primary">Google でログイン</button>
+        </div>
+        <div id="setup-waiting" class="setup-waiting" hidden>
+          <p>ブラウザで Google にログインしてください。完了すると、ここに受信トレイが開きます。</p>
+          <button type="button" id="cancel-sign-in" class="button">中止</button>
+        </div>
+      </form>
+    </main>
+
+    <!-- The inbox: the views in a sidebar, and one card per thread, newest at the left. -->
+    <div id="inbox" class="inbox" hidden>
+      <nav id="sidebar" class="sidebar glass" aria-label="サイドバー">
+        <div id="views" class="view-list" role="tablist" aria-orientation="vertical" aria-label="ビュー"></div>
+        <button type="button" id="open-settings" class="sidebar-item">
+          <span class="icon" data-icon="settings"></span><span>設定</span>
+        </button>
+      </nav>
+      <header class="topbar" data-tauri-drag-region="deep">
+        <button type="button" id="toggle-sidebar" class="icon-button glass" aria-controls="sidebar" title="サイドバー">
+          <span class="icon" data-icon="sidebar"></span><span class="visually-hidden">サイドバー</span>
+        </button>
+        <div class="topbar-title">
+          <h1 id="view-title" class="view-title">受信トレイ</h1>
+          <span id="inbox-count" class="topbar-count"></span>
+        </div>
+        <div class="topbar-tools glass">
+          <button type="button" id="reload" class="icon-button" title="再読み込み">
+            <span class="icon" data-icon="reload"></span><span class="visually-hidden">再読み込み</span>
+          </button>
+        </div>
+      </header>
+      <section id="strip" class="strip" aria-label="受信トレイのスレッド"></section>
+      <div id="empty" class="empty" hidden>
+        <p id="empty-title" class="empty-title">受信トレイは空です</p>
+        <p id="empty-lead" class="empty-lead">新しいメールが届いたら、再読み込みで表示されます。</p>
+      </div>
+    </div>
+
+    <!-- Settings: the accounts, and the custom views. -->
+    <main id="settings" class="settings" data-tauri-drag-region hidden>
+      <div class="settings-panel">
+        <header class="settings-head" data-tauri-drag-region="deep">
+          <h1 class="settings-title">設定</h1>
+          <button type="button" id="close-settings" class="button">受信トレイに戻る</button>
+        </header>
+
+        <section class="settings-section" aria-labelledby="accounts-heading">
+          <h2 id="accounts-heading" class="settings-heading">アカウント</h2>
+          <ul id="account-list" class="settings-list"></ul>
+          <form id="account-form" class="settings-form">
+            <details id="other-client" class="settings-details">
+              <summary>別の OAuth クライアントでログインする</summary>
+              <p class="setup-hint">空欄のままなら、最初のアカウントと同じクライアントを使います。</p>
+              <label class="field">
+                <span class="field-label">OAuth クライアント ID</span>
+                <input id="account-client-id" type="text" autocomplete="off" spellcheck="false" />
+              </label>
+              <label class="field">
+                <span class="field-label">クライアント シークレット</span>
+                <input id="account-client-secret" type="password" autocomplete="off" spellcheck="false" />
+              </label>
+            </details>
+            <p id="account-error" class="setup-error" role="alert" hidden></p>
+            <div class="setup-actions">
+              <button type="submit" id="add-account" class="button button-primary">Google でログインして追加</button>
+            </div>
+            <div id="account-waiting" class="setup-waiting" hidden>
+              <p>ブラウザで、追加する Google アカウントにログインしてください。</p>
+              <button type="button" id="cancel-add-account" class="button">中止</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="settings-section" aria-labelledby="views-heading">
+          <h2 id="views-heading" class="settings-heading">ビュー</h2>
+          <p class="setup-hint">受信トレイの中を絞り込んだ一覧です。サイドバーの「受信トレイ」「あとで読む」の下に並びます。</p>
+          <ul id="view-list" class="settings-list"></ul>
+          <p id="view-error" class="setup-error" role="alert" hidden></p>
+          <form id="view-form" class="settings-form" hidden>
+            <label class="field">
+              <span class="field-label">名前</span>
+              <input id="view-name" type="text" autocomplete="off" spellcheck="false" />
+            </label>
+            <fieldset class="field">
+              <legend class="field-label">アカウント（選ばなければすべて）</legend>
+              <div id="view-accounts" class="checks"></div>
+            </fieldset>
+            <label class="field">
+              <span class="field-label">検索条件（Gmail の検索と同じ書き方）</span>
+              <input id="view-query" type="text" autocomplete="off" spellcheck="false" placeholder="例: from:example.com is:unread" />
+            </label>
+            <div class="setup-actions">
+              <button type="button" id="cancel-view" class="button">キャンセル</button>
+              <button type="submit" id="save-view" class="button button-primary">保存</button>
+            </div>
+          </form>
+          <div class="setup-actions">
+            <button type="button" id="add-view" class="button">ビューを追加</button>
+          </div>
+        </section>
+
+        <section class="settings-section" aria-labelledby="image-senders-heading">
+          <h2 id="image-senders-heading" class="settings-heading">画像を常に表示する差出人</h2>
+          <p class="setup-hint">ここにある差出人からのメールは、外部の画像を確認せずに読み込みます。削除すると、次からはメールごとに確認します。</p>
+          <ul id="image-sender-list" class="settings-list"></ul>
+          <p id="image-sender-error" class="setup-error" role="alert" hidden></p>
+        </section>
+
+        <section class="settings-section" aria-labelledby="brand-heading">
+          <h2 id="brand-heading" class="settings-heading">送信元の検証</h2>
+          <p class="setup-hint">カードの件名の下に、Gmail が確かめた SPF・DKIM・DMARC の結果を表示します。</p>
+          <label class="check">
+            <input id="brand-logos" type="checkbox" />
+            <span>BIMI のロゴを表示する</span>
+          </label>
+          <p class="setup-hint">差出人のドメインが公開しているロゴを、認証局の証明書（VMC・CMC）で確かめてから表示します。確かめるために、差出人のドメインの DNS と、証明書が置かれたサーバーに問い合わせます。</p>
+          <p id="brand-logos-error" class="setup-error" role="alert" hidden></p>
+        </section>
+      </div>
+    </main>
+
+    <!-- The tag picker, moved next to whichever card's button opened it. -->
+    <div id="tag-picker" class="tag-picker glass" role="dialog" aria-label="タグを追加" hidden>
+      <input id="tag-filter" class="tag-filter" type="text" placeholder="タグを検索または作成" autocomplete="off" spellcheck="false" />
+      <ul id="tag-list" class="tag-list" role="listbox" aria-label="タグ"></ul>
+    </div>
+
+    <div id="notice" class="notice glass" role="alert" hidden></div>
+
+    <script type="module" src="main.js"></script>
+  </body>
+</html>

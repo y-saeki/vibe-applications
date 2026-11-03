@@ -121,7 +121,8 @@ extension ArticleBrowserModel: WKUIDelegate {
 struct ArticleBrowserView: View {
     @State private var model: ArticleBrowserModel
     @State private var isShowingComments = false
-    @State private var isShowingBookmarkNotice = false
+    @State private var isShowingBookmarkEditor = false
+    @Environment(ReadHistoryStore.self) private var readHistory
 
     init(entry: FeedItem) {
         _model = State(initialValue: ArticleBrowserModel(entry: entry))
@@ -155,6 +156,9 @@ struct ArticleBrowserView: View {
                 }
             }
             .navigationBarTitleDisplayMode(.inline)
+            // The entry, not the page shown, so that following links inside the
+            // article still marks the row it was opened from.
+            .onAppear { readHistory.markRead(model.entry.link) }
             .toolbar {
                 ToolbarItemGroup(placement: .bottomBar) {
                     // Arrows, because the chevron is the system's button back to the list.
@@ -164,7 +168,7 @@ struct ArticleBrowserView: View {
                         .disabled(!model.canGoForward)
                     Spacer()
                     Button("ブコメを見る", systemImage: "text.bubble") { isShowingComments = true }
-                    Button("ブクマする", systemImage: "bookmark") { isShowingBookmarkNotice = true }
+                    Button("ブクマする", systemImage: "bookmark") { isShowingBookmarkEditor = true }
                     ShareLink(item: model.pageURL ?? model.entry.link) {
                         Label("共有", systemImage: "square.and.arrow.up")
                     }
@@ -181,10 +185,12 @@ struct ArticleBrowserView: View {
                 }
                 .presentationDetents([.medium, .large])
             }
-            .alert("ブックマークはまだ使えません", isPresented: $isShowingBookmarkNotice) {
-                Button("OK", role: .cancel) {}
-            } message: {
-                Text("ログインとブックマークの機能を追加すると、ここからブックマークできるようになります。")
+            .sheet(isPresented: $isShowingBookmarkEditor) {
+                NavigationStack {
+                    // The entry, like the read mark: a link followed inside the
+                    // article is not what the user is bookmarking from the list.
+                    BookmarkEditorView(url: model.entry.link, title: model.entry.title)
+                }
             }
     }
 }
