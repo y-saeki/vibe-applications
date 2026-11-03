@@ -1,6 +1,24 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Mail Crew",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 480,
+        "minHeight": 420,
+        "center": true,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "trafficLightPosition": { "x": 20, "y": 23 },
+        "transparent": true,
+        "windowEffects": {
+          "effects": ["underWindowBackground"]
+        }
+      }
+    ],
     "security": {
       "csp": {
         "frame-src": "'self' http: https: mailto:"

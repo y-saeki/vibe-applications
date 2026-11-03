@@ -1,46 +1,76 @@
+/*
+ * Mail Crew follows the platform rather than a look of its own. On macOS the
+ * window's own material (set in src-tauri/tauri.macos.conf.json) shows behind
+ * the page, the toolbar shares its row with the window controls, and the
+ * controls that float over the cards (the sidebar, the toolbar's buttons, the
+ * tag picker, notices) are glass. The cards are content and stay opaque.
+ */
+
 :root {
   color-scheme: light dark;
-  --bg: #eef0f3;
+  --window: #ececef;
   --surface: #ffffff;
-  --surface-raised: #ffffff;
   --text: #1d1d1f;
-  --text-muted: #6b7077;
-  --border: #d9dce1;
-  --accent: #1f5fbf;
+  --text-muted: #86868b;
+  --border: rgb(0 0 0 / 0.1);
+  --control: rgb(0 0 0 / 0.05);
+  --control-hover: rgb(0 0 0 / 0.08);
+  --selection: rgb(0 0 0 / 0.07);
+  --accent: #0a84ff;
   --accent-text: #ffffff;
-  --accent-soft: #e3ecfa;
-  --star: #e3a008;
-  --danger: #b42318;
-  --shadow: 0 1px 2px rgb(0 0 0 / 0.06), 0 4px 16px rgb(0 0 0 / 0.06);
+  --accent-soft: rgb(10 132 255 / 0.12);
+  --star: #ff9f0a;
+  --danger: #d70015;
+  --glass: rgb(250 250 252 / 0.6);
+  --glass-solid: #f6f6f8;
+  --glass-edge: inset 0 1px 0 rgb(255 255 255 / 0.85), inset 0 0 0 0.5px rgb(255 255 255 / 0.4);
+  --glass-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.08), 0 10px 30px rgb(0 0 0 / 0.1);
+  --card-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.07), 0 2px 6px rgb(0 0 0 / 0.05);
   --radius: 12px;
-  --radius-small: 6px;
+  --radius-small: 7px;
+  --radius-glass: 16px;
   --card-width: 570px;
   --subject-lines: 2;
-  --subject-line-height: 1.4;
+  --subject-line-height: 1.35;
   --meta-height: 20px;
   --scrollbar-width: 6px;
   --scrollbar-inset: 2px;
   --scrollbar-min: 24px;
   --scrollbar-thumb: rgb(0 0 0 / 0.35);
   --scrollbar-thumb-active: rgb(0 0 0 / 0.55);
-  --gap: 16px;
-  --topbar-height: 48px;
+  --gap: 12px;
+  --toolbar-height: 52px;
+  /* Where the toolbar's first button sits: past the window controls on macOS. */
+  --toolbar-start: 12px;
+  --sidebar-inset: 8px;
+  --sidebar-width: 220px;
+  /* The left edge of the strip's first card while the sidebar is open beside it. */
+  --beside-sidebar: calc(var(--sidebar-inset) + var(--sidebar-width) + var(--gap));
   --font: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic UI", "Segoe UI", sans-serif;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #17181a;
-    --surface: #222326;
-    --surface-raised: #2b2d31;
-    --text: #e8e9eb;
-    --text-muted: #9a9ea6;
-    --border: #3a3c41;
-    --accent: #6ea0ec;
-    --accent-text: #0f1a2b;
-    --accent-soft: #24344d;
-    --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 4px 16px rgb(0 0 0 / 0.3);
+    --window: #1c1c1e;
+    --surface: #232325;
+    --text: #f2f2f7;
+    --text-muted: #98989d;
+    --border: rgb(255 255 255 / 0.1);
+    --control: rgb(255 255 255 / 0.08);
+    --control-hover: rgb(255 255 255 / 0.13);
+    --selection: rgb(255 255 255 / 0.1);
+    --accent-soft: rgb(10 132 255 / 0.22);
+    --glass: rgb(44 44 48 / 0.6);
+    --glass-solid: #2c2c30;
+    --glass-edge: inset 0 1px 0 rgb(255 255 255 / 0.12), inset 0 0 0 0.5px rgb(255 255 255 / 0.08);
+    --glass-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.5), 0 10px 30px rgb(0 0 0 / 0.35);
+    --card-shadow: 0 0 0 0.5px rgb(255 255 255 / 0.08), 0 2px 6px rgb(0 0 0 / 0.3);
   }
+}
+
+/* The window controls take the toolbar's leading edge (tauri.macos.conf.json places them). */
+:root[data-platform="macos"] {
+  --toolbar-start: 84px;
 }
 
 * {
@@ -57,10 +87,19 @@ body {
   margin: 0;
 }
 
+html {
+  background: var(--window);
+}
+
+/* The window's material is the background. */
+:root[data-platform="macos"],
+:root[data-platform="macos"] body {
+  background: transparent;
+}
+
 body {
-  background: var(--bg);
   color: var(--text);
-  font: 14px/1.5 var(--font);
+  font: 13px/1.5 var(--font);
   overflow: hidden;
   -webkit-user-select: none;
   user-select: none;
@@ -69,41 +108,99 @@ body {
 button {
   font: inherit;
   color: inherit;
+  /* Controls in a desktop app keep the arrow. */
+  cursor: default;
+}
+
+:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--accent) 50%, transparent);
+  outline-offset: 1px;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.icon {
+  display: contents;
+}
+
+/* Controls that float over the cards. */
+.glass {
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  backdrop-filter: blur(24px) saturate(180%);
+  box-shadow: var(--glass-edge), var(--glass-shadow);
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .glass {
+    background: var(--glass-solid);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
 }
 
 .button {
-  border: 1px solid var(--border);
-  background: var(--surface);
+  border: none;
+  background: var(--control);
   border-radius: var(--radius-small);
-  padding: 6px 14px;
-  cursor: pointer;
+  padding: 5px 14px;
+  box-shadow: 0 0 0 0.5px var(--border);
 }
 
 .button:hover {
-  border-color: var(--accent);
+  background: var(--control-hover);
 }
 
 .button:disabled {
   opacity: 0.5;
-  cursor: default;
 }
 
-.button-primary {
+.button-primary,
+.button-primary:hover {
   background: var(--accent);
-  border-color: var(--accent);
   color: var(--accent-text);
   font-weight: 600;
+  box-shadow: none;
+}
+
+.button-primary:hover {
+  filter: brightness(1.06);
 }
 
 .button-quiet {
-  border-color: transparent;
   background: transparent;
+  box-shadow: none;
   color: var(--text-muted);
 }
 
 .button-quiet:hover {
   color: var(--text);
-  border-color: var(--border);
+}
+
+.icon-button {
+  flex: none;
+  width: 32px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text);
+  opacity: 0.8;
+}
+
+.icon-button:hover {
+  background: var(--control);
+  opacity: 1;
 }
 
 .link-button {
@@ -121,7 +218,6 @@ button {
   display: grid;
   place-items: center;
   color: var(--text-muted);
-  background: var(--bg);
   z-index: 5;
 }
 
@@ -131,15 +227,15 @@ button {
   height: 100%;
   display: grid;
   place-items: center;
-  padding: var(--gap);
+  padding: var(--toolbar-height) var(--gap) var(--gap);
   overflow: auto;
 }
 
 .setup-form {
   width: min(440px, 100%);
   background: var(--surface);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  border-radius: var(--radius-glass);
+  box-shadow: var(--card-shadow);
   padding: 28px;
   display: grid;
   gap: 14px;
@@ -148,6 +244,7 @@ button {
 .setup-title {
   margin: 0;
   font-size: 22px;
+  font-weight: 700;
 }
 
 .setup-lead,
@@ -167,23 +264,23 @@ button {
 
 .field-label {
   font-weight: 600;
-  font-size: 13px;
 }
 
 .field input {
   font: inherit;
   color: inherit;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-small);
-  padding: 7px 10px;
+  background: var(--surface);
+  border: none;
+  box-shadow: 0 0 0 0.5px var(--border), inset 0 1px 1px rgb(0 0 0 / 0.04);
+  border-radius: 6px;
+  padding: 6px 9px;
   -webkit-user-select: text;
   user-select: text;
 }
 
 .field input:focus {
-  outline: 2px solid var(--accent);
-  outline-offset: -1px;
+  outline: 3px solid color-mix(in srgb, var(--accent) 50%, transparent);
+  outline-offset: 0;
 }
 
 .setup-error {
@@ -210,86 +307,172 @@ button {
 /* Inbox */
 
 .inbox {
+  position: relative;
   height: 100%;
   display: flex;
   flex-direction: column;
 }
 
-.topbar {
-  flex: none;
-  height: var(--topbar-height);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--gap);
-  padding: 0 var(--gap);
-}
-
-.topbar-title {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-}
-
-.topbar-title h1 {
-  margin: 0;
-  font-size: 16px;
-}
-
-.topbar-title {
-  min-width: 0;
-}
-
-.topbar-count {
-  flex: none;
-  color: var(--text-muted);
-  font-size: 13px;
-}
-
-.visually-hidden {
+/*
+ * The sidebar floats over the strip's left end. While it is open in a wide
+ * window the first card starts beside it, and the cards slide under it as the
+ * strip scrolls; in a narrow window it opens over the cards.
+ */
+.sidebar {
   position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
+  top: var(--sidebar-inset);
+  bottom: var(--sidebar-inset);
+  left: var(--sidebar-inset);
+  width: var(--sidebar-width);
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: calc(var(--toolbar-height) - var(--sidebar-inset)) 8px 8px;
+  border-radius: var(--radius-glass);
+  visibility: hidden;
+  transform: translateX(calc(-100% - 2 * var(--sidebar-inset)));
 }
 
-.view-tabs {
-  display: flex;
-  gap: 4px;
-  min-width: 0;
-  overflow-x: auto;
+.sidebar-open .sidebar {
+  visibility: visible;
+  transform: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .sidebar {
+    transition:
+      transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1),
+      visibility 0.25s;
+  }
+}
+
+.view-list {
+  display: grid;
+  gap: 2px;
+  min-height: 0;
+  overflow-y: auto;
   scrollbar-width: none;
 }
 
-.view-tab {
-  flex: none;
-  border: 1px solid transparent;
-  background: transparent;
-  border-radius: var(--radius-small);
-  padding: 4px 12px;
-  color: var(--text-muted);
-  cursor: pointer;
-}
-
-.view-tab:hover {
-  color: var(--text);
-  border-color: var(--border);
-}
-
-.view-tab[aria-selected="true"] {
-  color: var(--text);
-  background: var(--surface);
-  border-color: var(--border);
-  font-weight: 600;
-  cursor: default;
-}
-
-.topbar-tools {
+.view-tab,
+.sidebar-item {
   display: flex;
   align-items: center;
   gap: 8px;
+  width: 100%;
+  min-width: 0;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  text-align: left;
+}
+
+.view-tab svg,
+.sidebar-item svg {
+  flex: none;
+  color: var(--accent);
+}
+
+.view-tab-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.view-tab:hover,
+.sidebar-item:hover {
+  background: var(--control);
+}
+
+.view-tab[aria-selected="true"] {
+  background: var(--selection);
+  font-weight: 600;
+}
+
+.sidebar-item {
+  margin-top: auto;
+}
+
+.sidebar-item svg {
+  color: var(--text-muted);
+}
+
+.topbar {
+  flex: none;
+  position: relative;
+  z-index: 30;
+  height: var(--toolbar-height);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: var(--sidebar-inset) 12px 0 calc(var(--toolbar-start) + 40px);
+}
+
+/* Stays in place whether the sidebar is open or not, like the window controls beside it. */
+#toggle-sidebar {
+  position: absolute;
+  left: var(--toolbar-start);
+  top: calc(var(--sidebar-inset) + (var(--toolbar-height) - var(--sidebar-inset) - 30px) / 2);
+}
+
+.topbar-title {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  line-height: 1.25;
+}
+
+.view-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.topbar-count {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.topbar-tools {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 999px;
+}
+
+.strip,
+.empty {
+  padding-left: var(--gap);
+}
+
+/* Over the cards in a narrow window, the open sidebar covers the toolbar's title. */
+@media (max-width: 759px) {
+  .sidebar-open .topbar-title {
+    visibility: hidden;
+  }
+}
+
+@media (min-width: 760px) {
+  .sidebar-open .topbar {
+    padding-left: var(--beside-sidebar);
+  }
+
+  .sidebar-open .strip,
+  .sidebar-open .empty {
+    padding-left: var(--beside-sidebar);
+  }
+
+  .sidebar-open .strip {
+    scroll-padding-left: var(--beside-sidebar);
+  }
 }
 
 .strip {
@@ -297,11 +480,18 @@ button {
   min-height: 0;
   display: flex;
   gap: var(--gap);
-  padding: 0 var(--gap) var(--gap);
+  padding-top: var(--gap);
+  padding-right: var(--gap);
+  padding-bottom: var(--gap);
   overflow-x: auto;
   overflow-y: hidden;
   scroll-snap-type: x proximity;
-  scroll-padding: 0 var(--gap);
+  scroll-padding-left: var(--gap);
+  scrollbar-width: none;
+}
+
+.strip::-webkit-scrollbar {
+  display: none;
 }
 
 .card {
@@ -313,28 +503,28 @@ button {
   flex-direction: column;
   background: var(--surface);
   border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  box-shadow: var(--card-shadow);
   overflow: hidden;
   scroll-snap-align: start;
 }
 
 .card-head {
   flex: none;
-  padding: 14px 16px 10px;
-  border-bottom: 1px solid var(--border);
+  padding: 14px 18px 12px;
+  border-bottom: 0.5px solid var(--border);
   display: grid;
-  gap: 4px;
+  gap: 3px;
 }
 
 .card-from-row {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 8px;
+  height: var(--meta-height);
 }
 
 .card-from {
   flex: 1;
-  height: 1.5em;
   min-width: 0;
   font-weight: 600;
   overflow: hidden;
@@ -345,12 +535,12 @@ button {
 .card-unread .card-from::before {
   content: "";
   display: inline-block;
-  width: 8px;
-  height: 8px;
+  width: 9px;
+  height: 9px;
   margin-right: 6px;
   border-radius: 50%;
   background: var(--accent);
-  vertical-align: 1px;
+  vertical-align: 0;
 }
 
 .card-date {
@@ -361,42 +551,45 @@ button {
 
 .card-subject {
   margin: 0;
-  font-size: 15px;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
   line-height: var(--subject-line-height);
   /* Two lines whether the subject needs them or not, so every head is as tall. */
   height: calc(var(--subject-lines) * var(--subject-line-height) * 1em);
-  -webkit-line-clamp: var(--subject-lines);
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: var(--subject-lines);
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
 
 .card-meta {
+  flex: none;
   display: flex;
   gap: 6px;
-  height: var(--meta-height);
+  min-width: 0;
+  max-width: 50%;
 }
 
 .card-badge {
   display: inline-flex;
   align-items: center;
   gap: 2px;
-  font-size: 12px;
+  height: 18px;
+  font-size: 11px;
   color: var(--text-muted);
-  background: var(--bg);
-  border-radius: var(--radius-small);
-  padding: 0 6px;
+  background: var(--control);
+  border-radius: 999px;
+  padding: 0 8px;
 }
 
 .card-account {
   min-width: 0;
-  max-width: 50%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   display: block;
-  line-height: var(--meta-height);
+  line-height: 18px;
 }
 
 /* Which account a card is in matters only while there is more than one. */
@@ -405,8 +598,8 @@ button {
 }
 
 .card-badge svg {
-  width: 14px;
-  height: 14px;
+  width: 13px;
+  height: 13px;
 }
 
 .card-images {
@@ -414,7 +607,7 @@ button {
   display: flex;
   justify-content: space-between;
   gap: 8px;
-  padding: 6px 16px;
+  padding: 6px 18px;
   font-size: 12px;
   color: var(--text-muted);
   background: var(--accent-soft);
@@ -500,39 +693,83 @@ button {
 }
 
 .message-text a {
-  color: #1f5fbf;
+  color: #0066cc;
 }
 
+/* Symbols for the actions, and one prominent button for the one a card is there for. */
 .card-toolbar {
   flex: none;
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 10px;
+  border-top: 0.5px solid var(--border);
 }
 
 .tool {
   display: grid;
-  justify-items: center;
-  gap: 2px;
-  padding: 8px 4px;
+  place-items: center;
+  width: 34px;
+  height: 30px;
+  padding: 0;
   border: none;
+  border-radius: 8px;
   background: transparent;
-  color: var(--text-muted);
-  font-size: 11px;
-  cursor: pointer;
+  color: var(--text);
+  opacity: 0.75;
 }
 
 .tool:hover {
-  color: var(--text);
-  background: var(--bg);
+  background: var(--control);
+  opacity: 1;
+}
+
+.tool-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.tool-done {
+  order: 1;
+  margin-left: auto;
+  width: auto;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 14px 0 11px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-weight: 600;
+  opacity: 1;
 }
 
 .tool-done:hover {
-  color: var(--accent);
+  background: var(--accent);
+  filter: brightness(1.06);
+}
+
+.tool-done svg {
+  width: 15px;
+  height: 15px;
+  stroke-width: 2.2;
+}
+
+.tool-done .tool-label {
+  position: static;
+  width: auto;
+  height: auto;
+  clip-path: none;
 }
 
 .tool-star[aria-pressed="true"] {
   color: var(--star);
+  opacity: 1;
 }
 
 .tool-star[aria-pressed="true"] svg {
@@ -546,9 +783,8 @@ button {
   gap: 14px;
   padding: 24px;
   text-align: center;
-  background: transparent;
-  box-shadow: none;
-  border: 2px dashed var(--border);
+  background: color-mix(in srgb, var(--surface) 45%, transparent);
+  box-shadow: inset 0 0 0 0.5px var(--border);
 }
 
 .end-summary {
@@ -567,7 +803,7 @@ button {
 .empty-title {
   margin: 0;
   font-size: 20px;
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .empty-lead {
@@ -580,7 +816,7 @@ button {
 .settings {
   height: 100%;
   overflow: auto;
-  padding: var(--gap);
+  padding: var(--sidebar-inset) var(--gap) var(--gap);
 }
 
 .settings-panel {
@@ -591,29 +827,37 @@ button {
 }
 
 .settings-head {
+  height: calc(var(--toolbar-height) - var(--sidebar-inset));
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--gap);
 }
 
+/* Clear of the window controls when the window is narrow enough to reach them. */
+:root[data-platform="macos"] .settings-head {
+  padding-left: max(0px, calc(var(--toolbar-start) - (100vw - min(560px, 100vw - 2 * var(--gap))) / 2));
+}
+
 .settings-title {
   margin: 0;
-  font-size: 22px;
+  font-size: 15px;
+  font-weight: 700;
 }
 
 .settings-section {
   background: var(--surface);
   border-radius: var(--radius);
-  box-shadow: var(--shadow);
-  padding: 20px 24px;
+  box-shadow: var(--card-shadow);
+  padding: 16px 20px;
   display: grid;
   gap: 12px;
 }
 
 .settings-heading {
   margin: 0;
-  font-size: 16px;
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .settings-list {
@@ -627,8 +871,8 @@ button {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 0;
-  border-bottom: 1px solid var(--border);
+  padding: 7px 0;
+  border-bottom: 0.5px solid var(--border);
 }
 
 .settings-row:last-child {
@@ -668,7 +912,6 @@ button {
 }
 
 .settings-details summary {
-  cursor: pointer;
   color: var(--text-muted);
 }
 
@@ -702,12 +945,9 @@ fieldset.field {
 
 .tag-picker {
   position: fixed;
-  z-index: 10;
+  z-index: 40;
   width: 260px;
-  background: var(--surface-raised);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  border-radius: var(--radius-glass);
   padding: 8px;
   display: grid;
   gap: 6px;
@@ -716,10 +956,11 @@ fieldset.field {
 .tag-filter {
   font: inherit;
   color: inherit;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-small);
-  padding: 6px 8px;
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+  border: none;
+  box-shadow: 0 0 0 0.5px var(--border);
+  border-radius: 8px;
+  padding: 6px 9px;
 }
 
 .tag-list {
@@ -731,13 +972,13 @@ fieldset.field {
 }
 
 .tag-row {
-  padding: 5px 8px;
-  border-radius: var(--radius-small);
-  cursor: pointer;
+  padding: 5px 9px;
+  border-radius: 7px;
 }
 
 .tag-row[aria-selected="true"] {
-  background: var(--accent-soft);
+  background: var(--accent);
+  color: var(--accent-text);
 }
 
 .tag-row-new {
@@ -746,7 +987,6 @@ fieldset.field {
 
 .tag-row-none {
   color: var(--text-muted);
-  cursor: default;
 }
 
 .notice {
@@ -755,10 +995,7 @@ fieldset.field {
   bottom: 24px;
   transform: translateX(-50%);
   max-width: min(560px, calc(100% - 32px));
-  z-index: 20;
-  background: var(--text);
-  color: var(--bg);
-  border-radius: var(--radius-small);
+  z-index: 50;
+  border-radius: var(--radius-glass);
   padding: 10px 16px;
-  box-shadow: var(--shadow);
 }

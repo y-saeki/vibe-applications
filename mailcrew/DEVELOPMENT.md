@@ -68,7 +68,8 @@ pnpm exec playwright install chromium webkit
 | `src-tauri/src/commands.rs` | ページから呼べるコマンドの一覧 |
 | `src-tauri/src/links.rs` | webview がアプリ以外のページへ移動しないようにする。メール中のリンクは既定のアプリで開く |
 | `src/inbox.ts` | カードの列、ボタンの動作、まとめて完了 |
-| `src/views.ts` | 受信トレイの上のビューのタブと、ビューから取得条件を作る処理 |
+| `src/views.ts` | サイドバーに並ぶビューと、ビューから取得条件を作る処理 |
+| `src/sidebar.ts` | サイドバーの開閉。閉じたかどうかは `localStorage` に保存する |
 | `src/settings.ts` | 設定画面。アカウントの追加と削除、ビューの作成・編集・削除 |
 | `src/message-frame.ts` | 本文の表示。HTML は iframe に入れる |
 | `src/overlay-scrollbar.ts` | カードの本文に重ねて描くスクロールバー |
@@ -113,6 +114,20 @@ Google が上限を理由に断ったとき（429、または理由が `rateLimi
 「あとで読む」のタブでは、カードに「あとで読む」のボタンを出しません。ページは `archive` と `apply_label` に、カードを読み込んだタブの `mailbox`（`inbox` か `setAside`）を渡します。
 
 ページはボタンを押した時点でカードを消し、Rust 側が失敗を返したら元の位置に戻します。
+
+### ウィンドウの見た目
+
+macOS では `src-tauri/tauri.macos.conf.json` で次のように設定しています。
+
+- タイトルバーをページに重ねる（`titleBarStyle: Overlay`、`hiddenTitle`）
+- 信号ボタンをツールバーの行の高さに合わせる（`trafficLightPosition`）
+- ウィンドウを透明にして、その下に標準素材を敷く（`windowEffects` の `underWindowBackground`）
+
+Tauri の OS 別の設定ファイルは配列を丸ごと置き換えるので、`app.windows` の要素は `tauri.conf.json` の値も含めて書き直してあります。ウィンドウの大きさなどを変えるときは、両方のファイルを変えます。
+
+ページは `get_session` が返す `platform` を `<html data-platform>` に入れます。macOS のときだけ背景を透明にし、ツールバーの先頭を信号ボタンの右へずらします。タイトルバーがないので、ツールバー全体と、設定画面とログイン画面の余白を `data-tauri-drag-region` でドラッグ領域にしています。そのために `src-tauri/capabilities/default.json` で `core:window:allow-start-dragging` と `core:window:allow-internal-toggle-maximize` を許可しています。
+
+カードの上に浮く操作部品（サイドバー、ツールバーのボタン、タグを選ぶポップアップ、通知）は、`.glass`（`backdrop-filter` のぼかし）で半透明にします。カードは中身なので不透明のままです。Apple の Human Interface Guidelines が Liquid Glass を操作とナビゲーションの層に限っているのに合わせています。Windows ではウィンドウを透明にせず、Mica などの素材も使っていません。
 
 ### 本文の文字コード
 
@@ -196,6 +211,7 @@ WebView2 はトップレベルの遷移しか問い合わせないため、ペ�
 - 既定のブラウザやメールアプリでリンクが開くこと
 - Tauri が実際に付ける CSP（nonce を含む）。テストは `tauri.conf.json`（WebKit では `tauri.macos.conf.json` を重ねたもの）の値を送るだけです
 - コード署名していない配布物を各 OS が警告する挙動と、Windows インストーラの画面
+- ウィンドウの素材、信号ボタンの位置、ツールバーでのウィンドウのドラッグ。どれも Tauri のウィンドウの機能で、ブラウザでは動きません
 
 これらは実機で確かめるしかありません。リリースの前には少なくとも次を手で確かめます。
 
@@ -208,6 +224,7 @@ WebView2 はトップレベルの遷移しか問い合わせないため、ペ�
 7. 設定から 2 つ目のアカウントを追加すると、両方のメールが新しい順に 1 つの列に並び、それぞれのボタンが正しいアカウントに反映されること
 8. ビューのアカウントと検索条件で、並ぶメールが絞り込まれること
 9. 0.1 のバージョンでログインしていた環境で、ログインし直さずに受信トレイが表示されること
+10. macOS で、信号ボタンがツールバーの行にそろい、ウィンドウの背景に素材が出ること。ツールバーをドラッグするとウィンドウが動き、ダブルクリックするとウィンドウが拡大すること
 
 ### CI
 

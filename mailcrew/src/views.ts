@@ -1,7 +1,9 @@
-// The tabs above the strip: the inbox and what あとで読む set aside, across
-// every account, then each custom view the user made in the settings.
+// The views in the sidebar: the inbox and what あとで読む set aside, across
+// every account, then each custom view the user made in the settings. They are
+// a vertical tab list, and the toolbar names the one that is selected.
 
 import type { View } from './backend'
+import { ICONS } from './icons'
 import type { Filter } from './inbox'
 
 /** The id the tab for the inbox goes by. */
@@ -10,8 +12,8 @@ export const INBOX_VIEW = ''
 export const SET_ASIDE_VIEW = '@set-aside'
 
 const FIXED_TABS = [
-  { id: INBOX_VIEW, name: '受信トレイ' },
-  { id: SET_ASIDE_VIEW, name: 'あとで読む' },
+  { id: INBOX_VIEW, name: '受信トレイ', icon: ICONS.inbox },
+  { id: SET_ASIDE_VIEW, name: 'あとで読む', icon: ICONS.later },
 ]
 
 /** What the strip fetches for the tab with `id`, given the views and who is signed in now. */
@@ -39,6 +41,7 @@ export function describeView(view: View): string {
 
 export class ViewTabs {
   private readonly root = document.querySelector<HTMLElement>('#views')!
+  private readonly title = document.querySelector<HTMLElement>('#view-title')!
 
   constructor(onSelect: (id: string) => void) {
     this.root.addEventListener('click', (event) => {
@@ -49,16 +52,22 @@ export class ViewTabs {
   }
 
   render(views: View[], active: string): void {
-    const tabs = [...FIXED_TABS, ...views].map((view) => {
+    const all = [...FIXED_TABS, ...views.map((view) => ({ ...view, icon: ICONS.view }))]
+    const tabs = all.map((view) => {
       const tab = document.createElement('button')
       tab.type = 'button'
       tab.className = 'view-tab'
       tab.setAttribute('role', 'tab')
       tab.setAttribute('aria-selected', String(view.id === active))
       tab.dataset.view = view.id
-      tab.textContent = view.name
+      tab.innerHTML = view.icon
+      const name = document.createElement('span')
+      name.className = 'view-tab-name'
+      name.textContent = view.name
+      tab.append(name)
       return tab
     })
     this.root.replaceChildren(...tabs)
+    this.title.textContent = all.find((view) => view.id === active)?.name ?? '受信トレイ'
   }
 }
