@@ -40,6 +40,9 @@ function productionCsp(browserName: string): string {
 
 export const ME = 'me@example.com'
 
+/** A BIMI logo as the Rust side hands it over: a square of the accent blue. */
+export const LOGO = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMCAxMCI+PHJlY3Qgd2lkdGg9IjEwIiBoZWlnaHQ9IjEwIiBmaWxsPSIjMGE4NGZmIi8+PC9zdmc+'
+
 const DEFAULT_CONFIG: BackendConfig = {
   accounts: [ME],
   platform: 'windows',
@@ -48,6 +51,7 @@ const DEFAULT_CONFIG: BackendConfig = {
   labels: [],
   views: [],
   imageSenders: [],
+  preferences: { brandLogos: true },
   failures: {},
   signInEmail: ME,
 }
@@ -69,6 +73,12 @@ export function card(n: number, overrides: Partial<TestCard> = {}): TestCard {
     snippet: `スニペット ${n}`,
     body,
     attachments: [],
+    authentication: {
+      spf: { result: 'pass', domain: 'example.com' },
+      dkim: { result: 'pass', domain: 'example.com' },
+      dmarc: { result: 'pass', domain: 'example.com' },
+    },
+    brand: { bimi: 'none', domain: '', mark: 'none', logo: null },
     ...overrides,
   }
 }
@@ -129,6 +139,15 @@ export class App {
 
   tool(id: string, action: 'done' | 'tag' | 'later' | 'star'): Locator {
     return this.card(id).locator(`button[data-action="${action}"]`)
+  }
+
+  /** The checks under a card's subject, as `check: tone`, in order. */
+  trust(id: string): Promise<string[]> {
+    return this.card(id)
+      .locator('.card-trust .trust')
+      .evaluateAll((items) =>
+        items.map((item) => `${(item as HTMLElement).dataset.check}: ${(item as HTMLElement).dataset.tone}`),
+      )
   }
 
   /** The iframe a card's HTML body is shown in. */

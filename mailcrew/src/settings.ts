@@ -1,14 +1,17 @@
-// The settings screen: the accounts Mail Crew reads, the custom views, and the
-// senders whose images are shown without asking.
+// The settings screen: the accounts Mail Crew reads, the custom views, the
+// senders whose images are shown without asking, and whether senders' BIMI
+// logos are looked up.
 
 import { backend, errorMessage, isCommandError, type View } from './backend'
 import type { ImageSenders } from './image-senders'
+import type { PreferenceStore } from './preferences'
 import { describeView } from './views'
 
 export interface SettingsHost {
   accounts(): string[]
   views(): View[]
   imageSenders: ImageSenders
+  preferences: PreferenceStore
   /** Asks who is signed in again, after an account came or went. */
   accountsChanged(): Promise<void>
   /** The views, once they are saved. */
@@ -39,6 +42,8 @@ export class Settings {
   private readonly addView = document.querySelector<HTMLButtonElement>('#add-view')!
   private readonly senderList = document.querySelector<HTMLUListElement>('#image-sender-list')!
   private readonly senderError = document.querySelector<HTMLElement>('#image-sender-error')!
+  private readonly brandLogos = document.querySelector<HTMLInputElement>('#brand-logos')!
+  private readonly brandError = document.querySelector<HTMLElement>('#brand-logos-error')!
   /** The view being edited; null while a new one is being made. */
   private editing: string | null = null
 
@@ -74,6 +79,8 @@ export class Settings {
       const button = (event.target as Element).closest<HTMLButtonElement>('button[data-remove-sender]')
       if (button) void this.removeSender(button)
     })
+
+    this.brandLogos.addEventListener('change', () => void this.saveBrandLogos())
   }
 
   get isShown(): boolean {
@@ -84,6 +91,7 @@ export class Settings {
     this.root.hidden = false
     this.accountError.hidden = true
     this.senderError.hidden = true
+    this.brandError.hidden = true
     this.closeViewForm()
     this.render()
   }
@@ -170,6 +178,23 @@ export class Settings {
       item.className = 'settings-row settings-row-none'
       item.textContent = '画像を常に表示する差出人はいません'
       this.senderList.append(item)
+    }
+
+    this.brandLogos.checked = this.host.preferences.brandLogos
+  }
+
+  private async saveBrandLogos(): Promise<void> {
+    this.brandError.hidden = true
+    const wanted = this.brandLogos.checked
+    this.brandLogos.disabled = true
+    try {
+      await this.host.preferences.setBrandLogos(wanted)
+    } catch (err) {
+      this.brandLogos.checked = !wanted
+      this.brandError.textContent = errorMessage(err)
+      this.brandError.hidden = false
+    } finally {
+      this.brandLogos.disabled = false
     }
   }
 

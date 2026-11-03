@@ -47,6 +47,8 @@ htmlcov/
 !.env.example
 *.pem
 *.key
+# Public root certificates mailcrew checks BIMI mark certificates against.
+!mailcrew/src-tauri/bimi-roots/*.pem
 
 # Editors
 .vscode/

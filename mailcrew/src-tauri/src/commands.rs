@@ -10,11 +10,13 @@ use tokio::sync::oneshot;
 
 use crate::accounts::InboxPage;
 use crate::auth::{self, AccessToken, Pkce};
+use crate::bimi::Brand;
 use crate::card::MessageContent;
 use crate::credentials::Account;
 use crate::error::{CommandError, ErrorKind, Result};
 use crate::gmail::{Gmail, Label, Mailbox};
 use crate::image_senders;
+use crate::preferences::{self, Preferences};
 use crate::views::{self, View};
 use crate::AppState;
 
@@ -186,6 +188,64 @@ pub async fn get_message(
         .accounts
         .check(&account, gmail.message(&message_id).await)
         .await
+}
+
+/// The BIMI logo and checks for the sender of the message a card shows, or
+/// nothing when the user turned the lookups off. Asks the sender's DNS, and
+/// the host of the mark certificate its record names, once an hour at most.
+#[tauri::command]
+pub async fn get_brand(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    account: String,
+    message_id: String,
+) -> Result<Option<Brand>> {
+    if !current_preferences(&app, &state).await?.brand_logos {
+        return Ok(None);
+    }
+    let gmail = state.accounts.get(&account).await?;
+    // Already fetched for the body, so this costs no quota.
+    let content = state
+        .accounts
+        .check(&account, gmail.message(&message_id).await)
+        .await?;
+    // A message without exactly one author is never looked up.
+    let author = content.author.unwrap_or_default();
+    let passed = !author.is_empty() && content.authentication.dmarc_passed();
+    Ok(Some(state.brands.brand(&author, passed).await))
+}
+
+async fn current_preferences(app: &AppHandle, state: &AppState) -> Result<Preferences> {
+    let mut held = state.preferences.lock().await;
+    if let Some(preferences) = *held {
+        return Ok(preferences);
+    }
+    let path = config_path(app, preferences::FILE_NAME)?;
+    let loaded = tauri::async_runtime::spawn_blocking(move || preferences::load(&path))
+        .await
+        .map_err(|err| CommandError::new(ErrorKind::Internal, err.to_string()))??;
+    *held = Some(loaded);
+    Ok(loaded)
+}
+
+#[tauri::command]
+pub async fn get_preferences(app: AppHandle, state: State<'_, AppState>) -> Result<Preferences> {
+    current_preferences(&app, &state).await
+}
+
+#[tauri::command]
+pub async fn save_preferences(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    preferences: Preferences,
+) -> Result<()> {
+    let mut held = state.preferences.lock().await;
+    let path = config_path(&app, preferences::FILE_NAME)?;
+    tauri::async_runtime::spawn_blocking(move || preferences::save(&path, &preferences))
+        .await
+        .map_err(|err| CommandError::new(ErrorKind::Internal, err.to_string()))??;
+    *held = Some(preferences);
+    Ok(())
 }
 
 #[tauri::command]

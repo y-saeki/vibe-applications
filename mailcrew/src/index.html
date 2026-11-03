@@ -137,6 +137,17 @@
           <ul id="image-sender-list" class="settings-list"></ul>
           <p id="image-sender-error" class="setup-error" role="alert" hidden></p>
         </section>
+
+        <section class="settings-section" aria-labelledby="brand-heading">
+          <h2 id="brand-heading" class="settings-heading">送信元の検証</h2>
+          <p class="setup-hint">カードの件名の下に、Gmail が確かめた SPF・DKIM・DMARC の結果を表示します。</p>
+          <label class="check">
+            <input id="brand-logos" type="checkbox" />
+            <span>BIMI のロゴを表示する</span>
+          </label>
+          <p class="setup-hint">差出人のドメインが公開しているロゴを、認証局の証明書（VMC・CMC）で確かめてから表示します。確かめるために、差出人のドメインの DNS と、証明書が置かれたサーバーに問い合わせます。</p>
+          <p id="brand-logos-error" class="setup-error" role="alert" hidden></p>
+        </section>
       </div>
     </main>
 

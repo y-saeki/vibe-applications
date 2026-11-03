@@ -3,6 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::authres::Authentication;
 use crate::mime::{self, MessagePart};
 use crate::sanitize::sanitize_html;
 
@@ -84,6 +85,12 @@ pub struct Card {
 pub struct MessageContent {
     pub body: CardBody,
     pub attachments: Vec<String>,
+    /// What Gmail found when it checked the sender.
+    pub authentication: Authentication,
+    /// The author's address when the message names exactly one, which BIMI
+    /// requires before it looks for a logo. The page has the address already.
+    #[serde(skip)]
+    pub author: Option<String>,
 }
 
 impl MessageContent {
@@ -104,8 +111,45 @@ impl MessageContent {
         Self {
             body,
             attachments: payload.attachments(),
+            authentication: Authentication::from_headers(headers(
+                payload,
+                "Authentication-Results",
+            )),
+            author: single_author(&headers(payload, "From").collect::<Vec<_>>()),
         }
     }
+}
+
+/// Every value of the headers called `name`, in the order they come.
+fn headers<'a>(part: &'a MessagePart, name: &'a str) -> impl Iterator<Item = &'a str> + 'a {
+    part.headers
+        .iter()
+        .filter(move |header| header.name.eq_ignore_ascii_case(name))
+        .map(|header| header.value.as_str())
+}
+
+/// The address in the `From` header, when there is one such header holding
+/// one address.
+fn single_author(values: &[&str]) -> Option<String> {
+    let [value] = values else { return None };
+    // Display names may hold an `@` or a `,` of their own when quoted.
+    let mut bare = String::new();
+    let mut quoted = false;
+    let mut depth = 0usize;
+    for ch in value.chars() {
+        match ch {
+            '"' if depth == 0 => quoted = !quoted,
+            '(' if !quoted => depth += 1,
+            ')' if !quoted && depth > 0 => depth -= 1,
+            _ if quoted || depth > 0 => {}
+            _ => bare.push(ch),
+        }
+    }
+    if bare.matches('@').count() != 1 {
+        return None;
+    }
+    let email = mime::parse_address(value).email.to_ascii_lowercase();
+    email.contains('@').then_some(email)
 }
 
 impl Card {
@@ -290,7 +334,43 @@ mod tests {
                     remote_images: false
                 },
                 attachments: Vec::new(),
+                authentication: Authentication::default(),
+                author: Some("b@example.com".into()),
             }
+        );
+    }
+
+    #[test]
+    fn a_message_carries_gmails_checks_and_its_one_author() {
+        let mut value = message(
+            "m1",
+            &["INBOX"],
+            "1",
+            "\"Shop, Inc. (sales@shop.example)\" <News@Shop.example>",
+            "S",
+            Some("<p>x</p>"),
+        );
+        let headers = value["payload"]["headers"].as_array_mut().unwrap();
+        headers.insert(
+            0,
+            serde_json::json!({ "name": "Authentication-Results", "value": "mx.google.com; dmarc=pass header.from=shop.example" }),
+        );
+        headers.push(serde_json::json!({ "name": "Authentication-Results", "value": "mx.google.com; dmarc=fail" }));
+        let message: Message = serde_json::from_value(value).unwrap();
+        let content = MessageContent::from_message(&message);
+        assert!(content.authentication.dmarc_passed());
+        assert_eq!(content.author.as_deref(), Some("news@shop.example"));
+    }
+
+    #[test]
+    fn several_authors_are_no_author() {
+        assert_eq!(single_author(&["a@example.com, b@example.com"]), None);
+        assert_eq!(single_author(&["a@example.com", "b@example.com"]), None);
+        assert_eq!(single_author(&[]), None);
+        assert_eq!(single_author(&["no address"]), None);
+        assert_eq!(
+            single_author(&["Someone (a@b) <c@d.example>"]).as_deref(),
+            Some("c@d.example")
         );
     }
 
@@ -328,12 +408,26 @@ mod tests {
                 remote_images: true,
             },
             attachments: vec!["a.pdf".into()],
+            authentication: Authentication {
+                spf: None,
+                dkim: None,
+                dmarc: Some(crate::authres::Check {
+                    result: "pass".into(),
+                    domain: "example.com".into(),
+                }),
+            },
+            author: Some("a@example.com".into()),
         };
         assert_eq!(
             serde_json::to_value(content).unwrap(),
             serde_json::json!({
                 "body": { "kind": "html", "html": "x", "remoteImages": true },
-                "attachments": ["a.pdf"]
+                "attachments": ["a.pdf"],
+                "authentication": {
+                    "spf": null,
+                    "dkim": null,
+                    "dmarc": { "result": "pass", "domain": "example.com" }
+                }
             })
         );
         assert_eq!(

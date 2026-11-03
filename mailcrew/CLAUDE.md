@@ -38,6 +38,20 @@ its own. `DEVELOPMENT.md` explains both. Changing either keeps these true:
 Tauri's style nonce would switch off `'unsafe-inline'`, and every message's inline styles
 with it. Do not remove it without replacing what it does.
 
+## Sender checks and BIMI
+
+The row under a card's subject shows Gmail's SPF, DKIM and DMARC results and Mail Crew's own BIMI
+and mark certificate checks. `DEVELOPMENT.md` has the steps. Changing them keeps these true:
+
+- Only Gmail's `Authentication-Results` is read: the topmost one, and only when its authserv-id
+  is Gmail's (`GMAIL_AUTHSERV_ID` in `src-tauri/src/authres.rs`). A sender can write the header
+  too.
+- Nothing about BIMI is looked up unless Gmail's DMARC result is `pass`, and nothing at all
+  while the user has turned BIMI off in the settings (`preferences.json`, on by default).
+  Lookups go out from Rust; the page only ever gets a `data:` URL.
+- A logo is shown only from a mark certificate that chains to a root in `src-tauri/bimi-roots/`.
+  The record's `l=` file is never fetched.
+
 ## Every action names its account
 
 A card carries the address of the account its thread is in (`Card.account`), and every command
@@ -69,12 +83,12 @@ covers it changes in the same commit:
 | Changed | Follow it in |
 |---|---|
 | Sign-in, sign-out, or which screen shows at startup | `tests/e2e/sign-in.spec.ts` |
-| Adding or removing an account, or a sender whose images are always shown, in the settings | `tests/e2e/settings.spec.ts` |
+| Adding or removing an account, a sender whose images are always shown, or the BIMI setting, in the settings | `tests/e2e/settings.spec.ts` |
 | The sidebar and the views in it, the toolbar's title, or making, editing and deleting a view | `tests/e2e/views.spec.ts` |
 | How cards are laid out, the end of the strip, the empty state, reloading | `tests/e2e/inbox.spec.ts` |
 | A toolbar button or まとめて完了 | `tests/e2e/actions.spec.ts` |
 | The tag picker | `tests/e2e/tags.spec.ts` |
-| How a body is shown: the frame, links, images, scaling, lazy mounting | `tests/e2e/message.spec.ts` |
+| How a body is shown: the frame, links, images, scaling, lazy mounting, the checks under the subject, the BIMI logo | `tests/e2e/message.spec.ts` |
 | The `csp` in `src-tauri/tauri.conf.json` or `tauri.macos.conf.json`, or anything the page loads from elsewhere | `tests/e2e/csp.spec.ts` |
 | A field on `Card` or `MessageContent` (`src-tauri/src/card.rs`) | `src/backend.ts`, `card()` in `tests/e2e/fixtures.ts`, and `mod tests` in `card.rs` |
 | A command the frontend invokes | `handle` in `tests/e2e/harness/backend.ts`. It throws on a command it does not know |
@@ -82,6 +96,9 @@ covers it changes in the same commit:
 | How the senders whose images are always shown are stored | `mod tests` in `src-tauri/src/image_senders.rs` |
 | What the sanitiser removes or keeps | `mod tests` in `src-tauri/src/sanitize.rs` |
 | Which navigations the webview allows | `mod tests` in `src-tauri/src/links.rs` |
+| How Gmail's `Authentication-Results` are read | `mod tests` in `src-tauri/src/authres.rs` |
+| The DMARC, BIMI record and mark certificate checks | `mod tests` in `src-tauri/src/bimi.rs` |
+| How preferences are stored | `mod tests` in `src-tauri/src/preferences.rs` |
 
 `DEVELOPMENT.md` lists what these tests cannot reach — Google itself, the credential store,
 the browser a link opens in. Assert the `invoke` that was made and leave the rest to the

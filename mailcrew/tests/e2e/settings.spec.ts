@@ -96,3 +96,39 @@ test('a sender that could not be removed says why and stays', async ({ launch })
   await expect(app.page.locator('#image-sender-error')).toHaveText('保存できませんでした')
   await expect(app.page.locator('#image-sender-list .settings-row-name')).toHaveText(['news@example.com'])
 })
+
+test('turns the BIMI logos off and on', async ({ launch }) => {
+  const app = await launch({ inboxes: [[card(1)]] })
+  await app.expectCalls('get_brand', 1)
+  await app.openSettings()
+  const box = app.page.getByLabel('BIMI のロゴを表示する')
+  await expect(box).toBeChecked()
+  await box.uncheck()
+  await expect(box).toBeChecked({ checked: false })
+  expect(await app.callsTo('save_preferences')).toEqual([{ preferences: { brandLogos: false } }])
+  // Back on the strip, the cards are laid out again without looking anything up.
+  await app.page.getByRole('button', { name: '受信トレイに戻る' }).click()
+  await expect.poll(() => app.trust('t1')).toEqual(['spf: pass', 'dkim: pass', 'dmarc: pass'])
+  await app.expectCalls('get_message', 2)
+  expect(await app.callsTo('get_brand')).toHaveLength(1)
+  await app.openSettings()
+  await expect(box).toBeChecked({ checked: false })
+  await box.check()
+  expect(await app.callsTo('save_preferences')).toEqual([
+    { preferences: { brandLogos: false } },
+    { preferences: { brandLogos: true } },
+  ])
+})
+
+test('starts with the setting as saved, and keeps it when saving fails', async ({ launch }) => {
+  const app = await launch({
+    preferences: { brandLogos: false },
+    failures: { save_preferences: { kind: 'internal', message: '設定を保存できませんでした' } },
+  })
+  await app.openSettings()
+  const box = app.page.getByLabel('BIMI のロゴを表示する')
+  await expect(box).toBeChecked({ checked: false })
+  await box.click()
+  await expect(app.page.locator('#brand-logos-error')).toHaveText('設定を保存できませんでした')
+  await expect(box).toBeChecked({ checked: false })
+})

@@ -7,10 +7,22 @@
 
 import { mockIPC } from '@tauri-apps/api/mocks'
 
-import type { AccountFailure, Card, CommandError, Label, MessageContent, View } from '../../../src/backend'
+import type {
+  AccountFailure,
+  Brand,
+  Card,
+  CommandError,
+  Label,
+  MessageContent,
+  Preferences,
+  View,
+} from '../../../src/backend'
 
-/** A card together with the body `get_message` hands over for it. */
-export type TestCard = Card & MessageContent
+/**
+ * A card together with the body `get_message` hands over for it, and the
+ * brand `get_brand` does.
+ */
+export type TestCard = Card & MessageContent & { brand: Brand }
 
 /** What a test asks the fake backend to start from. */
 export interface BackendConfig {
@@ -29,6 +41,8 @@ export interface BackendConfig {
   views: View[]
   /** The senders whose images show without asking, when the app starts. */
   imageSenders: string[]
+  /** The preferences saved when the app starts. */
+  preferences: Preferences
   /** Commands that reject, with the error they reject with. */
   failures: Record<string, CommandError>
   /** What `sign_in` resolves with, and adds to the accounts. */
@@ -52,6 +66,14 @@ let inboxIndex = 0
 let accounts = [...config.accounts]
 let views = [...config.views]
 let imageSenders = [...config.imageSenders]
+let preferences = { ...config.preferences }
+
+function findMessage(args: unknown): TestCard {
+  const { account, messageId } = args as { account: string; messageId: string }
+  const found = config.inboxes.flat().find((card) => card.account === account && card.messageId === messageId)
+  if (!found) throw new Error(`mailcrew test: no message ${messageId} in ${account}`)
+  return found
+}
 
 function handle(cmd: string, args: unknown): unknown {
   harness.calls.push({ cmd, args })
@@ -78,14 +100,25 @@ function handle(cmd: string, args: unknown): unknown {
       const gone = failures.filter((failure) => failure.kind === 'signedOut').map((failure) => failure.account)
       accounts = accounts.filter((account) => !gone.includes(account))
       // The bodies come only through `get_message`, as from the Rust side.
-      return { cards: cards.map(({ body: _body, attachments: _attachments, ...card }) => card), failures }
+      return {
+        cards: cards.map(
+          ({ body: _body, attachments: _attachments, authentication: _authentication, brand: _brand, ...card }) => card,
+        ),
+        failures,
+      }
     }
     case 'get_message': {
-      const { account, messageId } = args as { account: string; messageId: string }
-      const found = config.inboxes.flat().find((card) => card.account === account && card.messageId === messageId)
-      if (!found) throw new Error(`mailcrew test: no message ${messageId} in ${account}`)
-      return { body: found.body, attachments: found.attachments }
+      const found = findMessage(args)
+      return { body: found.body, attachments: found.attachments, authentication: found.authentication }
     }
+    case 'get_brand':
+      // The Rust side looks nothing up while the preference is off.
+      return preferences.brandLogos ? findMessage(args).brand : null
+    case 'get_preferences':
+      return preferences
+    case 'save_preferences':
+      preferences = (args as { preferences: Preferences }).preferences
+      return null
     case 'list_views':
       return views
     case 'save_views':

@@ -37,10 +37,48 @@ export interface Card {
   snippet: string
 }
 
+/** One method's verdict in Gmail's checks. Mirrors `Check` in src-tauri/src/authres.rs. */
+export interface Check {
+  /** `pass`, `fail`, `softfail`, `neutral`, `none`, `temperror`, `permerror` or `policy`. */
+  result: string
+  /** The domain the result is about; empty when Gmail does not say. */
+  domain: string
+}
+
+/** What Gmail found when it checked the sender. Mirrors `Authentication` in src-tauri/src/authres.rs. */
+export interface Authentication {
+  spf: Check | null
+  dkim: Check | null
+  dmarc: Check | null
+}
+
 /** The body of the message a card shows. Mirrors `MessageContent` in src-tauri/src/card.rs. */
 export interface MessageContent {
   body: CardBody
   attachments: string[]
+  authentication: Authentication
+}
+
+/** Mirrors `BimiResult` in src-tauri/src/bimi.rs. */
+export type BimiResult = 'pass' | 'none' | 'declined' | 'fail' | 'skipped' | 'temperror'
+
+/** Mirrors `MarkResult` in src-tauri/src/bimi.rs. */
+export type MarkResult = 'none' | 'vmc' | 'cmc' | 'fail' | 'temperror'
+
+/** The sender's BIMI record and mark certificate. Mirrors `Brand` in src-tauri/src/bimi.rs. */
+export interface Brand {
+  bimi: BimiResult
+  /** The domain whose BIMI record was used; empty when none was. */
+  domain: string
+  mark: MarkResult
+  /** The certificate's logo as a `data:image/svg+xml` URL. */
+  logo: string | null
+}
+
+/** Mirrors `Preferences` in src-tauri/src/preferences.rs. */
+export interface Preferences {
+  /** Look up senders' BIMI records and mark certificates. */
+  brandLogos: boolean
 }
 
 export interface Label {
@@ -100,6 +138,10 @@ export const backend = {
   inbox: (accounts: string[], mailbox: Mailbox, query: string) =>
     invoke<InboxPage>('list_inbox', { accounts, mailbox, query }),
   message: (account: string, messageId: string) => invoke<MessageContent>('get_message', { account, messageId }),
+  /** Null when the user turned the lookups off. */
+  brand: (account: string, messageId: string) => invoke<Brand | null>('get_brand', { account, messageId }),
+  preferences: () => invoke<Preferences>('get_preferences'),
+  savePreferences: (preferences: Preferences) => invoke<void>('save_preferences', { preferences }),
   labels: (account: string) => invoke<Label[]>('list_labels', { account }),
   createLabel: (account: string, name: string) => invoke<Label>('create_label', { account, name }),
   /** 完了: read, and out of `mailbox`. */
