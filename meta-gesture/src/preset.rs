@@ -10,6 +10,13 @@
 //! - Chrome: <https://support.google.com/chrome/answer/157179>
 //! - Edge: <https://support.microsoft.com/en-us/edge/keyboard-shortcuts-in-microsoft-edge>
 //! - Safari: <https://support.apple.com/guide/safari/keyboard-and-other-shortcuts-cpsh003/mac>
+//! - Vivaldi: <https://help.vivaldi.com/desktop/tabs/tab-features/>, which lists only the keys
+//!   that switch tabs; its keyboard shortcuts page sends the reader to the list in the app
+//! - Firefox: its documentation (support.mozilla.org) answers with a check for robots that
+//!   cannot be read here, so the keys are read from the keyset Firefox itself is built with,
+//!   in Mozilla's repository:
+//!   <https://github.com/mozilla-firefox/firefox/blob/main/browser/base/content/browser-sets.inc.xhtml>
+//!   and the letters it names in `browser/locales/en-US/browser/browserSets.ftl`
 //!
 //! An application is recognized by its name as the settings window shows
 //! it, which is the same on both platforms and for its beta and
@@ -189,6 +196,43 @@ pub const BROWSERS: Preset = Preset {
             ],
         },
         Application {
+            label: "Firefox",
+            word: "firefox",
+            // `accel` is Ctrl on Windows and Command on macOS. The keys for
+            // the top and the bottom of the page and for switching tabs are
+            // not in the keyset.
+            windows: &[
+                ("back", "Alt+Left"),
+                ("forward", "Alt+Right"),
+                ("reload", "Ctrl+R"),
+                ("new-tab", "Ctrl+T"),
+                ("close-tab", "Ctrl+W"),
+                ("reopen-tab", "Ctrl+Shift+T"),
+            ],
+            macos: &[
+                ("back", "Cmd+Left"),
+                ("forward", "Cmd+Right"),
+                ("reload", "Cmd+R"),
+                ("new-tab", "Cmd+T"),
+                ("close-tab", "Cmd+W"),
+                ("reopen-tab", "Cmd+Shift+T"),
+            ],
+        },
+        Application {
+            label: "Vivaldi",
+            word: "vivaldi",
+            // As the help writes them: the next tab with Ctrl+Page Up, the
+            // previous with Ctrl+Page Down.
+            windows: &[
+                ("previous-tab", "Ctrl+PageDown"),
+                ("next-tab", "Ctrl+PageUp"),
+            ],
+            macos: &[
+                ("previous-tab", "Cmd+Shift+Oem4"),
+                ("next-tab", "Cmd+Shift+Oem6"),
+            ],
+        },
+        Application {
             label: "Safari",
             word: "safari",
             windows: &[],
@@ -276,6 +320,14 @@ mod tests {
         assert_eq!(
             BROWSERS.application(&app("Safari")).unwrap().label,
             "Safari"
+        );
+        assert_eq!(
+            BROWSERS.application(&app("Firefox")).unwrap().label,
+            "Firefox"
+        );
+        assert_eq!(
+            BROWSERS.application(&app("Vivaldi")).unwrap().label,
+            "Vivaldi"
         );
         assert!(BROWSERS.application(&app("Notepad")).is_none());
     }

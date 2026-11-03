@@ -29,7 +29,13 @@ version's documentation.
 
 When the documentation cannot be read because the session's network policy blocks its host,
 do not fall back on recollection or guesswork. Stop the part of the work that depends on it,
-tell the user which domain to allow (e.g. `developers.google.com`), and carry on with the rest.
+tell the user which domains to allow, and carry on with the rest. Give the domains as a code
+block with one host per line and nothing else in it, so that the user can copy it straight
+into the environment's allowed domains:
+
+```
+developers.google.com
+```
 
 ## macOS builds are for Apple silicon only
 

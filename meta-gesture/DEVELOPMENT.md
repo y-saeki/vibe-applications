@@ -255,17 +255,22 @@ macOS はポインタの下のウィンドウを `CGWindowListCopyWindowInfo` �
 ブラウザのキーは、各ブラウザの公式のショートカット一覧に載っているものだけを `src/preset.rs` に書いています。一覧に
 ないコマンドは、そのブラウザでは未設定のままにします。出典はファイルの冒頭にあります。
 
-- Chrome(Windows・macOS)、Edge(Windows・macOS)、Safari(macOS)に対応しています
-- Firefox は公式の一覧(support.mozilla.org)がボット対策のページを返し、読めなかったので入れていません
-- Vivaldi と Wavebox は、公式の一覧のドメイン(help.vivaldi.com、wavebox.io)にこのリポジトリの開発環境から
-  アクセスできなかったので入れていません
+- Chrome(Windows・macOS)、Edge(Windows・macOS)、Firefox(Windows・macOS)、Vivaldi(Windows・macOS)、
+  Safari(macOS)に対応しています
+- Firefox は公式の一覧(support.mozilla.org)がボット対策のページを返して読めないので、Mozilla のリポジトリにある
+  Firefox 自身のキーの定義(`browser-sets.inc.xhtml` と `browserSets.ftl`)から読んでいます。タブの切り替えと
+  ページの先頭・末尾のキーはこの定義になく、入れていません
+- Vivaldi のヘルプにキーが載っているのはタブの切り替えだけなので、ほかのコマンドのキーは入れていません。ヘルプは
+  次のタブを Ctrl+Page Up、前のタブを Ctrl+Page Down と書いており、そのとおりにしています
+- Wavebox は、公式の一覧(hub.wavebox.io、knowledgebase.wavebox.io)にこのリポジトリの開発環境からアクセス
+  できなかったので入れていません
 
-アプリは ID ではなく、設定画面に出る名前に含まれる語(`chrome`、`edge`、`safari`)で見分けます。ID は OS ごと、
+アプリは ID ではなく、設定画面に出る名前に含まれる語(`chrome`、`edge`、`firefox`、`vivaldi`、`safari`)で見分けます。ID は OS ごと、
 ベータ版などのビルドごとに違うためです。
 
-macOS の Edge と Safari の「戻る」「進む」は、一覧にある `⌘[`・`⌘]` を送ります。キーは位置(US 配列の `[` の位置)
-で送るので、JIS 配列の Mac では `[` と違うキーになる可能性があります。Chrome は一覧に `⌘←`・`⌘→` もあるので、
-そちらを使っています。
+macOS の Edge と Safari の「戻る」「進む」、Vivaldi のタブの切り替えは、一覧にある `[`・`]` を使うキーを送ります。
+キーは位置(US 配列の `[` の位置)で送るので、JIS 配列の Mac では `[` と違うキーになる可能性があります。Chrome と
+Firefox の「戻る」「進む」には `⌘←`・`⌘→` があるので、そちらを使っています。
 
 ### 設定画面
 
