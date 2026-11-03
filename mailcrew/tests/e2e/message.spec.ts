@@ -4,7 +4,7 @@
 
 import type { Page } from '@playwright/test'
 
-import { card, cards, expect, LOGO, ME, test } from './fixtures'
+import { attachment, card, cards, expect, LOGO, ME, test } from './fixtures'
 
 const IMAGE_HOST = 'https://images.example.test'
 const PNG = Buffer.from(
@@ -290,7 +290,7 @@ test('bodies far off to the right are neither fetched nor shown until the strip 
 test('a body is fetched from the account its card is in', async ({ launch }) => {
   const app = await launch({
     accounts: [ME, 'work@example.com'],
-    inboxes: [[card(1, { account: 'work@example.com', attachments: ['a.pdf'] })]],
+    inboxes: [[card(1, { account: 'work@example.com', attachments: [attachment('1', 'a.pdf')] })]],
   })
   await expect(app.frame('t1')).toBeAttached()
   expect(await app.callsTo('get_message')).toEqual([{ account: 'work@example.com', messageId: 'm1' }])

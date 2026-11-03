@@ -33,10 +33,23 @@ its own. `DEVELOPMENT.md` explains both. Changing either keeps these true:
   `http:`, `https:` and `mailto:` through on macOS, where the guard turns every one of them away.
   Windows keeps `'self'`: WebView2 does not ask about frames, so the policy is all that stops one
   there.
+- Images the message carries inside itself reach the frame only as `data:` URLs that
+  `sanitize.rs` puts in place of their `cid:` URLs, so the frame's `img-src data:` is enough
+  and nothing about them goes to the network from the page.
 
 `dangerousDisableAssetCspModification: ["style-src"]` in `tauri.conf.json` is deliberate:
 Tauri's style nonce would switch off `'unsafe-inline'`, and every message's inline styles
 with it. Do not remove it without replacing what it does.
+
+## Attachments are opened by kind, not trusted
+
+What a file does when opened is decided by its extension, and the sender picks the extension.
+So only the kinds listed in `OPENABLE` in `src-tauri/src/attachments.rs` — documents, images,
+audio, video — are ever handed to the OS to open; everything else can only be saved. The check
+is made in Rust on the name as it will be written (`safe_file_name`), not on what the page says,
+and the page shows no 開く for the rest. Do not add a kind that runs code or opens a browser or
+installer: programs, scripts, shortcuts, archives, HTML, SVG, macro-enabled Office files, disk
+images. Saving never overwrites a file that is already there.
 
 ## Sender checks and BIMI
 
@@ -88,13 +101,16 @@ covers it changes in the same commit:
 | How cards are laid out, the end of the strip, the empty state, reloading | `tests/e2e/inbox.spec.ts` |
 | A toolbar button or まとめて完了 | `tests/e2e/actions.spec.ts` |
 | The tag picker | `tests/e2e/tags.spec.ts` |
+| The list of a card's attachments, opening and saving them | `tests/e2e/attachments.spec.ts` |
 | How a body is shown: the frame, links, images, scaling, lazy mounting, the checks under the subject, the BIMI logo | `tests/e2e/message.spec.ts` |
 | The `csp` in `src-tauri/tauri.conf.json` or `tauri.macos.conf.json`, or anything the page loads from elsewhere | `tests/e2e/csp.spec.ts` |
 | A field on `Card` or `MessageContent` (`src-tauri/src/card.rs`) | `src/backend.ts`, `card()` in `tests/e2e/fixtures.ts`, and `mod tests` in `card.rs` |
 | A command the frontend invokes | `handle` in `tests/e2e/harness/backend.ts`. It throws on a command it does not know |
 | How accounts are stored, or the inbox of several accounts is merged | `mod tests` in `src-tauri/src/credentials.rs` and `src-tauri/src/accounts.rs` |
 | How the senders whose images are always shown are stored | `mod tests` in `src-tauri/src/image_senders.rs` |
-| What the sanitiser removes or keeps | `mod tests` in `src-tauri/src/sanitize.rs` |
+| What the sanitiser removes or keeps, or how embedded images are put in | `mod tests` in `src-tauri/src/sanitize.rs` |
+| Which parts are attachments or embedded images | `mod tests` in `src-tauri/src/mime.rs` and `card.rs` |
+| How attachments are named and written, or which kinds open | `mod tests` in `src-tauri/src/attachments.rs` |
 | Which navigations the webview allows | `mod tests` in `src-tauri/src/links.rs` |
 | How Gmail's `Authentication-Results` are read | `mod tests` in `src-tauri/src/authres.rs` |
 | The DMARC, BIMI record and mark certificate checks | `mod tests` in `src-tauri/src/bimi.rs` |

@@ -65,7 +65,8 @@ pnpm exec playwright install chromium webkit
 | `src-tauri/src/image_senders.rs` | 外部画像を常に表示する差出人の保存先（アプリの設定ディレクトリの `image-senders.json`） |
 | `src-tauri/src/card.rs` | スレッドから 1 枚のカードに載せる内容を組み立てる |
 | `src-tauri/src/mime.rs` | Gmail が返す MIME 構造の読み取り。本文の選択、文字コード（宣言がないか誤っているときは推測する）、RFC 2047 のヘッダー |
-| `src-tauri/src/sanitize.rs` | HTML 本文のサニタイズ（ammonia） |
+| `src-tauri/src/sanitize.rs` | HTML 本文のサニタイズ（ammonia）と、埋め込み画像の `cid:` を `data:` URL に置き換える処理 |
+| `src-tauri/src/attachments.rs` | 添付ファイルの書き出し。保存するファイル名、上書きしない書き出し先、開いてよい種類 |
 | `src-tauri/src/commands.rs` | ページから呼べるコマンドの一覧 |
 | `src-tauri/src/links.rs` | webview がアプリ以外のページへ移動しないようにする。メール中のリンクは既定のアプリで開く |
 | `src-tauri/src/authres.rs` | Gmail が付けた `Authentication-Results` ヘッダーから、SPF・DKIM・DMARC の結果を読み取る |
@@ -102,7 +103,7 @@ OAuth クライアントは利用者が自分の Google Cloud プロジェクト
 
 `list_inbox` は、対象のアカウント（ビューで選んだもの。「受信トレイ」と「あとで読む」のタブなら全アカウント）ごとに `threads.list`（50 件。ビューに検索条件があれば `q` に渡す）で並びを取り、各スレッドを `threads.get`（`format=metadata`、`From` と `Subject` のヘッダーだけ）で 8 件ずつ並行して取ります。アカウントどうしは並行して取り、全アカウントのカードを日時の新しい順に並べて 50 件に切ります。各アカウントの新しい 50 件をそろえてから切るので、全体の新しい 50 件が漏れません。`threads.list` の `labelIds` は、「あとで読む」のタブなら `SetAside` ラベル、それ以外のタブなら `INBOX` です。`SetAside` ラベルがまだないアカウントは、ラベルを作らずに空の一覧を返します。カードには下書きを除いた最新の 1 通の送信者、件名、日時と、スレッドの既読やスターの状態を載せ、どのアカウントのスレッドかを `account` に持たせます。
 
-本文と添付ファイルの名前は、カードが画面に近づいたときにページが `get_message` で取ります。Rust 側は `messages.get`（`format=full`）で 1 通を取り、本文を選んでサニタイズして返します。取るまでのカードにはスニペットが出ます。取った本文はアカウントごとに 200 通までメモリに持ちます。
+本文と添付ファイルの一覧は、カードが画面に近づいたときにページが `get_message` で取ります。Rust 側は `messages.get`（`format=full`）で 1 通を取り、本文を選んでサニタイズして返します。取るまでのカードにはスニペットが出ます。取った本文はアカウントごとに 200 通までメモリに持ちます。
 
 Gmail API の上限は、1 ユーザーあたり 1 分に 6,000 単位です（[Usage limits](https://developers.google.com/workspace/gmail/api/reference/quota)）。`threads.get` は `format=full` だと 120 単位を使うので、50 件のスレッドを本文ごと取ると、それだけで上限を超えます。`format=metadata` なら 40 単位なので、一覧の読み込みは `threads.list` の 10 単位と合わせて 2,010 単位です。本文の `messages.get`（`format=full`）は 1 通 60 単位で、画面に近づいたカードの分だけかかります。
 
@@ -127,6 +128,17 @@ Google が上限を理由に断ったとき（429、または理由が `rateLimi
 「あとで読む」のタブでは、カードに「あとで読む」のボタンを出しません。ページは `archive` と `apply_label` に、カードを読み込んだタブの `mailbox`（`inbox` か `setAside`）を渡します。
 
 ページはボタンを押した時点でカードを消し、Rust 側が失敗を返したら元の位置に戻します。
+
+### 添付ファイルと埋め込み画像
+
+添付ファイルの一覧に載るのは、ファイル名があるパートのうち、HTML 本文が `cid:` で表示している画像を除いたものです。以前は `Content-Disposition: inline` で `Content-ID` があるパートを一律に除いていましたが、本文が表示しない画像まで見えなくなるので、本文が実際に参照しているかで分けています。一覧の各項目はメッセージの中のパート ID（`partId`）で区別します。
+
+埋め込み画像は `get_message` の中で取ります。HTML 本文が `cid:` で参照する `image/*` のパートを、`messages.attachments.get`（1 回 20 単位）で取り、`data:` URL にしてサニタイズのときに `src` と `background` を置き換えます。Gmail が本文と一緒に中身を返したパートは、追加の呼び出しなしで使います。取るのは 1 通につき 20 枚、合わせて 5 MB までで、それを超える画像と、取れなかった画像は表示しません。取れなかった画像があるときは、本文をメモリに残さず、次にカードを表示したときに取り直します。iframe の CSP は前から `img-src data:` を許しているので、ネットワークへの読み込みは増えず、開いたことは送り主に伝わりません。
+
+添付ファイルを開くとき（`open_attachment`）と保存するとき（`save_attachment`）は、Rust 側がメモリにある本文から添付ファイルを探し、`messages.attachments.get`（20 単位）で中身を取ります。ファイル名は `attachments.rs` の `safe_file_name` で、パスの区切りや OS が受け付けない文字を `_` にし、先頭と末尾の `.` と空白を取り除いてから使います。末尾の `.` や空白は Windows がエラーを出さずに取り除くので、残すと拡張子が変わってしまいます。
+
+- 開く: 一時ディレクトリの `mailcrew-attachments/<乱数>/` に書き出し、OS が選ぶアプリで開きます（opener プラグインの `open_path` を Rust 側から呼びます）。このディレクトリは起動のたびに消します。開けるのは、拡張子が `attachments.rs` の `OPENABLE` にある種類（文書、画像、音声、動画）だけです。開いたときに何が起きるかは拡張子で決まり、拡張子は送り主が決められるためです。プログラム、スクリプト、ショートカット、インストーラ、アーカイブ、HTML や SVG、マクロ付きの Office 文書は、ページに「開く」を出さず、Rust 側も断ります。
+- 保存: ダウンロード フォルダに書き出します。同じ名前のファイルがあれば `名前 (2).pdf` のように番号を付け、既存のファイルは上書きしません。
 
 ### ウィンドウの見た目
 
@@ -173,7 +185,7 @@ Tauri の OS 別の設定ファイルは配列を丸ごと置き換えるので�
 
 HTML 本文は 2 段階で守ります。
 
-1. Rust 側（`sanitize.rs`）で、実行や送信につながるもの（`script`、イベントハンドラ、`form`、`iframe`、`object`、`embed`、`meta`、`base`、`link`、`svg`、`javascript:` のリンク、相対 URL）を取り除きます。メールのレイアウトに要る `style` 要素と `style` 属性、表組みの属性は残します。外部画像を読み込むかどうかも、ここで判定します。
+1. Rust 側（`sanitize.rs`）で、実行や送信につながるもの（`script`、イベントハンドラ、`form`、`iframe`、`object`、`embed`、`meta`、`base`、`link`、`svg`、`javascript:` のリンク、相対 URL）を取り除きます。メールのレイアウトに要る `style` 要素と `style` 属性、表組みの属性は残します。外部画像を読み込むかどうかも、ここで判定します。埋め込み画像の `cid:` は `data:` URL に置き換え、取っていない画像の `cid:` は取り除きます。
 2. ページ側（`message-frame.ts`）で、`sandbox="allow-same-origin"` だけを付けた iframe に `srcdoc` で入れます。`allow-scripts` がないので、サニタイズをすり抜けたものがあってもスクリプトは動きません。iframe の文書には専用の Content-Security-Policy（`default-src 'none'; style-src 'unsafe-inline'; img-src data:`）を付け、利用者が「表示する」を押したときと、差出人が「画像を常に表示する差出人」にあるときだけ、`img-src` に `https:` と `http:` を加えます。`referrer` は送りません。
 
 `allow-same-origin` は、ページが iframe の中のリンクのクリックを拾い、幅の広いメールを縮小するために付けています。`allow-scripts` と同時に付けると sandbox の意味がなくなるため、この 2 つは決して並べないでください。
@@ -229,7 +241,7 @@ BIMI は `get_brand` で確かめます。ページは本文を取ったあと�
 | フロントエンド（`src/`）の E2E | `pnpm test:e2e` | `tests/e2e/` |
 | Rust 側の単体テスト | `cargo test` | 各ファイルの `mod tests` |
 
-`cargo test` が確かめるのは、ネットワークを使わない部分です。PKCE とリダイレクトの読み取り（`auth.rs`）、アカウントの一覧の更新と旧形式の読み取り（`credentials.rs`）、複数アカウントのカードを新しい順に並べて切る処理（`accounts.rs`）、ビューの保存と読み込み（`views.rs`）、画像を常に表示する差出人の保存と読み込み（`image_senders.rs`）、MIME の解析と文字コード（ISO-2022-JP、Shift_JIS を含む）、文字コードの宣言がないか誤っているときの推測、RFC 2047 のヘッダー（`mime.rs`）、サニタイズで消えるものと残るもの（`sanitize.rs`）、スレッドからカードへの変換、メッセージから本文への変換と JSON の形（`card.rs`）、上限で断られたときの判定と待ち時間（`gmail.rs`）、開いてよいリンク（`commands.rs`）、webview に許す遷移（`links.rs`）、Gmail の検証結果の読み取り（`authres.rs`）、DMARC のポリシーと BIMI レコードの判定、テスト用に作ったマーク証明書の検証（`bimi.rs`）、設定の保存と読み込み（`preferences.rs`）を見ます。
+`cargo test` が確かめるのは、ネットワークを使わない部分です。PKCE とリダイレクトの読み取り（`auth.rs`）、アカウントの一覧の更新と旧形式の読み取り（`credentials.rs`）、複数アカウントのカードを新しい順に並べて切る処理（`accounts.rs`）、ビューの保存と読み込み（`views.rs`）、画像を常に表示する差出人の保存と読み込み（`image_senders.rs`）、MIME の解析と文字コード（ISO-2022-JP、Shift_JIS を含む）、文字コードの宣言がないか誤っているときの推測、RFC 2047 のヘッダー（`mime.rs`）、サニタイズで消えるものと残るもの、埋め込み画像の置き換え（`sanitize.rs`）、添付ファイルの一覧と埋め込み画像の見分け（`mime.rs`、`card.rs`）、保存するファイル名、上書きしない書き出し、開いてよい種類（`attachments.rs`）、スレッドからカードへの変換、メッセージから本文への変換と JSON の形（`card.rs`）、上限で断られたときの判定と待ち時間（`gmail.rs`）、開いてよいリンク（`commands.rs`）、webview に許す遷移（`links.rs`）、Gmail の検証結果の読み取り（`authres.rs`）、DMARC のポリシーと BIMI レコードの判定、テスト用に作ったマーク証明書の検証（`bimi.rs`）、設定の保存と読み込み（`preferences.rs`）を見ます。
 
 ### フロントエンドの E2E テスト
 
@@ -250,7 +262,7 @@ BIMI は `get_brand` で確かめます。ページは本文を取ったあと�
 
 - 本物の Google とのやりとり。ログイン画面、トークンの発行と更新、Gmail API の応答とエラー
 - OS の資格情報ストアへの保存と読み出し、macOS のキーチェーンのダイアログ、以前のバージョンからのログインの引き継ぎ
-- 既定のブラウザやメールアプリでリンクが開くこと
+- 既定のブラウザやメールアプリでリンクが開くこと、添付ファイルが既定のアプリで開くこと、ダウンロード フォルダに保存されること
 - 本物の DNS や、証明書と CRL を置いたサーバーとのやりとり。DigiCert や Entrust が発行した本物のマーク証明書の検証
 - Tauri が実際に付ける CSP（nonce を含む）。テストは `tauri.conf.json`（WebKit では `tauri.macos.conf.json` を重ねたもの）の値を送るだけです
 - コード署名していない配布物を各 OS が警告する挙動と、Windows インストーラの画面
@@ -270,6 +282,8 @@ BIMI は `get_brand` で確かめます。ページは本文を取ったあと�
 9. 0.1 のバージョンでログインしていた環境で、ログインし直さずに受信トレイが表示されること
 10. macOS で、信号ボタンがツールバーの行の中央にそろい、ウィンドウの背景に素材が出ること。ツールバーをドラッグするとウィンドウが動き、ダブルクリックするとウィンドウが拡大すること
 11. Gmail の Web 版でロゴが出る差出人のメールで、件名の下の検証結果がすべて緑になり、名前の横に同じロゴが出ること。設定で「BIMI のロゴを表示する」をオフにすると、ロゴと BIMI・VMC の項目が消えること
+12. PDF や画像の添付ファイルが「開く」で既定のアプリで開き、「保存」でダウンロード フォルダに入ること。同じものをもう一度保存すると、番号の付いた別のファイルになること
+13. 署名の画像やロゴを本文に埋め込んだメール（Outlook や Apple Mail から送ったものなど）で、画像が本文の中に表示されること
 
 ### CI
 

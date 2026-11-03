@@ -1,4 +1,5 @@
 mod accounts;
+mod attachments;
 mod auth;
 mod authres;
 mod bimi;
@@ -29,6 +30,14 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(links::guard())
+        .setup(|app| {
+            // What was opened last time is not needed any more. A file a
+            // viewer still holds open stays, and goes next time.
+            if let Ok(dir) = commands::opened_dir(app.handle()) {
+                let _ = std::fs::remove_dir_all(dir);
+            }
+            Ok(())
+        })
         .manage(AppState {
             accounts: accounts::Accounts::new(),
             cancel_sign_in: Mutex::new(None),
@@ -43,6 +52,8 @@ pub fn run() {
             commands::list_inbox,
             commands::get_message,
             commands::get_brand,
+            commands::open_attachment,
+            commands::save_attachment,
             commands::get_preferences,
             commands::save_preferences,
             commands::list_labels,

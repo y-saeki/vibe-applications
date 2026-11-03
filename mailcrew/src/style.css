@@ -699,6 +699,56 @@ button {
   height: 13px;
 }
 
+button.card-badge {
+  border: none;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+button.card-badge:hover,
+button.card-badge[aria-expanded="true"] {
+  color: var(--text);
+  background: var(--control-hover);
+}
+
+.card-files {
+  flex: none;
+  max-height: 30%;
+  overflow-y: auto;
+  margin: 0;
+  padding: 4px 18px;
+  list-style: none;
+  font-size: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.card-file {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 3px 0;
+}
+
+.card-file-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.card-file-size {
+  flex: none;
+  color: var(--text-muted);
+}
+
+.card-file-actions {
+  flex: none;
+  display: flex;
+  gap: 12px;
+}
+
 .card-images {
   flex: none;
   display: flex;

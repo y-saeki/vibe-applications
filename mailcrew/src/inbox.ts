@@ -6,6 +6,7 @@
 
 import {
   backend,
+  type Attachment,
   errorMessage,
   isCommandError,
   type Authentication,
@@ -54,6 +55,49 @@ export interface InboxFilter {
 export type Filter = InboxFilter | null
 
 const INBOX: InboxFilter = { mailbox: 'inbox', accounts: [], query: '', custom: false }
+
+/** A size in bytes as people read it. */
+export function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  const units = ['KB', 'MB', 'GB']
+  let value = bytes / 1024
+  let unit = 0
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024
+    unit += 1
+  }
+  return `${value < 10 ? value.toFixed(1) : Math.round(value)} ${units[unit]}`
+}
+
+/** One row of a card's list of attachments. */
+function buildFile(attachment: Attachment): HTMLElement {
+  const row = document.createElement('li')
+  row.className = 'card-file'
+  const name = document.createElement('span')
+  name.className = 'card-file-name'
+  name.textContent = attachment.name
+  name.title = attachment.name
+  const size = document.createElement('span')
+  size.className = 'card-file-size'
+  size.textContent = formatSize(attachment.size)
+  const actions = document.createElement('span')
+  actions.className = 'card-file-actions'
+  const button = (action: string, label: string) => {
+    const element = document.createElement('button')
+    element.type = 'button'
+    element.className = 'link-button'
+    element.dataset.action = action
+    element.dataset.attachmentId = attachment.id
+    element.textContent = label
+    element.setAttribute('aria-label', `${attachment.name} を${label}`)
+    return element
+  }
+  // Programs and the like are never opened from here, only saved.
+  if (attachment.openable) actions.append(button('open-attachment', '開く'))
+  actions.append(button('save-attachment', '保存'))
+  row.append(name, size, actions)
+  return row
+}
 
 /** Thread ids are only unique within one account. */
 function keyOf(card: Card): string {
@@ -304,9 +348,13 @@ export class Inbox {
       count.textContent = `${card.messageCount} 通`
       meta.append(count)
     }
-    // The attachments are known only once the body has been fetched.
-    const attachments = document.createElement('span')
+    // The attachments are known only once the body has been fetched. The
+    // badge opens and closes the list of them.
+    const attachments = document.createElement('button')
+    attachments.type = 'button'
     attachments.className = 'card-badge card-attachments'
+    attachments.dataset.action = 'attachments'
+    attachments.setAttribute('aria-expanded', 'false')
     attachments.hidden = true
     meta.append(attachments)
     fromRow.append(logo, from, meta, date)
@@ -334,6 +382,11 @@ export class Inbox {
       imagesActions.append(always)
     }
     images.append(imagesText, imagesActions)
+
+    const files = document.createElement('ul')
+    files.className = 'card-files'
+    files.setAttribute('aria-label', '添付ファイル')
+    files.hidden = true
 
     const bodyWrap = document.createElement('div')
     bodyWrap.className = 'card-body-wrap'
@@ -364,7 +417,7 @@ export class Inbox {
       toolbar.append(button)
     }
 
-    element.append(head, images, bodyWrap, toolbar)
+    element.append(head, images, files, bodyWrap, toolbar)
     return element
   }
 
@@ -433,8 +486,9 @@ export class Inbox {
       const attachments = element.querySelector<HTMLElement>('.card-attachments')!
       attachments.innerHTML = ICONS.attachment
       attachments.append(` ${content.attachments.length}`)
-      attachments.title = content.attachments.join('\n')
+      attachments.title = `添付ファイル ${content.attachments.length} 件`
       attachments.hidden = false
+      element.querySelector('.card-files')!.replaceChildren(...content.attachments.map(buildFile))
     }
     const lookUp = this.preferences.brandLogos
     this.showTrust(mounted, content.authentication, undefined, lookUp)
@@ -508,6 +562,40 @@ export class Inbox {
       case 'images-always':
         void this.trustSender(card.from.email, button)
         break
+      case 'attachments':
+        this.toggleFiles(mounted, button)
+        break
+      case 'open-attachment':
+        void this.withAttachment(button, () =>
+          backend.openAttachment(card.account, card.messageId, button.dataset.attachmentId ?? ''),
+        )
+        break
+      case 'save-attachment':
+        void this.withAttachment(button, async () => {
+          const name = await backend.saveAttachment(card.account, card.messageId, button.dataset.attachmentId ?? '')
+          showNotice(`ダウンロード フォルダに「${name}」を保存しました`)
+        })
+        break
+    }
+  }
+
+  /** Shows or hides the list of a card's attachments. */
+  private toggleFiles(mounted: Mounted, button: HTMLButtonElement): void {
+    const files = mounted.element.querySelector<HTMLElement>('.card-files')!
+    files.hidden = !files.hidden
+    button.setAttribute('aria-expanded', String(!files.hidden))
+    mounted.body?.refit()
+  }
+
+  /** Runs what an attachment's button asks for, with the button off until it is done. */
+  private async withAttachment(button: HTMLButtonElement, action: () => Promise<void>): Promise<void> {
+    button.disabled = true
+    try {
+      await action()
+    } catch (err) {
+      this.fail(err)
+    } finally {
+      button.disabled = false
     }
   }
 
