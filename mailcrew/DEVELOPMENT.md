@@ -61,7 +61,7 @@ pnpm exec playwright install chromium webkit
 | `src-tauri/src/credentials.rs` | アカウント情報の保存先（macOS のキーチェーン、Windows の資格情報マネージャー） |
 | `src-tauri/src/gmail.rs` | Gmail API の呼び出し。受信トレイのスレッド、ラベル、ラベルの付け外し |
 | `src-tauri/src/card.rs` | スレッドから 1 枚のカードに載せる内容を組み立てる |
-| `src-tauri/src/mime.rs` | Gmail が返す MIME 構造の読み取り。本文の選択、文字コード、RFC 2047 のヘッダー |
+| `src-tauri/src/mime.rs` | Gmail が返す MIME 構造の読み取り。本文の選択、文字コード（宣言がないか誤っているときは推測する）、RFC 2047 のヘッダー |
 | `src-tauri/src/sanitize.rs` | HTML 本文のサニタイズ（ammonia） |
 | `src-tauri/src/commands.rs` | ページから呼べるコマンドの一覧 |
 | `src-tauri/src/links.rs` | webview がアプリ以外のページへ移動しないようにする。メール中のリンクは既定のアプリで開く |
@@ -91,6 +91,20 @@ OAuth クライアントは利用者が自分の Google Cloud プロジェクト
 | スター（外す） | なし | スレッドの全メッセージから `STARRED` |
 
 ページはボタンを押した時点でカードを消し、Rust 側が失敗を返したら元の位置に戻します。
+
+### 本文の文字コード
+
+Gmail API は本文を送信者の文字コードのままのバイト列で返します。日本のメールには、パートのヘッダーに文字コードがない、`us-ascii` と書いてある、ブラウザが知らない名前（`cp932` など）を使っている、といったものがあります。そのまま UTF-8 として読むと、日本語がすべて置換文字（�）になります。
+
+そのため `mime.rs` の `decode_text` は次の順に試し、エラーなく読めた最初のものを使います。
+
+1. パートのヘッダーの `charset`（`us-ascii` は宣言なしとみなす）
+2. HTML の `<meta>` が宣言する文字コード
+3. エスケープシーケンスがあれば ISO-2022-JP
+4. UTF-8
+5. [chardetng](https://crates.io/crates/chardetng)（Firefox の文字コード推測）の結果
+
+どれでもエラーなく読めなければ、1 の文字コード（なければ UTF-8）で置換文字を入れて読みます。
 
 ### カードの本文
 
@@ -133,7 +147,7 @@ WebView2 はトップレベルの遷移しか問い合わせないため、ペ�
 | フロントエンド（`src/`）の E2E | `pnpm test:e2e` | `tests/e2e/` |
 | Rust 側の単体テスト | `cargo test` | 各ファイルの `mod tests` |
 
-`cargo test` が確かめるのは、ネットワークを使わない部分です。PKCE とリダイレクトの読み取り（`auth.rs`）、MIME の解析と文字コード（ISO-2022-JP、Shift_JIS を含む）と RFC 2047 のヘッダー（`mime.rs`）、サニタイズで消えるものと残るもの（`sanitize.rs`）、スレッドからカードへの変換と JSON の形（`card.rs`）、開いてよいリンク（`commands.rs`）、webview に許す遷移（`links.rs`）を見ます。
+`cargo test` が確かめるのは、ネットワークを使わない部分です。PKCE とリダイレクトの読み取り（`auth.rs`）、MIME の解析と文字コード（ISO-2022-JP、Shift_JIS を含む）、文字コードの宣言がないか誤っているときの推測、RFC 2047 のヘッダー（`mime.rs`）、サニタイズで消えるものと残るもの（`sanitize.rs`）、スレッドからカードへの変換と JSON の形（`card.rs`）、開いてよいリンク（`commands.rs`）、webview に許す遷移（`links.rs`）を見ます。
 
 ### フロントエンドの E2E テスト
 

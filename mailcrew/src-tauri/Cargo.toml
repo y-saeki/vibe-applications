@@ -30,6 +30,8 @@ keyring = "4"
 # Message bodies: HTML sanitising, charset decoding, base64url.
 ammonia = "4"
 encoding_rs = "0.8"
+# Guessing the charset of a body that names none, or names one it is not in.
+chardetng = "1"
 base64 = "0.23"
 # PKCE for the sign-in.
 sha2 = "0.11"

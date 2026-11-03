@@ -5,6 +5,8 @@
 use base64::alphabet;
 use base64::engine::{DecodePaddingMode, GeneralPurpose, GeneralPurposeConfig};
 use base64::Engine as _;
+use chardetng::{EncodingDetector, Iso2022JpDetection, Utf8Detection};
+use encoding_rs::Encoding;
 use serde::Deserialize;
 
 /// base64url, with or without padding: Gmail has been seen to send both.
@@ -133,13 +135,118 @@ pub fn content_type_param(value: &str, name: &str) -> Option<String> {
     })
 }
 
-/// Bytes in a named charset, as text. An unknown or missing charset is read as
-/// UTF-8, and anything that does not decode becomes U+FFFD rather than an error.
+/// The encoding a charset label names. encoding_rs knows the labels browsers
+/// use; mail also carries a few it does not, which are mapped here.
+fn encoding_for_label(label: &str) -> Option<&'static Encoding> {
+    let label = label.trim().trim_matches('"').to_ascii_lowercase();
+    // US-ASCII is a label browsers read as windows-1252, which decodes any
+    // byte at all; mail labelled ASCII that holds anything else is mislabelled,
+    // and treating the label as absent lets the bytes speak for themselves.
+    if matches!(
+        label.as_str(),
+        "us-ascii" | "ascii" | "ansi_x3.4-1968" | "us"
+    ) {
+        return None;
+    }
+    if let Some(encoding) = Encoding::for_label(label.as_bytes()) {
+        return Some(encoding);
+    }
+    match label.as_str() {
+        // Microsoft's Shift_JIS, which encoding_rs's Shift_JIS already is.
+        "cp932" | "x-ms-cp932" | "windows-932" | "ibm-943" => Some(encoding_rs::SHIFT_JIS),
+        "eucjp" | "euc-jp-ms" | "x-euc-jp-ms" => Some(encoding_rs::EUC_JP),
+        _ if label.starts_with("iso-2022-jp") => Some(encoding_rs::ISO_2022_JP),
+        _ => None,
+    }
+}
+
+/// The charset an HTML body declares for itself in a `<meta>` element, for a
+/// part whose header names none.
+fn meta_charset(bytes: &[u8]) -> Option<&'static Encoding> {
+    let head = &bytes[..bytes.len().min(4096)];
+    let lower = head.to_ascii_lowercase();
+    let mut from = 0;
+    while let Some(at) = find(&lower[from..], b"charset") {
+        let mut i = from + at + b"charset".len();
+        from = i;
+        while i < lower.len() && lower[i].is_ascii_whitespace() {
+            i += 1;
+        }
+        if lower.get(i) != Some(&b'=') {
+            continue;
+        }
+        i += 1;
+        while i < lower.len()
+            && (lower[i].is_ascii_whitespace() || lower[i] == b'"' || lower[i] == b'\'')
+        {
+            i += 1;
+        }
+        let end = lower[i..]
+            .iter()
+            .position(|b| !(b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.' | b':')))
+            .map_or(lower.len(), |len| i + len);
+        if let Some(encoding) = std::str::from_utf8(&lower[i..end])
+            .ok()
+            .and_then(encoding_for_label)
+        {
+            return Some(encoding);
+        }
+    }
+    None
+}
+
+fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    haystack
+        .windows(needle.len())
+        .position(|window| window == needle)
+}
+
+/// Decodes without putting U+FFFD in anywhere, or not at all.
+fn decode_cleanly(bytes: &[u8], encoding: &'static Encoding) -> Option<String> {
+    encoding
+        .decode_without_bom_handling_and_without_replacement(bytes)
+        .map(|text| text.into_owned())
+}
+
+/// Bytes in a named charset, as text.
+///
+/// Mail often names its charset wrongly or not at all, and reading Japanese
+/// bytes as UTF-8 turns every character into U+FFFD. So the label is only the
+/// first guess: then a charset the HTML declares for itself, then ISO-2022-JP
+/// if its escape sequences are there, then UTF-8, then
+/// what chardetng (Firefox's detector) makes of the bytes. The first that
+/// decodes without a single error wins; if none does, the label (or UTF-8)
+/// decodes with replacement characters, as before.
 pub fn decode_text(bytes: &[u8], charset: Option<&str>) -> String {
-    let encoding = charset
-        .and_then(|label| encoding_rs::Encoding::for_label(label.as_bytes()))
-        .unwrap_or(encoding_rs::UTF_8);
-    encoding.decode(bytes).0.into_owned()
+    let labelled = charset.and_then(encoding_for_label);
+    // ISO-2022-JP is 7-bit, so it is valid UTF-8 too; its escape sequences
+    // are what give it away.
+    let iso_2022_jp = (bytes.is_ascii()
+        && (find(bytes, b"\x1b$B").is_some() || find(bytes, b"\x1b$@").is_some()))
+    .then_some(encoding_rs::ISO_2022_JP);
+    let candidates = [
+        labelled,
+        meta_charset(bytes),
+        iso_2022_jp,
+        Some(encoding_rs::UTF_8),
+        Some(guess(bytes)),
+    ];
+    for encoding in candidates.into_iter().flatten() {
+        if let Some(text) = decode_cleanly(bytes, encoding) {
+            return text;
+        }
+    }
+    labelled
+        .unwrap_or(encoding_rs::UTF_8)
+        .decode(bytes)
+        .0
+        .into_owned()
+}
+
+fn guess(bytes: &[u8]) -> &'static Encoding {
+    let mut detector = EncodingDetector::new(Iso2022JpDetection::Allow);
+    detector.feed(bytes, true);
+    detector.guess(None, Utf8Detection::Allow)
 }
 
 /// Decodes RFC 2047 encoded words (`=?ISO-2022-JP?B?...?=`) in a header value.
@@ -341,6 +448,50 @@ mod tests {
         );
         assert_eq!(message.body(), Body::Text("body".into()));
         assert_eq!(message.attachments(), vec!["notes.txt".to_string()]);
+    }
+
+    #[test]
+    fn reads_charsets_mail_names_that_browsers_do_not() {
+        let (sjis, _, _) = encoding_rs::SHIFT_JIS.encode("ご利用ありがとうございます");
+        assert_eq!(
+            decode_text(&sjis, Some("CP932")),
+            "ご利用ありがとうございます"
+        );
+        let (iso, _, _) = encoding_rs::ISO_2022_JP.encode("お知らせ");
+        assert_eq!(decode_text(&iso, Some("ISO-2022-JP-MS")), "お知らせ");
+    }
+
+    #[test]
+    fn falls_back_to_the_charset_the_html_declares() {
+        let (sjis, _, _) = encoding_rs::SHIFT_JIS.encode(
+            "<html><head><meta http-equiv=\"Content-Type\" content=\"text/html; charset=Shift_JIS\"></head><body>残高500円分を当てよう</body></html>",
+        );
+        let part = leaf("text/html", "text/html", &sjis);
+        let Body::Html(html) = part.body() else {
+            panic!("not html")
+        };
+        assert!(html.contains("残高500円分を当てよう"), "{html}");
+        let (euc, _, _) = encoding_rs::EUC_JP.encode("<meta charset='euc-jp'><p>日経電子版</p>");
+        assert!(decode_text(&euc, None).contains("日経電子版"));
+    }
+
+    #[test]
+    fn detects_japanese_that_names_no_charset_or_the_wrong_one() {
+        let text = "日経電子版の解約につきまして。ご契約内容をご確認ください。";
+        let (sjis, _, _) = encoding_rs::SHIFT_JIS.encode(text);
+        assert_eq!(decode_text(&sjis, None), text);
+        assert_eq!(decode_text(&sjis, Some("utf-8")), text);
+        let (euc, _, _) = encoding_rs::EUC_JP.encode(text);
+        assert_eq!(decode_text(&euc, Some("us-ascii")), text);
+        let (iso, _, _) = encoding_rs::ISO_2022_JP.encode(text);
+        assert_eq!(decode_text(&iso, None), text);
+    }
+
+    #[test]
+    fn a_correct_label_is_taken_as_it_is() {
+        assert_eq!(decode_text("café".as_bytes(), Some("utf-8")), "café");
+        let (latin, _, _) = encoding_rs::WINDOWS_1252.encode("café");
+        assert_eq!(decode_text(&latin, Some("iso-8859-1")), "café");
     }
 
     #[test]
