@@ -10,6 +10,7 @@ use tokio::sync::oneshot;
 
 use crate::accounts::InboxPage;
 use crate::auth::{self, AccessToken, Pkce};
+use crate::card::MessageContent;
 use crate::credentials::Account;
 use crate::error::{CommandError, ErrorKind, Result};
 use crate::gmail::{Gmail, Label};
@@ -166,6 +167,20 @@ pub async fn list_inbox(
     query: String,
 ) -> Result<InboxPage> {
     state.accounts.inbox(&accounts, &query).await
+}
+
+/// The body and attachments of the message a card shows.
+#[tauri::command]
+pub async fn get_message(
+    state: State<'_, AppState>,
+    account: String,
+    message_id: String,
+) -> Result<MessageContent> {
+    let gmail = state.accounts.get(&account).await?;
+    state
+        .accounts
+        .check(&account, gmail.message(&message_id).await)
+        .await
 }
 
 #[tauri::command]

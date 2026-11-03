@@ -32,6 +32,7 @@ pub fn run() {
             commands::cancel_sign_in,
             commands::sign_out,
             commands::list_inbox,
+            commands::get_message,
             commands::list_labels,
             commands::create_label,
             commands::archive,

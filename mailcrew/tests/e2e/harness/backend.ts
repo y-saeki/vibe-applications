@@ -7,7 +7,10 @@
 
 import { mockIPC } from '@tauri-apps/api/mocks'
 
-import type { AccountFailure, Card, CommandError, Label, View } from '../../../src/backend'
+import type { AccountFailure, Card, CommandError, Label, MessageContent, View } from '../../../src/backend'
+
+/** A card together with the body `get_message` hands over for it. */
+export type TestCard = Card & MessageContent
 
 /** What a test asks the fake backend to start from. */
 export interface BackendConfig {
@@ -15,7 +18,7 @@ export interface BackendConfig {
   accounts: string[]
   platform: string
   /** The cards each `list_inbox` returns, in turn; the last one repeats. */
-  inboxes: Card[][]
+  inboxes: TestCard[][]
   /**
    * The accounts every `list_inbox` reports as failed. One that failed as
    * `signedOut` is removed, as the Rust side does.
@@ -71,7 +74,14 @@ function handle(cmd: string, args: unknown): unknown {
       const failures = config.inboxFailures.filter((failure) => accounts.includes(failure.account))
       const gone = failures.filter((failure) => failure.kind === 'signedOut').map((failure) => failure.account)
       accounts = accounts.filter((account) => !gone.includes(account))
-      return { cards, failures }
+      // The bodies come only through `get_message`, as from the Rust side.
+      return { cards: cards.map(({ body: _body, attachments: _attachments, ...card }) => card), failures }
+    }
+    case 'get_message': {
+      const { account, messageId } = args as { account: string; messageId: string }
+      const found = config.inboxes.flat().find((card) => card.account === account && card.messageId === messageId)
+      if (!found) throw new Error(`mailcrew test: no message ${messageId} in ${account}`)
+      return { body: found.body, attachments: found.attachments }
     }
     case 'list_views':
       return views

@@ -5,8 +5,8 @@ import { readFileSync } from 'node:fs'
 
 import { test as base, expect, type Locator, type Page } from '@playwright/test'
 
-import type { Card, CardBody } from '../../src/backend'
-import type { BackendConfig, Call } from './harness/backend'
+import type { CardBody } from '../../src/backend'
+import type { BackendConfig, Call, TestCard } from './harness/backend'
 import { HARNESS_BUNDLE } from './harness/paths'
 
 export type LaunchOptions = Partial<BackendConfig> & {
@@ -51,8 +51,8 @@ const DEFAULT_CONFIG: BackendConfig = {
   signInEmail: ME,
 }
 
-/** A thread as the Rust side would hand it over; `n` keeps the ids apart. */
-export function card(n: number, overrides: Partial<Card> = {}): Card {
+/** A thread as the Rust side would hand it over, with the body `get_message` returns for it; `n` keeps the ids apart. */
+export function card(n: number, overrides: Partial<TestCard> = {}): TestCard {
   const body: CardBody = { kind: 'html', html: `<p>本文 ${n}</p>`, remoteImages: false }
   return {
     id: `t${n}`,
@@ -72,7 +72,7 @@ export function card(n: number, overrides: Partial<Card> = {}): Card {
   }
 }
 
-export function cards(count: number): Card[] {
+export function cards(count: number): TestCard[] {
   return Array.from({ length: count }, (_, i) => card(i + 1))
 }
 

@@ -4,7 +4,7 @@
 
 import type { Page } from '@playwright/test'
 
-import { card, cards, expect, test } from './fixtures'
+import { card, cards, expect, ME, test } from './fixtures'
 
 const IMAGE_HOST = 'https://images.example.test'
 const PNG = Buffer.from(
@@ -206,11 +206,35 @@ test('the scrollbar shows only while the body is scrolled', async ({ launch }) =
   await expect(app.card('t2').locator('.scrollbar')).toBeHidden()
 })
 
-test('bodies far off to the right wait until the strip comes near them', async ({ launch }) => {
+test('bodies far off to the right are neither fetched nor shown until the strip comes near them', async ({ launch }) => {
   const app = await launch({ inboxes: [cards(30)] })
   await expect(app.frame('t1')).toBeAttached()
   await expect(app.frame('t30')).toHaveCount(0)
   await expect(app.card('t30').locator('.card-snippet')).toHaveText('スニペット 30')
+  const fetched = async () => ((await app.callsTo('get_message')) as { messageId: string }[]).map((call) => call.messageId)
+  expect(await fetched()).toContain('m1')
+  expect(await fetched()).not.toContain('m30')
   await app.card('t30').scrollIntoViewIfNeeded()
   await expect(app.frame('t30')).toBeAttached()
+  expect(await fetched()).toContain('m30')
+})
+
+test('a body is fetched from the account its card is in', async ({ launch }) => {
+  const app = await launch({
+    accounts: [ME, 'work@example.com'],
+    inboxes: [[card(1, { account: 'work@example.com', attachments: ['a.pdf'] })]],
+  })
+  await expect(app.frame('t1')).toBeAttached()
+  expect(await app.callsTo('get_message')).toEqual([{ account: 'work@example.com', messageId: 'm1' }])
+  await expect(app.card('t1').locator('.card-attachments')).toHaveText('1')
+})
+
+test('a body that could not be fetched leaves the snippet and says why', async ({ launch }) => {
+  const app = await launch({
+    inboxes: [[card(1)]],
+    failures: { get_message: { kind: 'google', message: 'Gmail の利用上限に達しました。1 分ほど待ってから再読み込みしてください' } },
+  })
+  await expect(app.notice).toHaveText('Gmail の利用上限に達しました。1 分ほど待ってから再読み込みしてください')
+  await expect(app.card('t1').locator('.card-snippet')).toHaveText('スニペット 1')
+  await expect(app.frame('t1')).toHaveCount(0)
 })

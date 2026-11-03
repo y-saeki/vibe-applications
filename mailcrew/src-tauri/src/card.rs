@@ -1,4 +1,5 @@
-//! Turning a Gmail thread into what one card shows.
+//! Turning a Gmail thread into what one card shows, and a message into the
+//! body a card shows once it comes near the screen.
 
 use serde::{Deserialize, Serialize};
 
@@ -73,23 +74,22 @@ pub struct Card {
     /// screen stays in the inbox.
     pub message_ids: Vec<String>,
     pub snippet: String,
+}
+
+/// The body of the message a card shows, fetched apart from the card: a full
+/// message costs Gmail quota several times what its headers do, so it is
+/// fetched only for the cards that come near the screen.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MessageContent {
     pub body: CardBody,
     pub attachments: Vec<String>,
 }
 
-impl Card {
-    /// `None` for a thread with nothing in it but drafts.
-    pub fn from_thread(thread: &Thread, account: &str) -> Option<Self> {
-        let messages: Vec<&Message> = thread.messages.iter().filter(|m| !m.is_draft()).collect();
-        let shown = *messages.last()?;
-        let payload = &shown.payload;
-        let header = |name: &str| {
-            payload
-                .header(name)
-                .map(mime::decode_encoded_words)
-                .unwrap_or_default()
-        };
-        let from = mime::parse_address(payload.header("From").unwrap_or_default());
+impl MessageContent {
+    /// From a message fetched with `format=full`.
+    pub fn from_message(message: &Message) -> Self {
+        let payload = &message.payload;
         let body = match payload.body() {
             mime::Body::Html(html) => {
                 let clean = sanitize_html(&html);
@@ -101,6 +101,28 @@ impl Card {
             mime::Body::Text(text) => CardBody::Text { text },
             mime::Body::Empty => CardBody::Empty,
         };
+        Self {
+            body,
+            attachments: payload.attachments(),
+        }
+    }
+}
+
+impl Card {
+    /// From a thread fetched with `format=metadata` (or `full`); only the
+    /// headers, labels and dates are read. `None` for a thread with nothing in
+    /// it but drafts.
+    pub fn from_thread(thread: &Thread, account: &str) -> Option<Self> {
+        let messages: Vec<&Message> = thread.messages.iter().filter(|m| !m.is_draft()).collect();
+        let shown = *messages.last()?;
+        let payload = &shown.payload;
+        let header = |name: &str| {
+            payload
+                .header(name)
+                .map(mime::decode_encoded_words)
+                .unwrap_or_default()
+        };
+        let from = mime::parse_address(payload.header("From").unwrap_or_default());
         Some(Self {
             id: thread.id.clone(),
             account: account.to_string(),
@@ -116,8 +138,6 @@ impl Card {
             message_id: shown.id.clone(),
             message_ids: messages.iter().map(|m| m.id.clone()).collect(),
             snippet: decode_entities(&shown.snippet),
-            body,
-            attachments: payload.attachments(),
         })
     }
 }
@@ -249,11 +269,27 @@ mod tests {
         assert!(card.unread);
         assert!(card.starred);
         assert_eq!(card.snippet, "it's & snippet");
+    }
+
+    #[test]
+    fn a_message_body_is_sanitised() {
+        let message: Message = serde_json::from_value(message(
+            "m2",
+            &["INBOX"],
+            "2000",
+            "b@example.com",
+            "S",
+            Some("<p onclick=x>two</p>"),
+        ))
+        .unwrap();
         assert_eq!(
-            card.body,
-            CardBody::Html {
-                html: "<p>two</p>".into(),
-                remote_images: false
+            MessageContent::from_message(&message),
+            MessageContent {
+                body: CardBody::Html {
+                    html: "<p>two</p>".into(),
+                    remote_images: false
+                },
+                attachments: Vec::new(),
             }
         );
     }
@@ -283,16 +319,26 @@ mod tests {
         .unwrap();
         let json = serde_json::to_value(&card).unwrap();
         assert_eq!(json["account"], "me@example.com");
-        assert_eq!(json["body"], serde_json::json!({ "kind": "empty" }));
+        assert!(json.get("body").is_none());
         assert_eq!(json["messageIds"], serde_json::json!(["m1"]));
         assert_eq!(json["from"]["email"], "a@example.com");
-        let html = CardBody::Html {
-            html: "x".into(),
-            remote_images: true,
+        let content = MessageContent {
+            body: CardBody::Html {
+                html: "x".into(),
+                remote_images: true,
+            },
+            attachments: vec!["a.pdf".into()],
         };
         assert_eq!(
-            serde_json::to_value(html).unwrap(),
-            serde_json::json!({ "kind": "html", "html": "x", "remoteImages": true })
+            serde_json::to_value(content).unwrap(),
+            serde_json::json!({
+                "body": { "kind": "html", "html": "x", "remoteImages": true },
+                "attachments": ["a.pdf"]
+            })
+        );
+        assert_eq!(
+            serde_json::to_value(CardBody::Empty).unwrap(),
+            serde_json::json!({ "kind": "empty" })
         );
     }
 

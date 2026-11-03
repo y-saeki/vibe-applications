@@ -184,7 +184,7 @@ pub fn newest(pages: Vec<Vec<Card>>, limit: usize) -> Vec<Card> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::card::{CardBody, Person};
+    use crate::card::Person;
 
     fn card(id: &str, account: &str, date: i64) -> Card {
         Card {
@@ -202,8 +202,6 @@ mod tests {
             message_id: id.into(),
             message_ids: vec![id.into()],
             snippet: String::new(),
-            body: CardBody::Empty,
-            attachments: Vec::new(),
         }
     }
 

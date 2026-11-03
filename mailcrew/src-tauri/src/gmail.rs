@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
 use crate::auth::{self, AccessToken};
-use crate::card::{Card, Thread};
+use crate::card::{Card, Message, MessageContent, Thread};
 use crate::credentials::Account;
 use crate::error::{CommandError, ErrorKind, Result};
 
@@ -25,10 +25,15 @@ const FETCH_CONCURRENCY: usize = 8;
 const BATCH_LIMIT: usize = 1000;
 
 /// How many times a request Google turned down for its rate limit is sent
-/// again, waiting longer each time.
-const RATE_LIMIT_RETRIES: u32 = 4;
+/// again, waiting longer each time. The limit is counted per minute, so the
+/// waits add up to a little over one.
+const RATE_LIMIT_RETRIES: u32 = 6;
+/// The longest wait between two tries.
+const MAX_BACKOFF: Duration = Duration::from_secs(32);
 /// How many threads' cards each account keeps between loads.
 const CACHE_LIMIT: usize = 1000;
+/// How many message bodies each account keeps.
+const CONTENT_CACHE_LIMIT: usize = 200;
 
 /// The label "あとで読む" puts on a thread.
 pub const SET_ASIDE_LABEL: &str = "SetAside";
@@ -56,6 +61,9 @@ pub struct Gmail {
     /// Threads already fetched, so that a reload or another view asks Gmail
     /// only for the threads that changed.
     cache: Mutex<HashMap<String, Cached>>,
+    /// Message bodies already fetched, by message id. A message's content
+    /// never changes, only its labels.
+    contents: Mutex<HashMap<String, MessageContent>>,
 }
 
 #[derive(Deserialize)]
@@ -98,11 +106,14 @@ pub fn is_rate_limited(status: u16, body: &str) -> bool {
     })
 }
 
-/// How long to wait before the `attempt`-th retry (from 0): 1, 2, 4, 8 seconds,
-/// with up to a quarter more so that parallel requests do not all come back at once.
+/// How long to wait before the `attempt`-th retry (from 0): 1, 2, 4 … seconds
+/// up to `MAX_BACKOFF`, with up to a second more so that parallel requests do
+/// not all come back at once. This is the truncated exponential backoff the
+/// Gmail API's usage limits page recommends.
 fn backoff(attempt: u32) -> Duration {
-    let base = Duration::from_secs(1 << attempt.min(5));
-    base + base.mul_f64(rand::random::<f64>() / 4.0)
+    let base = Duration::from_secs(1 << attempt.min(6));
+    let jitter = Duration::from_millis(rand::random_range(0..=1000));
+    (base + jitter).min(MAX_BACKOFF)
 }
 
 /// The one HTTP client every account's requests go through.
@@ -122,6 +133,7 @@ impl Gmail {
             token: Mutex::new(token),
             set_aside: Mutex::new(None),
             cache: Mutex::new(HashMap::new()),
+            contents: Mutex::new(HashMap::new()),
         }
     }
 
@@ -276,8 +288,13 @@ impl Gmail {
             .map(|(id, history_id)| async move {
                 let thread = self
                     .send::<Thread>(|http| {
-                        http.get(format!("{API}/threads/{id}"))
-                            .query(&[("format", "full")])
+                        // Headers and labels only: a full thread costs three
+                        // times as much quota. The body comes with `message`.
+                        http.get(format!("{API}/threads/{id}")).query(&[
+                            ("format", "metadata"),
+                            ("metadataHeaders", "From"),
+                            ("metadataHeaders", "Subject"),
+                        ])
                     })
                     .await?;
                 Ok::<_, CommandError>((thread, history_id))
@@ -299,6 +316,26 @@ impl Gmail {
             .iter()
             .filter_map(|thread| cache.get(&thread.id).and_then(|cached| cached.card.clone()))
             .collect())
+    }
+
+    /// The body and attachments of one message.
+    pub async fn message(&self, id: &str) -> Result<MessageContent> {
+        if let Some(content) = self.contents.lock().await.get(id) {
+            return Ok(content.clone());
+        }
+        let message: Message = self
+            .send(|http| {
+                http.get(format!("{API}/messages/{id}"))
+                    .query(&[("format", "full")])
+            })
+            .await?;
+        let content = MessageContent::from_message(&message);
+        let mut contents = self.contents.lock().await;
+        if contents.len() >= CONTENT_CACHE_LIMIT {
+            contents.clear();
+        }
+        contents.insert(id.to_string(), content.clone());
+        Ok(content)
     }
 
     /// The labels the user made, by name.
@@ -405,11 +442,15 @@ mod tests {
     }
 
     #[test]
-    fn waits_longer_each_time() {
-        for attempt in 0..4 {
+    fn waits_longer_each_time_up_to_the_cap() {
+        for attempt in 0..5 {
             let wait = backoff(attempt);
             let base = Duration::from_secs(1 << attempt);
-            assert!(wait >= base && wait <= base + base / 4);
+            assert!(wait >= base && wait <= base + Duration::from_secs(1));
         }
+        assert_eq!(backoff(5), MAX_BACKOFF);
+        assert_eq!(backoff(9), MAX_BACKOFF);
+        let total: Duration = (0..RATE_LIMIT_RETRIES).map(backoff).sum();
+        assert!(total >= Duration::from_secs(60));
     }
 }

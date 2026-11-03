@@ -4,7 +4,15 @@
 // the card off the strip at once and puts it back if the Rust side reports a
 // failure.
 
-import { backend, errorMessage, isCommandError, type Card, type InboxPage, type Label } from './backend'
+import {
+  backend,
+  errorMessage,
+  isCommandError,
+  type Card,
+  type InboxPage,
+  type Label,
+  type MessageContent,
+} from './backend'
 import { formatDate } from './format'
 import { ICONS } from './icons'
 import { mountBody, type MountedBody } from './message-frame'
@@ -46,6 +54,8 @@ interface Mounted {
   card: Card
   element: HTMLElement
   body: MountedBody | null
+  /** Set while the message's body is being fetched. */
+  fetching: boolean
 }
 
 export class Inbox {
@@ -177,7 +187,7 @@ export class Inbox {
       : '新しいメールが届いたら、再読み込みで表示されます。'
     for (const card of cards) {
       const element = this.buildCard(card)
-      this.mounted.set(keyOf(card), { card, element, body: null })
+      this.mounted.set(keyOf(card), { card, element, body: null, fetching: false })
       this.strip.append(element)
       this.observer.observe(element)
     }
@@ -253,14 +263,11 @@ export class Inbox {
       count.textContent = `${card.messageCount} 通`
       meta.append(count)
     }
-    if (card.attachments.length > 0) {
-      const attachments = document.createElement('span')
-      attachments.className = 'card-badge card-attachments'
-      attachments.innerHTML = ICONS.attachment
-      attachments.append(` ${card.attachments.length}`)
-      attachments.title = card.attachments.join('\n')
-      meta.append(attachments)
-    }
+    // The attachments are known only once the body has been fetched.
+    const attachments = document.createElement('span')
+    attachments.className = 'card-badge card-attachments'
+    attachments.hidden = true
+    meta.append(attachments)
     // Always there, empty or not, so that every card's head is the same height.
     head.append(meta)
 
@@ -321,22 +328,57 @@ export class Inbox {
     return element
   }
 
-  /** Renders the bodies of cards as they come near the visible part of the strip. */
+  /**
+   * Fetches and renders the bodies of cards as they come near the visible
+   * part of the strip. A full message costs Gmail quota several times what
+   * the card's headers do, so the bodies of cards nobody scrolls to are never
+   * fetched; until then a card shows the snippet.
+   */
   private reveal(entries: IntersectionObserverEntry[]): void {
     for (const entry of entries) {
       if (!entry.isIntersecting) continue
       const element = entry.target as HTMLElement
       this.observer.unobserve(element)
       const mounted = this.mounted.get(element.dataset.key ?? '')
-      if (!mounted || mounted.body) continue
-      const container = element.querySelector<HTMLElement>('.card-body')!
-      mounted.body = mountBody(container, mounted.card.body, (url) => this.openLink(url))
-      const scrollbar = new OverlayScrollbar(container, container.parentElement!)
-      for (const child of container.children) scrollbar.watch(child)
-      const body = mounted.card.body
-      if (body.kind === 'html' && body.remoteImages) {
-        element.querySelector<HTMLElement>('.card-images')!.hidden = false
-      }
+      if (!mounted || mounted.body || mounted.fetching) continue
+      void this.fetchBody(mounted)
+    }
+  }
+
+  private async fetchBody(mounted: Mounted): Promise<void> {
+    const { card, element } = mounted
+    mounted.fetching = true
+    let content: MessageContent
+    try {
+      content = await backend.message(card.account, card.messageId)
+    } catch (err) {
+      // The snippet stays; the card is tried again when it next comes near.
+      if (this.mounted.get(keyOf(card)) === mounted) this.observer.observe(element)
+      this.fail(err)
+      return
+    } finally {
+      mounted.fetching = false
+    }
+    // The strip may have been loaded again while the body was on its way.
+    if (this.mounted.get(keyOf(card)) !== mounted) return
+    this.showBody(mounted, content)
+  }
+
+  private showBody(mounted: Mounted, content: MessageContent): void {
+    const { element } = mounted
+    const container = element.querySelector<HTMLElement>('.card-body')!
+    mounted.body = mountBody(container, content.body, (url) => this.openLink(url))
+    const scrollbar = new OverlayScrollbar(container, container.parentElement!)
+    for (const child of container.children) scrollbar.watch(child)
+    if (content.body.kind === 'html' && content.body.remoteImages) {
+      element.querySelector<HTMLElement>('.card-images')!.hidden = false
+    }
+    if (content.attachments.length > 0) {
+      const attachments = element.querySelector<HTMLElement>('.card-attachments')!
+      attachments.innerHTML = ICONS.attachment
+      attachments.append(` ${content.attachments.length}`)
+      attachments.title = content.attachments.join('\n')
+      attachments.hidden = false
     }
   }
 

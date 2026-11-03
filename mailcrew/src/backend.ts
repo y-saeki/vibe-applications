@@ -35,6 +35,10 @@ export interface Card {
   messageId: string
   messageIds: string[]
   snippet: string
+}
+
+/** The body of the message a card shows. Mirrors `MessageContent` in src-tauri/src/card.rs. */
+export interface MessageContent {
   body: CardBody
   attachments: string[]
 }
@@ -91,6 +95,7 @@ export const backend = {
   cancelSignIn: () => invoke<void>('cancel_sign_in'),
   signOut: (account: string) => invoke<void>('sign_out', { account }),
   inbox: (accounts: string[], query: string) => invoke<InboxPage>('list_inbox', { accounts, query }),
+  message: (account: string, messageId: string) => invoke<MessageContent>('get_message', { account, messageId }),
   labels: (account: string) => invoke<Label[]>('list_labels', { account }),
   createLabel: (account: string, name: string) => invoke<Label>('create_label', { account, name }),
   archive: (account: string, messageIds: string[]) => invoke<void>('archive', { account, messageIds }),
