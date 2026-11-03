@@ -27,6 +27,7 @@ struct HotEntryListView: View {
     @State private var isShowingSettings = false
     @State private var bookmarking: FeedItem?
     @Environment(ReadHistoryStore.self) private var readHistory
+    @Environment(MuteStore.self) private var mutes
 
     var body: some View {
         VerticalBarReader { barsMayBeVertical in
@@ -35,12 +36,14 @@ struct HotEntryListView: View {
     }
 
     private func list(barsMayBeVertical: Bool) -> some View {
-        NavigationStack {
+        let visible = model.items.filter { !mutes.isMuted($0) }
+        let mutedCount = model.items.count - visible.count
+        return NavigationStack {
             List {
                 if let error = model.error {
                     ErrorBanner(error: error)
                 }
-                ForEach(model.items) { item in
+                ForEach(visible) { item in
                     NavigationLink(value: item) {
                         EntryRow(item: item, isRead: readHistory.isRead(item.link))
                     }
@@ -48,6 +51,15 @@ struct HotEntryListView: View {
                         Button("ブクマする", systemImage: "bookmark") { bookmarking = item }
                             .tint(.blue)
                     }
+                }
+                if mutedCount > 0 {
+                    // Said at the foot, so that a short or empty list is not
+                    // mistaken for a feed that failed to load.
+                    Text("ミュートで \(mutedCount) 件を隠しています")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity)
+                        .listRowSeparator(.hidden)
                 }
             }
             .listStyle(.plain)
