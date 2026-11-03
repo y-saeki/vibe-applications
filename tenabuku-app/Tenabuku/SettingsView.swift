@@ -14,7 +14,9 @@ struct SettingsView: View {
                     // On the button, not the form: where the dialog shows as a
                     // popover, it points at the view it is attached to.
                     .confirmationDialog("記録を消しますか？", isPresented: $isConfirmingClear, titleVisibility: .visible) {
-                        Button("既読の記録を消す", role: .destructive) { readHistory.removeAll() }
+                        // A verb that answers the title, so the popover does not
+                        // repeat the label of the button it points at.
+                        Button("消す", role: .destructive) { readHistory.removeAll() }
                     }
             } header: {
                 Text("既読")
