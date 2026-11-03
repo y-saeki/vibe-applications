@@ -72,14 +72,31 @@ test('a message without remote images offers nothing to show', async ({ launch }
   await expect(app.card('t1').locator('.card-images')).toBeHidden()
 })
 
-test('a link opens outside and the frame stays put', async ({ launch }) => {
+// The page catches a click inside the frame and hands the link to the Rust
+// side. WebKit runs no listener inside a frame that may not run scripts, so
+// there the click goes ahead as a navigation of the frame, which WKWebView
+// hands to src-tauri/src/links.rs to open outside instead. Each engine is held
+// to its own path: Chromium must never navigate, WebKit must navigate to
+// exactly the link (and nowhere the guard would not see).
+test('a link leaves the frame by the path its engine takes', async ({ launch, browserName }) => {
   const html = '<p><a id="link" href="https://example.com/news?id=1">記事</a></p>'
   const app = await launch({ inboxes: [[card(1, { body: { kind: 'html', html, remoteImages: false } })]] })
-  const frame = app.frame('t1').contentFrame()
-  await frame.locator('#link').click()
-  await app.expectCalls('open_link', 1)
-  expect(await app.callsTo('open_link')).toEqual([{ url: 'https://example.com/news?id=1' }])
-  await expect(frame.locator('#link')).toBeVisible()
+  const navigations: string[] = []
+  await app.page.route('https://example.com/**', (route) => {
+    if (route.request().isNavigationRequest()) navigations.push(route.request().url())
+    return route.abort()
+  })
+  await app.frame('t1').contentFrame().locator('#link').click()
+
+  if (browserName === 'webkit') {
+    await expect.poll(() => navigations).toEqual(['https://example.com/news?id=1'])
+    expect(await app.callsTo('open_link')).toEqual([])
+  } else {
+    await app.expectCalls('open_link', 1)
+    expect(await app.callsTo('open_link')).toEqual([{ url: 'https://example.com/news?id=1' }])
+    await expect(app.frame('t1').contentFrame().locator('#link')).toBeVisible()
+    expect(navigations).toEqual([])
+  }
 })
 
 test('plain text is shown as text, with its addresses made into links', async ({ launch }) => {

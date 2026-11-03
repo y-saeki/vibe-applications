@@ -4,6 +4,7 @@ mod commands;
 mod credentials;
 mod error;
 mod gmail;
+mod links;
 mod mime;
 mod sanitize;
 
@@ -18,6 +19,7 @@ pub struct AppState {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(links::guard())
         .manage(AppState {
             gmail: gmail::Gmail::new(),
             cancel_sign_in: Mutex::new(None),

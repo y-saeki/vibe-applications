@@ -15,9 +15,12 @@
 //   user asks, card by card, so opening a message tells no sender it was read.
 // - `no-referrer`, so even an allowed image does not say where it was seen.
 //
-// Links never navigate the frame: a click is caught here and handed to the
-// Rust side, which opens http, https and mailto links in the default browser
-// and refuses the rest.
+// Links leave through the Rust side, which opens http, https and mailto links
+// in the default browser and refuses the rest. In WebView2 a click is caught
+// here and handed to `open_link`. WebKit runs none of this page's listeners
+// inside a frame that may not run scripts, so in WKWebView the click goes
+// ahead as a navigation of the frame, and src-tauri/src/links.rs turns that
+// navigation away and opens the link outside instead.
 
 import type { CardBody } from './backend'
 

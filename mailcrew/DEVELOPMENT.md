@@ -62,6 +62,7 @@ pnpm exec playwright install chromium webkit
 | `src-tauri/src/mime.rs` | Gmail が返す MIME 構造の読み取り。本文の選択、文字コード、RFC 2047 のヘッダー |
 | `src-tauri/src/sanitize.rs` | HTML 本文のサニタイズ（ammonia） |
 | `src-tauri/src/commands.rs` | ページから呼べるコマンドの一覧 |
+| `src-tauri/src/links.rs` | webview がアプリ以外のページへ移動しないようにする。メール中のリンクは既定のアプリで開く |
 | `src/inbox.ts` | カードの列、ボタンの動作、まとめて完了 |
 | `src/message-frame.ts` | 本文の表示。HTML は iframe に入れる |
 | `src/tag-picker.ts` | タグを選ぶポップアップ |
@@ -97,7 +98,12 @@ HTML 本文は 2 段階で守ります。
 
 `allow-same-origin` は、ページが iframe の中のリンクのクリックを拾い、幅の広いメールを縮小するために付けています。`allow-scripts` と同時に付けると sandbox の意味がなくなるため、この 2 つは決して並べないでください。
 
-リンクは iframe の中で遷移させず、`open_link` コマンドに渡します。Rust 側は `http`、`https`、`mailto` だけを既定のアプリで開きます。opener プラグインの権限はページに与えていません（`capabilities/default.json`）。
+リンクは iframe の中で遷移させず、Rust 側が `http`、`https`、`mailto` だけを既定のアプリで開きます。経路はエンジンによって 2 つあります。
+
+- WebView2（Windows）: ページが iframe の中のクリックを拾い、`open_link` コマンドに渡します。
+- WKWebView（macOS）: WebKit はスクリプトを禁じた iframe の中でページのイベントリスナーを呼ばないので、クリックは iframe の遷移として始まります。WKWebView はどのフレームの遷移も Rust 側に問い合わせるので、`links.rs` がそこで遷移を止め、リンクを既定のアプリで開きます。
+
+WebView2 はトップレベルの遷移しか問い合わせないため、ページの側でクリックを拾う処理も必要です。opener プラグインの権限はページに与えていません（`capabilities/default.json`）。
 
 `srcdoc` の文書はアプリ本体の CSP も引き継ぎます。Tauri は既定で `style-src` に nonce を足しますが、nonce があると `'unsafe-inline'` が無視され、メールのインラインスタイルがすべて効かなくなります。そのため `tauri.conf.json` の `dangerousDisableAssetCspModification` で `style-src` だけを対象から外しています。アプリ本体の `img-src` に `https:` と `http:` があるのも、許可した外部画像を通すためです。
 
@@ -116,7 +122,7 @@ HTML 本文は 2 段階で守ります。
 | フロントエンド（`src/`）の E2E | `pnpm test:e2e` | `tests/e2e/` |
 | Rust 側の単体テスト | `cargo test` | 各ファイルの `mod tests` |
 
-`cargo test` が確かめるのは、ネットワークを使わない部分です。PKCE とリダイレクトの読み取り（`auth.rs`）、MIME の解析と文字コード（ISO-2022-JP、Shift_JIS を含む）と RFC 2047 のヘッダー（`mime.rs`）、サニタイズで消えるものと残るもの（`sanitize.rs`）、スレッドからカードへの変換と JSON の形（`card.rs`）、開いてよいリンク（`commands.rs`）を見ます。
+`cargo test` が確かめるのは、ネットワークを使わない部分です。PKCE とリダイレクトの読み取り（`auth.rs`）、MIME の解析と文字コード（ISO-2022-JP、Shift_JIS を含む）と RFC 2047 のヘッダー（`mime.rs`）、サニタイズで消えるものと残るもの（`sanitize.rs`）、スレッドからカードへの変換と JSON の形（`card.rs`）、開いてよいリンク（`commands.rs`）、webview に許す遷移（`links.rs`）を見ます。
 
 ### フロントエンドの E2E テスト
 
@@ -129,7 +135,7 @@ HTML 本文は 2 段階で守ります。
 | `chromium` | Windows の WebView2 |
 | `webkit` | macOS の WKWebView |
 
-ハーネスが返す本文は Rust のサニタイズを通っていません。`tests/e2e/message.spec.ts` はこれを利用して、`script` やイベントハンドラを含む HTML でもスクリプトが動かないこと、「表示する」を押すまで外部画像へのリクエストが 1 件も出ないことを、iframe だけで確かめています。
+ハーネスが返す本文は Rust のサニタイズを通っていません。`tests/e2e/message.spec.ts` はこれを利用して、`script` やイベントハンドラを含む HTML でもスクリプトが動かないこと、「表示する」を押すまで外部画像へのリクエストが 1 件も出ないことを、iframe だけで確かめています。本文中のリンクは、Chromium ではクリックが `open_link` に渡ること、WebKit ではリンク先への iframe の遷移になることを確かめます。その遷移を `links.rs` が止めて外で開くところは webview の外なので、テストでは確かめられません。
 
 開発サーバは Content-Security-Policy を送りません。`tests/e2e/csp.spec.ts` だけが `tauri.conf.json` と同じポリシーの下でページを開き、メールのスタイルが効くこと、許可した画像が通ることを確かめます。
 

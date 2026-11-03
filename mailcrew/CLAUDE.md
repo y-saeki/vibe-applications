@@ -12,8 +12,9 @@ its own. `DEVELOPMENT.md` explains both. Changing either keeps these true:
 - The frame never gets `allow-scripts`. With `allow-same-origin` beside it, the sandbox
   would no longer hold.
 - Nothing from the network loads in a message until the user presses 表示する for it.
-- Links never navigate the frame; they go to `open_link`, which opens http, https and
-  mailto only.
+- Links never navigate the frame. WebView2 hands them to `open_link`; in WKWebView, where the
+  page's listeners do not run inside the frame, `src-tauri/src/links.rs` turns the navigation
+  away and opens the link outside. Both open http, https and mailto only.
 - The webview is granted no opener permission. Only Rust opens URLs.
 
 `dangerousDisableAssetCspModification: ["style-src"]` in `tauri.conf.json` is deliberate:
@@ -42,6 +43,7 @@ covers it changes in the same commit:
 | A field on `Card` (`src-tauri/src/card.rs`) | `src/backend.ts`, `card()` in `tests/e2e/fixtures.ts`, and `mod tests` in `card.rs` |
 | A command the frontend invokes | `handle` in `tests/e2e/harness/backend.ts`. It throws on a command it does not know |
 | What the sanitiser removes or keeps | `mod tests` in `src-tauri/src/sanitize.rs` |
+| Which navigations the webview allows | `mod tests` in `src-tauri/src/links.rs` |
 
 `DEVELOPMENT.md` lists what these tests cannot reach — Google itself, the credential store,
 the browser a link opens in. Assert the `invoke` that was made and leave the rest to the
