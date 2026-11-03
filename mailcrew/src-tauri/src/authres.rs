@@ -221,7 +221,7 @@ fn parse(value: &str) -> (String, Vec<MethodResult>) {
 mod tests {
     use super::*;
 
-    const GMAIL: &str = "mx.google.com;\r\n       dkim=pass header.i=@news.example.com header.s=s1 header.b=AbCd;\r\n       spf=pass (google.com: domain of bounce@mail.example.com designates 192.0.2.1 as permitted sender) smtp.mailfrom=bounce@mail.example.com;\r\n       dmarc=pass (p=REJECT sp=REJECT dis=NONE) header.from=example.com";
+    const GMAIL: &str = "mx.google.com;\r\n       dkim=pass header.i=@news.example.com header.s=s1 header.b=AbCd;\r\n       arc=pass (i=2 spf=pass spfdomain=lists.example dkim=pass dkdomain=other.example dmarc=pass fromdomain=other.example);\r\n       spf=pass (google.com: domain of bounce@mail.example.com designates 192.0.2.1 as permitted sender) smtp.mailfrom=bounce@mail.example.com;\r\n       dmarc=pass (p=REJECT sp=REJECT dis=NONE) header.from=example.com;\r\n       dara=fail header.i=@example.com";
 
     #[test]
     fn reads_gmails_results() {
