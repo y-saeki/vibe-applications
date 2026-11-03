@@ -43,6 +43,9 @@ const MARK_TYPE_OID: &str = "1.3.6.1.4.1.53087.1.13";
 const ROOTS: &[&[u8]] = &[
     include_bytes!("../bimi-roots/digicert-verified-mark-root-ca.pem"),
     include_bytes!("../bimi-roots/entrust-verified-mark-root-vmcr1.pem"),
+    include_bytes!("../bimi-roots/globalsign-verified-mark-root-r42.pem"),
+    include_bytes!("../bimi-roots/sslcom-vmc-ecc-root-ca-2024.pem"),
+    include_bytes!("../bimi-roots/sslcom-vmc-rsa-root-ca-2024.pem"),
 ];
 
 /// A certificate and its chain is a few kilobytes plus the logo, which the

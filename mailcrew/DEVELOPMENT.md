@@ -212,7 +212,7 @@ BIMI は `get_brand` で確かめます。ページは本文を取ったあと�
 
 結果は差出人のアドレスごとに、証明書の検証結果は URL ごとに、1 時間メモリに持ちます。DNS が答えなかったときと、証明書や CRL を取れなかったときは結果を持たず、次に同じ差出人のカードを表示したときに確かめ直します。設定で BIMI をオフにすると、Rust 側は DNS にも証明書のサーバーにも問い合わせません。
 
-ルート証明書は、AuthIndicators Working Group が [Mark Certificate Issuer Information](https://bimigroup.org/vmc-issuers/) に載せている認証局のものを `src-tauri/bimi-roots/` に置いています。いまは DigiCert と Entrust の 2 つで、一覧にある GlobalSign と SSL.com のものはまだ入れていません。一覧が変わったら、このディレクトリの PEM と `bimi.rs` の `ROOTS` を合わせて変えます。
+ルート証明書は、AuthIndicators Working Group が [Mark Certificate Issuer Information](https://bimigroup.org/vmc-issuers/) に載せている認証局のものを `src-tauri/bimi-roots/` に置いています。一覧にある DigiCert、Entrust、GlobalSign と、SSL.com の ECC と RSA の 2 つで、合わせて 5 つです。一覧が変わったら、このディレクトリの PEM と `bimi.rs` の `ROOTS` を合わせて変えます。
 
 ## Pull Request のビルド
 
