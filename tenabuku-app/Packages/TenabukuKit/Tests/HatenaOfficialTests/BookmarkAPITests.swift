@@ -77,6 +77,31 @@ final class BookmarkAPITests: XCTestCase {
             "https://b.hatena.ne.jp/my/search/json?q=q&of=0&limit=100"
         )
     }
+
+    func testTagsAcceptsABareArray() async throws {
+        let transport = StubTransport(body: #"[{"tag":"swift","count":12},{"tag":"ios","count":"3"}]"#)
+
+        let tags = try await api(transport).tags()
+
+        XCTAssertEqual(tags, [UserTag(name: "swift", count: 12), UserTag(name: "ios", count: 3)])
+        XCTAssertEqual(transport.requests.first?.url?.absoluteString, "https://bookmark.hatenaapis.com/rest/1/my/tags")
+        XCTAssertEqual(transport.requests.first?.httpMethod, "GET")
+    }
+
+    func testTagsAcceptsAWrappedArray() async throws {
+        let transport = StubTransport(body: #"{"tags":[{"tag":"swift","count":12}]}"#)
+        let tags = try await api(transport).tags()
+        XCTAssertEqual(tags, [UserTag(name: "swift", count: 12)])
+    }
+
+    func testTagsInAnUnknownShapeAreABreakage() async {
+        do {
+            _ = try await api(StubTransport(body: #"{"items":[]}"#)).tags()
+            XCTFail("should throw")
+        } catch {
+            XCTAssertEqual((error as? HatenaError)?.isBreakage, true)
+        }
+    }
 }
 
 final class EntryInfoAPITests: XCTestCase {
@@ -112,5 +137,71 @@ final class EntryInfoAPITests: XCTestCase {
         } catch {
             XCTAssertTrue((error as? HatenaError)?.isBreakage == true)
         }
+    }
+}
+
+final class BookmarkDraftTests: XCTestCase {
+    private let page = URL(string: "https://example.com/")!
+
+    func testStartsFromTheSavedBookmark() {
+        let saved = MyBookmark(user: "sample", comment: "c", tags: ["a"], isPrivate: true, createdAt: nil, permalink: nil)
+        XCTAssertEqual(
+            BookmarkDraft(url: page, editing: saved),
+            BookmarkDraft(url: page, comment: "c", tags: ["a"], isPrivate: true)
+        )
+    }
+
+    func testAddTagTrimsAndSkipsEmptyAndDuplicates() {
+        var draft = BookmarkDraft(url: page)
+        XCTAssertTrue(draft.addTag("  swift "))
+        XCTAssertFalse(draft.addTag("swift"))
+        XCTAssertFalse(draft.addTag("   "))
+        XCTAssertEqual(draft.tags, ["swift"])
+    }
+
+    func testAddTagStopsAtTen() {
+        var draft = BookmarkDraft(url: page, tags: (1...9).map { "t\($0)" })
+        XCTAssertTrue(draft.addTag("t10"))
+        XCTAssertFalse(draft.canAddTag)
+        XCTAssertFalse(draft.addTag("t11"))
+        XCTAssertEqual(draft.tags.count, BookmarkDraft.maxTags)
+
+        draft.removeTag("t1")
+        XCTAssertTrue(draft.canAddTag)
+        XCTAssertFalse(draft.tags.contains("t1"))
+    }
+}
+
+final class TagSuggestionTests: XCTestCase {
+    private let tags = [
+        UserTag(name: "iOS", count: 5),
+        UserTag(name: "Swift", count: 30),
+        UserTag(name: "SwiftUI", count: 8),
+        UserTag(name: "あとで読む", count: 50),
+        UserTag(name: "TaylorSwift", count: 40),
+    ]
+
+    private func names(_ input: String, excluding: [String] = []) -> [String] {
+        UserTag.suggestions(from: tags, matching: input, excluding: excluding).map(\.name)
+    }
+
+    func testEmptyInputOffersEveryTagMostUsedFirst() {
+        XCTAssertEqual(names(""), ["あとで読む", "TaylorSwift", "Swift", "SwiftUI", "iOS"])
+    }
+
+    func testPrefixMatchesComeBeforeOtherMatches() {
+        XCTAssertEqual(names("swift"), ["Swift", "SwiftUI", "TaylorSwift"])
+    }
+
+    func testIgnoresCaseAndWidth() {
+        XCTAssertEqual(names("ＩＯＳ"), ["iOS"])
+    }
+
+    func testLeavesOutTagsAlreadyChosen() {
+        XCTAssertEqual(names("swift", excluding: ["Swift"]), ["SwiftUI", "TaylorSwift"])
+    }
+
+    func testNoMatchIsEmpty() {
+        XCTAssertEqual(names("rust"), [])
     }
 }

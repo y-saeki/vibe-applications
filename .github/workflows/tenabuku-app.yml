@@ -41,9 +41,11 @@ jobs:
   # The data layer's tests again with Apple's Foundation, then the app itself
   # built for the simulator. Nothing is signed or shipped: the app is installed
   # from Xcode by whoever builds it.
+  # The app reads SwiftUI values that only the iOS 27.1 SDK has, which
+  # macos-latest's Xcode 26 lacks; the xcode-27 image defaults to Xcode 27.1.
   app:
-    name: app (macos-latest)
-    runs-on: macos-latest
+    name: app (xcode-27)
+    runs-on: xcode-27
     timeout-minutes: 30
     defaults:
       run:

@@ -25,6 +25,14 @@ struct ErrorBanner: View {
     }
 
     private var title: String {
+        Self.title(for: error)
+    }
+
+    private var detail: String {
+        Self.detail(for: error)
+    }
+
+    static func title(for error: Error) -> String {
         switch error as? HatenaError {
         case .parseFailed?: "はてな側の仕様が変わった可能性があります"
         case .unauthorized?: "ログインし直してください"
@@ -33,7 +41,7 @@ struct ErrorBanner: View {
         }
     }
 
-    private var detail: String {
+    static func detail(for error: Error) -> String {
         switch error as? HatenaError {
         case let .parseFailed(source, _)?: "取得元: \(source)"
         case let .httpStatus(status)?: "HTTP \(status)"

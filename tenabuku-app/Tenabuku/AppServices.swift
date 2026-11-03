@@ -12,6 +12,16 @@ enum AppServices {
     static let entryInfo = EntryInfoAPI(http: http)
     static let entryComments = EntryCommentsAPI(http: http)
 
+    /// Signs with the consumer key the build carries in Info.plist, or nil when
+    /// Secrets.xcconfig left it empty.
+    static let oauthSigner: OAuthSigner? = {
+        let info = Bundle.main.infoDictionary ?? [:]
+        guard let key = info["HatenaConsumerKey"] as? String, !key.isEmpty,
+              let secret = info["HatenaConsumerSecret"] as? String, !secret.isEmpty
+        else { return nil }
+        return OAuthSigner(consumer: OAuthConsumer(key: key, secret: secret))
+    }()
+
     private static var appVersion: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
     }

@@ -2,11 +2,37 @@ import SwiftUI
 
 struct SettingsView: View {
     @Environment(ReadHistoryStore.self) private var readHistory
+    @Environment(AccountStore.self) private var accounts
     @Environment(\.dismiss) private var dismiss
     @State private var isConfirmingClear = false
+    @State private var isConfirmingSignOut = false
 
     var body: some View {
         Form {
+            Section {
+                if let account = accounts.account {
+                    LabeledContent("ログイン中", value: "id:\(account.urlName)")
+                    if accounts.needsSignInAgain {
+                        Text("はてなが、保存してあるログイン情報を受け付けませんでした。")
+                            .font(.footnote)
+                            .foregroundStyle(.red)
+                        SignInButton(title: "ログインし直す")
+                    }
+                    Button("ログアウト", role: .destructive) { isConfirmingSignOut = true }
+                        .confirmationDialog("ログアウトしますか？", isPresented: $isConfirmingSignOut, titleVisibility: .visible) {
+                            Button("ログアウト", role: .destructive) { accounts.signOut() }
+                        }
+                } else {
+                    SignInButton()
+                }
+            } header: {
+                Text("はてなアカウント")
+            } footer: {
+                if !accounts.canSignIn {
+                    Text("このビルドには、はてなの consumer key が入っていません。")
+                }
+            }
+
             Section {
                 LabeledContent("記録している記事", value: "\(readHistory.history.count) 件")
                 Button("既読の記録を消す", role: .destructive) { isConfirmingClear = true }
