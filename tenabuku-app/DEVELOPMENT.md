@@ -10,18 +10,138 @@
 
 ## 初回の準備
 
+新しい Mac で開発を始めるときの手順です。上から順に進めます。シミュレーターで動かすだけなら、手順 1 から 5 までで足ります。手順 6 は、自分の iPhone で動かすときだけ行います。
+
+コマンドは「ターミナル」アプリに貼り付けて実行します。ターミナルは、Finder の「アプリケーション」>「ユーティリティ」にあります。
+
+### 1. Xcode を入れる
+
+1. Mac App Store で Xcode を探して入れます。
+2. Xcode を一度起動します。追加のコンポーネントを入れるか聞かれたら、iOS を選んで入れます。
+3. ターミナルで次を実行し、コマンドラインの開発ツールが Xcode を使うようにします。Mac のログインパスワードを聞かれます。
+
+   ```bash
+   sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+   ```
+
+4. 次を実行し、`/Applications/Xcode.app/Contents/Developer` と表示されれば完了です。
+
+   ```bash
+   xcode-select -p
+   ```
+
+   `/Library/Developer/CommandLineTools` と表示されたら、上の `sudo xcode-select` のコマンドがまだ効いていません。このままだと、あとで `swift test` を実行したときに `XCTest` が見つからずに失敗します。
+
+起動したときに iOS を入れ忘れたら、あとから次のコマンドで入れられます。Xcode の設定の Components からも入れられます。
+
 ```bash
-cd tenabuku-app
+xcodebuild -downloadPlatform iOS
+```
+
+### 2. Homebrew と XcodeGen を入れる
+
+XcodeGen は、Xcode のプロジェクトを `project.yml` から作るツールです。Homebrew で入れます。
+
+1. Homebrew が入っているかを確かめます。バージョンが表示されれば、次の 2 を飛ばして 3 に進みます。
+
+   ```bash
+   brew --version
+   ```
+
+2. 「command not found」と表示されたら、Homebrew を入れます。コマンドは [Homebrew の公式サイト](https://brew.sh/)に載っているものです。
+
+   ```bash
+   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+   ```
+
+   終わると、最後に「Next steps」として、`brew` を使えるようにするためのコマンドが表示されます。表示されたとおりに実行し、ターミナルを開き直します。
+
+3. XcodeGen を入れます。
+
+   ```bash
+   brew install xcodegen
+   ```
+
+4. 次を実行し、バージョンが表示されれば完了です。
+
+   ```bash
+   xcodegen --version
+   ```
+
+### 3. リポジトリを取得する
+
+置きたい場所に移動してから、リポジトリを取得します。`git` は Xcode と一緒に入っています。
+
+```bash
+git clone https://github.com/y-saeki/vibe-applications.git
+cd vibe-applications/tenabuku-app
+```
+
+ここから先のコマンドは、どれも `tenabuku-app` の中で実行します。
+
+### 4. 自分用の設定ファイルを作る
+
+見本をコピーして、自分用の設定ファイル `Config/Secrets.xcconfig` を作ります。このファイルは git の管理外です。
+
+```bash
 cp Config/Secrets.example.xcconfig Config/Secrets.xcconfig
 ```
 
-`Config/Secrets.xcconfig` に次の値を書きます。このファイルは git の管理外です。
+ファイルには次の 3 種類の値を書きます。どれも、必要になるまでは空のままでかまいません。シミュレーターで動かすだけなら、何も書かずに次へ進めます。
 
-- `DEVELOPMENT_TEAM`: 実機で動かすときの Apple の開発チーム ID
-- `HATENA_CONSUMER_KEY` と `HATENA_CONSUMER_SECRET`: [OAuth 開発者向け設定ページ](https://www.hatena.ne.jp/oauth/develop)でアプリケーションを登録して得た値。scope は `read_public`、`write_public`、`read_private`、`write_private` を使えるようにしておきます
-- `TENABUKU_BUNDLE_ID`: 既定のバンドル ID がチームで使えないときだけ
+- `HATENA_CONSUMER_KEY` と `HATENA_CONSUMER_SECRET`: はてなのログインを使う機能を試すときだけ要ります。取り方は下に書きます
+- `DEVELOPMENT_TEAM`: 実機で動かすときだけ要ります。手順 6 で書きます
+- `TENABUKU_BUNDLE_ID`: 既定のバンドル ID がチームで使えないときだけ書きます。手順 6 で書きます
+
+はてなの consumer key と secret は、次の手順で取ります。
+
+1. はてなにログインし、[OAuth 開発者向け設定ページ](https://www.hatena.ne.jp/oauth/develop)を開きます。
+2. 利用上の注意に同意し、アプリケーションを登録します。名前、Web サイトの URL、ロゴの画像を求められます。審査はなく、登録した直後から使えます。
+3. 登録したアプリケーションの設定で、scope の `read_public`、`write_public`、`read_private`、`write_private` を使えるようにします。
+4. 同じページにある consumer key と consumer secret を、`Config/Secrets.xcconfig` の `HATENA_CONSUMER_KEY` と `HATENA_CONSUMER_SECRET` に書きます。
 
 consumer key と secret はアプリの Info.plist に入ります。ビルドしたアプリを他人に渡すと、secret も一緒に渡ります。自分で使う前提の作りです。
+
+### 5. シミュレーターで動かす
+
+1. Xcode のプロジェクトを作って開きます。
+
+   ```bash
+   xcodegen generate
+   open Tenabuku.xcodeproj
+   ```
+
+2. Xcode のツールバーの左側で、スキームが `Tenabuku` になっていることを確かめます。その右の実行先のメニューで、iPhone のシミュレーターを選びます。
+3. 「Product」>「Run」を選ぶか、ツールバーの実行ボタンを押します。シミュレーターが開き、ホットエントリーの一覧が表示されれば完了です。
+
+続けて、データ取得層のテストが通ることも確かめておきます。
+
+```bash
+cd Packages/TenabukuKit
+swift test
+cd ../..
+```
+
+pull のたびに `xcodegen generate` を実行するのが面倒なら、「ビルドと実行」の節にある git のフックを入れておきます。
+
+### 6. 実機で動かす（必要なときだけ）
+
+1. Xcode の「Xcode」>「Settings」>「Apple Accounts」で、Apple アカウントでサインインします。有料の Apple Developer Program に入っていない、個人の Apple アカウントでもかまいません。
+2. iPhone を Mac につなぎます。実行先のメニューの「Manage Devices」から Device Hub を開き、iPhone を Mac とペアリングします。
+3. iPhone の「設定」>「プライバシーとセキュリティ」で、「セキュリティ」の下にあるデベロッパモードをオンにします。再起動を求められるので再起動し、再起動のあとに出る確認で有効にして、パスコードを入れます。デベロッパモードの項目は、iPhone を Mac とペアリングするまで表示されません。
+4. Xcode でプロジェクトのターゲット `Tenabuku` を選び、「Signing & Capabilities」でチームを選びます。
+5. 選んだチームの ID を、ターミナルで確かめます。
+
+   ```bash
+   xcodebuild -showBuildSettings -project Tenabuku.xcodeproj -scheme Tenabuku | grep DEVELOPMENT_TEAM
+   ```
+
+   `DEVELOPMENT_TEAM = ` のあとに表示された英数字が、チームの ID です。
+
+6. その ID を、`Config/Secrets.xcconfig` の `DEVELOPMENT_TEAM` に書きます。Xcode の画面で選んだチームは、`xcodegen generate` を実行すると消えるためです。設定ファイルに書いておけば、作り直しても残ります。
+7. もう一度 `xcodegen generate` を実行します。実行先に iPhone を選んで、「Product」>「Run」を選びます。
+
+「Signing & Capabilities」に、バンドル ID が使えないという警告が出ることがあります。そのときは、`Config/Secrets.xcconfig` の `TENABUKU_BUNDLE_ID` の行の先頭にある `//` を消します。そのうえで、自分だけが使う ID（`com.example.tenabuku` の `example` を自分の名前にしたものなど）を書き、`xcodegen generate` を実行し直します。
 
 ## ビルドと実行
 
