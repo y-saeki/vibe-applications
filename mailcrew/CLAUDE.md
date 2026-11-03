@@ -40,9 +40,11 @@ with it. Do not remove it without replacing what it does.
 
 A card carries the address of the account its thread is in (`Card.account`), and every command
 that reads or changes mail takes that address. Thread, message and label ids are only unique
-within one account, so nothing on the page is keyed by an id alone. The stored sign-ins are one
-credential entry per account plus an `accounts` index; the entry named `google-account` is the
-pre-0.2 single account, read once and moved.
+within one account, so nothing on the page is keyed by an id alone. On macOS the stored sign-ins
+are one credential entry, `all-accounts`, since the Keychain asks once per entry after every
+update; on Windows, whose entries are capped at 2,560 bytes, they are one entry per account plus
+an `accounts` index. Both older layouts (that index on macOS before 0.4, and `google-account`,
+the pre-0.2 single account) are read once and moved.
 
 ## Mind the Gmail quota
 

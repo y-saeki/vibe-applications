@@ -1,18 +1,27 @@
 //! The signed-in accounts, kept in the OS credential store (the macOS Keychain,
-//! the Windows Credential Manager). Each account is one JSON entry of its own,
-//! and one more entry lists their addresses in the order they were added, since
-//! the store cannot be asked what it holds. Nothing about an account is written
+//! the Windows Credential Manager). Nothing about an account is written
 //! anywhere else.
+//!
+//! On macOS every account goes in one entry. The Keychain asks before an
+//! updated build reads an entry, once for each entry, so one entry means one
+//! question per update however many accounts there are. Windows asks nothing
+//! but caps an entry at 2,560 bytes, a handful of accounts, so there each
+//! account is an entry of its own, and one more lists their addresses in the
+//! order they were added, since the store cannot be asked what it holds.
+//! macOS used that layout too before 0.4, and moves out of it once.
 
 use serde::{Deserialize, Serialize};
 
 use crate::error::{CommandError, ErrorKind, Result};
 
 const SERVICE: &str = "com.ysaeki.mailcrew";
-/// The addresses of the stored accounts, as a JSON array.
+/// Every account, as a JSON array of `Account`. macOS only.
+#[cfg(target_os = "macos")]
+const ALL_USER: &str = "all-accounts";
+/// The addresses of the accounts kept one entry each, as a JSON array.
 const INDEX_USER: &str = "accounts";
 /// Where versions before multiple accounts kept their one account. Read once,
-/// moved to an entry of its own, and deleted.
+/// moved, and deleted.
 const LEGACY_USER: &str = "google-account";
 
 /// Everything needed to get a fresh access token without asking again.
@@ -71,31 +80,25 @@ fn read_index() -> Result<Option<Vec<String>>> {
         .transpose()
 }
 
-/// `index` with `email` at the end, unless it is already there.
-pub fn with_email(mut index: Vec<String>, email: &str) -> Vec<String> {
-    if !index.iter().any(|known| known == email) {
-        index.push(email.to_string());
-    }
+/// The addresses in `index` that none of `accounts` has.
+#[cfg(any(test, not(target_os = "macos")))]
+fn dropped(index: &[String], accounts: &[Account]) -> Vec<String> {
     index
+        .iter()
+        .filter(|email| !accounts.iter().any(|account| &account.email == *email))
+        .cloned()
+        .collect()
 }
 
-/// `index` without `email`.
-pub fn without_email(mut index: Vec<String>, email: &str) -> Vec<String> {
-    index.retain(|known| known != email);
-    index
-}
-
-/// The stored accounts, in the order they were added. An account kept by a
-/// version that knew only one is moved to where this one keeps it.
-pub fn load_all() -> Result<Vec<Account>> {
+/// The accounts kept one entry each, in the order they were added, and
+/// whether they came from the entry of a version that knew only one.
+fn read_entries() -> Result<(Vec<Account>, bool)> {
     let Some(index) = read_index()? else {
         let Some(json) = read(LEGACY_USER)? else {
-            return Ok(Vec::new());
+            return Ok((Vec::new(), false));
         };
         let account: Account = serde_json::from_str(&json).map_err(broken)?;
-        store(&account)?;
-        delete(LEGACY_USER)?;
-        return Ok(vec![account]);
+        return Ok((vec![account], true));
     };
     let mut accounts = Vec::with_capacity(index.len());
     for email in index {
@@ -105,51 +108,109 @@ pub fn load_all() -> Result<Vec<Account>> {
             accounts.push(serde_json::from_str(&json).map_err(broken)?);
         }
     }
+    Ok((accounts, false))
+}
+
+/// Keeps `accounts` one entry each, and deletes the entries of the ones that
+/// are no longer there.
+#[cfg(not(target_os = "macos"))]
+fn write_entries(accounts: &[Account]) -> Result<()> {
+    let before = read_index()?.unwrap_or_default();
+    for account in accounts {
+        write(&account_user(&account.email), &to_json(account)?)?;
+    }
+    let index: Vec<&str> = accounts
+        .iter()
+        .map(|account| account.email.as_str())
+        .collect();
+    write(INDEX_USER, &to_json(&index)?)?;
+    for email in dropped(&before, accounts) {
+        delete(&account_user(&email))?;
+    }
+    Ok(())
+}
+
+/// The stored accounts, in the order they were added. Accounts kept the way
+/// an earlier version kept them are moved to where this one keeps them.
+#[cfg(target_os = "macos")]
+pub fn load_all() -> Result<Vec<Account>> {
+    if let Some(json) = read(ALL_USER)? {
+        return serde_json::from_str(&json).map_err(broken);
+    }
+    let (accounts, legacy) = read_entries()?;
+    if accounts.is_empty() {
+        return Ok(accounts);
+    }
+    write(ALL_USER, &to_json(&accounts)?)?;
+    // Once the new entry exists the old ones are never read again, so one that
+    // the Keychain will not let go of is left behind rather than failing the
+    // start-up over it.
+    let mut old = if legacy {
+        vec![LEGACY_USER.to_string()]
+    } else {
+        vec![INDEX_USER.to_string()]
+    };
+    old.extend(accounts.iter().map(|account| account_user(&account.email)));
+    for user in old {
+        if let Err(err) = delete(&user) {
+            eprintln!(
+                "mailcrew: could not delete the old entry {user}: {}",
+                err.message
+            );
+        }
+    }
     Ok(accounts)
 }
 
-/// Keeps `account`, replacing what was stored for the same address.
-pub fn store(account: &Account) -> Result<()> {
-    write(&account_user(&account.email), &to_json(account)?)?;
-    let index = with_email(read_index()?.unwrap_or_default(), &account.email);
-    write(INDEX_USER, &to_json(&index)?)
+/// The stored accounts, in the order they were added. An account kept by a
+/// version that knew only one is moved to where this one keeps it.
+#[cfg(not(target_os = "macos"))]
+pub fn load_all() -> Result<Vec<Account>> {
+    let (accounts, legacy) = read_entries()?;
+    if legacy {
+        write_entries(&accounts)?;
+        delete(LEGACY_USER)?;
+    }
+    Ok(accounts)
 }
 
-/// Forgets the account with this address.
-pub fn remove(email: &str) -> Result<()> {
-    let index = without_email(read_index()?.unwrap_or_default(), email);
-    write(INDEX_USER, &to_json(&index)?)?;
-    delete(&account_user(email))
+/// Keeps exactly `accounts`, in this order, in place of what was stored.
+pub fn save_all(accounts: &[Account]) -> Result<()> {
+    #[cfg(target_os = "macos")]
+    {
+        write(ALL_USER, &to_json(&accounts)?)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        write_entries(accounts)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    fn account(email: &str) -> Account {
+        Account {
+            client_id: "id".into(),
+            client_secret: "s".into(),
+            refresh_token: "r".into(),
+            email: email.into(),
+        }
+    }
+
     fn emails(list: &[&str]) -> Vec<String> {
         list.iter().map(|email| email.to_string()).collect()
     }
 
     #[test]
-    fn a_new_address_goes_at_the_end() {
-        assert_eq!(with_email(emails(&["a@x"]), "b@x"), emails(&["a@x", "b@x"]));
-    }
-
-    #[test]
-    fn signing_in_again_keeps_the_place() {
+    fn addresses_no_account_has_are_dropped() {
+        let accounts = [account("a@x"), account("c@x")];
         assert_eq!(
-            with_email(emails(&["a@x", "b@x"]), "a@x"),
-            emails(&["a@x", "b@x"])
+            dropped(&emails(&["a@x", "b@x", "c@x"]), &accounts),
+            emails(&["b@x"])
         );
-    }
-
-    #[test]
-    fn removing_keeps_the_rest_in_order() {
-        assert_eq!(
-            without_email(emails(&["a@x", "b@x", "c@x"]), "b@x"),
-            emails(&["a@x", "c@x"])
-        );
-        assert_eq!(without_email(emails(&["a@x"]), "z@x"), emails(&["a@x"]));
+        assert!(dropped(&emails(&["a@x"]), &accounts).is_empty());
     }
 
     #[test]
@@ -157,6 +218,22 @@ mod tests {
         assert_eq!(account_user("a@x"), "google-account:a@x");
         assert_ne!(account_user("a@x"), LEGACY_USER);
         assert_ne!(account_user("a@x"), INDEX_USER);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn the_single_entry_is_apart_from_the_old_ones() {
+        assert_ne!(ALL_USER, INDEX_USER);
+        assert_ne!(ALL_USER, LEGACY_USER);
+        assert!(!ALL_USER.starts_with(&account_user("")));
+    }
+
+    #[test]
+    fn the_single_entry_keeps_the_order() {
+        let accounts = vec![account("b@x"), account("a@x")];
+        let json = to_json(&accounts).unwrap();
+        let read: Vec<Account> = serde_json::from_str(&json).unwrap();
+        assert_eq!(read, accounts);
     }
 
     #[test]
