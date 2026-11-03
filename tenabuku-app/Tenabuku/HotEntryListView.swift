@@ -26,7 +26,9 @@ struct HotEntryListView: View {
     @State private var model = HotEntryListModel()
     @State private var isShowingSettings = false
     @State private var bookmarking: FeedItem?
+    @State private var muting: MuteSource?
     @Environment(ReadHistoryStore.self) private var readHistory
+    @Environment(MuteStore.self) private var mutes
 
     var body: some View {
         VerticalBarReader { barsMayBeVertical in
@@ -40,7 +42,7 @@ struct HotEntryListView: View {
                 if let error = model.error {
                     ErrorBanner(error: error)
                 }
-                ForEach(model.items) { item in
+                ForEach(visibleItems) { item in
                     NavigationLink(value: item) {
                         EntryRow(item: item, isRead: readHistory.isRead(item.link))
                     }
@@ -48,6 +50,20 @@ struct HotEntryListView: View {
                         Button("ブクマする", systemImage: "bookmark") { bookmarking = item }
                             .tint(.blue)
                     }
+                    .swipeActions(edge: .trailing) {
+                        Button("ミュート", systemImage: "eye.slash") {
+                            muting = MuteSource(title: item.title, url: item.link)
+                        }
+                        .tint(.gray)
+                    }
+                }
+                // So that a list emptied by the user's own rules is not taken
+                // for a feed that came back empty.
+                if case let hidden = model.items.count - visibleItems.count, hidden > 0 {
+                    Text("ミュートで \(hidden) 件を隠しています")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .listRowSeparator(.hidden)
                 }
             }
             .listStyle(.plain)
@@ -87,6 +103,11 @@ struct HotEntryListView: View {
                     BookmarkEditorView(url: item.link, title: item.title)
                 }
             }
+            .sheet(item: $muting) { source in
+                NavigationStack {
+                    MuteRuleEditorView(source: source)
+                }
+            }
             .sheet(isPresented: $isShowingSettings) {
                 NavigationStack {
                     SettingsView()
@@ -100,6 +121,10 @@ struct HotEntryListView: View {
             .refreshable { await model.load() }
             .task(id: model.category) { await model.load() }
         }
+    }
+
+    private var visibleItems: [FeedItem] {
+        model.items.filter { !mutes.isMuted(title: $0.title, url: $0.link) }
     }
 
     private var settingsButton: some View {
