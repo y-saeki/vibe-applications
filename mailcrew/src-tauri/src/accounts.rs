@@ -4,7 +4,7 @@
 use std::sync::Arc;
 
 use serde::Serialize;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, MutexGuard};
 
 use crate::auth::AccessToken;
 use crate::card::Card;
@@ -54,8 +54,8 @@ impl Accounts {
         &self.http
     }
 
-    /// Every signed-in account, in the order they were added.
-    pub async fn all(&self) -> Result<Vec<Arc<Gmail>>> {
+    /// The list, read from the credential store the first time.
+    async fn lock(&self) -> Result<MutexGuard<'_, Option<Vec<Arc<Gmail>>>>> {
         let mut list = self.list.lock().await;
         if list.is_none() {
             let stored = blocking(credentials::load_all).await?;
@@ -67,7 +67,21 @@ impl Accounts {
                     .collect(),
             );
         }
-        Ok(list.clone().unwrap_or_default())
+        Ok(list)
+    }
+
+    /// Every signed-in account, in the order they were added.
+    pub async fn all(&self) -> Result<Vec<Arc<Gmail>>> {
+        Ok(self.lock().await?.clone().unwrap_or_default())
+    }
+
+    /// Stores exactly `next` and starts using it. The list stays locked
+    /// meanwhile, so two changes cannot overwrite each other in the store.
+    async fn replace(list: &mut Option<Vec<Arc<Gmail>>>, next: Vec<Arc<Gmail>>) -> Result<()> {
+        let stored: Vec<Account> = next.iter().map(|gmail| gmail.account().clone()).collect();
+        blocking(move || credentials::save_all(&stored)).await?;
+        *list = Some(next);
+        Ok(())
     }
 
     pub async fn emails(&self) -> Result<Vec<String>> {
@@ -104,27 +118,22 @@ impl Accounts {
     /// Stores `account` and starts using it, in the place of one with the
     /// same address if there is one.
     pub async fn add(&self, account: Account, token: AccessToken) -> Result<()> {
-        self.all().await?;
-        let stored = account.clone();
-        blocking(move || credentials::store(&stored)).await?;
+        let mut list = self.lock().await?;
         let gmail = Arc::new(Gmail::new(self.http.clone(), account, Some(token)));
-        let mut list = self.list.lock().await;
-        let list = list.get_or_insert_with(Vec::new);
-        match list.iter().position(|known| known.email() == gmail.email()) {
-            Some(at) => list[at] = gmail,
-            None => list.push(gmail),
+        let mut next = list.clone().unwrap_or_default();
+        match next.iter().position(|known| known.email() == gmail.email()) {
+            Some(at) => next[at] = gmail,
+            None => next.push(gmail),
         }
-        Ok(())
+        Self::replace(&mut list, next).await
     }
 
     /// Stops using the account with this address and forgets it.
     pub async fn remove(&self, email: &str) -> Result<()> {
-        self.all().await?;
-        if let Some(list) = self.list.lock().await.as_mut() {
-            list.retain(|gmail| gmail.email() != email);
-        }
-        let email = email.to_string();
-        blocking(move || credentials::remove(&email)).await
+        let mut list = self.lock().await?;
+        let mut next = list.clone().unwrap_or_default();
+        next.retain(|gmail| gmail.email() != email);
+        Self::replace(&mut list, next).await
     }
 
     /// Forgets the account when `result` says Google no longer accepts it;
