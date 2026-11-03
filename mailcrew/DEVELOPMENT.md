@@ -68,6 +68,10 @@ pnpm exec playwright install chromium webkit
 | `src-tauri/src/sanitize.rs` | HTML 本文のサニタイズ（ammonia） |
 | `src-tauri/src/commands.rs` | ページから呼べるコマンドの一覧 |
 | `src-tauri/src/links.rs` | webview がアプリ以外のページへ移動しないようにする。メール中のリンクは既定のアプリで開く |
+| `src-tauri/src/authres.rs` | Gmail が付けた `Authentication-Results` ヘッダーから、SPF・DKIM・DMARC の結果を読み取る |
+| `src-tauri/src/bimi.rs` | BIMI のレコードとマーク証明書（VMC・CMC）の検証。ロゴは証明書から取り出す |
+| `src-tauri/bimi-roots/` | マーク証明書の検証に使うルート証明書 |
+| `src-tauri/src/preferences.rs` | 設定の保存先（アプリの設定ディレクトリの `preferences.json`）。いまは BIMI のロゴを表示するかどうかだけ |
 | `src/inbox.ts` | カードの列、ボタンの動作、まとめて完了 |
 | `src/views.ts` | サイドバーに並ぶビューと、ビューから取得条件を作る処理 |
 | `src/sidebar.ts` | サイドバーの開閉。閉じたかどうかは `localStorage` に保存する |
@@ -76,6 +80,8 @@ pnpm exec playwright install chromium webkit
 | `src/message-frame.ts` | 本文の表示。HTML は iframe に入れる |
 | `src/overlay-scrollbar.ts` | カードの本文に重ねて描くスクロールバー |
 | `src/tag-picker.ts` | タグを選ぶポップアップ |
+| `src/trust.ts` | 件名の下に並ぶ検証結果の表示 |
+| `src/preferences.ts` | 設定の値。受信トレイと設定画面が同じ値を使う |
 
 ### ログインとアカウント情報
 
@@ -185,7 +191,28 @@ WebView2 はトップレベルの遷移しか問い合わせないため、ペ�
 
 「この差出人は常に表示」で覚えるのは、カードの差出人のメールアドレスです。Gmail の Web 版も画像を表示するかどうかを差出人のアドレスごとに覚えます。ドメインごとにしないのは、`gmail.com` のように大勢が使うドメインでは、1 人を許可すると同じドメインの全員の画像が読み込まれるためです。アドレスは小文字にそろえて比べ、アプリの設定ディレクトリの `image-senders.json` に保存します。一覧はアカウントごとに分けず、全アカウントで共有します。
 
-`From` ヘッダーは送り主が自由に書けるので、許可したアドレスを名乗るメールでも画像が読み込まれます。Mail Crew は SPF や DKIM の結果を確かめていません。名乗ったメールで画像が読み込まれても、送り主に伝わるのは開封したことと IP アドレスで、スクリプトが動かないことは変わりません。
+`From` ヘッダーは送り主が自由に書けるので、許可したアドレスを名乗るメールでも画像が読み込まれます。画像を読み込むかどうかを決めるときは、SPF や DKIM の結果を見ていません。名乗ったメールで画像が読み込まれても、送り主に伝わるのは開封したことと IP アドレスで、スクリプトが動かないことは変わりません。
+
+### 送信元の検証と BIMI
+
+件名の下には 5 つの検証結果を並べます。SPF・DKIM・DMARC は Gmail の判定を、BIMI と VMC は Mail Crew が自分で確かめた結果を示します。
+
+SPF・DKIM・DMARC は `get_message` で取ったメッセージの `Authentication-Results` ヘッダー（RFC 8601）から読みます。このヘッダーは送り主も書けるので、読むのはいちばん上の 1 つだけです。受け取ったサーバーはこのヘッダーを先頭に追加するので、いちばん上が Gmail の付けたものになります。そのうえで、認証サービスの識別子が `mx.google.com` のときだけ読みます。DKIM の署名が複数あるときは、1 つでも合格していれば合格とします。
+
+BIMI は `get_brand` で確かめます。ページは本文を取ったあとにこのコマンドを呼び、Rust 側はメモリにある本文を使うので、Gmail API の使用量は増えません。手順は draft-brand-indicators-for-message-identification-15 の 7 章と、draft-fetch-validation-vmc-wchuang-12 に沿っています。
+
+1. Gmail の DMARC の判定が `pass` で、`From` のアドレスが 1 つだけのメールに限ります。そのうえで差出人のドメインの DMARC レコードを DNS で引き、ポリシーが `reject` か、`pct=100` の `quarantine` であることを確かめます。
+2. `default._bimi.<ドメイン>` の BIMI レコードを引き、なければ組織ドメイン（Public Suffix List で決める）のものを引きます。`lps=` があれば、ローカルパートから作ったセレクタのレコードも引きます。`BIMI-Selector` ヘッダーは読みません。仕様はこのヘッダーが DKIM の署名に含まれていることを求めていますが、Gmail の判定からは署名の対象が分からないためです。
+3. レコードの `a=` にある証明書を HTTPS で取り、BIMI のルート証明書までの連鎖、有効期間、証明書と発行元の CA にある BIMI の拡張鍵用途（1.3.6.1.5.5.7.3.31）、証明書が示す CRL での失効、SAN にレコードのドメインがあることを確かめます。
+4. ロゴは証明書の logotype 拡張に埋め込まれた SVG です。`l=` の SVG は取りに行きません。証明書のない BIMI レコードでは、ロゴを表示しません。
+
+証明書の `subject:markType` が `Registered Mark` か `Government Mark` なら VMC、それ以外なら CMC と表示します。Certificate Transparency の証明は確かめていません。
+
+ロゴはページに `data:` URL で渡し、`<img>` で表示します。`<img>` に読み込んだ SVG では、スクリプトも外部の読み込みも動きません。
+
+結果は差出人のアドレスごとに、証明書の検証結果は URL ごとに、1 時間メモリに持ちます。DNS が答えなかったときと、証明書や CRL を取れなかったときは結果を持たず、次に同じ差出人のカードを表示したときに確かめ直します。設定で BIMI をオフにすると、Rust 側は DNS にも証明書のサーバーにも問い合わせません。
+
+ルート証明書は、AuthIndicators Working Group が [Mark Certificate Issuer Information](https://bimigroup.org/vmc-issuers/) に載せている認証局のものを `src-tauri/bimi-roots/` に置いています。一覧にある DigiCert、Entrust、GlobalSign と、SSL.com の ECC と RSA の 2 つで、合わせて 5 つです。一覧が変わったら、このディレクトリの PEM と `bimi.rs` の `ROOTS` を合わせて変えます。
 
 ## Pull Request のビルド
 
@@ -202,7 +229,7 @@ WebView2 はトップレベルの遷移しか問い合わせないため、ペ�
 | フロントエンド（`src/`）の E2E | `pnpm test:e2e` | `tests/e2e/` |
 | Rust 側の単体テスト | `cargo test` | 各ファイルの `mod tests` |
 
-`cargo test` が確かめるのは、ネットワークを使わない部分です。PKCE とリダイレクトの読み取り（`auth.rs`）、アカウントの一覧の更新と旧形式の読み取り（`credentials.rs`）、複数アカウントのカードを新しい順に並べて切る処理（`accounts.rs`）、ビューの保存と読み込み（`views.rs`）、画像を常に表示する差出人の保存と読み込み（`image_senders.rs`）、MIME の解析と文字コード（ISO-2022-JP、Shift_JIS を含む）、文字コードの宣言がないか誤っているときの推測、RFC 2047 のヘッダー（`mime.rs`）、サニタイズで消えるものと残るもの（`sanitize.rs`）、スレッドからカードへの変換、メッセージから本文への変換と JSON の形（`card.rs`）、上限で断られたときの判定と待ち時間（`gmail.rs`）、開いてよいリンク（`commands.rs`）、webview に許す遷移（`links.rs`）を見ます。
+`cargo test` が確かめるのは、ネットワークを使わない部分です。PKCE とリダイレクトの読み取り（`auth.rs`）、アカウントの一覧の更新と旧形式の読み取り（`credentials.rs`）、複数アカウントのカードを新しい順に並べて切る処理（`accounts.rs`）、ビューの保存と読み込み（`views.rs`）、画像を常に表示する差出人の保存と読み込み（`image_senders.rs`）、MIME の解析と文字コード（ISO-2022-JP、Shift_JIS を含む）、文字コードの宣言がないか誤っているときの推測、RFC 2047 のヘッダー（`mime.rs`）、サニタイズで消えるものと残るもの（`sanitize.rs`）、スレッドからカードへの変換、メッセージから本文への変換と JSON の形（`card.rs`）、上限で断られたときの判定と待ち時間（`gmail.rs`）、開いてよいリンク（`commands.rs`）、webview に許す遷移（`links.rs`）、Gmail の検証結果の読み取り（`authres.rs`）、DMARC のポリシーと BIMI レコードの判定、テスト用に作ったマーク証明書の検証（`bimi.rs`）、設定の保存と読み込み（`preferences.rs`）を見ます。
 
 ### フロントエンドの E2E テスト
 
@@ -224,6 +251,7 @@ WebView2 はトップレベルの遷移しか問い合わせないため、ペ�
 - 本物の Google とのやりとり。ログイン画面、トークンの発行と更新、Gmail API の応答とエラー
 - OS の資格情報ストアへの保存と読み出し、macOS のキーチェーンのダイアログ、以前のバージョンからのログインの引き継ぎ
 - 既定のブラウザやメールアプリでリンクが開くこと
+- 本物の DNS や、証明書と CRL を置いたサーバーとのやりとり。DigiCert や Entrust が発行した本物のマーク証明書の検証
 - Tauri が実際に付ける CSP（nonce を含む）。テストは `tauri.conf.json`（WebKit では `tauri.macos.conf.json` を重ねたもの）の値を送るだけです
 - コード署名していない配布物を各 OS が警告する挙動と、Windows インストーラの画面
 - ウィンドウの素材、信号ボタンの位置、ツールバーでのウィンドウのドラッグ。どれも Tauri のウィンドウの機能で、ブラウザでは動きません
@@ -241,6 +269,7 @@ WebView2 はトップレベルの遷移しか問い合わせないため、ペ�
 8. ビューのアカウントと検索条件で、並ぶメールが絞り込まれること
 9. 0.1 のバージョンでログインしていた環境で、ログインし直さずに受信トレイが表示されること
 10. macOS で、信号ボタンがツールバーの行の中央にそろい、ウィンドウの背景に素材が出ること。ツールバーをドラッグするとウィンドウが動き、ダブルクリックするとウィンドウが拡大すること
+11. Gmail の Web 版でロゴが出る差出人のメールで、件名の下の検証結果がすべて緑になり、名前の横に同じロゴが出ること。設定で「BIMI のロゴを表示する」をオフにすると、ロゴと BIMI・VMC の項目が消えること
 
 ### CI
 

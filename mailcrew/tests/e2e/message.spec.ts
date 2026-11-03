@@ -4,7 +4,7 @@
 
 import type { Page } from '@playwright/test'
 
-import { card, cards, expect, ME, test } from './fixtures'
+import { card, cards, expect, LOGO, ME, test } from './fixtures'
 
 const IMAGE_HOST = 'https://images.example.test'
 const PNG = Buffer.from(
@@ -305,4 +305,93 @@ test('a body that could not be fetched leaves the snippet and says why', async (
   await expect(app.notice).toHaveText('Gmail の利用上限に達しました。1 分ほど待ってから再読み込みしてください')
   await expect(app.card('t1').locator('.card-snippet')).toHaveText('スニペット 1')
   await expect(app.frame('t1')).toHaveCount(0)
+})
+
+test("shows Gmail's checks and the sender's verified logo with the body", async ({ launch }) => {
+  const app = await launch({
+    accounts: [ME, 'work@example.com'],
+    inboxes: [
+      [
+        card(1, {
+          account: 'work@example.com',
+          authentication: {
+            spf: { result: 'softfail', domain: 'bounce.shop.example' },
+            dkim: { result: 'pass', domain: 'shop.example' },
+            dmarc: { result: 'pass', domain: 'shop.example' },
+          },
+          brand: { bimi: 'pass', domain: 'shop.example', mark: 'vmc', logo: LOGO },
+        }),
+      ],
+    ],
+  })
+  const head = app.card('t1').locator('.card-head')
+  await expect.poll(() => app.trust('t1')).toEqual([
+    'spf: fail',
+    'dkim: pass',
+    'dmarc: pass',
+    'bimi: pass',
+    'mark: pass',
+  ])
+  await expect(head.locator('.trust')).toHaveText(['SPF', 'DKIM', 'DMARC', 'BIMI', 'VMC'])
+  await expect(head.locator('[data-check="spf"]')).toHaveAttribute(
+    'title',
+    'SPF: 不合格（ソフトフェイル）（bounce.shop.example）',
+  )
+  const logo = head.locator('.card-logo')
+  await expect(logo).toBeVisible()
+  await expect(logo).toHaveAttribute('src', LOGO)
+  await expect(logo).toHaveAttribute('title', 'shop.example のロゴ（VMC で確認済み）')
+  expect(await app.callsTo('get_brand')).toEqual([{ account: 'work@example.com', messageId: 'm1' }])
+})
+
+test('a common mark is called a CMC, and a sender without a certificate shows no logo', async ({ launch }) => {
+  const app = await launch({
+    inboxes: [
+      [
+        card(1, { brand: { bimi: 'pass', domain: 'shop.example', mark: 'cmc', logo: LOGO } }),
+        card(2, { brand: { bimi: 'pass', domain: 'plain.example', mark: 'none', logo: null } }),
+        card(3, {
+          authentication: { spf: null, dkim: { result: 'fail', domain: 'x.example' }, dmarc: { result: 'fail', domain: 'bank.example' } },
+          brand: { bimi: 'skipped', domain: '', mark: 'none', logo: null },
+        }),
+      ],
+    ],
+  })
+  await expect(app.card('t1').locator('[data-check="mark"]')).toHaveText('CMC')
+  await expect(app.card('t1').locator('.card-logo')).toHaveAttribute('title', 'shop.example のロゴ（CMC で確認済み）')
+  await expect.poll(() => app.trust('t2')).toEqual(['spf: pass', 'dkim: pass', 'dmarc: pass', 'bimi: pass', 'mark: neutral'])
+  await expect(app.card('t2').locator('.card-logo')).toBeHidden()
+  await expect.poll(() => app.trust('t3')).toEqual([
+    'spf: neutral',
+    'dkim: fail',
+    'dmarc: fail',
+    'bimi: neutral',
+    'mark: neutral',
+  ])
+  await expect(app.card('t3').locator('[data-check="spf"]')).toHaveAttribute('title', 'SPF: Gmail の検証結果がありません')
+  await expect(app.card('t3').locator('[data-check="bimi"]')).toHaveAttribute(
+    'title',
+    'BIMI: DMARC の条件を満たさないため確認していません',
+  )
+})
+
+test('looks up no logo while the setting is off', async ({ launch }) => {
+  const app = await launch({
+    preferences: { brandLogos: false },
+    inboxes: [[card(1, { brand: { bimi: 'pass', domain: 'shop.example', mark: 'vmc', logo: LOGO } })]],
+  })
+  await expect.poll(() => app.trust('t1')).toEqual(['spf: pass', 'dkim: pass', 'dmarc: pass'])
+  await expect(app.card('t1').locator('.card-logo')).toBeHidden()
+  expect(await app.callsTo('get_brand')).toEqual([])
+})
+
+test('a lookup that failed leaves the logo out and says it could not check', async ({ launch }) => {
+  const app = await launch({
+    inboxes: [[card(1, { brand: { bimi: 'pass', domain: 'shop.example', mark: 'vmc', logo: LOGO } })]],
+    failures: { get_brand: { kind: 'internal', message: 'x' } },
+  })
+  await expect.poll(() => app.trust('t1')).toEqual(['spf: pass', 'dkim: pass', 'dmarc: pass', 'bimi: neutral', 'mark: neutral'])
+  await expect(app.card('t1').locator('[data-check="bimi"]')).toHaveAttribute('title', 'BIMI: 確認できませんでした')
+  await expect(app.card('t1').locator('.card-logo')).toBeHidden()
+  await expect(app.notice).toBeHidden()
 })

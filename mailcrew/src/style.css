@@ -21,6 +21,7 @@
   --accent-soft: rgb(10 132 255 / 0.12);
   --star: #ff9f0a;
   --danger: #d70015;
+  --pass: #248a3d;
   --glass: rgb(250 250 252 / 0.6);
   --glass-solid: #f6f6f8;
   --glass-edge: inset 0 1px 0 rgb(255 255 255 / 0.85), inset 0 0 0 0.5px rgb(255 255 255 / 0.4);
@@ -63,6 +64,8 @@
     --control-hover: rgb(255 255 255 / 0.13);
     --selection: rgb(255 255 255 / 0.1);
     --accent-soft: rgb(10 132 255 / 0.22);
+    --pass: #30d158;
+    --danger: #ff453a;
     --glass: rgb(44 44 48 / 0.6);
     --glass-solid: #2c2c30;
     --glass-edge: inset 0 1px 0 rgb(255 255 255 / 0.12), inset 0 0 0 0.5px rgb(255 255 255 / 0.08);
@@ -564,6 +567,17 @@ button {
   vertical-align: 0;
 }
 
+.card-logo {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  object-fit: contain;
+  /* BIMI logos are drawn for a light, square tile. */
+  background: #ffffff;
+  box-shadow: 0 0 0 0.5px var(--border);
+}
+
 .card-date {
   flex: none;
   color: var(--text-muted);
@@ -582,6 +596,68 @@ button {
   -webkit-line-clamp: var(--subject-lines);
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+/*
+ * The checks under the subject: a word and a dot per check, quiet unless one
+ * failed. The row keeps its height before the body arrives.
+ */
+.card-trust {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 14px;
+  margin-top: 2px;
+  overflow: hidden;
+}
+
+.trust {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  cursor: default;
+}
+
+.trust::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.35;
+}
+
+.trust-pass::before {
+  background: var(--pass);
+  opacity: 1;
+}
+
+.trust-fail {
+  color: var(--danger);
+}
+
+.trust-fail::before {
+  opacity: 1;
+}
+
+.trust-pending::before {
+  opacity: 0.2;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .trust-pending::before {
+    animation: trust-pending 1.2s ease-in-out infinite alternate;
+  }
+}
+
+@keyframes trust-pending {
+  to {
+    opacity: 0.5;
+  }
 }
 
 .card-meta {

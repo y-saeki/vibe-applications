@@ -5,6 +5,7 @@ import { ICONS } from './icons'
 import { ImageSenders } from './image-senders'
 import { Inbox } from './inbox'
 import { showNotice } from './notice'
+import { PreferenceStore } from './preferences'
 import { Settings } from './settings'
 import { Sidebar } from './sidebar'
 import { filterFor, INBOX_VIEW, tabExists, ViewTabs } from './views'
@@ -29,7 +30,8 @@ for (const slot of document.querySelectorAll<HTMLElement>('[data-icon]')) {
 }
 
 const imageSenders = new ImageSenders()
-const inbox = new Inbox((message) => void signedOut(message), imageSenders)
+const preferences = new PreferenceStore()
+const inbox = new Inbox((message) => void signedOut(message), imageSenders, preferences)
 const sidebar = new Sidebar()
 const tabs = new ViewTabs((id) => {
   activeView = id
@@ -49,6 +51,7 @@ const settings = new Settings({
   accounts,
   views: () => views,
   imageSenders,
+  preferences,
   accountsChanged: async () => {
     if (await refreshSession()) settings.render()
   },
@@ -175,6 +178,12 @@ async function main(): Promise<void> {
     await imageSenders.load()
   } catch (err) {
     // Every message then asks before it shows images, as it does for anyone else.
+    showNotice(errorMessage(err))
+  }
+  try {
+    await preferences.load()
+  } catch (err) {
+    // The defaults stand in until the settings are saved again.
     showNotice(errorMessage(err))
   }
   if (accounts().length > 0) showInbox()

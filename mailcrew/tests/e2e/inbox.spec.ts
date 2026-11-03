@@ -1,6 +1,6 @@
 // How the inbox lays its threads out.
 
-import { card, cards, expect, ME, test } from './fixtures'
+import { card, cards, expect, LOGO, ME, test } from './fixtures'
 
 test('lays the threads out newest first, left to right', async ({ launch }) => {
   const app = await launch({ inboxes: [cards(5)] })
@@ -59,12 +59,16 @@ test("every card's head is the same height, whatever it holds", async ({ launch 
           subject: 'とても長い件名が二行にわたって折り返されるくらいの長さで続いていく、さらにもう少し長いスレッドの件名です',
           messageCount: 4,
           attachments: ['a.pdf'],
+          brand: { bimi: 'pass', domain: 'shop.example', mark: 'vmc', logo: LOGO },
         }),
-        card(3, { subject: '' }),
+        card(3, { subject: '', brand: { bimi: 'none', domain: '', mark: 'none', logo: null } }),
       ],
     ],
   })
   await expect(app.cards).toHaveCount(3)
+  // Once the bodies, the checks and the logo are in.
+  await expect(app.card('t2').locator('.card-logo')).toBeVisible()
+  await expect.poll(() => app.trust('t3').then((items) => items.length)).toBe(5)
   const heights = await app.page
     .locator('.card[data-thread-id] .card-head')
     .evaluateAll((heads) => heads.map((head) => Math.round(head.getBoundingClientRect().height)))

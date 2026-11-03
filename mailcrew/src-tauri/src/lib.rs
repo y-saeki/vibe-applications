@@ -1,5 +1,7 @@
 mod accounts;
 mod auth;
+mod authres;
+mod bimi;
 mod card;
 mod commands;
 mod credentials;
@@ -8,6 +10,7 @@ mod gmail;
 mod image_senders;
 mod links;
 mod mime;
+mod preferences;
 mod sanitize;
 mod views;
 
@@ -17,6 +20,9 @@ pub struct AppState {
     accounts: accounts::Accounts,
     /// Gives up the sign-in that is waiting for the browser, if any.
     cancel_sign_in: Mutex<Option<oneshot::Sender<()>>>,
+    brands: bimi::Brands,
+    /// Read from disk on first use.
+    preferences: Mutex<Option<preferences::Preferences>>,
 }
 
 pub fn run() {
@@ -26,6 +32,8 @@ pub fn run() {
         .manage(AppState {
             accounts: accounts::Accounts::new(),
             cancel_sign_in: Mutex::new(None),
+            brands: bimi::Brands::new(),
+            preferences: Mutex::new(None),
         })
         .invoke_handler(tauri::generate_handler![
             commands::get_session,
@@ -34,6 +42,9 @@ pub fn run() {
             commands::sign_out,
             commands::list_inbox,
             commands::get_message,
+            commands::get_brand,
+            commands::get_preferences,
+            commands::save_preferences,
             commands::list_labels,
             commands::create_label,
             commands::archive,

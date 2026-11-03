@@ -4,7 +4,7 @@
 // an image the user allowed that the policy would block fail here rather than
 // only in the installed app.
 
-import { card, expect, test } from './fixtures'
+import { card, expect, LOGO, test } from './fixtures'
 
 const PNG = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
@@ -49,4 +49,17 @@ test('an image the user allowed gets through the app policy too', async ({ launc
         .evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0),
     )
     .toBe(true)
+})
+
+test("a sender's BIMI logo gets through the app policy", async ({ launch }) => {
+  const app = await launch({
+    csp: true,
+    inboxes: [[card(1, { brand: { bimi: 'pass', domain: 'shop.example', mark: 'vmc', logo: LOGO } })]],
+  })
+  const logo = app.card('t1').locator('.card-logo')
+  await expect(logo).toBeVisible()
+  await expect
+    .poll(() => logo.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0))
+    .toBe(true)
+  expect(app.cspViolations).toEqual([])
 })

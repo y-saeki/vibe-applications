@@ -8,6 +8,8 @@ import {
   backend,
   errorMessage,
   isCommandError,
+  type Authentication,
+  type Brand,
   type Card,
   type InboxPage,
   type Label,
@@ -20,7 +22,9 @@ import type { ImageSenders } from './image-senders'
 import { mountBody, type MountedBody } from './message-frame'
 import { showNotice } from './notice'
 import { OverlayScrollbar } from './overlay-scrollbar'
+import type { PreferenceStore } from './preferences'
 import { TagPicker, type TagChoice } from './tag-picker'
+import { renderTrust } from './trust'
 
 /** How far beyond the visible strip a card's body is already rendered. */
 const PRELOAD_MARGIN = '0px 1200px'
@@ -90,6 +94,7 @@ export class Inbox {
   constructor(
     private readonly onSignedOut: (message: string) => void,
     private readonly imageSenders: ImageSenders,
+    private readonly preferences: PreferenceStore,
   ) {
     this.strip.addEventListener('click', (event) => this.onClick(event))
     // A card is narrower than its usual width only when the window is, so a
@@ -260,6 +265,11 @@ export class Inbox {
     head.className = 'card-head'
     const fromRow = document.createElement('div')
     fromRow.className = 'card-from-row'
+    // The sender's BIMI logo, once its certificate has been checked.
+    const logo = document.createElement('img')
+    logo.className = 'card-logo'
+    logo.alt = ''
+    logo.hidden = true
     const from = document.createElement('span')
     from.className = 'card-from'
     from.textContent = card.from.name || card.from.email
@@ -271,7 +281,13 @@ export class Inbox {
     const subject = document.createElement('h2')
     subject.className = 'card-subject'
     subject.textContent = card.subject || '(件名なし)'
-    head.append(fromRow, subject)
+    // Filled in with the body; the row keeps its height until then so that
+    // every head is as tall.
+    const trust = document.createElement('div')
+    trust.className = 'card-trust'
+    trust.setAttribute('role', 'group')
+    trust.setAttribute('aria-label', '送信元の検証')
+    head.append(fromRow, subject, trust)
 
     // The badges sit on the sender's line, between the name and the date.
     const meta = document.createElement('div')
@@ -293,7 +309,7 @@ export class Inbox {
     attachments.className = 'card-badge card-attachments'
     attachments.hidden = true
     meta.append(attachments)
-    fromRow.append(from, meta, date)
+    fromRow.append(logo, from, meta, date)
 
     const images = document.createElement('div')
     images.className = 'card-images'
@@ -419,6 +435,42 @@ export class Inbox {
       attachments.append(` ${content.attachments.length}`)
       attachments.title = content.attachments.join('\n')
       attachments.hidden = false
+    }
+    const lookUp = this.preferences.brandLogos
+    this.showTrust(mounted, content.authentication, undefined, lookUp)
+    if (lookUp) void this.fetchBrand(mounted, content.authentication)
+  }
+
+  private showTrust(
+    mounted: Mounted,
+    authentication: Authentication,
+    brand: Brand | null | undefined,
+    lookUp: boolean,
+  ): void {
+    renderTrust(mounted.element.querySelector<HTMLElement>('.card-trust')!, authentication, brand, lookUp)
+  }
+
+  /** Looks up the sender's BIMI logo; the checks say how it went either way. */
+  private async fetchBrand(mounted: Mounted, authentication: Authentication): Promise<void> {
+    const { card, element } = mounted
+    let brand: Brand | null
+    try {
+      brand = await backend.brand(card.account, card.messageId)
+    } catch {
+      // Nothing to tell beyond what the checks show.
+      brand = null
+    }
+    if (this.mounted.get(keyOf(card)) !== mounted) return
+    if (brand === null && !this.preferences.brandLogos) {
+      this.showTrust(mounted, authentication, null, false)
+      return
+    }
+    this.showTrust(mounted, authentication, brand, true)
+    if (brand?.logo) {
+      const logo = element.querySelector<HTMLImageElement>('.card-logo')!
+      logo.src = brand.logo
+      logo.title = `${brand.domain} のロゴ（${brand.mark === 'cmc' ? 'CMC' : 'VMC'} で確認済み）`
+      logo.hidden = false
     }
   }
 
