@@ -25,8 +25,11 @@ final class BookmarkEditorModel {
         draft = BookmarkDraft(url: url)
     }
 
+    /// With nothing typed, only the most used tags, so that a long tag history
+    /// does not push the rest of the form out of reach; typing searches them all.
     var suggestions: [UserTag] {
-        UserTag.suggestions(from: userTags, matching: tagInput, excluding: draft.tags)
+        let matches = UserTag.suggestions(from: userTags, matching: tagInput, excluding: draft.tags)
+        return tagInput.trimmingCharacters(in: .whitespaces).isEmpty ? Array(matches.prefix(20)) : matches
     }
 
     func load(api: BookmarkAPI, accounts: AccountStore) async {
@@ -149,6 +152,11 @@ private struct BookmarkForm: View {
                     .lineLimit(3...8)
             }
 
+            // Above the tags, whose suggestions can run to hundreds of rows.
+            Section {
+                Toggle("非公開にする", isOn: $model.draft.isPrivate)
+            }
+
             Section {
                 if !model.draft.tags.isEmpty {
                     TagChips(tags: model.draft.tags) { model.draft.removeTag($0) }
@@ -176,10 +184,6 @@ private struct BookmarkForm: View {
                 Text("タグ")
             } footer: {
                 Text("\(model.draft.tags.count) / \(BookmarkDraft.maxTags) 個")
-            }
-
-            Section {
-                Toggle("非公開にする", isOn: $model.draft.isPrivate)
             }
 
             if model.saved != nil {
