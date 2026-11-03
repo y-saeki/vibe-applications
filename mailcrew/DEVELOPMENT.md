@@ -129,7 +129,7 @@ HTML 本文は 2 段階で守ります。
 リンクは iframe の中で遷移させず、Rust 側が `http`、`https`、`mailto` だけを既定のアプリで開きます。経路はエンジンによって 2 つあります。
 
 - WebView2（Windows）: ページが iframe の中のクリックを拾い、`open_link` コマンドに渡します。
-- WKWebView（macOS）: WebKit はスクリプトを禁じた iframe の中でページのイベントリスナーを呼ばないので、クリックは iframe の遷移として始まります。WKWebView はどのフレームの遷移も Rust 側に問い合わせるので、`links.rs` がそこで遷移を止め、リンクを既定のアプリで開きます。
+- WKWebView（macOS）: WebKit はスクリプトを禁じた iframe の中でページのイベントリスナーを呼ばないので、クリックは iframe の遷移として始まります。WKWebView はどのフレームの遷移も Rust 側に問い合わせるので、`links.rs` がそこで遷移を止め、リンクを既定のアプリで開きます。ただし WebKit は問い合わせる前にアプリ本体の CSP の `frame-src` を確かめ、許されない遷移は何も表示せずに取りやめます。そのため macOS だけ `tauri.macos.conf.json` で `frame-src` に `http:`、`https:`、`mailto:` を加えています。Tauri は macOS でこのファイルを `tauri.conf.json` に重ねます。iframe の遷移は `links.rs` がすべて止めるので、外部のページが iframe に読み込まれることはありません。Windows では iframe が遷移しないので、`frame-src` は `'self'` のままです。
 
 WebView2 はトップレベルの遷移しか問い合わせないため、ページの側でクリックを拾う処理も必要です。opener プラグインの権限はページに与えていません（`capabilities/default.json`）。
 
@@ -163,16 +163,16 @@ WebView2 はトップレベルの遷移しか問い合わせないため、ペ�
 | `chromium` | Windows の WebView2 |
 | `webkit` | macOS の WKWebView |
 
-ハーネスが返す本文は Rust のサニタイズを通っていません。`tests/e2e/message.spec.ts` はこれを利用して、`script` やイベントハンドラを含む HTML でもスクリプトが動かないこと、「表示する」を押すまで外部画像へのリクエストが 1 件も出ないことを、iframe だけで確かめています。本文中のリンクは、Chromium ではクリックが `open_link` に渡ること、WebKit ではリンク先への iframe の遷移になることを確かめます。その遷移を `links.rs` が止めて外で開くところは webview の外なので、テストでは確かめられません。
+ハーネスが返す本文は Rust のサニタイズを通っていません。`tests/e2e/message.spec.ts` はこれを利用して、`script` やイベントハンドラを含む HTML でもスクリプトが動かないこと、「表示する」を押すまで外部画像へのリクエストが 1 件も出ないことを、iframe だけで確かめています。本文中のリンクは、Chromium ではクリックが `open_link` に渡ること、WebKit ではリンク先への iframe の遷移になることを確かめます。このテストはアプリ本体の CSP の下で動かすので、`frame-src` が遷移を止めていないことも確かめられます。その遷移を `links.rs` が止めて外で開くところは webview の外なので、テストでは確かめられません。
 
-開発サーバは Content-Security-Policy を送りません。`tests/e2e/csp.spec.ts` だけが `tauri.conf.json` と同じポリシーの下でページを開き、メールのスタイルが効くこと、許可した画像が通ることを確かめます。
+開発サーバは Content-Security-Policy を送りません。`tests/e2e/csp.spec.ts` と本文中のリンクのテストだけが、`tauri.conf.json` と同じポリシーの下でページを開きます。WebKit では macOS と同じく `tauri.macos.conf.json` を重ねたポリシーを使います。`csp.spec.ts` はメールのスタイルが効くこと、許可した画像が通ることを確かめます。
 
 届かない範囲もあります。
 
 - 本物の Google とのやりとり。ログイン画面、トークンの発行と更新、Gmail API の応答とエラー
 - OS の資格情報ストアへの保存と読み出し、macOS のキーチェーンのダイアログ
 - 既定のブラウザやメールアプリでリンクが開くこと
-- Tauri が実際に付ける CSP（nonce を含む）。テストは `tauri.conf.json` の値を送るだけです
+- Tauri が実際に付ける CSP（nonce を含む）。テストは `tauri.conf.json`（WebKit では `tauri.macos.conf.json` を重ねたもの）の値を送るだけです
 - コード署名していない配布物を各 OS が警告する挙動と、Windows インストーラの画面
 
 これらは実機で確かめるしかありません。リリースの前には少なくとも次を手で確かめます。

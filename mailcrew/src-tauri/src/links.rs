@@ -8,6 +8,10 @@
 //! anything that is not the app's own page is opened in the default browser
 //! instead, or refused.
 //!
+//! WebKit only asks once the navigation has passed the page's `frame-src`, and
+//! drops one the policy refuses without asking. `tauri.macos.conf.json` lets
+//! `http:`, `https:` and `mailto:` through so that a link reaches this guard.
+//!
 //! WebView2 only asks about the top-level page, which is why the page still
 //! catches clicks itself.
 

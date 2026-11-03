@@ -10,20 +10,30 @@ import type { BackendConfig, Call } from './harness/backend'
 import { HARNESS_BUNDLE } from './harness/paths'
 
 export type LaunchOptions = Partial<BackendConfig> & {
-  /** Serves the page under the Content-Security-Policy the built app runs with. */
+  /**
+   * Serves the page under the Content-Security-Policy the built app runs with
+   * on the platform the browser stands in for.
+   */
   csp?: boolean
 }
 
 interface TauriConf {
-  app: { security: { csp: Record<string, string> } }
+  app?: { security?: { csp?: Record<string, string> } }
 }
 
-/** The policy in src-tauri/tauri.conf.json, as a header value. */
-function productionCsp(): string {
-  const conf = JSON.parse(
-    readFileSync(new URL('../../src-tauri/tauri.conf.json', import.meta.url), 'utf8'),
-  ) as TauriConf
-  return Object.entries(conf.app.security.csp)
+function readConf(name: string): TauriConf {
+  return JSON.parse(readFileSync(new URL(`../../src-tauri/${name}`, import.meta.url), 'utf8')) as TauriConf
+}
+
+/**
+ * The policy in src-tauri/tauri.conf.json, as a header value. WebKit stands in
+ * for macOS, where Tauri merges tauri.macos.conf.json on top, directive by
+ * directive.
+ */
+function productionCsp(browserName: string): string {
+  const csp = { ...readConf('tauri.conf.json').app?.security?.csp }
+  if (browserName === 'webkit') Object.assign(csp, readConf('tauri.macos.conf.json').app?.security?.csp)
+  return Object.entries(csp)
     .map(([directive, value]) => `${directive} ${value}`)
     .join('; ')
 }
@@ -122,12 +132,12 @@ export class App {
 }
 
 export const test = base.extend<{ launch: (options?: LaunchOptions) => Promise<App> }>({
-  launch: async ({ page }, use) => {
+  launch: async ({ page, browserName }, use) => {
     await use(async (options: LaunchOptions = {}) => {
       const { csp, ...overrides } = options
       const config: BackendConfig = { ...DEFAULT_CONFIG, ...overrides }
       if (csp) {
-        const policy = productionCsp()
+        const policy = productionCsp(browserName)
         await page.route(
           (url) => url.pathname === '/',
           async (route) => {
