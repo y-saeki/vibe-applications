@@ -45,8 +45,11 @@ struct HotEntryListView: View {
                 ArticleBrowserView(entry: item)
             }
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
+                // Settings are rarely opened, so they stay out of the top bar,
+                // which keeps the category menu as its one action.
+                ToolbarItemGroup(placement: .bottomBar) {
                     Button("設定", systemImage: "gearshape") { isShowingSettings = true }
+                    Spacer()
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {

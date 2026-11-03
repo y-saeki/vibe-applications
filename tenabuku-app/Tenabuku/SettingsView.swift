@@ -11,6 +11,11 @@ struct SettingsView: View {
                 LabeledContent("記録している記事", value: "\(readHistory.history.count) 件")
                 Button("既読の記録を消す", role: .destructive) { isConfirmingClear = true }
                     .disabled(readHistory.history.count == 0)
+                    // On the button, not the form: where the dialog shows as a
+                    // popover, it points at the view it is attached to.
+                    .confirmationDialog("既読の記録を消しますか？", isPresented: $isConfirmingClear, titleVisibility: .visible) {
+                        Button("既読の記録を消す", role: .destructive) { readHistory.removeAll() }
+                    }
             } header: {
                 Text("既読")
             } footer: {
@@ -23,11 +28,6 @@ struct SettingsView: View {
             ToolbarItem(placement: .confirmationAction) {
                 Button("完了") { dismiss() }
             }
-        }
-        .confirmationDialog("既読の記録を消しますか？", isPresented: $isConfirmingClear, titleVisibility: .visible) {
-            Button("既読の記録を消す", role: .destructive) { readHistory.removeAll() }
-        } message: {
-            Text("一覧のすべての記事が未読の表示に戻ります。")
         }
     }
 }
