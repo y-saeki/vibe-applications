@@ -73,7 +73,7 @@
 
 /* The window controls take the toolbar's leading edge (tauri.macos.conf.json places them). */
 :root[data-platform="macos"] {
-  --toolbar-start: 84px;
+  --toolbar-start: 96px;
 }
 
 * {
