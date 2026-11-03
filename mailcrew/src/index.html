@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>mailcrew</title>
+    <link rel="stylesheet" href="main.css" />
+  </head>
+  <body>
+    <!-- Shown until the session is known, and while the inbox loads. -->
+    <div id="loading" class="screen-message" role="status">読み込み中…</div>
+
+    <!-- Sign-in. The OAuth client is the user's own, so it is asked for here. -->
+    <main id="setup" class="setup" hidden>
+      <form id="setup-form" class="setup-form">
+        <h1 class="setup-title">mailcrew</h1>
+        <p class="setup-lead">Gmail の受信トレイを、1 通ずつのカードで読むメーラーです。</p>
+        <label class="field">
+          <span class="field-label">OAuth クライアント ID</span>
+          <input id="client-id" name="client-id" type="text" autocomplete="off" spellcheck="false" required />
+        </label>
+        <label class="field">
+          <span class="field-label">クライアント シークレット</span>
+          <input id="client-secret" name="client-secret" type="password" autocomplete="off" spellcheck="false" required />
+        </label>
+        <p class="setup-hint">
+          どちらも Google Cloud で作ったものを使います。作り方は
+          <a href="https://github.com/y-saeki/vibe-applications/blob/main/mailcrew/README.md" id="setup-help">README</a>
+          にあります。
+        </p>
+        <p id="setup-error" class="setup-error" role="alert" hidden></p>
+        <div class="setup-actions">
+          <button type="submit" id="sign-in" class="button button-primary">Google でログイン</button>
+        </div>
+        <div id="setup-waiting" class="setup-waiting" hidden>
+          <p>ブラウザで Google にログインしてください。完了すると、ここに受信トレイが開きます。</p>
+          <button type="button" id="cancel-sign-in" class="button">中止</button>
+        </div>
+      </form>
+    </main>
+
+    <!-- The inbox: one card per thread, newest at the left. -->
+    <div id="inbox" class="inbox" hidden>
+      <header class="topbar">
+        <div class="topbar-title">
+          <h1>受信トレイ</h1>
+          <span id="inbox-count" class="topbar-count"></span>
+        </div>
+        <div class="topbar-tools">
+          <button type="button" id="reload" class="button button-quiet" title="再読み込み">再読み込み</button>
+          <span id="account" class="topbar-account"></span>
+          <button type="button" id="sign-out" class="button button-quiet" title="ログアウト">ログアウト</button>
+        </div>
+      </header>
+      <section id="strip" class="strip" aria-label="受信トレイのスレッド"></section>
+      <div id="empty" class="empty" hidden>
+        <p class="empty-title">受信トレイは空です</p>
+        <p class="empty-lead">新しいメールが届いたら、再読み込みで表示されます。</p>
+      </div>
+    </div>
+
+    <!-- The tag picker, moved next to whichever card's button opened it. -->
+    <div id="tag-picker" class="tag-picker" role="dialog" aria-label="タグを追加" hidden>
+      <input id="tag-filter" class="tag-filter" type="text" placeholder="タグを検索または作成" autocomplete="off" spellcheck="false" />
+      <ul id="tag-list" class="tag-list" role="listbox" aria-label="タグ"></ul>
+    </div>
+
+    <div id="notice" class="notice" role="alert" hidden></div>
+
+    <script type="module" src="main.js"></script>
+  </body>
+</html>

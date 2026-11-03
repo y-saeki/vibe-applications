@@ -1,0 +1,48 @@
+# mailcrew
+
+Repository-wide conventions are in the root `CLAUDE.md`; these apply on top of them.
+
+## The message frame is a security boundary
+
+A message's HTML is untrusted, and two layers keep it from doing anything:
+`src-tauri/src/sanitize.rs` strips what could run, and `src/message-frame.ts` shows the
+rest in an iframe sandboxed with `allow-same-origin` alone and a Content-Security-Policy of
+its own. `DEVELOPMENT.md` explains both. Changing either keeps these true:
+
+- The frame never gets `allow-scripts`. With `allow-same-origin` beside it, the sandbox
+  would no longer hold.
+- Nothing from the network loads in a message until the user presses 表示する for it.
+- Links never navigate the frame; they go to `open_link`, which opens http, https and
+  mailto only.
+- The webview is granted no opener permission. Only Rust opens URLs.
+
+`dangerousDisableAssetCspModification: ["style-src"]` in `tauri.conf.json` is deliberate:
+Tauri's style nonce would switch off `'unsafe-inline'`, and every message's inline styles
+with it. Do not remove it without replacing what it does.
+
+## Labels change on message ids, not threads
+
+Every action sends the message ids the card was built from (`messages.batchModify`), so a
+reply that arrives while a card is on screen stays in the inbox. Keep new actions on that
+path rather than `threads.modify`.
+
+## Keeping the tests in step
+
+`DEVELOPMENT.md` describes the two suites. When mailcrew's behaviour changes, the file that
+covers it changes in the same commit:
+
+| Changed | Follow it in |
+|---|---|
+| Sign-in, sign-out, or which screen shows at startup | `tests/e2e/sign-in.spec.ts` |
+| How cards are laid out, the end of the strip, the empty state, reloading | `tests/e2e/inbox.spec.ts` |
+| A toolbar button or まとめて完了 | `tests/e2e/actions.spec.ts` |
+| The tag picker | `tests/e2e/tags.spec.ts` |
+| How a body is shown: the frame, links, images, scaling, lazy mounting | `tests/e2e/message.spec.ts` |
+| The `csp` in `src-tauri/tauri.conf.json`, or anything the page loads from elsewhere | `tests/e2e/csp.spec.ts` |
+| A field on `Card` (`src-tauri/src/card.rs`) | `src/backend.ts`, `card()` in `tests/e2e/fixtures.ts`, and `mod tests` in `card.rs` |
+| A command the frontend invokes | `handle` in `tests/e2e/harness/backend.ts`. It throws on a command it does not know |
+| What the sanitiser removes or keeps | `mod tests` in `src-tauri/src/sanitize.rs` |
+
+`DEVELOPMENT.md` lists what these tests cannot reach — Google itself, the credential store,
+the browser a link opens in. Assert the `invoke` that was made and leave the rest to the
+manual pass; do not write a case that looks like it covers one of them.
