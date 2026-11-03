@@ -36,6 +36,21 @@ its own. `DEVELOPMENT.md` explains both. Changing either keeps these true:
 Tauri's style nonce would switch off `'unsafe-inline'`, and every message's inline styles
 with it. Do not remove it without replacing what it does.
 
+## Every action names its account
+
+A card carries the address of the account its thread is in (`Card.account`), and every command
+that reads or changes mail takes that address. Thread, message and label ids are only unique
+within one account, so nothing on the page is keyed by an id alone. The stored sign-ins are one
+credential entry per account plus an `accounts` index; the entry named `google-account` is the
+pre-0.2 single account, read once and moved.
+
+## Mind the Gmail quota
+
+Each user gets 6,000 quota units a minute, and a full thread costs 120 of them, so a page of
+50 full threads is already over. The strip is therefore built from `format=metadata` threads,
+and a body is fetched with `get_message` only when its card comes near the screen. A new call
+that reads mail states its cost against the usage limits page before it goes in.
+
 ## Labels change on message ids, not threads
 
 Every action sends the message ids the card was built from (`messages.batchModify`), so a
@@ -50,13 +65,16 @@ covers it changes in the same commit:
 | Changed | Follow it in |
 |---|---|
 | Sign-in, sign-out, or which screen shows at startup | `tests/e2e/sign-in.spec.ts` |
+| Adding or removing an account in the settings | `tests/e2e/settings.spec.ts` |
+| The view tabs, or making, editing and deleting a view | `tests/e2e/views.spec.ts` |
 | How cards are laid out, the end of the strip, the empty state, reloading | `tests/e2e/inbox.spec.ts` |
 | A toolbar button or まとめて完了 | `tests/e2e/actions.spec.ts` |
 | The tag picker | `tests/e2e/tags.spec.ts` |
 | How a body is shown: the frame, links, images, scaling, lazy mounting | `tests/e2e/message.spec.ts` |
 | The `csp` in `src-tauri/tauri.conf.json` or `tauri.macos.conf.json`, or anything the page loads from elsewhere | `tests/e2e/csp.spec.ts` |
-| A field on `Card` (`src-tauri/src/card.rs`) | `src/backend.ts`, `card()` in `tests/e2e/fixtures.ts`, and `mod tests` in `card.rs` |
+| A field on `Card` or `MessageContent` (`src-tauri/src/card.rs`) | `src/backend.ts`, `card()` in `tests/e2e/fixtures.ts`, and `mod tests` in `card.rs` |
 | A command the frontend invokes | `handle` in `tests/e2e/harness/backend.ts`. It throws on a command it does not know |
+| How accounts are stored, or the inbox of several accounts is merged | `mod tests` in `src-tauri/src/credentials.rs` and `src-tauri/src/accounts.rs` |
 | What the sanitiser removes or keeps | `mod tests` in `src-tauri/src/sanitize.rs` |
 | Which navigations the webview allows | `mod tests` in `src-tauri/src/links.rs` |
 

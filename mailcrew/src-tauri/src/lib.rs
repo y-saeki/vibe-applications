@@ -1,3 +1,4 @@
+mod accounts;
 mod auth;
 mod card;
 mod commands;
@@ -7,11 +8,12 @@ mod gmail;
 mod links;
 mod mime;
 mod sanitize;
+mod views;
 
 use tokio::sync::{oneshot, Mutex};
 
 pub struct AppState {
-    gmail: gmail::Gmail,
+    accounts: accounts::Accounts,
     /// Gives up the sign-in that is waiting for the browser, if any.
     cancel_sign_in: Mutex<Option<oneshot::Sender<()>>>,
 }
@@ -21,7 +23,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(links::guard())
         .manage(AppState {
-            gmail: gmail::Gmail::new(),
+            accounts: accounts::Accounts::new(),
             cancel_sign_in: Mutex::new(None),
         })
         .invoke_handler(tauri::generate_handler![
@@ -30,12 +32,15 @@ pub fn run() {
             commands::cancel_sign_in,
             commands::sign_out,
             commands::list_inbox,
+            commands::get_message,
             commands::list_labels,
             commands::create_label,
             commands::archive,
             commands::apply_label,
             commands::set_aside,
             commands::set_starred,
+            commands::list_views,
+            commands::save_views,
             commands::open_link,
         ])
         .run(tauri::generate_context!())

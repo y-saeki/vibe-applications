@@ -7,19 +7,29 @@
 
 import { mockIPC } from '@tauri-apps/api/mocks'
 
-import type { Card, CommandError, Label } from '../../../src/backend'
+import type { AccountFailure, Card, CommandError, Label, MessageContent, View } from '../../../src/backend'
+
+/** A card together with the body `get_message` hands over for it. */
+export type TestCard = Card & MessageContent
 
 /** What a test asks the fake backend to start from. */
 export interface BackendConfig {
-  /** The signed-in address; null starts signed out. */
-  email: string | null
+  /** The signed-in addresses; empty starts signed out. */
+  accounts: string[]
   platform: string
-  /** What each `list_inbox` returns, in turn; the last one repeats. */
-  inboxes: Card[][]
+  /** The cards each `list_inbox` returns, in turn; the last one repeats. */
+  inboxes: TestCard[][]
+  /**
+   * The accounts every `list_inbox` reports as failed. One that failed as
+   * `signedOut` is removed, as the Rust side does.
+   */
+  inboxFailures: AccountFailure[]
   labels: Label[]
+  /** The views saved when the app starts. */
+  views: View[]
   /** Commands that reject, with the error they reject with. */
   failures: Record<string, CommandError>
-  /** What `sign_in` resolves with. */
+  /** What `sign_in` resolves with, and adds to the accounts. */
   signInEmail: string
 }
 
@@ -37,6 +47,8 @@ export interface Harness {
 const harness = window.__mailcrew
 const { config } = harness
 let inboxIndex = 0
+let accounts = [...config.accounts]
+let views = [...config.views]
 
 function handle(cmd: string, args: unknown): unknown {
   harness.calls.push({ cmd, args })
@@ -44,17 +56,38 @@ function handle(cmd: string, args: unknown): unknown {
   if (failure) throw failure
   switch (cmd) {
     case 'get_session':
-      return { email: config.email, platform: config.platform, version: '0.0.0-test' }
+      return { accounts, platform: config.platform, version: '0.0.0-test' }
     case 'sign_in':
+      if (!accounts.includes(config.signInEmail)) accounts = [...accounts, config.signInEmail]
       return config.signInEmail
     case 'cancel_sign_in':
-    case 'sign_out':
       return null
-    case 'list_inbox': {
-      const inbox = config.inboxes[Math.min(inboxIndex, config.inboxes.length - 1)] ?? []
-      inboxIndex += 1
-      return inbox
+    case 'sign_out': {
+      const { account } = args as { account: string }
+      accounts = accounts.filter((known) => known !== account)
+      return null
     }
+    case 'list_inbox': {
+      if (accounts.length === 0) throw { kind: 'signedOut', message: 'Google アカウントにログインしていません' }
+      const cards = config.inboxes[Math.min(inboxIndex, config.inboxes.length - 1)] ?? []
+      inboxIndex += 1
+      const failures = config.inboxFailures.filter((failure) => accounts.includes(failure.account))
+      const gone = failures.filter((failure) => failure.kind === 'signedOut').map((failure) => failure.account)
+      accounts = accounts.filter((account) => !gone.includes(account))
+      // The bodies come only through `get_message`, as from the Rust side.
+      return { cards: cards.map(({ body: _body, attachments: _attachments, ...card }) => card), failures }
+    }
+    case 'get_message': {
+      const { account, messageId } = args as { account: string; messageId: string }
+      const found = config.inboxes.flat().find((card) => card.account === account && card.messageId === messageId)
+      if (!found) throw new Error(`mailcrew test: no message ${messageId} in ${account}`)
+      return { body: found.body, attachments: found.attachments }
+    }
+    case 'list_views':
+      return views
+    case 'save_views':
+      views = (args as { views: View[] }).views
+      return null
     case 'list_labels':
       return config.labels
     case 'create_label': {

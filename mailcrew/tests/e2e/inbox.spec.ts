@@ -1,6 +1,6 @@
 // How the inbox lays its threads out.
 
-import { card, cards, expect, test } from './fixtures'
+import { card, cards, expect, ME, test } from './fixtures'
 
 test('lays the threads out newest first, left to right', async ({ launch }) => {
   const app = await launch({ inboxes: [cards(5)] })
@@ -116,6 +116,33 @@ for (const [platform, modifier] of [
     await app.expectCalls('get_session', 1)
   })
 }
+
+test('a card does not name the account while there is only one', async ({ launch }) => {
+  const one = await launch({ inboxes: [[card(1)]] })
+  await expect(one.card('t1').locator('.card-account')).toBeHidden()
+})
+
+test('lays out the threads of every account together, as the Rust side orders them', async ({ launch }) => {
+  const app = await launch({
+    accounts: [ME, 'work@example.com'],
+    inboxes: [[card(1, { account: 'work@example.com' }), card(2), card(3, { account: 'work@example.com' })]],
+  })
+  await expect(app.cards).toHaveCount(3)
+  expect(await app.ids()).toEqual(['t1', 't2', 't3'])
+  await expect(app.card('t1').locator('.card-account')).toHaveText('work@example.com')
+  await expect(app.card('t2').locator('.card-account')).toHaveText(ME)
+  expect(await app.callsTo('list_inbox')).toEqual([{ accounts: [], mailbox: 'inbox', query: '' }])
+})
+
+test('an account that did not answer is named, and the others are shown', async ({ launch }) => {
+  const app = await launch({
+    accounts: [ME, 'work@example.com'],
+    inboxes: [[card(1)]],
+    inboxFailures: [{ account: 'work@example.com', kind: 'network', message: 'Google に接続できませんでした' }],
+  })
+  await expect(app.cards).toHaveCount(1)
+  await expect(app.notice).toHaveText('work@example.com: Google に接続できませんでした')
+})
 
 test('a failed load says why', async ({ launch }) => {
   const app = await launch({ failures: { list_inbox: { kind: 'network', message: 'Google に接続できませんでした' } } })

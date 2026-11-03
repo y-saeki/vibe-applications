@@ -1,6 +1,6 @@
 // The four buttons on a card, and the one at the end of the strip.
 
-import { card, cards, expect, test } from './fixtures'
+import { card, cards, expect, ME, test } from './fixtures'
 
 test('完了 archives the whole thread and takes the card off', async ({ launch }) => {
   const app = await launch({ inboxes: [[card(1, { messageIds: ['m0', 'm1'] }), card(2)]] })
@@ -8,14 +8,14 @@ test('完了 archives the whole thread and takes the card off', async ({ launch 
   await expect(app.card('t1')).toHaveCount(0)
   expect(await app.ids()).toEqual(['t2'])
   await expect(app.count).toHaveText('1 件')
-  expect(await app.callsTo('archive')).toEqual([{ messageIds: ['m0', 'm1'] }])
+  expect(await app.callsTo('archive')).toEqual([{ account: ME, messageIds: ['m0', 'm1'], mailbox: 'inbox' }])
 })
 
 test('あとで読む sets the thread aside and takes the card off', async ({ launch }) => {
   const app = await launch({ inboxes: [[card(1), card(2)]] })
   await app.tool('t2', 'later').click()
   await expect(app.card('t2')).toHaveCount(0)
-  expect(await app.callsTo('set_aside')).toEqual([{ messageIds: ['m2'] }])
+  expect(await app.callsTo('set_aside')).toEqual([{ account: ME, messageIds: ['m2'] }])
 })
 
 test('スター stars the shown message and unstars the thread', async ({ launch }) => {
@@ -29,8 +29,8 @@ test('スター stars the shown message and unstars the thread', async ({ launch
   await star.click()
   await expect(star).toHaveAttribute('aria-pressed', 'false')
   expect(await app.callsTo('set_starred')).toEqual([
-    { messageId: 'm1', messageIds: ['m0', 'm1'], starred: true },
-    { messageId: 'm1', messageIds: ['m0', 'm1'], starred: false },
+    { account: ME, messageId: 'm1', messageIds: ['m0', 'm1'], starred: true },
+    { account: ME, messageId: 'm1', messageIds: ['m0', 'm1'], starred: false },
   ])
   // Starring keeps the thread in the inbox.
   await expect(app.card('t1')).toBeVisible()
@@ -74,7 +74,10 @@ test('まとめて完了 archives everything on the strip and fetches the next p
   await app.doneAll.click()
   await expect(app.cards).toHaveCount(1)
   expect(await app.ids()).toEqual(['t60'])
-  expect(await app.callsTo('archive')).toEqual([{ messageIds: ['m2'] }, { messageIds: ['m1', 'm3'] }])
+  expect(await app.callsTo('archive')).toEqual([
+    { account: ME, messageIds: ['m2'], mailbox: 'inbox' },
+    { account: ME, messageIds: ['m1', 'm3'], mailbox: 'inbox' },
+  ])
 })
 
 test('まとめて完了 shows the empty inbox once nothing is left', async ({ launch }) => {
@@ -95,4 +98,30 @@ test('a failed まとめて完了 keeps every card', async ({ launch }) => {
   await expect(app.notice).toHaveText('Google に接続できませんでした')
   await expect(app.cards).toHaveCount(2)
   await expect(app.doneAll).toBeEnabled()
+})
+
+test('each card acts on the account its thread is in', async ({ launch }) => {
+  const app = await launch({
+    accounts: [ME, 'work@example.com'],
+    inboxes: [[card(1), card(2, { account: 'work@example.com' })]],
+  })
+  await app.tool('t2', 'done').click()
+  await app.tool('t1', 'later').click()
+  await app.expectCalls('set_aside', 1)
+  expect(await app.callsTo('archive')).toEqual([{ account: 'work@example.com', messageIds: ['m2'], mailbox: 'inbox' }])
+  expect(await app.callsTo('set_aside')).toEqual([{ account: ME, messageIds: ['m1'] }])
+})
+
+test('まとめて完了 archives each account’s threads with that account', async ({ launch }) => {
+  const app = await launch({
+    accounts: [ME, 'work@example.com'],
+    inboxes: [[card(1), card(2, { account: 'work@example.com' }), card(3)], []],
+  })
+  await app.doneAll.scrollIntoViewIfNeeded()
+  await app.doneAll.click()
+  await expect(app.empty).toBeVisible()
+  expect(await app.callsTo('archive')).toEqual([
+    { account: ME, messageIds: ['m1', 'm3'], mailbox: 'inbox' },
+    { account: 'work@example.com', messageIds: ['m2'], mailbox: 'inbox' },
+  ])
 })
