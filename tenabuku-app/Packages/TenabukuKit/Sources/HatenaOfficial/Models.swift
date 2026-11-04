@@ -141,7 +141,7 @@ public struct MyBookmarkSearchPage: Equatable, Sendable {
     public let hits: [MyBookmarkSearchHit]
 }
 
-public struct MyBookmarkSearchHit: Equatable, Sendable, Identifiable {
+public struct MyBookmarkSearchHit: Equatable, Sendable, Identifiable, Codable {
     public var id: String { url.absoluteString }
     public let title: String
     public let url: URL

@@ -106,6 +106,14 @@ final class AccountStore {
         }
         account = nil
         needsSignInAgain = false
+        // The saved list holds private bookmarks.
+        Task {
+            do {
+                try await AppServices.myBookmarks.clear()
+            } catch {
+                Self.logger.error("saved bookmark list not deleted: \(error.localizedDescription, privacy: .public)")
+            }
+        }
     }
 
     /// Records a failure from an API call made with the account. A 401 means

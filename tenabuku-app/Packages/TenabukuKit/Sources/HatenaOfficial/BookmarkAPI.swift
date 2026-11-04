@@ -66,12 +66,18 @@ public struct BookmarkAPI: Sendable {
     }
 
     /// Full-text search over the user's bookmarks (title, body, URL, comment).
-    /// `limit` is at most 100.
+    /// `limit` is at most 100, and no page reaches past `searchDepth`.
     public func search(_ query: String, offset: Int = 0, limit: Int = 20) async throws -> MyBookmarkSearchPage {
-        let url = Self.url(Self.searchURL, [("q", query), ("of", String(offset)), ("limit", String(min(limit, 100)))])
+        let limit = min(limit, 100, max(Self.searchDepth - offset, 1))
+        let url = Self.url(Self.searchURL, [("q", query), ("of", String(offset)), ("limit", String(limit))])
         let data = try await http.data(for: signed("GET", url))
         return try JSONDecoder.hatena(MyBookmarkSearchPage.self, from: data, source: "official.my-search")
     }
+
+    /// How far into one search's hits the API reads, found by trying it: from
+    /// this offset on it answers with no hits and a total of 0, however many
+    /// matched. The documentation does not mention it.
+    public static let searchDepth = 10_000
 
     private func signed(_ method: String, _ url: URL, form: [(String, String)] = []) -> URLRequest {
         signer.request(method: method, url: url, form: form, token: token)

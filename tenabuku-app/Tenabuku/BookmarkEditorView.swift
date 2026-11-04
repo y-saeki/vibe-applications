@@ -59,11 +59,14 @@ final class BookmarkEditorModel {
     func save(api: BookmarkAPI, accounts: AccountStore) async -> Bool {
         // Text left in the field is a tag the user meant to add.
         addTag(tagInput)
-        return await perform(accounts) { [draft] in try await api.save(draft) }
+        return await perform(accounts) { [draft] in saved = try await api.save(draft) }
     }
 
     func delete(api: BookmarkAPI, accounts: AccountStore) async -> Bool {
-        await perform(accounts) { [url] in try await api.delete(url) }
+        await perform(accounts) { [url] in
+            try await api.delete(url)
+            saved = nil
+        }
     }
 
     private func perform(_ accounts: AccountStore, _ action: () async throws -> Void) async -> Bool {
@@ -84,12 +87,15 @@ final class BookmarkEditorModel {
 /// Adds, edits or deletes the signed-in user's bookmark of one page.
 struct BookmarkEditorView: View {
     let title: String
+    /// Told the bookmark as saved, or nil once it is deleted, before the editor closes.
+    var onChange: (MyBookmark?) -> Void = { _ in }
     @State private var model: BookmarkEditorModel
     @Environment(AccountStore.self) private var accounts
     @Environment(\.dismiss) private var dismiss
 
-    init(url: URL, title: String) {
+    init(url: URL, title: String, onChange: @escaping (MyBookmark?) -> Void = { _ in }) {
         self.title = title
+        self.onChange = onChange
         _model = State(initialValue: BookmarkEditorModel(url: url))
     }
 
@@ -123,7 +129,10 @@ struct BookmarkEditorView: View {
                 Button("再読み込み") { Task { await model.load(api: api, accounts: accounts) } }
             }
         case .ready:
-            BookmarkForm(model: model, title: title, api: api, dismiss: dismiss)
+            BookmarkForm(model: model, title: title, api: api) {
+                onChange(model.saved)
+                dismiss()
+            }
         }
     }
 }
@@ -132,7 +141,8 @@ private struct BookmarkForm: View {
     @Bindable var model: BookmarkEditorModel
     let title: String
     let api: BookmarkAPI
-    let dismiss: DismissAction
+    /// Closes the editor after a save or a delete went through.
+    let finish: () -> Void
     @Environment(AccountStore.self) private var accounts
     @State private var isConfirmingDelete = false
     @FocusState private var isTagFieldFocused: Bool
@@ -192,7 +202,7 @@ private struct BookmarkForm: View {
                         .confirmationDialog("ブックマークを削除しますか？", isPresented: $isConfirmingDelete, titleVisibility: .visible) {
                             Button("削除", role: .destructive) {
                                 Task {
-                                    if await model.delete(api: api, accounts: accounts) { dismiss() }
+                                    if await model.delete(api: api, accounts: accounts) { finish() }
                                 }
                             }
                         }
@@ -204,7 +214,7 @@ private struct BookmarkForm: View {
             ToolbarItem(placement: .confirmationAction) {
                 Button("保存") {
                     Task {
-                        if await model.save(api: api, accounts: accounts) { dismiss() }
+                        if await model.save(api: api, accounts: accounts) { finish() }
                     }
                 }
                 .disabled(model.isWorking)

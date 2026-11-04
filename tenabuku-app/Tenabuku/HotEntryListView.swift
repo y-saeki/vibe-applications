@@ -71,6 +71,9 @@ struct HotEntryListView: View {
             .navigationDestination(for: FeedItem.self) { item in
                 ArticleBrowserView(entry: item)
             }
+            .navigationDestination(for: MyBookmarkListRoute.self) { _ in
+                MyBookmarkListView()
+            }
             .toolbar {
                 // Apple asks for the top of a vertical bar to hold navigation and
                 // prominent actions, so where bars can stand vertically, as on
@@ -84,6 +87,12 @@ struct HotEntryListView: View {
                 } else {
                     ToolbarItem(placement: .topBarLeading) {
                         settingsButton
+                    }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    // A value, like the rows, so that the stack resolves every push the same way.
+                    NavigationLink(value: MyBookmarkListRoute()) {
+                        Label("マイブックマーク", systemImage: "books.vertical")
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
