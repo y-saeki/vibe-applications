@@ -4,9 +4,11 @@ struct SettingsView: View {
     @Environment(ReadHistoryStore.self) private var readHistory
     @Environment(AccountStore.self) private var accounts
     @Environment(MuteStore.self) private var mutes
+    @Environment(WebSessionStore.self) private var webSession
     @Environment(\.dismiss) private var dismiss
     @State private var isConfirmingClear = false
     @State private var isConfirmingSignOut = false
+    @State private var isConfirmingWebSignOut = false
 
     var body: some View {
         Form {
@@ -29,9 +31,29 @@ struct SettingsView: View {
             } header: {
                 Text("はてなアカウント")
             } footer: {
-                if !accounts.canSignIn {
+                if accounts.canSignIn {
+                    Text("ブックマークの保存と、マイブックマークに使います。")
+                } else {
                     Text("このビルドには、はてなの consumer key が入っていません。")
                 }
+            }
+
+            Section {
+                if webSession.isSignedIn {
+                    LabeledContent("状態", value: "ログイン中")
+                    Button("ログアウト", role: .destructive) { isConfirmingWebSignOut = true }
+                        .confirmationDialog("Web からログアウトしますか？", isPresented: $isConfirmingWebSignOut, titleVisibility: .visible) {
+                            Button("ログアウト", role: .destructive) {
+                                Task { await webSession.signOut() }
+                            }
+                        }
+                } else {
+                    WebSignInButton()
+                }
+            } header: {
+                Text("はてなの Web")
+            } footer: {
+                Text("マイホットエントリーに使います。はてなが公式に提供していない方法で読み込むので、予告なく読めなくなることがあります。")
             }
 
             Section {

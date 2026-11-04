@@ -5,6 +5,7 @@ struct TenabukuApp: App {
     @State private var readHistory = ReadHistoryStore()
     @State private var accounts = AccountStore()
     @State private var mutes = MuteStore()
+    @State private var webSession = WebSessionStore()
 
     var body: some Scene {
         WindowGroup {
@@ -12,6 +13,7 @@ struct TenabukuApp: App {
                 .environment(readHistory)
                 .environment(accounts)
                 .environment(mutes)
+                .environment(webSession)
         }
     }
 }
