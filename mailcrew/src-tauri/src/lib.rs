@@ -1,30 +1,8 @@
-mod accounts;
-mod attachments;
-mod auth;
-mod authres;
-mod bimi;
-mod card;
 mod commands;
-mod credentials;
-mod error;
-mod gmail;
-mod image_senders;
 mod links;
-mod mime;
-mod preferences;
-mod sanitize;
-mod views;
 
-use tokio::sync::{oneshot, Mutex};
-
-pub struct AppState {
-    accounts: accounts::Accounts,
-    /// Gives up the sign-in that is waiting for the browser, if any.
-    cancel_sign_in: Mutex<Option<oneshot::Sender<()>>>,
-    brands: bimi::Brands,
-    /// Read from disk on first use.
-    preferences: Mutex<Option<preferences::Preferences>>,
-}
+use mailcrew_core::Core;
+use tauri::Manager;
 
 pub fn run() {
     tauri::Builder::default()
@@ -36,13 +14,8 @@ pub fn run() {
             if let Ok(dir) = commands::opened_dir(app.handle()) {
                 let _ = std::fs::remove_dir_all(dir);
             }
+            app.manage(Core::new(app.path().app_config_dir()?));
             Ok(())
-        })
-        .manage(AppState {
-            accounts: accounts::Accounts::new(),
-            cancel_sign_in: Mutex::new(None),
-            brands: bimi::Brands::new(),
-            preferences: Mutex::new(None),
         })
         .invoke_handler(tauri::generate_handler![
             commands::get_session,

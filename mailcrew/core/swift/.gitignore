@@ -1,0 +1,4 @@
+# Written by build.sh.
+/.build/
+/Sources/mailcrew_coreFFI/mailcrew_coreFFI.h
+/Sources/MailCrewCore/Generated/

@@ -191,6 +191,26 @@ updates:
           - tauri
           - tauri-*
 
+  # The core crate the Tauri app and the native app share. src-tauri's entry
+  # covers the same libraries through its own lockfile; this one keeps
+  # core/Cargo.lock, which the native app builds with, in step.
+  - package-ecosystem: cargo
+    directory: /mailcrew/core
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    labels:
+      - dependencies
+      - no-release
+    commit-message:
+      prefix: mailcrew
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+
   - package-ecosystem: npm
     directory: /mailcrew
     schedule:
