@@ -1,23 +1,90 @@
 import HatenaFeed
+import HatenaShared
+import HatenaUnofficial
 import SwiftUI
+
+/// What the main list shows: one of Hatena's hot entry categories, or the
+/// user's own My hot entries.
+enum EntryListSource: Hashable, Identifiable {
+    case hotEntry(HotEntryCategory)
+    case myHotEntry
+
+    static let allCases: [EntryListSource] = HotEntryCategory.allCases.map(Self.hotEntry) + [.myHotEntry]
+
+    var id: Self { self }
+
+    var displayName: String {
+        switch self {
+        case let .hotEntry(category): category.displayName
+        case .myHotEntry: "マイホットエントリー"
+        }
+    }
+}
 
 @MainActor
 @Observable
 final class HotEntryListModel {
-    var category: HotEntryCategory = .all
+    var source: EntryListSource = .hotEntry(.all)
     private(set) var items: [FeedItem] = []
     private(set) var error: Error?
     private(set) var isLoading = false
+    /// Whether `items` came back for the current source, which tells an empty
+    /// My hot entries apart from one still on its way.
+    private(set) var hasLoaded = false
+    /// Set when My hot entries needs the website login.
+    private(set) var needsWebSignIn = false
 
-    func load() async {
+    func load(webSession: WebSessionStore) async {
+        let source = source
         isLoading = true
         defer { isLoading = false }
         do {
-            items = try await AppServices.feed.hotEntries(category)
+            let items = try await Self.fetch(source, webSession: webSession)
+            // A slow answer for a source the user has since left is dropped.
+            guard source == self.source else { return }
+            self.items = items
             error = nil
+            needsWebSignIn = false
+            hasLoaded = true
+        } catch HatenaError.unauthorized where source == .myHotEntry {
+            guard source == self.source else { return }
+            items = []
+            error = nil
+            needsWebSignIn = true
+            hasLoaded = true
         } catch {
+            guard source == self.source else { return }
             FailureLog.record(error)
             self.error = error
+            needsWebSignIn = false
+            hasLoaded = true
+        }
+    }
+
+    /// Clears what the previous source showed, so that it is not taken for
+    /// the new one while that loads.
+    func didChangeSource() {
+        items = []
+        error = nil
+        needsWebSignIn = false
+        hasLoaded = false
+    }
+
+    private static func fetch(_ source: EntryListSource, webSession: WebSessionStore) async throws -> [FeedItem] {
+        switch source {
+        case let .hotEntry(category):
+            return try await AppServices.feed.hotEntries(category)
+        case .myHotEntry:
+            return try await webSession.myHotEntries().map { entry in
+                FeedItem(
+                    title: entry.title,
+                    link: entry.url,
+                    summary: entry.summary,
+                    date: entry.date,
+                    bookmarkCount: entry.bookmarkCount,
+                    imageURL: entry.imageURL
+                )
+            }
         }
     }
 }
@@ -29,6 +96,7 @@ struct HotEntryListView: View {
     @State private var muting: MuteSource?
     @Environment(ReadHistoryStore.self) private var readHistory
     @Environment(MuteStore.self) private var mutes
+    @Environment(WebSessionStore.self) private var webSession
 
     var body: some View {
         VerticalBarReader { barsMayBeVertical in
@@ -39,6 +107,17 @@ struct HotEntryListView: View {
     private func list(barsMayBeVertical: Bool) -> some View {
         NavigationStack {
             List {
+                if model.needsWebSignIn {
+                    WebSignInPrompt()
+                        .listRowSeparator(.hidden)
+                } else if model.source == .myHotEntry, model.hasLoaded, model.error == nil, model.items.isEmpty {
+                    ContentUnavailableView(
+                        "記事がありません",
+                        systemImage: "tray",
+                        description: Text("お気に入りのユーザーと関心ワードは、はてなの Web で設定します。")
+                    )
+                    .listRowSeparator(.hidden)
+                }
                 if let error = model.error {
                     ErrorBanner(error: error)
                 }
@@ -67,7 +146,7 @@ struct HotEntryListView: View {
                 }
             }
             .listStyle(.plain)
-            .navigationTitle(model.category.displayName)
+            .navigationTitle(model.source.displayName)
             .navigationDestination(for: FeedItem.self) { item in
                 ArticleBrowserView(entry: item)
             }
@@ -97,9 +176,9 @@ struct HotEntryListView: View {
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
-                        Picker("カテゴリー", selection: $model.category) {
-                            ForEach(HotEntryCategory.allCases) { category in
-                                Text(category.displayName).tag(category)
+                        Picker("カテゴリー", selection: $model.source) {
+                            ForEach(EntryListSource.allCases) { source in
+                                Text(source.displayName).tag(source)
                             }
                         }
                     } label: {
@@ -127,8 +206,15 @@ struct HotEntryListView: View {
                     ProgressView()
                 }
             }
-            .refreshable { await model.load() }
-            .task(id: model.category) { await model.load() }
+            .refreshable { await model.load(webSession: webSession) }
+            .task(id: model.source) { await model.load(webSession: webSession) }
+            .onChange(of: model.source) { model.didChangeSource() }
+            // Signing in from the prompt, or from Settings, brings the list in.
+            .onChange(of: webSession.isSignedIn) { _, isSignedIn in
+                if isSignedIn, model.needsWebSignIn {
+                    Task { await model.load(webSession: webSession) }
+                }
+            }
         }
     }
 
