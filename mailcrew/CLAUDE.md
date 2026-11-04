@@ -131,6 +131,7 @@ covers it changes in the same commit:
 | The DMARC, BIMI record and mark certificate checks | `mod tests` in `core/src/bimi.rs` |
 | How preferences are stored | `mod tests` in `core/src/preferences.rs` |
 | A function, object or record the native app calls (`core/src/ffi.rs`) | `mod tests` in `ffi.rs`, and `core/swift/Tests/` for what crosses into Swift |
+| What the native app shows at startup, after a sign-in or sign-out, or how it loads the inbox (`MailCrew/AppModel.swift`) | `MailCrewTests/AppModelTests.swift`, and `FakeCore` for a call it newly makes |
 
 `DEVELOPMENT.md` lists what these tests cannot reach — Google itself, the credential store,
 the browser a link opens in. Assert the `invoke` that was made and leave the rest to the
