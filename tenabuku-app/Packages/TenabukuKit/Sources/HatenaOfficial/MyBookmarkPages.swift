@@ -1,8 +1,39 @@
 import Foundation
 
-/// The pages of one search over the user's bookmarks read so far, so that a
-/// list can read on as it is scrolled.
-public struct MyBookmarkPages: Equatable, Sendable {
+/// One page of a search over the user's bookmarks, to be read next.
+public struct MyBookmarkSearchRequest: Equatable, Sendable {
+    public let query: String
+    public let offset: Int
+
+    public init(query: String, offset: Int) {
+        self.query = query
+        self.offset = offset
+    }
+}
+
+/// A list of the user's bookmarks built from pages of search hits, read on
+/// one page at a time as it is scrolled.
+public protocol MyBookmarkListing: Sendable {
+    /// What to show, in order, without repeats.
+    var hits: [MyBookmarkSearchHit] { get }
+    /// The page to read next, or nil when there is nothing more to show.
+    var nextRequest: MyBookmarkSearchRequest? { get }
+    /// Takes in the answer to `request`. A page asked for under an earlier
+    /// state of the listing is dropped.
+    mutating func receive(_ page: MyBookmarkSearchPage, for request: MyBookmarkSearchRequest)
+    /// Reflects a bookmark the user edited from the list, which the search
+    /// index only catches up with later.
+    mutating func update(_ url: URL, with bookmark: MyBookmark)
+    /// Drops a bookmark the user deleted from the list.
+    mutating func remove(_ url: URL)
+}
+
+extension MyBookmarkListing {
+    public var hasMore: Bool { nextRequest != nil }
+}
+
+/// The pages of one search over the user's bookmarks read so far.
+public struct MyBookmarkPages: MyBookmarkListing, Equatable {
     public let query: String
     public private(set) var hits: [MyBookmarkSearchHit] = []
     /// Matches in total as of the last page, or nil before the first.
@@ -16,12 +47,18 @@ public struct MyBookmarkPages: Equatable, Sendable {
         self.query = query
     }
 
-    /// Whether another page is worth asking for. A page that comes back empty
-    /// ends the list even when `total` says there are more, so that a count
-    /// the index has not caught up with cannot ask for pages forever.
-    public var hasMore: Bool {
-        guard let total else { return true }
-        return !reachedEnd && nextOffset < total
+    /// A page that comes back empty ends the list even when `total` says
+    /// there are more, so that a count the index has not caught up with
+    /// cannot ask for pages forever. Hits past `searchDepth` cannot be read.
+    public var nextRequest: MyBookmarkSearchRequest? {
+        if let total, reachedEnd || nextOffset >= total { return nil }
+        guard nextOffset < BookmarkAPI.searchDepth else { return nil }
+        return MyBookmarkSearchRequest(query: query, offset: nextOffset)
+    }
+
+    public mutating func receive(_ page: MyBookmarkSearchPage, for request: MyBookmarkSearchRequest) {
+        guard request == nextRequest else { return }
+        append(page)
     }
 
     public mutating func append(_ page: MyBookmarkSearchPage) {
@@ -34,14 +71,11 @@ public struct MyBookmarkPages: Equatable, Sendable {
         hits += page.hits.filter { seen.insert($0.id).inserted }
     }
 
-    /// Reflects a bookmark the user edited from the list, which the search
-    /// index only catches up with later.
     public mutating func update(_ url: URL, with bookmark: MyBookmark) {
         guard let index = hits.firstIndex(where: { $0.url == url }) else { return }
         hits[index] = hits[index].updated(with: bookmark)
     }
 
-    /// Drops a bookmark the user deleted from the list.
     public mutating func remove(_ url: URL) {
         guard let index = hits.firstIndex(where: { $0.url == url }) else { return }
         hits.remove(at: index)

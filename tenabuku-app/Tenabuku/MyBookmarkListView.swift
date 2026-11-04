@@ -5,7 +5,12 @@ import SwiftUI
 @MainActor
 @Observable
 final class MyBookmarkListModel {
-    private(set) var pages = MyBookmarkPages(query: BookmarkAPI.everythingQuery)
+    /// The search the list shows, or an empty string for every bookmark.
+    private(set) var query = ""
+    private(set) var listing: any MyBookmarkListing = MyBookmarkTimeline()
+    /// Whether a page has come back for `query`, which tells an empty list
+    /// apart from one still on its way.
+    private(set) var hasLoaded = false
     private(set) var error: Error?
     private(set) var isLoading = false
     /// Bumped by every reload, so that a page still on its way for the
@@ -14,37 +19,47 @@ final class MyBookmarkListModel {
 
     static let pageSize = 50
 
-    /// Starts over from the first page of `query`.
+    /// Starts over from the newest bookmark matching `query`.
     func reload(_ query: String, api: BookmarkAPI, accounts: AccountStore) async {
         generation += 1
-        pages = MyBookmarkPages(query: query)
+        self.query = query
+        listing = query.isEmpty ? MyBookmarkTimeline() : MyBookmarkPages(query: query)
+        hasLoaded = false
         error = nil
         await fetch(api: api, accounts: accounts)
     }
 
     func loadMore(api: BookmarkAPI, accounts: AccountStore) async {
-        guard pages.hasMore, !isLoading else { return }
+        guard listing.hasMore, !isLoading else { return }
         await fetch(api: api, accounts: accounts)
     }
 
     func didChange(_ url: URL, to bookmark: MyBookmark?) {
         if let bookmark {
-            pages.update(url, with: bookmark)
+            listing.update(url, with: bookmark)
         } else {
-            pages.remove(url)
+            listing.remove(url)
         }
     }
 
+    /// Reads pages until the list grows or has nothing more. The timeline
+    /// shows nothing until both of its searches have answered, so one call
+    /// can take more than one page.
     private func fetch(api: BookmarkAPI, accounts: AccountStore) async {
         let generation = generation
         isLoading = true
         defer {
             if generation == self.generation { isLoading = false }
         }
+        let shown = listing.hits.count
         do {
-            let page = try await api.search(pages.query, offset: pages.nextOffset, limit: Self.pageSize)
-            guard generation == self.generation else { return }
-            pages.append(page)
+            while let request = listing.nextRequest {
+                let page = try await api.search(request.query, offset: request.offset, limit: Self.pageSize)
+                guard generation == self.generation else { return }
+                listing.receive(page, for: request)
+                if listing.hits.count > shown { break }
+            }
+            hasLoaded = true
             error = nil
         } catch {
             guard generation == self.generation else { return }
@@ -79,8 +94,9 @@ private struct MyBookmarkList: View {
     @State private var model = MyBookmarkListModel()
     @State private var searchText = ""
     /// What was last submitted, as opposed to what is being typed: every
-    /// search is a request, so it waits for the return key.
-    @State private var query = BookmarkAPI.everythingQuery
+    /// search is a request, so it waits for the return key. Empty lists
+    /// every bookmark.
+    @State private var query = ""
     @State private var editing: MyBookmarkSearchHit?
     @Environment(AccountStore.self) private var accounts
     @Environment(ReadHistoryStore.self) private var readHistory
@@ -96,7 +112,7 @@ private struct MyBookmarkList: View {
             if let error = model.error {
                 ErrorBanner(error: error)
             }
-            ForEach(model.pages.hits) { hit in
+            ForEach(model.listing.hits) { hit in
                 // A value the hot entry list's stack already knows how to open.
                 NavigationLink(value: FeedItem(title: hit.title, link: hit.url, bookmarkCount: hit.bookmarkCount)) {
                     MyBookmarkRow(hit: hit, isRead: readHistory.isRead(hit.url))
@@ -106,8 +122,15 @@ private struct MyBookmarkList: View {
                         .tint(.blue)
                 }
             }
-            if !model.pages.hits.isEmpty && model.pages.hasMore {
+            if !model.listing.hits.isEmpty && model.listing.hasMore {
                 footer
+            }
+            if let timeline = model.listing as? MyBookmarkTimeline, timeline.isCutShort {
+                Text("これより前のブックマークは、検索すると見つかります")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity)
+                    .listRowSeparator(.hidden)
             }
         }
         .listStyle(.plain)
@@ -117,10 +140,10 @@ private struct MyBookmarkList: View {
         }
         .onChange(of: searchText) { _, text in
             // Clearing the field, or its cancel button, goes back to the whole list.
-            if text.isEmpty { query = BookmarkAPI.everythingQuery }
+            if text.isEmpty { query = "" }
         }
         .overlay {
-            if model.pages.hits.isEmpty {
+            if model.listing.hits.isEmpty {
                 emptyState
             }
         }
@@ -145,7 +168,7 @@ private struct MyBookmarkList: View {
             ProgressView()
                 .frame(maxWidth: .infinity)
                 .listRowSeparator(.hidden)
-                .task(id: model.pages.nextOffset) { await model.loadMore(api: api, accounts: accounts) }
+                .task(id: model.listing.hits.count) { await model.loadMore(api: api, accounts: accounts) }
         } else {
             Button("続きを読み込む") { Task { await model.loadMore(api: api, accounts: accounts) } }
                 .frame(maxWidth: .infinity)
@@ -157,11 +180,11 @@ private struct MyBookmarkList: View {
     private var emptyState: some View {
         if model.isLoading {
             ProgressView()
-        } else if model.error == nil && model.pages.total != nil {
-            if model.pages.query.isEmpty {
+        } else if model.error == nil && model.hasLoaded {
+            if model.query.isEmpty {
                 ContentUnavailableView("ブックマークはまだありません", systemImage: "bookmark")
             } else {
-                ContentUnavailableView.search(text: model.pages.query)
+                ContentUnavailableView.search(text: model.query)
             }
         }
     }

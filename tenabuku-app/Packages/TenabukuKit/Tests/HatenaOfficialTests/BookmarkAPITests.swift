@@ -78,15 +78,14 @@ final class BookmarkAPITests: XCTestCase {
         )
     }
 
-    func testListingSearchesWithAnEmptyQuery() async throws {
+    func testSearchStopsShortOfTheDepthItCanRead() async throws {
         let transport = StubTransport(body: #"{"bookmarks":[],"meta":{"total":0}}"#)
 
-        let result = try await api(transport).search(BookmarkAPI.everythingQuery, offset: 40, limit: 20)
+        _ = try await api(transport).search("https", offset: 9_980, limit: 50)
 
-        XCTAssertEqual(result.total, 0)
         XCTAssertEqual(
             transport.requests.first?.url?.absoluteString,
-            "https://b.hatena.ne.jp/my/search/json?q=&of=40&limit=20"
+            "https://b.hatena.ne.jp/my/search/json?q=https&of=9980&limit=20"
         )
     }
 
@@ -237,7 +236,7 @@ final class MyBookmarkPagesTests: XCTestCase {
 
     func testReadsOnUntilTheTotal() {
         var pages = MyBookmarkPages(query: "")
-        XCTAssertTrue(pages.hasMore)
+        XCTAssertEqual(pages.nextRequest, MyBookmarkSearchRequest(query: "", offset: 0))
         XCTAssertNil(pages.total)
 
         pages.append(page(total: 3, "a", "b"))
@@ -274,6 +273,20 @@ final class MyBookmarkPagesTests: XCTestCase {
         XCTAssertTrue(pages.hasMore)
     }
 
+    func testAPageAnsweringAnEarlierRequestIsDropped() {
+        var pages = MyBookmarkPages(query: "swift")
+        pages.receive(page(total: 3, "a"), for: MyBookmarkSearchRequest(query: "swift", offset: 0))
+        pages.receive(page(total: 3, "a"), for: MyBookmarkSearchRequest(query: "swift", offset: 0))
+        XCTAssertEqual(pages.hits.map(\.title), ["a"])
+        XCTAssertEqual(pages.nextOffset, 1)
+    }
+
+    func testNothingPastTheSearchDepthIsAskedFor() {
+        var pages = MyBookmarkPages(query: "swift")
+        pages.append(MyBookmarkSearchPage(total: 20_000, hits: (0..<BookmarkAPI.searchDepth).map { hit("\($0)") }))
+        XCTAssertNil(pages.nextRequest)
+    }
+
     func testUpdatingAHitTakesTheSavedCommentAndPrivacy() {
         var pages = MyBookmarkPages(query: "")
         pages.append(page(total: 1, "a"))
@@ -284,5 +297,104 @@ final class MyBookmarkPagesTests: XCTestCase {
         XCTAssertEqual(pages.hits.first?.comment, "よい")
         XCTAssertEqual(pages.hits.first?.isPrivate, true)
         XCTAssertEqual(pages.hits.first?.title, "a")
+    }
+}
+
+final class MyBookmarkTimelineTests: XCTestCase {
+    /// A hit bookmarked `minutesAgo` before a fixed moment.
+    private func hit(_ path: String, _ minutesAgo: Int, scheme: String = "https") -> MyBookmarkSearchHit {
+        MyBookmarkSearchHit(
+            title: path,
+            url: URL(string: "\(scheme)://example.com/\(path)")!,
+            bookmarkCount: 1,
+            snippet: "",
+            comment: "",
+            isPrivate: false,
+            bookmarkedAt: Date(timeIntervalSince1970: 1_800_000_000 - TimeInterval(minutesAgo * 60))
+        )
+    }
+
+    /// Answers whatever the timeline asks for next with `hits`.
+    private func answer(_ timeline: inout MyBookmarkTimeline, total: Int, _ hits: MyBookmarkSearchHit...) {
+        guard let request = timeline.nextRequest else { return XCTFail("nothing was asked for") }
+        timeline.receive(MyBookmarkSearchPage(total: total, hits: hits), for: request)
+    }
+
+    func testAsksForBothSchemesBeforeShowingAnything() {
+        var timeline = MyBookmarkTimeline()
+        XCTAssertEqual(timeline.nextRequest, MyBookmarkSearchRequest(query: "https", offset: 0))
+
+        answer(&timeline, total: 2, hit("a", 1), hit("b", 3))
+        XCTAssertEqual(timeline.hits, [])
+        XCTAssertEqual(timeline.nextRequest, MyBookmarkSearchRequest(query: "http", offset: 0))
+    }
+
+    func testInterleavesBothSearchesNewestFirst() {
+        var timeline = MyBookmarkTimeline()
+        answer(&timeline, total: 2, hit("a", 1), hit("c", 3))
+        answer(&timeline, total: 2, hit("b", 2, scheme: "http"), hit("d", 4, scheme: "http"))
+
+        XCTAssertEqual(timeline.hits.map(\.title), ["a", "b", "c", "d"])
+        XCTAssertFalse(timeline.hasMore)
+        XCTAssertFalse(timeline.isCutShort)
+    }
+
+    func testWaitsForTheNextPageOfASearchThatRanDry() {
+        var timeline = MyBookmarkTimeline()
+        answer(&timeline, total: 3, hit("a", 1), hit("c", 3))
+        answer(&timeline, total: 1, hit("b", 2, scheme: "http"))
+
+        // "https" has a third hit that may be newer than anything waiting.
+        XCTAssertEqual(timeline.hits.map(\.title), ["a", "b", "c"])
+        XCTAssertEqual(timeline.nextRequest, MyBookmarkSearchRequest(query: "https", offset: 2))
+
+        answer(&timeline, total: 3, hit("e", 5))
+        XCTAssertEqual(timeline.hits.map(\.title), ["a", "b", "c", "e"])
+        XCTAssertFalse(timeline.hasMore)
+    }
+
+    func testABookmarkBothSearchesHoldIsShownOnce() {
+        var timeline = MyBookmarkTimeline()
+        answer(&timeline, total: 2, hit("a", 1), hit("b", 2))
+        answer(&timeline, total: 1, hit("a", 1))
+
+        XCTAssertEqual(timeline.hits.map(\.title), ["a", "b"])
+    }
+
+    func testEndsWhereASearchCanReadNoDeeper() {
+        var timeline = MyBookmarkTimeline()
+        let deep = (0..<BookmarkAPI.searchDepth).map { hit("s\($0)", $0 * 2) }
+        timeline.receive(
+            MyBookmarkSearchPage(total: 20_000, hits: deep),
+            for: MyBookmarkSearchRequest(query: "https", offset: 0)
+        )
+        answer(&timeline, total: 20_000, hit("old", BookmarkAPI.searchDepth * 3, scheme: "http"))
+
+        XCTAssertEqual(timeline.hits.count, BookmarkAPI.searchDepth)
+        XCTAssertTrue(timeline.isCutShort)
+        XCTAssertNil(timeline.nextRequest)
+    }
+
+    func testRemovingABookmarkPullsBackTheSearchesThatHeldIt() {
+        var timeline = MyBookmarkTimeline()
+        answer(&timeline, total: 3, hit("a", 1), hit("c", 3))
+        answer(&timeline, total: 1, hit("b", 2, scheme: "http"))
+
+        timeline.remove(URL(string: "https://example.com/a")!)
+
+        XCTAssertEqual(timeline.hits.map(\.title), ["b", "c"])
+        XCTAssertEqual(timeline.nextRequest, MyBookmarkSearchRequest(query: "https", offset: 1))
+    }
+
+    func testUpdatingABookmarkTakesTheSavedComment() {
+        var timeline = MyBookmarkTimeline()
+        answer(&timeline, total: 1, hit("a", 1))
+        answer(&timeline, total: 0)
+        let saved = MyBookmark(user: "sample", comment: "よい", tags: [], isPrivate: true, createdAt: nil, permalink: nil)
+
+        timeline.update(URL(string: "https://example.com/a")!, with: saved)
+
+        XCTAssertEqual(timeline.hits.first?.comment, "よい")
+        XCTAssertEqual(timeline.hits.first?.isPrivate, true)
     }
 }
