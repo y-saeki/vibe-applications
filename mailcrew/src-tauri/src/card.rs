@@ -1,8 +1,11 @@
 //! Turning a Gmail thread into what one card shows, and a message into the
 //! body a card shows once it comes near the screen.
 
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 
+use crate::attachments;
 use crate::authres::Authentication;
 use crate::mime::{self, MessagePart};
 use crate::sanitize::sanitize_html;
@@ -77,6 +80,92 @@ pub struct Card {
     pub snippet: String,
 }
 
+/// Where a part's bytes are: sent along with the message, or to be fetched
+/// with `messages.attachments.get`.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum PartSource {
+    /// base64url, as Gmail sent it.
+    Data(String),
+    /// The attachment id, valid for the message as it was fetched.
+    Fetch(String),
+    #[default]
+    Missing,
+}
+
+impl PartSource {
+    fn of(part: &MessagePart) -> Self {
+        match (&part.body.data, &part.body.attachment_id) {
+            (Some(data), _) => Self::Data(data.clone()),
+            (None, Some(id)) => Self::Fetch(id.clone()),
+            (None, None) => Self::Missing,
+        }
+    }
+}
+
+/// A file attached to a message.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Attachment {
+    /// The part's id within the message, which names it to the commands that
+    /// open and save it.
+    pub id: String,
+    pub name: String,
+    pub mime_type: String,
+    /// Bytes.
+    pub size: u64,
+    /// Whether Mail Crew opens it (`attachments::is_openable`); otherwise it
+    /// can only be saved.
+    pub openable: bool,
+    #[serde(skip)]
+    pub source: PartSource,
+}
+
+/// An image the HTML body shows from inside the message.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EmbeddedImage {
+    /// In lower case, as `cid:` URLs are compared.
+    pub content_id: String,
+    pub mime_type: String,
+    pub size: u64,
+    pub source: PartSource,
+}
+
+/// The images the message's HTML body shows from inside the message.
+pub fn embedded_images(message: &Message) -> Vec<EmbeddedImage> {
+    let payload = &message.payload;
+    let mime::Body::Html(html) = payload.body() else {
+        return Vec::new();
+    };
+    payload
+        .embedded_images(&html)
+        .into_iter()
+        .filter_map(|part| {
+            Some(EmbeddedImage {
+                content_id: part.content_id()?.to_ascii_lowercase(),
+                mime_type: part.mime_type.to_ascii_lowercase(),
+                size: part.body.size,
+                source: PartSource::of(part),
+            })
+        })
+        .collect()
+}
+
+/// An image's bytes as a `data:` URL, for an image type and nothing else.
+pub fn data_url(mime_type: &str, bytes: &[u8]) -> Option<String> {
+    use base64::Engine as _;
+    let subtype = mime_type.strip_prefix("image/")?;
+    let plain = !subtype.is_empty()
+        && subtype
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '+' | '-'));
+    plain.then(|| {
+        format!(
+            "data:{mime_type};base64,{}",
+            base64::engine::general_purpose::STANDARD.encode(bytes)
+        )
+    })
+}
+
 /// The body of the message a card shows, fetched apart from the card: a full
 /// message costs Gmail quota several times what its headers do, so it is
 /// fetched only for the cards that come near the screen.
@@ -84,7 +173,7 @@ pub struct Card {
 #[serde(rename_all = "camelCase")]
 pub struct MessageContent {
     pub body: CardBody,
-    pub attachments: Vec<String>,
+    pub attachments: Vec<Attachment>,
     /// What Gmail found when it checked the sender.
     pub authentication: Authentication,
     /// The author's address when the message names exactly one, which BIMI
@@ -94,12 +183,16 @@ pub struct MessageContent {
 }
 
 impl MessageContent {
-    /// From a message fetched with `format=full`.
-    pub fn from_message(message: &Message) -> Self {
+    /// From a message fetched with `format=full`. `images` maps the content
+    /// ids of the images its body shows from inside it, in lower case, to
+    /// `data:` URLs of them.
+    pub fn from_message(message: &Message, images: &HashMap<String, String>) -> Self {
         let payload = &message.payload;
+        let mut embedded = Vec::new();
         let body = match payload.body() {
             mime::Body::Html(html) => {
-                let clean = sanitize_html(&html);
+                embedded = payload.embedded_images(&html);
+                let clean = sanitize_html(&html, images);
                 CardBody::Html {
                     html: clean.html,
                     remote_images: clean.remote_images,
@@ -108,9 +201,24 @@ impl MessageContent {
             mime::Body::Text(text) => CardBody::Text { text },
             mime::Body::Empty => CardBody::Empty,
         };
+        let attachments = payload
+            .attachments(&embedded)
+            .into_iter()
+            .map(|part| {
+                let name = part.file_name();
+                Attachment {
+                    id: part.part_id.clone(),
+                    openable: attachments::is_openable(&name),
+                    name,
+                    mime_type: part.mime_type.clone(),
+                    size: part.body.size,
+                    source: PartSource::of(part),
+                }
+            })
+            .collect();
         Self {
             body,
-            attachments: payload.attachments(),
+            attachments,
             authentication: Authentication::from_headers(headers(
                 payload,
                 "Authentication-Results",
@@ -327,7 +435,7 @@ mod tests {
         ))
         .unwrap();
         assert_eq!(
-            MessageContent::from_message(&message),
+            MessageContent::from_message(&message, &HashMap::new()),
             MessageContent {
                 body: CardBody::Html {
                     html: "<p>two</p>".into(),
@@ -357,7 +465,7 @@ mod tests {
         );
         headers.push(serde_json::json!({ "name": "Authentication-Results", "value": "mx.google.com; dmarc=fail" }));
         let message: Message = serde_json::from_value(value).unwrap();
-        let content = MessageContent::from_message(&message);
+        let content = MessageContent::from_message(&message, &HashMap::new());
         assert!(content.authentication.dmarc_passed());
         assert_eq!(content.author.as_deref(), Some("news@shop.example"));
     }
@@ -407,7 +515,14 @@ mod tests {
                 html: "x".into(),
                 remote_images: true,
             },
-            attachments: vec!["a.pdf".into()],
+            attachments: vec![Attachment {
+                id: "2".into(),
+                name: "a.pdf".into(),
+                mime_type: "application/pdf".into(),
+                size: 1024,
+                openable: true,
+                source: PartSource::Fetch("ANGjdJ".into()),
+            }],
             authentication: Authentication {
                 spf: None,
                 dkim: None,
@@ -422,7 +537,13 @@ mod tests {
             serde_json::to_value(content).unwrap(),
             serde_json::json!({
                 "body": { "kind": "html", "html": "x", "remoteImages": true },
-                "attachments": ["a.pdf"],
+                "attachments": [{
+                    "id": "2",
+                    "name": "a.pdf",
+                    "mimeType": "application/pdf",
+                    "size": 1024,
+                    "openable": true
+                }],
                 "authentication": {
                     "spf": null,
                     "dkim": null,
@@ -434,6 +555,108 @@ mod tests {
             serde_json::to_value(CardBody::Empty).unwrap(),
             serde_json::json!({ "kind": "empty" })
         );
+    }
+
+    #[test]
+    fn a_message_lists_its_attachments_and_embeds_its_images() {
+        let html = r#"<p>hi</p><img src="cid:logo@shop.example">"#;
+        let b64 = |bytes: &[u8]| base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+        let message: Message = serde_json::from_value(serde_json::json!({
+            "id": "m1",
+            "payload": {
+                "partId": "",
+                "mimeType": "multipart/mixed",
+                "headers": [{ "name": "From", "value": "a@example.com" }],
+                "parts": [
+                    {
+                        "partId": "0",
+                        "mimeType": "multipart/related",
+                        "parts": [
+                            {
+                                "partId": "0.0",
+                                "mimeType": "text/html",
+                                "headers": [{ "name": "Content-Type", "value": "text/html; charset=utf-8" }],
+                                "body": { "data": b64(html.as_bytes()), "size": html.len() }
+                            },
+                            {
+                                "partId": "0.1",
+                                "mimeType": "image/png",
+                                "filename": "logo.png",
+                                "headers": [{ "name": "Content-ID", "value": "<Logo@shop.example>" }],
+                                "body": { "attachmentId": "IMG", "size": 300 }
+                            }
+                        ]
+                    },
+                    {
+                        "partId": "1",
+                        "mimeType": "application/x-msdownload",
+                        "filename": "setup.exe",
+                        "body": { "attachmentId": "EXE", "size": 5000 }
+                    },
+                    {
+                        "partId": "2",
+                        "mimeType": "text/plain",
+                        "filename": "memo.txt",
+                        "body": { "data": b64(b"memo"), "size": 4 }
+                    }
+                ]
+            }
+        }))
+        .unwrap();
+        assert_eq!(
+            embedded_images(&message),
+            vec![EmbeddedImage {
+                content_id: "logo@shop.example".into(),
+                mime_type: "image/png".into(),
+                size: 300,
+                source: PartSource::Fetch("IMG".into()),
+            }]
+        );
+        let images = HashMap::from([(
+            "logo@shop.example".to_string(),
+            data_url("image/png", b"png").unwrap(),
+        )]);
+        let content = MessageContent::from_message(&message, &images);
+        assert_eq!(
+            content.body,
+            CardBody::Html {
+                html: r#"<p>hi</p><img src="data:image/png;base64,cG5n">"#.into(),
+                remote_images: false
+            }
+        );
+        assert_eq!(
+            content.attachments,
+            vec![
+                Attachment {
+                    id: "1".into(),
+                    name: "setup.exe".into(),
+                    mime_type: "application/x-msdownload".into(),
+                    size: 5000,
+                    openable: false,
+                    source: PartSource::Fetch("EXE".into()),
+                },
+                Attachment {
+                    id: "2".into(),
+                    name: "memo.txt".into(),
+                    mime_type: "text/plain".into(),
+                    size: 4,
+                    openable: true,
+                    source: PartSource::Data(b64(b"memo")),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn only_images_become_data_urls() {
+        assert_eq!(
+            data_url("image/gif", b"GIF").as_deref(),
+            Some("data:image/gif;base64,R0lG")
+        );
+        assert!(data_url("image/svg+xml", b"x").is_some());
+        assert_eq!(data_url("text/html", b"<script>"), None);
+        assert_eq!(data_url("image/png;x=\"y\"", b"x"), None);
+        assert_eq!(data_url("image/", b"x"), None);
     }
 
     #[test]

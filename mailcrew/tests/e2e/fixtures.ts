@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs'
 
 import { test as base, expect, type Locator, type Page } from '@playwright/test'
 
-import type { CardBody } from '../../src/backend'
+import type { Attachment, CardBody } from '../../src/backend'
 import type { BackendConfig, Call, TestCard } from './harness/backend'
 import { HARNESS_BUNDLE } from './harness/paths'
 
@@ -81,6 +81,11 @@ export function card(n: number, overrides: Partial<TestCard> = {}): TestCard {
     brand: { bimi: 'none', domain: '', mark: 'none', logo: null },
     ...overrides,
   }
+}
+
+/** An attachment as the Rust side lists it; `id` is its part id. */
+export function attachment(id: string, name: string, overrides: Partial<Attachment> = {}): Attachment {
+  return { id, name, mimeType: 'application/octet-stream', size: 2048, openable: true, ...overrides }
 }
 
 export function cards(count: number): TestCard[] {

@@ -52,10 +52,22 @@ export interface Authentication {
   dmarc: Check | null
 }
 
+/** A file attached to a message. Mirrors `Attachment` in src-tauri/src/card.rs. */
+export interface Attachment {
+  /** The part's id within the message; the open and save commands take it. */
+  id: string
+  name: string
+  mimeType: string
+  /** Bytes. */
+  size: number
+  /** Whether Mail Crew opens it; otherwise it can only be saved. */
+  openable: boolean
+}
+
 /** The body of the message a card shows. Mirrors `MessageContent` in src-tauri/src/card.rs. */
 export interface MessageContent {
   body: CardBody
-  attachments: string[]
+  attachments: Attachment[]
   authentication: Authentication
 }
 
@@ -140,6 +152,12 @@ export const backend = {
   message: (account: string, messageId: string) => invoke<MessageContent>('get_message', { account, messageId }),
   /** Null when the user turned the lookups off. */
   brand: (account: string, messageId: string) => invoke<Brand | null>('get_brand', { account, messageId }),
+  /** Opens an attachment in the app the OS picks; only kinds marked `openable`. */
+  openAttachment: (account: string, messageId: string, attachmentId: string) =>
+    invoke<void>('open_attachment', { account, messageId, attachmentId }),
+  /** Saves an attachment to the downloads folder; resolves with the name it was saved under. */
+  saveAttachment: (account: string, messageId: string, attachmentId: string) =>
+    invoke<string>('save_attachment', { account, messageId, attachmentId }),
   preferences: () => invoke<Preferences>('get_preferences'),
   savePreferences: (preferences: Preferences) => invoke<void>('save_preferences', { preferences }),
   labels: (account: string) => invoke<Label[]>('list_labels', { account }),

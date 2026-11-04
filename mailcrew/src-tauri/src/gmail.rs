@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
 use crate::auth::{self, AccessToken};
-use crate::card::{Card, Message, MessageContent, Thread};
+use crate::card::{self, Attachment, Card, Message, MessageContent, PartSource, Thread};
 use crate::credentials::Account;
 use crate::error::{CommandError, ErrorKind, Result};
 
@@ -34,6 +34,12 @@ const MAX_BACKOFF: Duration = Duration::from_secs(32);
 const CACHE_LIMIT: usize = 1000;
 /// How many message bodies each account keeps.
 const CONTENT_CACHE_LIMIT: usize = 200;
+/// How many of the images a body embeds are fetched; each costs 20 quota
+/// units. The rest are left out of the body.
+const EMBEDDED_IMAGE_LIMIT: usize = 20;
+/// The most bytes of embedded images one body takes in, counting each image
+/// whole. They are kept with the body in memory.
+const EMBEDDED_BYTES_LIMIT: u64 = 5 * 1024 * 1024;
 
 /// The label "あとで読む" puts on a thread.
 pub const SET_ASIDE_LABEL: &str = "SetAside";
@@ -336,7 +342,8 @@ impl Gmail {
             .collect())
     }
 
-    /// The body and attachments of one message.
+    /// The body and attachments of one message, with the images its body
+    /// embeds fetched and put in.
     pub async fn message(&self, id: &str) -> Result<MessageContent> {
         if let Some(content) = self.contents.lock().await.get(id) {
             return Ok(content.clone());
@@ -347,13 +354,104 @@ impl Gmail {
                     .query(&[("format", "full")])
             })
             .await?;
-        let content = MessageContent::from_message(&message);
-        let mut contents = self.contents.lock().await;
-        if contents.len() >= CONTENT_CACHE_LIMIT {
-            contents.clear();
+        let (images, complete) = self.embedded_images(id, &message).await;
+        let content = MessageContent::from_message(&message, &images);
+        // A body missing an image it could have had is fetched again next time.
+        if complete {
+            let mut contents = self.contents.lock().await;
+            if contents.len() >= CONTENT_CACHE_LIMIT {
+                contents.clear();
+            }
+            contents.insert(id.to_string(), content.clone());
         }
-        contents.insert(id.to_string(), content.clone());
         Ok(content)
+    }
+
+    /// The images the message's body embeds, by content id, as `data:` URLs,
+    /// within `EMBEDDED_IMAGE_LIMIT` and `EMBEDDED_BYTES_LIMIT`; and whether
+    /// none failed to come. A failure leaves the image out, not the body.
+    async fn embedded_images(
+        &self,
+        id: &str,
+        message: &Message,
+    ) -> (HashMap<String, String>, bool) {
+        let mut budget = EMBEDDED_BYTES_LIMIT;
+        let wanted: Vec<_> = card::embedded_images(message)
+            .into_iter()
+            .filter(|image| {
+                let fits = image.size <= budget;
+                if fits {
+                    budget -= image.size;
+                }
+                fits
+            })
+            .take(EMBEDDED_IMAGE_LIMIT)
+            .collect();
+        let fetched: Vec<_> = futures::stream::iter(wanted)
+            .map(|image| async move {
+                let url = self
+                    .part_bytes(id, &image.source)
+                    .await
+                    .ok()
+                    .and_then(|bytes| card::data_url(&image.mime_type, &bytes));
+                (image.content_id, url)
+            })
+            .buffered(FETCH_CONCURRENCY)
+            .collect()
+            .await;
+        let complete = fetched.iter().all(|(_, url)| url.is_some());
+        let images = fetched
+            .into_iter()
+            .filter_map(|(content_id, url)| Some((content_id, url?)))
+            .collect();
+        (images, complete)
+    }
+
+    /// The bytes of one part of a message, fetched when Gmail did not send
+    /// them with it (20 quota units).
+    async fn part_bytes(&self, message_id: &str, source: &PartSource) -> Result<Vec<u8>> {
+        #[derive(Deserialize)]
+        struct PartBody {
+            #[serde(default)]
+            data: String,
+        }
+        let data = match source {
+            PartSource::Data(data) => data.clone(),
+            PartSource::Fetch(attachment_id) => {
+                self.send::<PartBody>(|http| {
+                    http.get(format!(
+                        "{API}/messages/{message_id}/attachments/{attachment_id}"
+                    ))
+                })
+                .await?
+                .data
+            }
+            PartSource::Missing => String::new(),
+        };
+        crate::mime::decode_base64url(&data).ok_or_else(|| {
+            CommandError::new(
+                ErrorKind::Google,
+                "Gmail から受け取った添付ファイルを読み取れませんでした",
+            )
+        })
+    }
+
+    /// One attachment of a message, named by its part id, with its bytes.
+    pub async fn attachment(
+        &self,
+        message_id: &str,
+        part_id: &str,
+    ) -> Result<(Attachment, Vec<u8>)> {
+        let content = self.message(message_id).await?;
+        let attachment = content
+            .attachments
+            .into_iter()
+            .find(|attachment| attachment.id == part_id)
+            .ok_or_else(|| {
+                CommandError::new(ErrorKind::Internal, "添付ファイルが見つかりません")
+            })?;
+        let bytes = self.part_bytes(message_id, &attachment.source).await?;
+        Ok((attachment, bytes))
     }
 
     /// The labels the user made, by name.
