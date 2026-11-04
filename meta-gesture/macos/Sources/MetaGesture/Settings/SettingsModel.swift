@@ -14,6 +14,24 @@ struct Candidate: Hashable {
     let name: String
 }
 
+/// The menu dialog: which line it is for, the running applications it can
+/// list the menus of, and the one it lists.
+struct MenuPicking {
+    let line: Int
+    let apps: [Candidate]
+    var app: String?
+    /// What the dialog says when none of the applications is running.
+    let notRunning: String
+    /// The menus are being read.
+    var loading: Bool
+}
+
+/// What a line takes from the chosen menu item.
+enum MenuUse {
+    case keys
+    case item
+}
+
 /// What the settings window shows, read back from the library's editor after
 /// every change. The window reports clicks and typing here and draws what
 /// comes back; what a change does is the editor's to decide.
@@ -43,6 +61,18 @@ final class SettingsModel: ObservableObject {
     /// The recording dialog is open for the line of keys `.0`, with the caps
     /// recorded so far.
     @Published private(set) var recording: (line: Int, caps: [String], complete: Bool)?
+
+    /// The menu dialog is open for the line of keys `line`, choosing from the
+    /// menu bar of one of `apps`.
+    @Published private(set) var menuPicking: MenuPicking?
+    /// The menu dialog's search, which starts out as the command's name.
+    @Published var menuQuery = "" {
+        didSet { searchMenus() }
+    }
+    @Published private(set) var menuLines: [MenuLine] = []
+    /// The menu dialog's selected item, by its place in the catalog.
+    @Published var menuItem: UInt32?
+    private var catalog: MenuCatalog?
 
     /// The window asks to close itself; whoever opened it does the closing.
     var onClose: () -> Void = {}
@@ -187,6 +217,86 @@ final class SettingsModel: ObservableObject {
         }
     }
 
+    // MARK: Menus
+
+    /// 'メニューから選ぶ...' on the line of keys `line`: the applications whose
+    /// menus can be chosen from are the line's, or for the first line any
+    /// of the set's, of those that are running.
+    func startPickingMenu(_ line: Int) {
+        let candidates: [Candidate]
+        if line > 0 {
+            guard line - 1 < apps.count else { return }
+            candidates = [Candidate(id: apps[line - 1].id, name: apps[line - 1].name)]
+        } else if isCommon {
+            candidates = running
+        } else {
+            candidates = apps.map { Candidate(id: $0.id, name: $0.name) }
+        }
+        let open = candidates.filter { !NSRunningApplication.runningApplications(withBundleIdentifier: $0.id).isEmpty }
+        let notRunning: String
+        if line > 0 {
+            notRunning = "\(apps[line - 1].name) が起動していません"
+        } else {
+            notRunning = "セットのアプリが起動していません"
+        }
+        menuPicking = MenuPicking(line: line, apps: open, app: open.first?.id, notRunning: notRunning, loading: false)
+        menuQuery = commandName
+        readMenus()
+    }
+
+    /// Chooses whose menus the dialog lists.
+    func pickMenuApp(_ id: String) {
+        guard menuPicking != nil, menuPicking?.app != id else { return }
+        menuPicking?.app = id
+        readMenus()
+    }
+
+    /// Reads the menus of the dialog's application, off the main thread, as
+    /// the accessibility API asks the application for every item.
+    private func readMenus() {
+        catalog = nil
+        menuLines = []
+        menuItem = nil
+        guard let id = menuPicking?.app,
+              let pid = NSRunningApplication.runningApplications(withBundleIdentifier: id).first?.processIdentifier
+        else { return }
+        menuPicking?.loading = true
+        Task {
+            let entries = await withCheckedContinuation { (done: CheckedContinuation<[MenuEntry], Never>) in
+                DispatchQueue.global(qos: .userInitiated).async {
+                    done.resume(returning: Menus.entries(of: pid))
+                }
+            }
+            // Another application may have been chosen meanwhile.
+            guard menuPicking?.app == id else { return }
+            menuPicking?.loading = false
+            catalog = MenuCatalog(entries: entries)
+            searchMenus()
+        }
+    }
+
+    private func searchMenus() {
+        menuLines = catalog?.search(query: menuQuery) ?? []
+        if let item = menuItem, !menuLines.contains(where: { $0.item == item }) {
+            menuItem = nil
+        }
+    }
+
+    /// The dialog closed: with the chosen item's shortcut as the line's keys
+    /// (`.keys`), with the item itself (`.item`), or with nothing.
+    func endPickingMenu(_ use: MenuUse?) {
+        guard let line = menuPicking?.line else { return }
+        menuPicking = nil
+        defer { catalog = nil }
+        guard let use, let item = menuItem, let catalog else { return }
+        change {
+            switch use {
+            case .keys: editor.useMenuKeys(line: UInt32(line), catalog: catalog, item: item)
+            case .item: editor.useMenuItem(line: UInt32(line), catalog: catalog, item: item)
+            }
+        }
+    }
+
     // MARK: Closing
 
     var isChanged: Bool {
@@ -240,7 +350,7 @@ final class SettingsModel: ObservableObject {
 
     /// キャンセル, or the window's close button.
     func cancel() {
-        if isRecording { return }
+        if isRecording || menuPicking != nil { return }
         if isChanged {
             confirming = true
         } else {

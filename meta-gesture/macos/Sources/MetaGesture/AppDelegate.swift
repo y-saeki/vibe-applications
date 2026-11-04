@@ -101,6 +101,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case let .send(command, code, flags):
             toast.show(command)
             Sender.send(code: code, flags: flags, to: app)
+        case let .menu(command, path):
+            toast.show(command)
+            Sender.choose(path, in: app) { [weak self] pressed in
+                switch pressed {
+                case .done: break
+                case .missing: self?.toast.show("\(command): メニュー項目が見つかりません")
+                case .disabled: self?.toast.show("\(command): いまは選べないメニュー項目です")
+                }
+            }
         case let .unassigned(command):
             toast.show("\(command): このアプリには未設定")
         case let .unsendable(command):

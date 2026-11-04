@@ -9,9 +9,8 @@
 //! Nothing here touches the operating system, so it is tested on every
 //! platform.
 
-use crate::config::{App, COMMON_NAME, Command, Config, GestureSet, Place, Problem};
+use crate::config::{Action, App, COMMON_NAME, Command, Config, GestureSet, Place, Problem};
 use crate::gesture::{Direction, Gesture};
-use crate::keys::Combo;
 use crate::preset::{self, Preset};
 
 /// A line of the list of sets.
@@ -30,15 +29,14 @@ pub struct CommandRow {
     pub gesture: String,
 }
 
-/// A line of the selected command's keys: the keys it sends to the
-/// applications that have none of their own (`app` is `None`), or to one
-/// application.
+/// A line of the selected command's keys: what the applications that have
+/// nothing of their own do (`app` is `None`), or what one application does.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct KeyRow {
     pub app: Option<App>,
     pub label: String,
-    /// The keys set on this line.
-    pub keys: Option<Combo>,
+    /// The keys or menu item set on this line.
+    pub action: Option<Action>,
 }
 
 /// The label of the line of keys for every application of a set.
@@ -397,19 +395,23 @@ impl Editor {
                 SET_KEYS_LABEL
             }
             .into(),
-            keys: c.keys,
+            action: c.action.clone(),
         };
         let apps = self.apps().iter().map(|a| KeyRow {
             app: Some(a.clone()),
             label: a.name.clone(),
-            keys: c.apps.iter().find(|(id, _)| a.is(id)).map(|(_, k)| *k),
+            action: c
+                .apps
+                .iter()
+                .find(|(id, _)| a.is(id))
+                .map(|(_, action)| action.clone()),
         });
         std::iter::once(first).chain(apps).collect()
     }
 
-    /// Sets the keys of the selected command's line `row` of
+    /// Sets the keys or menu item of the selected command's line `row` of
     /// [`Editor::key_rows`]; `None` clears them.
-    pub fn set_keys(&mut self, row: usize, keys: Option<Combo>) {
+    pub fn set_action(&mut self, row: usize, action: Option<Action>) {
         let app = match row {
             0 => None,
             n => match self.apps().get(n - 1) {
@@ -420,12 +422,12 @@ impl Editor {
         let Some(c) = self.command_mut() else {
             return;
         };
-        match (app, keys) {
-            (None, keys) => c.keys = keys,
-            (Some(id), keys) => {
+        match app {
+            None => c.action = action,
+            Some(id) => {
                 c.apps.retain(|app, _| !app.eq_ignore_ascii_case(&id));
-                if let Some(k) = keys {
-                    c.apps.insert(id, k);
+                if let Some(a) = action {
+                    c.apps.insert(id, a);
                 }
             }
         }
@@ -484,7 +486,7 @@ fn fill_in(set: &mut GestureSet, os: crate::config::Os, app: &App) {
             continue;
         };
         if !c.apps.keys().any(|id| app.is(id)) {
-            c.apps.insert(app.id.clone(), keys);
+            c.apps.insert(app.id.clone(), Action::Keys(keys));
         }
     }
 }
@@ -500,8 +502,8 @@ mod tests {
         }
     }
 
-    fn combo(s: &str) -> Combo {
-        s.parse().unwrap()
+    fn keys(s: &str) -> Action {
+        Action::Keys(s.parse().unwrap())
     }
 
     /// A set "ブラウザ" with Chrome and Firefox, and a command 戻る ← with
@@ -515,7 +517,7 @@ mod tests {
         e.add_command();
         e.rename_command("戻る");
         e.push_direction(Direction::Left);
-        e.set_keys(0, Some(combo("Alt+Left")));
+        e.set_action(0, Some(keys("Alt+Left")));
         e
     }
 
@@ -572,8 +574,8 @@ mod tests {
     #[test]
     fn removing_an_application_takes_its_keys() {
         let mut e = browsers();
-        e.set_keys(2, Some(combo("Ctrl+OemComma")));
-        assert_eq!(e.key_rows()[2].keys, Some(combo("Ctrl+OemComma")));
+        e.set_action(2, Some(keys("Ctrl+OemComma")));
+        assert_eq!(e.key_rows()[2].action, Some(keys("Ctrl+OemComma")));
         e.remove_app(1);
         assert_eq!(e.apps().len(), 1);
         assert!(e.command().unwrap().apps.is_empty());
@@ -582,20 +584,35 @@ mod tests {
     #[test]
     fn shows_the_keys_of_the_set_and_of_each_application() {
         let mut e = browsers();
-        e.set_keys(1, Some(combo("Ctrl+OemComma")));
+        e.set_action(1, Some(keys("Ctrl+OemComma")));
         let rows = e.key_rows();
         assert_eq!(rows.len(), 3);
         assert_eq!(rows[0].label, SET_KEYS_LABEL);
-        assert_eq!(rows[0].keys, Some(combo("Alt+Left")));
+        assert_eq!(rows[0].action, Some(keys("Alt+Left")));
         assert_eq!(rows[1].label, "Chrome");
-        assert_eq!(rows[1].keys, Some(combo("Ctrl+OemComma")));
-        assert_eq!(rows[2].keys, None);
-        e.set_keys(1, None);
+        assert_eq!(rows[1].action, Some(keys("Ctrl+OemComma")));
+        assert_eq!(rows[2].action, None);
+        e.set_action(1, None);
         assert!(e.command().unwrap().apps.is_empty());
         e.select_set_row(0);
         e.add_command();
         assert_eq!(e.key_rows().len(), 1);
         assert_eq!(e.key_rows()[0].label, COMMON_KEYS_LABEL);
+    }
+
+    #[test]
+    fn a_line_chooses_a_menu_item_in_place_of_keys() {
+        let mut e = browsers();
+        let menu = Action::Menu(vec!["タブ".into(), "右側のタブを閉じる".into()]);
+        e.set_action(1, Some(menu.clone()));
+        assert_eq!(e.key_rows()[1].action, Some(menu.clone()));
+        assert_eq!(e.command().unwrap().apps["chrome.exe"], menu);
+        // Keys put back in its place replace it.
+        e.set_action(1, Some(keys("Ctrl+W")));
+        assert_eq!(e.key_rows()[1].action, Some(keys("Ctrl+W")));
+        e.set_action(0, Some(menu.clone()));
+        assert_eq!(e.key_rows()[0].action, Some(menu));
+        assert!(e.check().is_ok());
     }
 
     #[test]
@@ -691,13 +708,15 @@ mod tests {
         assert_eq!(rows[0].gesture, "←");
         e.select_command(Some(0));
         let os = e.config().os;
-        let keys = e.key_rows();
+        let rows = e.key_rows();
         // The set has no keys of its own; each browser has its own.
-        assert_eq!(keys[0].keys, None);
-        assert!(keys[1].keys.is_some());
+        assert_eq!(rows[0].action, None);
+        assert!(rows[1].action.is_some());
         assert_eq!(
-            keys[1].keys,
-            preset::BROWSERS.applications[0].keys(os, "back")
+            rows[1].action,
+            preset::BROWSERS.applications[0]
+                .keys(os, "back")
+                .map(Action::Keys)
         );
         // It saves as it is, and a second one takes another name and no
         // application already in the first.
@@ -716,19 +735,21 @@ mod tests {
         e.select_command(Some(0));
         let rows = e.key_rows();
         assert_eq!(
-            rows[1].keys,
-            preset::BROWSERS.applications[0].keys(e.config().os, "back")
+            rows[1].action,
+            preset::BROWSERS.applications[0]
+                .keys(e.config().os, "back")
+                .map(Action::Keys)
         );
-        assert_eq!(rows[2].keys, None);
+        assert_eq!(rows[2].action, None);
         // Keys set by hand are not filled over.
-        e.set_keys(1, Some(combo("F1")));
+        e.set_action(1, Some(keys("F1")));
         let mut config = e.config().clone();
         fill_in(
             &mut config.sets[0],
             config.os,
             &app("chrome.exe", "Google Chrome"),
         );
-        assert_eq!(config.sets[0].commands[0].apps["chrome.exe"], combo("F1"));
+        assert_eq!(config.sets[0].commands[0].apps["chrome.exe"], keys("F1"));
         // A command made by hand has no preset to fill in from.
         e.add_command();
         e.add_app(app("msedge.exe", "Microsoft Edge")).unwrap();

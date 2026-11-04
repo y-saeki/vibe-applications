@@ -9,14 +9,16 @@ build or change it. The root `CLAUDE.md` describes what goes where.
 
 ## Keep logic out of `src/win/` and `macos/`
 
-`config.rs`, `gesture.rs`, `keys.rs`, `vk.rs`, `mac.rs`, `editor.rs`, `ffi.rs`, `art.rs` and
-`icon_res.rs` do not touch the operating system, so they build and test on any platform (`ffi.rs`
+`config.rs`, `gesture.rs`, `keys.rs`, `vk.rs`, `mac.rs`, `menu.rs`, `editor.rs`, `ffi.rs`, `art.rs`
+and `icon_res.rs` do not touch the operating system, so they build and test on any platform (`ffi.rs`
 with the `ffi` feature). All but `icon_res.rs` make up the library (`src/lib.rs`); `main.rs` and
 `src/win/` are the Windows binary built on it, and the macOS app in `macos/` calls it through the
 bindings `ffi.rs` declares. Anything that decides behaviour — which gesture the pointer drew, what
 a gesture comes to over an application, what a config accepts, what the settings window edits and
-checks before saving — belongs there, with its tests. `src/win/` and `macos/` pass values between
-the library and the operating system and should stay thin.
+checks before saving, which menu items a search finds — belongs there, with its tests. `src/win/`
+and `macos/` pass values between the library and the operating system and should stay thin: the
+macOS app reads an application's menu bar through the accessibility API (`Menus.swift`) and hands
+the items to `ffi.rs` as they are reported.
 
 Keys and modifiers are `keys::Key` and `keys::Modifiers`, never an operating system's codes:
 `vk.rs` is the one place that converts between them and Windows' virtual-key codes, and `mac.rs`
@@ -62,7 +64,8 @@ behaviour changes, the file that covers it changes in the same commit:
 | The config file's fields or validation, or what a gesture comes to over an application | `mod tests` in `src/config.rs`, and the example in `DEVELOPMENT.md` |
 | Key names, how combinations are written, or how keys are recorded | `mod tests` in `src/keys.rs` |
 | Which virtual-key code a key or modifier is, or which keys are extended | `mod tests` in `src/vk.rs` |
-| Which macOS key code or event flag a key or modifier is | `mod tests` in `src/mac.rs` |
+| Which macOS key code or event flag a key or modifier is, or which keys a menu item's shortcut is | `mod tests` in `src/mac.rs` |
+| How a menu item's path is shown, or which items a search finds and in what order | `mod tests` in `src/menu.rs` |
 | What the settings window edits, lists or checks | `mod tests` in `src/editor.rs` |
 | A preset's commands, its applications or their keys | `mod tests` in `src/preset.rs`, and the sources at its top: keys come only from an application's own documentation, or from its maker's source code when that documentation cannot be read |
 | What the macOS app is told to do with a press, or what its settings window shows and saves | `mod tests` in `src/ffi.rs` |

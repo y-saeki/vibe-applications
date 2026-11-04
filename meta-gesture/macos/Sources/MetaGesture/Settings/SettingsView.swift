@@ -21,9 +21,12 @@ struct SettingsView: View {
                 }
             }
             footer
+                .sheet(isPresented: Binding(get: { model.menuPicking != nil }, set: { _ in })) {
+                    MenuSheet(model: model)
+                }
         }
         .padding(24)
-        .frame(minWidth: 1060, minHeight: 680)
+        .frame(minWidth: 1160, minHeight: 680)
         .alert("変更を保存せずに閉じますか?", isPresented: $model.confirming) {
             Button("閉じる", role: .destructive) { model.onClose() }
             Button("戻る", role: .cancel) {}
@@ -241,14 +244,17 @@ private struct Details: View {
                     ForEach(Array(model.keys.enumerated()), id: \.offset) { i, line in
                         HStack(spacing: 12) {
                             Text(line.label).lineLimit(1).frame(width: 170, alignment: .leading)
-                            if line.caps.isEmpty {
-                                Text(i == 0 ? "未設定" : "セットの既定").foregroundColor(.secondary)
-                            } else {
+                            if !line.caps.isEmpty {
                                 KeycapsView(caps: line.caps, size: .small)
+                            } else if !line.menu.isEmpty {
+                                Label(line.menu, systemImage: "filemenu.and.selection").lineLimit(1)
+                            } else {
+                                Text(i == 0 ? "未設定" : "セットの既定").foregroundColor(.secondary)
                             }
                             Spacer()
                             Button("変更") { model.startRecording(i) }
-                            Button("クリア") { model.clearKeys(i) }.disabled(line.caps.isEmpty)
+                            Button("メニューから選ぶ...") { model.startPickingMenu(i) }
+                            Button("クリア") { model.clearKeys(i) }.disabled(line.caps.isEmpty && line.menu.isEmpty)
                         }
                     }
                 }
