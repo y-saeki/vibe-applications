@@ -54,18 +54,30 @@ public struct BookmarkAPI: Sendable {
         try HatenaHTTPClient.validate(response)
     }
 
+    /// Every tag the user has used, with how many bookmarks carry it.
+    public func tags() async throws -> [UserTag] {
+        let data = try await http.data(for: signed("GET", URL(string: Self.restBase + "/my/tags")!))
+        return try JSONDecoder.hatena(UserTagList.self, from: data, source: "official.my-tags").tags
+    }
+
     public func me() async throws -> HatenaUser {
         let data = try await http.data(for: signed("GET", URL(string: Self.restBase + "/my")!))
         return try JSONDecoder.hatena(HatenaUser.self, from: data, source: "official.my")
     }
 
     /// Full-text search over the user's bookmarks (title, body, URL, comment).
-    /// `limit` is at most 100.
+    /// `limit` is at most 100, and no page reaches past `searchDepth`.
     public func search(_ query: String, offset: Int = 0, limit: Int = 20) async throws -> MyBookmarkSearchPage {
-        let url = Self.url(Self.searchURL, [("q", query), ("of", String(offset)), ("limit", String(min(limit, 100)))])
+        let limit = min(limit, 100, max(Self.searchDepth - offset, 1))
+        let url = Self.url(Self.searchURL, [("q", query), ("of", String(offset)), ("limit", String(limit))])
         let data = try await http.data(for: signed("GET", url))
         return try JSONDecoder.hatena(MyBookmarkSearchPage.self, from: data, source: "official.my-search")
     }
+
+    /// How far into one search's hits the API reads, found by trying it: from
+    /// this offset on it answers with no hits and a total of 0, however many
+    /// matched. The documentation does not mention it.
+    public static let searchDepth = 10_000
 
     private func signed(_ method: String, _ url: URL, form: [(String, String)] = []) -> URLRequest {
         signer.request(method: method, url: url, form: form, token: token)
@@ -77,9 +89,12 @@ public struct BookmarkAPI: Sendable {
 }
 
 public struct BookmarkDraft: Equatable, Sendable {
+    /// The most tags one bookmark can carry, which the API enforces.
+    public static let maxTags = 10
+
     public var url: URL
     public var comment: String
-    /// At most 10, which the API enforces.
+    /// At most `maxTags`.
     public var tags: [String]
     public var isPrivate: Bool
 
@@ -88,5 +103,28 @@ public struct BookmarkDraft: Equatable, Sendable {
         self.comment = comment
         self.tags = tags
         self.isPrivate = isPrivate
+    }
+
+    /// A draft that starts from the bookmark already saved for `url`.
+    public init(url: URL, editing bookmark: MyBookmark) {
+        self.init(url: url, comment: bookmark.comment, tags: bookmark.tags, isPrivate: bookmark.isPrivate)
+    }
+
+    public var canAddTag: Bool {
+        tags.count < Self.maxTags
+    }
+
+    /// Adds `tag` with surrounding spaces trimmed. Returns false, changing
+    /// nothing, when it is empty, already there, or the draft is full.
+    @discardableResult
+    public mutating func addTag(_ tag: String) -> Bool {
+        let tag = tag.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !tag.isEmpty, canAddTag, !tags.contains(tag) else { return false }
+        tags.append(tag)
+        return true
+    }
+
+    public mutating func removeTag(_ tag: String) {
+        tags.removeAll { $0 == tag }
     }
 }

@@ -59,6 +59,28 @@ updates:
           - patch
 
   - package-ecosystem: cargo
+    directory: /myaku
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    labels:
+      - dependencies
+      - no-release
+    commit-message:
+      prefix: myaku
+    # windows-numerics has to be the version the windows crate itself depends
+    # on (Direct2D's calls take its Vector2 and Matrix3x2), so it moves only
+    # when windows does, by hand.
+    ignore:
+      - dependency-name: windows-numerics
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: cargo
     directory: /draftpad/src-tauri
     schedule:
       interval: weekly
@@ -110,6 +132,55 @@ updates:
     groups:
       # See the tauri group of /draftpad/src-tauri, including why
       # minor-and-patch excludes it.
+      tauri:
+        patterns:
+          - "@tauri-apps/*"
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+        exclude-patterns:
+          - "@tauri-apps/*"
+
+  - package-ecosystem: cargo
+    directory: /mailcrew/src-tauri
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    labels:
+      - dependencies
+      - no-release
+    commit-message:
+      prefix: mailcrew
+    groups:
+      # See the tauri group of /draftpad/src-tauri, including why
+      # minor-and-patch excludes it.
+      tauri:
+        patterns:
+          - tauri
+          - tauri-*
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+        exclude-patterns:
+          - tauri
+          - tauri-*
+
+  - package-ecosystem: npm
+    directory: /mailcrew
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    labels:
+      - dependencies
+      - no-release
+    commit-message:
+      prefix: mailcrew
+    groups:
+      # See the tauri group of /draftpad/src-tauri.
       tauri:
         patterns:
           - "@tauri-apps/*"

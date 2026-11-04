@@ -71,6 +71,7 @@ final class EntryCommentsModel {
 struct EntryDetailView: View {
     let entry: FeedItem
     @State private var model: EntryCommentsModel
+    @State private var isShowingBookmarkEditor = false
     @Environment(\.openURL) private var openURL
 
     init(entry: FeedItem) {
@@ -105,10 +106,18 @@ struct EntryDetailView: View {
         .navigationTitle("\(entry.bookmarkCount) users")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .primaryAction) {
+            ToolbarItemGroup(placement: .primaryAction) {
+                Button("ブクマする", systemImage: "bookmark") {
+                    isShowingBookmarkEditor = true
+                }
                 Button("Safari で開く", systemImage: "safari") {
                     openURL(entry.link)
                 }
+            }
+        }
+        .sheet(isPresented: $isShowingBookmarkEditor) {
+            NavigationStack {
+                BookmarkEditorView(url: entry.link, title: entry.title)
             }
         }
         .refreshable { await model.load() }

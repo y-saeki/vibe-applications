@@ -1,4 +1,8 @@
 //! winwin's icon as pixels: a two-tone W on an off-white rounded square.
+//! From `DETAILED_FROM` pixels up the tile is shaded: the tile and the W's
+//! halves have soft gradients, both halves cast a light shadow, and the
+//! teal half is frosted glass through which the ink half shows blurred.
+//! Smaller sizes are drawn flat, as shading would only blur them.
 //!
 //! - `pixels`: the tile with a thin margin, for Windows. The notification
 //!   area and the settings window draw it at run time (win/icon.rs); build.rs
@@ -15,6 +19,20 @@ const TILE_TOP: Rgb = (0xF7, 0xF4, 0xEE);
 const TILE_BOTTOM: Rgb = (0xE6, 0xE1, 0xD6);
 const INK: Rgb = (0x1E, 0x1B, 0x4B);
 const TEAL: Rgb = (0x0F, 0xB5, 0xA0);
+
+/// From this edge in pixels up, the tile is drawn shaded rather than flat.
+pub const DETAILED_FROM: usize = 48;
+
+// The shaded tile's colours: each gradient runs top to bottom.
+const SHADED_TILE: (Rgb, Rgb) = ((0xFC, 0xFA, 0xF6), (0xE3, 0xDD, 0xD0));
+const SHADED_INK: (Rgb, Rgb) = ((0x34, 0x30, 0x7A), (0x17, 0x14, 0x3D));
+const SHADED_TEAL: (Rgb, Rgb) = ((0x3F, 0xE0, 0xC8), (0x0A, 0x9C, 0x8A));
+/// Where the W's gradients start and end, as fractions of the tile's edge.
+const STROKE_GRADIENT: (f32, f32) = (0.2167, 0.8);
+const INK_SHADOW: Rgb = (0x3B, 0x2F, 0x1A);
+const TEAL_SHADOW: Rgb = (0x0B, 0x15, 0x30);
+/// How opaque the teal glass is over what it frosts.
+const GLASS_OPACITY: f32 = 0.75;
 
 /// How opaque the menu-bar glyph's right half is, against 255 for the left.
 const MENU_BAR_FAINT: f32 = 0.45;
@@ -73,6 +91,15 @@ pub fn menu_bar_pixels(size: usize) -> Vec<u32> {
 
 /// The tile, inset by `margin` pixels on each side.
 fn tile(size: usize, margin: f32) -> Vec<u32> {
+    if size >= DETAILED_FROM {
+        shaded_tile(size, margin)
+    } else {
+        flat_tile(size, margin)
+    }
+}
+
+/// The tile in flat colours, for small sizes.
+fn flat_tile(size: usize, margin: f32) -> Vec<u32> {
     let s = size as f32;
     let edge = s - 2.0 * margin;
     let radius = TILE_RADIUS * edge;
@@ -92,6 +119,179 @@ fn tile(size: usize, margin: f32) -> Vec<u32> {
             c = mix(c, INK, coverage(polyline_distance(p, &left) - half));
             c = mix(c, TEAL, coverage(polyline_distance(p, &right) - half));
             out[y * size + x] = argb(a, c);
+        }
+    }
+    out
+}
+
+/// A pixel's colour with its alpha, the colour premultiplied by it.
+type Px = [f32; 4];
+
+/// The tile shaded: lengths below are in 240ths of the tile's edge, the
+/// units the design was drawn in.
+fn shaded_tile(size: usize, margin: f32) -> Vec<u32> {
+    let s = size as f32;
+    let edge = s - 2.0 * margin;
+    let u = edge / 240.0;
+    let radius = TILE_RADIUS * edge;
+    let half = TILE_STROKE * edge / 2.0;
+    let left = scale(&TILE_LEFT, margin, edge);
+    let right = scale(&TILE_RIGHT, margin, edge);
+    let along = |y: f32, (from, to): (f32, f32)| {
+        ((((y - margin) / edge) - from) / (to - from)).clamp(0.0, 1.0)
+    };
+    let mask = |f: &dyn Fn(Point) -> f32| -> Vec<f32> {
+        (0..size * size)
+            .map(|i| f(((i % size) as f32 + 0.5, (i / size) as f32 + 0.5)))
+            .collect()
+    };
+    let stroke = |points: &[Point; 3], dx: f32, dy: f32| {
+        mask(&|p| coverage(polyline_distance((p.0 - dx, p.1 - dy), points) - half))
+    };
+    let tile = mask(&|p| coverage(rounded_square_distance(p, margin, edge, radius)));
+    let ink = stroke(&left, 0.0, 0.0);
+    let teal = stroke(&right, 0.0, 0.0);
+    let ink_shadow = blur_mask(stroke(&left, 0.0, 4.0 * u), size, 4.0 * u);
+    let teal_shadow = blur_mask(stroke(&right, -3.0 * u, 5.0 * u), size, 5.0 * u);
+
+    // Everything the glass lies on: the tile, the ink half and both shadows.
+    let mut under: Vec<Px> = (0..size * size)
+        .map(|i| {
+            let y = (i / size) as f32 + 0.5;
+            let t = ((y - margin) / edge).clamp(0.0, 1.0);
+            let mut px = solid(mix(SHADED_TILE.0, SHADED_TILE.1, t), tile[i]);
+            px = over(px, solid(INK_SHADOW, 0.16 * ink_shadow[i] * tile[i]));
+            px = over(
+                px,
+                solid(gradient(SHADED_INK, along(y, STROKE_GRADIENT)), ink[i]),
+            );
+            over(px, solid(TEAL_SHADOW, 0.35 * teal_shadow[i] * tile[i]))
+        })
+        .collect();
+
+    // The glass: what lies under it, blurred and whitened, with the teal
+    // over it and a sheen that fades from its top.
+    let frosted = blur(&under, size, 6.0 * u);
+    let rim_half = 16.5 * u;
+    for (i, px) in under.iter_mut().enumerate() {
+        if teal[i] <= 0.0 {
+            continue;
+        }
+        let p = ((i % size) as f32 + 0.5, (i / size) as f32 + 0.5);
+        let mut glass = over(frosted[i], solid((0xFF, 0xFF, 0xFF), 0.2));
+        let colour = gradient(SHADED_TEAL, along(p.1, STROKE_GRADIENT));
+        glass = over(glass, solid(colour, GLASS_OPACITY));
+        let sheen = sheen(((p.1 - margin) / edge - 0.2) / 0.6);
+        let rim = coverage(polyline_distance(p, &right) - rim_half);
+        glass = over(glass, solid((0xFF, 0xFF, 0xFF), sheen * rim));
+        *px = lerp(*px, glass, teal[i]);
+    }
+    under.into_iter().map(to_argb).collect()
+}
+
+/// The sheen's opacity `t` of the way down the W: strong at its top, gone
+/// by 40%, and faint again at the bottom.
+fn sheen(t: f32) -> f32 {
+    let t = t.clamp(0.0, 1.0);
+    if t < 0.4 {
+        0.45 * (1.0 - t / 0.4)
+    } else {
+        0.12 * (t - 0.4) / 0.6
+    }
+}
+
+fn gradient((from, to): (Rgb, Rgb), t: f32) -> Rgb {
+    mix(from, to, t)
+}
+
+fn solid((r, g, b): Rgb, alpha: f32) -> Px {
+    let c = |v: u8| v as f32 / 255.0 * alpha;
+    [c(r), c(g), c(b), alpha]
+}
+
+/// `top` laid over `bottom`.
+fn over(bottom: Px, top: Px) -> Px {
+    let k = 1.0 - top[3];
+    [0, 1, 2, 3].map(|i| top[i] + bottom[i] * k)
+}
+
+fn lerp(a: Px, b: Px, t: f32) -> Px {
+    [0, 1, 2, 3].map(|i| a[i] + (b[i] - a[i]) * t)
+}
+
+fn to_argb(px: Px) -> u32 {
+    let a = px[3].clamp(0.0, 1.0);
+    if a <= 0.0 {
+        return 0;
+    }
+    let c = |v: f32| ((v / a).clamp(0.0, 1.0) * 255.0).round() as u8;
+    argb(a, (c(px[0]), c(px[1]), c(px[2])))
+}
+
+fn blur_mask(mask: Vec<f32>, size: usize, sigma: f32) -> Vec<f32> {
+    let px: Vec<Px> = mask.into_iter().map(|a| [0.0, 0.0, 0.0, a]).collect();
+    blur(&px, size, sigma).into_iter().map(|p| p[3]).collect()
+}
+
+/// A Gaussian blur of a `size` square, approximated by three box blurs;
+/// outside the square counts as transparent.
+fn blur(pixels: &[Px], size: usize, sigma: f32) -> Vec<Px> {
+    let mut out = pixels.to_vec();
+    for radius in box_radii(sigma) {
+        out = box_blur(&out, size, radius, true);
+        out = box_blur(&out, size, radius, false);
+    }
+    out
+}
+
+/// The radii of three box blurs that together approximate a Gaussian of
+/// `sigma` (Kovesi, "Fast almost-Gaussian filtering").
+fn box_radii(sigma: f32) -> [usize; 3] {
+    let n = 3.0;
+    let ideal = (12.0 * sigma * sigma / n + 1.0).sqrt();
+    let mut lower = ideal.floor() as i32;
+    if lower % 2 == 0 {
+        lower -= 1;
+    }
+    let lower = lower.max(1);
+    let wl = lower as f32;
+    let m = ((12.0 * sigma * sigma - n * wl * wl - 4.0 * n * wl - 3.0 * n) / (-4.0 * wl - 4.0))
+        .round() as i32;
+    [0, 1, 2].map(|i| {
+        let width = if i < m { lower } else { lower + 2 };
+        (width as usize - 1) / 2
+    })
+}
+
+fn box_blur(pixels: &[Px], size: usize, radius: usize, horizontal: bool) -> Vec<Px> {
+    let mut out = vec![[0.0; 4]; pixels.len()];
+    if radius == 0 {
+        return pixels.to_vec();
+    }
+    let width = (2 * radius + 1) as f32;
+    let index = |line: usize, k: usize| {
+        if horizontal {
+            line * size + k
+        } else {
+            k * size + line
+        }
+    };
+    for line in 0..size {
+        let mut sum = [0.0f32; 4];
+        for k in 0..radius.min(size) {
+            let p = pixels[index(line, k)];
+            (0..4).for_each(|c| sum[c] += p[c]);
+        }
+        for k in 0..size {
+            if k + radius < size {
+                let p = pixels[index(line, k + radius)];
+                (0..4).for_each(|c| sum[c] += p[c]);
+            }
+            if k > radius {
+                let p = pixels[index(line, k - radius - 1)];
+                (0..4).for_each(|c| sum[c] -= p[c]);
+            }
+            out[index(line, k)] = sum.map(|v| v / width);
         }
     }
     out
@@ -156,9 +356,14 @@ mod tests {
         p >> 24
     }
 
+    fn luminance(p: u32) -> f32 {
+        let (r, g, b) = rgb(p);
+        0.2126 * r as f32 + 0.7152 * g as f32 + 0.0722 * b as f32
+    }
+
     #[test]
-    fn a_rounded_tile_with_a_two_tone_w() {
-        for size in [16, 32, 256] {
+    fn small_tiles_are_a_flat_two_tone_w() {
+        for size in [16, 32] {
             let p = pixels(size);
             let at =
                 |x: f32, y: f32| p[(y * size as f32) as usize * size + (x * size as f32) as usize];
@@ -180,19 +385,49 @@ mod tests {
     }
 
     #[test]
+    fn large_tiles_are_shaded_with_a_glass_right_half() {
+        let size = 256;
+        let p = pixels(size);
+        // Fractions of the tile, which starts 8 pixels in at this size.
+        let at = |x: f32, y: f32| {
+            let px = |f: f32| (8.0 + f * 240.0) as usize;
+            p[px(y) * size + px(x)]
+        };
+        assert_eq!(p[0], 0);
+        assert_eq!(alpha(at(0.5, 0.0)), 255);
+        // The tile is lighter at the top than at the bottom.
+        assert!(luminance(at(0.5, 0.05)) > luminance(at(0.5, 0.95)) + 10.0);
+        // The ink half is dark and blue, darker at its foot than at its top.
+        let foot = at(0.3417, 0.72);
+        let (r, _, b) = rgb(foot);
+        assert!(b > r && luminance(foot) < 40.0);
+        assert!(luminance(at(0.175, 0.28)) > luminance(foot));
+        // The teal half is green-blue.
+        let teal = at(0.6583, 0.72);
+        let (r, g, b) = rgb(teal);
+        assert!(g > r + 60 && g > b, "{:?}", rgb(teal));
+        // Through the glass the ink half shows, darker than the teal over
+        // the tile at the same height.
+        let over_ink = at(0.476, 0.4207);
+        let over_tile = at(0.771, 0.4207);
+        assert!(luminance(over_ink) + 15.0 < luminance(over_tile));
+        // The ink half casts a shadow below its foot.
+        assert!(luminance(at(0.3417, 0.815)) + 5.0 < luminance(at(0.1, 0.815)));
+        // Everything is opaque inside the tile.
+        assert!([foot, teal, over_ink].iter().all(|&px| alpha(px) == 255));
+    }
+
+    #[test]
     fn the_mac_icon_keeps_the_app_icon_margin() {
-        let size = 1024;
+        let size = 512;
         let mac = mac_pixels(size);
         let win = pixels(size);
-        // 100 pixels in from the middle of the left edge: inside on Windows,
+        // 50 pixels in from the middle of the left edge: inside on Windows,
         // the margin on macOS.
         let at = |p: &[u32], x: usize, y: usize| p[y * size + x];
-        assert_eq!(alpha(at(&win, 90, 512)), 255);
-        assert_eq!(at(&mac, 90, 512), 0);
-        assert_eq!(alpha(at(&mac, 110, 512)), 255);
-        // The W is the same drawing, only smaller.
-        assert_eq!(rgb(at(&mac, 512 - 132, 690)), INK);
-        assert_eq!(rgb(at(&mac, 512 + 132, 690)), TEAL);
+        assert_eq!(alpha(at(&win, 45, 256)), 255);
+        assert_eq!(at(&mac, 45, 256), 0);
+        assert_eq!(alpha(at(&mac, 55, 256)), 255);
     }
 
     #[test]

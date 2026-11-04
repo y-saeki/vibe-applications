@@ -70,13 +70,78 @@ extension HatenaUser: Decodable {
     }
 }
 
+public struct UserTag: Equatable, Sendable, Identifiable, Decodable {
+    public var id: String { name }
+    public let name: String
+    /// How many of the user's bookmarks carry the tag.
+    public let count: Int
+
+    public init(name: String, count: Int) {
+        self.name = name
+        self.count = count
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case name = "tag"
+        case count
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        name = try container.decode(String.self, forKey: .name)
+        count = try container.decodeIfPresent(LooseInt.self, forKey: .count)?.value ?? 0
+    }
+
+    /// The tags to offer while the user types `input`, leaving out those in
+    /// `excluded`. Tags that start with the input come before those that only
+    /// contain it, and the more used come first within each. With no input,
+    /// every tag is offered, most used first. Letter case is ignored.
+    public static func suggestions(from tags: [UserTag], matching input: String, excluding excluded: [String]) -> [UserTag] {
+        let needle = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        let candidates = tags.filter { !excluded.contains($0.name) }
+        let ranked: [(tag: UserTag, rank: Int)] = candidates.compactMap { tag in
+            if needle.isEmpty {
+                return (tag, 0)
+            }
+            guard let range = tag.name.range(of: needle, options: [.caseInsensitive, .widthInsensitive]) else {
+                return nil
+            }
+            return (tag, range.lowerBound == tag.name.startIndex ? 0 : 1)
+        }
+        return ranked.sorted { lhs, rhs in
+            if lhs.rank != rhs.rank { return lhs.rank < rhs.rank }
+            if lhs.tag.count != rhs.tag.count { return lhs.tag.count > rhs.tag.count }
+            return lhs.tag.name < rhs.tag.name
+        }.map(\.tag)
+    }
+}
+
+/// The documentation says the tag API returns an array of tags; the API is
+/// also known to wrap it as `{"tags": [...]}`. Both are accepted until a real
+/// response has been seen.
+struct UserTagList: Decodable {
+    let tags: [UserTag]
+
+    private enum CodingKeys: String, CodingKey {
+        case tags
+    }
+
+    init(from decoder: Decoder) throws {
+        if let container = try? decoder.container(keyedBy: CodingKeys.self) {
+            tags = try container.decode([UserTag].self, forKey: .tags)
+        } else {
+            tags = try decoder.singleValueContainer().decode([UserTag].self)
+        }
+    }
+}
+
 public struct MyBookmarkSearchPage: Equatable, Sendable {
     /// Matches in total, of which `hits` is one page.
     public let total: Int
     public let hits: [MyBookmarkSearchHit]
 }
 
-public struct MyBookmarkSearchHit: Equatable, Sendable, Identifiable {
+public struct MyBookmarkSearchHit: Equatable, Sendable, Identifiable, Codable {
     public var id: String { url.absoluteString }
     public let title: String
     public let url: URL
