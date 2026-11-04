@@ -122,6 +122,8 @@ test('swiping right at the start of the strip reloads', async ({ launch }) => {
   await expect(app.cards).toHaveCount(1)
   // Hidden even when a single card leaves the strip room to spare.
   await expect.poll(() => pulledOut(app.strip)).toBe(0)
+  // A pull starts only once the strip has come to rest.
+  await expect(app.page.locator('.pull-zone')).toHaveAttribute('data-armed', 'true')
   await app.card('t1').locator('.card-head').hover()
   await app.page.mouse.wheel(-400, 0)
   await expect(app.cards).toHaveCount(2)
@@ -136,6 +138,7 @@ test("the swipe reloads over a message's body too", async ({ launch }) => {
   })
   const frame = app.card('t1').locator('iframe')
   await expect(frame).toBeVisible()
+  await expect(app.page.locator('.pull-zone')).toHaveAttribute('data-armed', 'true')
   await frame.hover()
   await app.page.mouse.wheel(-400, 0)
   await expect(app.cards).toHaveCount(2)

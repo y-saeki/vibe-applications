@@ -18,8 +18,11 @@ const SETTLE_MS = 150
 export class PullToReload {
   readonly zone: HTMLElement
   private readonly icon: HTMLElement
-  /** Set while the strip is still at the first card, so a swipe from there may pull. */
-  private resting = true
+  /**
+   * Set while the strip is still at the first card, so a swipe from there may
+   * pull. The zone's `data-armed` says the same, for the tests to wait on.
+   */
+  private restingNow = true
   private pulling = false
   private busy = false
   private settleTimer: number | undefined
@@ -35,11 +38,21 @@ export class PullToReload {
     this.icon.className = 'pull-icon'
     this.icon.innerHTML = ICONS.reload
     this.zone.append(this.icon)
+    this.resting = true
     strip.addEventListener('scroll', () => this.onScroll(), { passive: true })
     // The strip has no width while it is hidden; put it back once it has one.
     new ResizeObserver(() => {
       if (this.resting && !this.pulling) this.strip.scrollLeft = this.rest
     }).observe(strip)
+  }
+
+  private get resting(): boolean {
+    return this.restingNow
+  }
+
+  private set resting(value: boolean) {
+    this.restingNow = value
+    this.zone.dataset.armed = String(value && !this.busy)
   }
 
   /** The scroll position that shows the first card with the zone out of sight. */
@@ -89,6 +102,7 @@ export class PullToReload {
       await this.onPull()
     } finally {
       this.busy = false
+      this.resting = this.restingNow
       this.zone.classList.remove('pull-busy')
       this.draw(0)
       if (this.strip.scrollLeft < this.rest) this.strip.scrollTo({ left: this.rest, behavior: 'smooth' })
