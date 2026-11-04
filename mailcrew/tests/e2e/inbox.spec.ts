@@ -171,6 +171,28 @@ test("the swipe reloads over a message's body too", async ({ launch }) => {
   await swipeToReload(app.page, app.cards)
 })
 
+test('the cards follow a pull only part of the way', async ({ launch }) => {
+  const app = await launch({ inboxes: [cards(3)] })
+  await expect(app.cards).toHaveCount(3)
+  await expect(app.page.locator('.pull-zone')).toHaveAttribute('data-armed', 'true')
+  const { pulled, moved } = await app.strip.evaluate(async (strip) => {
+    const frame = () => new Promise((resolve) => requestAnimationFrame(resolve))
+    const first = strip.querySelector<HTMLElement>('.card[data-thread-id]')!
+    const rest = strip.scrollLeft
+    const before = first.getBoundingClientRect().left
+    strip.scrollTo({ left: 0 })
+    await frame()
+    await frame()
+    const moved = first.getBoundingClientRect().left - before
+    // Put it back before it counts as letting go.
+    strip.scrollTo({ left: rest })
+    return { pulled: rest, moved }
+  })
+  // 80px (--pull-lag) less than the strip was pulled.
+  expect(Math.round(moved)).toBe(Math.round(pulled) - 80)
+  await app.expectCalls('list_inbox', 1)
+})
+
 test('pulling the zone out and back before letting go does not reload', async ({ launch }) => {
   const app = await launch({ inboxes: [cards(3)] })
   await expect(app.cards).toHaveCount(3)

@@ -83,9 +83,10 @@ export class PullToReload {
 
   /** The scroll position that shows the first card with the zone out of sight. */
   get rest(): number {
-    const first = this.zone.nextElementSibling
+    // Layout positions, since the cards are shifted while they lag behind a pull.
+    const first = this.zone.nextElementSibling as HTMLElement | null
     if (!first || !this.zone.isConnected) return 0
-    return first.getBoundingClientRect().left - this.zone.getBoundingClientRect().left
+    return first.offsetLeft - this.zone.offsetLeft
   }
 
   /** Scrolls back to the first card, as after the strip is laid out again. */

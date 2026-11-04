@@ -40,7 +40,9 @@
   --scrollbar-thumb: rgb(0 0 0 / 0.35);
   --scrollbar-thumb-active: rgb(0 0 0 / 0.55);
   --gap: 12px;
-  --pull-width: 96px;
+  --pull-width: 160px;
+  /* How much less than the pull the cards move, which makes a pull feel held back. */
+  --pull-lag: 80px;
   --toolbar-height: 52px;
   /* Where the toolbar's first button sits: past the window controls on macOS. */
   --toolbar-start: 12px;
@@ -544,6 +546,8 @@ button {
 .pull-zone {
   flex: none;
   width: var(--pull-width);
+  /* The cards cover the zone's far side while they lag behind a pull. */
+  padding-right: var(--pull-lag);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -570,6 +574,29 @@ button {
 
 .pull-busy .pull-icon {
   animation: pull-spin 0.8s linear infinite;
+}
+
+/*
+ * The cards follow a pull only part of the way, driven by the strip's own
+ * scroll position so they move in step with it. Where scroll-driven
+ * animations are missing, the cards simply follow the pull.
+ */
+@supports (animation-timeline: scroll()) {
+  .strip > .card {
+    animation: pull-lag auto linear both;
+    animation-timeline: scroll(nearest inline);
+    animation-range: 0 calc(var(--pull-width) + var(--gap));
+  }
+}
+
+@keyframes pull-lag {
+  from {
+    transform: translateX(calc(-1 * var(--pull-lag)));
+  }
+
+  to {
+    transform: none;
+  }
 }
 
 @keyframes pull-spin {
