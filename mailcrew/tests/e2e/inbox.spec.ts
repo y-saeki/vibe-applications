@@ -202,14 +202,22 @@ test('pulling the strip right from its first card reloads once the wheel stops',
   await expect.poll(() => pulledOut(app.strip)).toBe(0)
 })
 
-test("a pull over a message's body reloads too", async ({ launch }) => {
+test("a wheel pull over a message's body reaches the page in WebView2 only", async ({ launch, browserName }) => {
   const app = await launch({
     inboxes: [[card(1, { body: { kind: 'html', html: '<p>本文</p>', remoteImages: false } })], [card(9), card(1)]],
   })
   await expect(app.card('t1').locator('iframe')).toBeVisible()
   await expect(app.page.locator('.pull-zone')).toHaveAttribute('data-armed', 'true')
   await wheelGesture(app.strip, [0], true)
-  await expect(app.cards).toHaveCount(2)
+  if (browserName === 'webkit') {
+    // WKWebView runs none of the page's listeners inside the frame, so wheel
+    // events there never count; on macOS the trackpad events from the Rust
+    // side stand in for them.
+    await expect.poll(() => pulledOut(app.strip)).toBe(0)
+    await app.expectCalls('list_inbox', 1)
+  } else {
+    await expect(app.cards).toHaveCount(2)
+  }
 })
 
 test('momentum that carries a fling back to the start springs back without reloading', async ({ launch }) => {
