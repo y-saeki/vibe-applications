@@ -177,6 +177,9 @@ test('the cards follow a pull only part of the way', async ({ launch }) => {
   await expect(app.page.locator('.pull-zone')).toHaveAttribute('data-armed', 'true')
   const { pulled, moved, state } = await app.strip.evaluate(async (strip) => {
     const frame = () => new Promise((resolve) => requestAnimationFrame(resolve))
+    // Keep pushing, as a trackpad does while held, so the pull is not let go
+    // however long a frame takes.
+    const hold = setInterval(() => strip.dispatchEvent(new WheelEvent('wheel')), 30)
     const first = strip.querySelector<HTMLElement>('.card[data-thread-id]')!
     const look = () =>
       `left=${strip.scrollLeft} transform=${getComputedStyle(first).transform} ` +
@@ -189,8 +192,9 @@ test('the cards follow a pull only part of the way', async ({ launch }) => {
     await frame()
     const moved = first.getBoundingClientRect().left - before
     const state = `rest=${rest} class=${strip.className} before[${lookBefore}] after[${look()}]`
-    // Put it back before it counts as letting go.
+    // Put it back before letting go.
     strip.scrollTo({ left: rest })
+    clearInterval(hold)
     return { pulled: rest, moved, state }
   })
   // 80px (--pull-lag) less than the strip was pulled.
@@ -208,12 +212,16 @@ test('pulling the zone out and back before letting go does not reload', async ({
     const label = strip.querySelector('.pull-label')!
     strip.addEventListener('scroll', () => trace.push(`${strip.scrollLeft} ${label.textContent}`))
     const frame = () => new Promise((resolve) => requestAnimationFrame(resolve))
+    // Keep pushing, as a trackpad does while held, so the pull is not let go
+    // however long a frame takes.
+    const hold = setInterval(() => strip.dispatchEvent(new WheelEvent('wheel')), 30)
     const rest = strip.scrollLeft
     trace.push(`rest=${rest}`)
     strip.scrollTo({ left: 0 })
     await frame()
     await frame()
     strip.scrollTo({ left: rest / 2 })
+    clearInterval(hold)
   })
   await expect.poll(() => pulledOut(app.strip)).toBe(0)
   const trace = await app.strip.evaluate((strip) => (strip as HTMLElement & { trace?: string[] }).trace ?? [])
