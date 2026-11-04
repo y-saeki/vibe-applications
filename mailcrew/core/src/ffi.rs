@@ -843,9 +843,10 @@ mod tests {
     fn links_and_the_opened_folder() {
         assert!(is_openable_link("https://example.com".into()));
         assert!(!is_openable_link("javascript:alert(1)".into()));
+        // Joined with the platform's separator, `\` on Windows.
         assert_eq!(
             opened_attachments_dir("/tmp".into()),
-            "/tmp/mailcrew-attachments"
+            path_string(Path::new("/tmp").join("mailcrew-attachments"))
         );
     }
 
