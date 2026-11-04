@@ -699,56 +699,6 @@ button {
   height: 13px;
 }
 
-button.card-badge {
-  border: none;
-  font: inherit;
-  font-size: 11px;
-  cursor: pointer;
-}
-
-button.card-badge:hover,
-button.card-badge[aria-expanded="true"] {
-  color: var(--text);
-  background: var(--control-hover);
-}
-
-.card-files {
-  flex: none;
-  max-height: 30%;
-  overflow-y: auto;
-  margin: 0;
-  padding: 4px 18px;
-  list-style: none;
-  font-size: 12px;
-  border-bottom: 1px solid var(--border);
-}
-
-.card-file {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  padding: 3px 0;
-}
-
-.card-file-name {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.card-file-size {
-  flex: none;
-  color: var(--text-muted);
-}
-
-.card-file-actions {
-  flex: none;
-  display: flex;
-  gap: 12px;
-}
-
 .card-images {
   flex: none;
   display: flex;
@@ -918,6 +868,22 @@ button.card-badge[aria-expanded="true"] {
   width: auto;
   height: auto;
   clip-path: none;
+}
+
+.tool-attachments {
+  width: auto;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0 9px 0 7px;
+  font: inherit;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.tool-attachments[aria-expanded="true"] {
+  background: var(--control);
+  opacity: 1;
 }
 
 .tool-star[aria-pressed="true"] {
@@ -1140,6 +1106,63 @@ fieldset.field {
 
 .tag-row-none {
   color: var(--text-muted);
+}
+
+.attachment-menu {
+  position: fixed;
+  z-index: 40;
+  width: min(380px, calc(100vw - 16px));
+  border-radius: var(--radius-glass);
+  padding: 6px;
+}
+
+.attachment-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.attachment-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 9px;
+  border-radius: 7px;
+  font-size: 13px;
+}
+
+.attachment-row:hover {
+  background: var(--control);
+}
+
+.attachment-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attachment-size {
+  flex: none;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.attachment-actions {
+  flex: none;
+  display: flex;
+  gap: 12px;
+  font-size: 12px;
+}
+
+.attachment-actions .link-button:disabled {
+  color: var(--text-muted);
+  text-decoration: none;
+  cursor: default;
 }
 
 .notice {

@@ -294,7 +294,7 @@ test('a body is fetched from the account its card is in', async ({ launch }) => 
   })
   await expect(app.frame('t1')).toBeAttached()
   expect(await app.callsTo('get_message')).toEqual([{ account: 'work@example.com', messageId: 'm1' }])
-  await expect(app.card('t1').locator('.card-attachments')).toHaveText('1')
+  await expect(app.card('t1').locator('.tool-attachments')).toHaveText('1')
 })
 
 test('a body that could not be fetched leaves the snippet and says why', async ({ launch }) => {

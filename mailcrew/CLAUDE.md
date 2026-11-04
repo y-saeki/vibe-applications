@@ -101,7 +101,7 @@ covers it changes in the same commit:
 | How cards are laid out, the end of the strip, the empty state, reloading | `tests/e2e/inbox.spec.ts` |
 | A toolbar button or まとめて完了 | `tests/e2e/actions.spec.ts` |
 | The tag picker | `tests/e2e/tags.spec.ts` |
-| The list of a card's attachments, opening and saving them | `tests/e2e/attachments.spec.ts` |
+| The attachment button in a card's toolbar, the list it opens, opening and saving | `tests/e2e/attachments.spec.ts` |
 | How a body is shown: the frame, links, images, scaling, lazy mounting, the checks under the subject, the BIMI logo | `tests/e2e/message.spec.ts` |
 | The `csp` in `src-tauri/tauri.conf.json` or `tauri.macos.conf.json`, or anything the page loads from elsewhere | `tests/e2e/csp.spec.ts` |
 | A field on `Card` or `MessageContent` (`src-tauri/src/card.rs`) | `src/backend.ts`, `card()` in `tests/e2e/fixtures.ts`, and `mod tests` in `card.rs` |

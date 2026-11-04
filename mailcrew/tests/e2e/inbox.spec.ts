@@ -29,7 +29,7 @@ test('shows the sender, subject and what the thread holds', async ({ launch }) =
   await expect(first.locator('.card-from')).toHaveText('bare@example.com')
   await expect(first.locator('.card-subject')).toHaveText('(件名なし)')
   await expect(first.locator('.card-message-count')).toHaveText('3 通')
-  await expect(first.locator('.card-attachments')).toHaveText('2')
+  await expect(first.locator('.tool-attachments')).toHaveText('2')
   await expect(first).toHaveClass(/card-unread/)
 })
 

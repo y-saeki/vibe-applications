@@ -81,6 +81,7 @@ pnpm exec playwright install chromium webkit
 | `src/message-frame.ts` | 本文の表示。HTML は iframe に入れる |
 | `src/overlay-scrollbar.ts` | カードの本文に重ねて描くスクロールバー |
 | `src/tag-picker.ts` | タグを選ぶポップアップ |
+| `src/attachment-menu.ts` | 添付ファイルの一覧のポップアップ。開くと保存のボタン |
 | `src/trust.ts` | 件名の下に並ぶ検証結果の表示 |
 | `src/preferences.ts` | 設定の値。受信トレイと設定画面が同じ値を使う |
 
