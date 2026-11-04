@@ -22,6 +22,7 @@ import type { ImageSenders } from './image-senders'
 import { mountBody, type MountedBody } from './message-frame'
 import { showNotice } from './notice'
 import { OverlayScrollbar } from './overlay-scrollbar'
+import { PullToReload } from './pull-reload'
 import type { PreferenceStore } from './preferences'
 import { TagPicker, type TagChoice } from './tag-picker'
 import { renderTrust } from './trust'
@@ -86,6 +87,7 @@ export class Inbox {
   private loadingNow = false
   /** Set when a load is asked for while one is running, so the newer filter wins. */
   private loadAgain = false
+  private readonly pull = new PullToReload(this.strip, () => this.load())
   private readonly observer = new IntersectionObserver((entries) => this.reveal(entries), {
     root: this.strip,
     rootMargin: PRELOAD_MARGIN,
@@ -110,7 +112,8 @@ export class Inbox {
         if (event.ctrlKey || Math.abs(event.deltaX) >= Math.abs(event.deltaY)) return
         const body = (event.target as Element).closest('.card-body')
         if (body && body.scrollHeight > body.clientHeight) return
-        this.strip.scrollLeft += event.deltaY
+        // A wheel only scrolls back to the first card; pulling past it is a swipe.
+        this.strip.scrollLeft = Math.max(this.pull.rest, this.strip.scrollLeft + event.deltaY)
         event.preventDefault()
       },
       { passive: false },
@@ -193,7 +196,7 @@ export class Inbox {
   private clear(): void {
     this.observer.disconnect()
     this.mounted.clear()
-    this.strip.replaceChildren()
+    this.strip.replaceChildren(this.pull.zone)
   }
 
   private render(cards: Card[]): void {
@@ -217,8 +220,8 @@ export class Inbox {
       this.observer.observe(element)
     }
     if (cards.length > 0) this.strip.append(this.buildEnd())
-    this.strip.scrollLeft = 0
     this.updateCount()
+    this.pull.reset()
   }
 
   private updateCount(): void {

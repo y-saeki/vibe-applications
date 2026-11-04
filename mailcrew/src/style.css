@@ -40,6 +40,7 @@
   --scrollbar-thumb: rgb(0 0 0 / 0.35);
   --scrollbar-thumb-active: rgb(0 0 0 / 0.55);
   --gap: 12px;
+  --pull-width: 96px;
   --toolbar-height: 52px;
   /* Where the toolbar's first button sits: past the window controls on macOS. */
   --toolbar-start: 12px;
@@ -516,6 +517,53 @@ button {
 
 .strip::-webkit-scrollbar {
   display: none;
+}
+
+/*
+ * Pull to reload: the zone before the first card is kept scrolled out of
+ * sight. The strip always overflows by at least the zone, so a single card
+ * still leaves room to hide it.
+ */
+.strip {
+  position: relative;
+}
+
+.strip::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: calc(100% + var(--pull-width) + var(--gap));
+  height: 1px;
+  pointer-events: none;
+}
+
+.pull-zone {
+  flex: none;
+  width: var(--pull-width);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+}
+
+.pull-icon {
+  display: flex;
+  opacity: 0;
+}
+
+.pull-ready .pull-icon {
+  color: var(--accent);
+}
+
+.pull-busy .pull-icon {
+  animation: pull-spin 0.8s linear infinite;
+}
+
+@keyframes pull-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .card {

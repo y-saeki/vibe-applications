@@ -1,5 +1,6 @@
 // How the inbox lays its threads out.
 
+import type { Locator } from '@playwright/test'
 import { card, cards, expect, LOGO, ME, test } from './fixtures'
 
 test('lays the threads out newest first, left to right', async ({ launch }) => {
@@ -105,6 +106,69 @@ test('reload fetches the inbox again', async ({ launch }) => {
   await app.page.locator('#reload').click()
   await expect(app.cards).toHaveCount(2)
   expect(await app.ids()).toEqual(['t9', 't1'])
+})
+
+/** How much of the pull-to-reload zone before the first card is in sight. */
+function pulledOut(strip: Locator): Promise<number> {
+  return strip.evaluate((element) => {
+    const zone = element.querySelector('.pull-zone')!
+    const rest = zone.nextElementSibling!.getBoundingClientRect().left - zone.getBoundingClientRect().left
+    return Math.max(0, Math.round(rest - element.scrollLeft))
+  })
+}
+
+test('swiping right at the start of the strip reloads', async ({ launch }) => {
+  const app = await launch({ inboxes: [[card(1)], [card(9), card(1)]] })
+  await expect(app.cards).toHaveCount(1)
+  await app.card('t1').locator('.card-head').hover()
+  await app.page.mouse.wheel(-400, 0)
+  await expect(app.cards).toHaveCount(2)
+  expect(await app.ids()).toEqual(['t9', 't1'])
+  // Laid out again from the first card, with the pull zone out of sight.
+  await expect.poll(() => pulledOut(app.strip)).toBe(0)
+})
+
+test("the swipe reloads over a message's body too", async ({ launch }) => {
+  const app = await launch({
+    inboxes: [[card(1, { body: { kind: 'html', html: '<p>本文</p>', remoteImages: false } })], [card(9), card(1)]],
+  })
+  const frame = app.card('t1').locator('iframe')
+  await expect(frame).toBeVisible()
+  await frame.hover()
+  await app.page.mouse.wheel(-400, 0)
+  await expect(app.cards).toHaveCount(2)
+})
+
+test('a short swipe at the start of the strip springs back without reloading', async ({ launch }) => {
+  const app = await launch({ inboxes: [cards(3)] })
+  await expect(app.cards).toHaveCount(3)
+  await app.card('t1').locator('.card-head').hover()
+  await app.page.mouse.wheel(-30, 0)
+  await expect.poll(() => pulledOut(app.strip)).toBe(0)
+  await app.expectCalls('list_inbox', 1)
+})
+
+test('a swipe that runs past the first card does not reload', async ({ launch }) => {
+  const app = await launch({ inboxes: [cards(5)] })
+  await expect(app.cards).toHaveCount(5)
+  await app.card('t1').locator('.card-head').hover()
+  await app.page.mouse.wheel(300, 0)
+  await expect.poll(() => app.strip.evaluate((strip) => strip.scrollLeft)).toBeGreaterThan(200)
+  // Straight back without stopping at the first card, as a fling does.
+  await app.page.mouse.wheel(-2000, 0)
+  await expect.poll(() => pulledOut(app.strip)).toBe(0)
+  await expect(app.card('t1')).toBeInViewport()
+  await app.expectCalls('list_inbox', 1)
+})
+
+test('a mouse wheel stops at the first card rather than reloading', async ({ launch }) => {
+  const app = await launch({ inboxes: [cards(3)] })
+  await expect(app.cards).toHaveCount(3)
+  await app.card('t1').locator('.card-head').hover()
+  await app.page.mouse.wheel(0, -400)
+  await app.page.waitForTimeout(300)
+  await app.expectCalls('list_inbox', 1)
+  await expect.poll(() => pulledOut(app.strip)).toBe(0)
 })
 
 for (const [platform, modifier] of [
