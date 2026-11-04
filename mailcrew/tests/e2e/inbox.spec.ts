@@ -146,8 +146,21 @@ test('swiping right at the start of the strip reloads', async ({ launch }) => {
   await expect(app.page.locator('.pull-zone')).toHaveAttribute('data-armed', 'true')
   // Scrolled straight to the start: one synthetic wheel event in WebKit moves
   // the strip only a step and snaps back, where a trackpad keeps pulling.
-  await app.strip.evaluate((strip) => strip.scrollTo({ left: 0 }))
-  await expect(app.cards).toHaveCount(2)
+  const after = await app.strip.evaluate((strip) => {
+    const zone = strip.querySelector<HTMLElement>('.pull-zone')!
+    const trace: string[] = []
+    ;(window as unknown as { pullTrace: string[] }).pullTrace = trace
+    strip.addEventListener('scroll', () => trace.push(`${strip.scrollLeft} armed=${zone.dataset.armed}`))
+    const before = `${strip.scrollLeft} max=${strip.scrollWidth - strip.clientWidth} zone=${zone.offsetLeft}`
+    strip.scrollTo({ left: 0 })
+    return `${before} -> ${strip.scrollLeft}`
+  })
+  try {
+    await expect(app.cards).toHaveCount(2)
+  } catch (err) {
+    const trace = await app.page.evaluate(() => (window as unknown as { pullTrace: string[] }).pullTrace)
+    throw new Error(`${(err as Error).message}\nscrollTo: ${after}\nscroll trace: ${trace.join(' | ')}`)
+  }
   expect(await app.ids()).toEqual(['t9', 't1'])
   // Laid out again from the first card, with the pull zone out of sight.
   await expect.poll(() => pulledOut(app.strip)).toBe(0)
