@@ -13,7 +13,7 @@ use crate::error::{CommandError, ErrorKind, Result};
 use crate::gmail::{self, Gmail, Mailbox, PAGE_SIZE};
 
 async fn blocking<T: Send + 'static>(f: impl FnOnce() -> Result<T> + Send + 'static) -> Result<T> {
-    tauri::async_runtime::spawn_blocking(f)
+    tokio::task::spawn_blocking(f)
         .await
         .map_err(|err| CommandError::new(ErrorKind::Internal, err.to_string()))?
 }
@@ -193,6 +193,12 @@ pub fn newest(pages: Vec<Vec<Card>>, limit: usize) -> Vec<Card> {
     cards.sort_by_key(|card| std::cmp::Reverse(card.date));
     cards.truncate(limit);
     cards
+}
+
+impl Default for Accounts {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[cfg(test)]

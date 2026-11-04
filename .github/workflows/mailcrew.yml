@@ -103,7 +103,9 @@ jobs:
       # the ones a pull request wrote go away when it closes.
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
-          workspaces: mailcrew/src-tauri
+          workspaces: |
+            mailcrew/src-tauri
+            mailcrew/core
       - run: pnpm install --frozen-lockfile
       # `tauri::generate_context!` verifies that frontendDist (dist/) exists.
       - run: pnpm build
@@ -115,6 +117,46 @@ jobs:
       - name: Rust tests
         working-directory: mailcrew/src-tauri
         run: cargo test
+      # The core crate on its own, with and without the bindings the native
+      # app calls it through. Its tests are the ones that cover what it does;
+      # src-tauri's are only the Tauri side's.
+      - name: Core lint
+        working-directory: mailcrew/core
+        run: |
+          cargo fmt --check
+          cargo clippy --all-targets -- -D warnings
+          cargo clippy --all-targets --features ffi -- -D warnings
+      - name: Core tests
+        working-directory: mailcrew/core
+        run: cargo test --features ffi
+
+  # The Swift side of the bindings: the core crate as a static library, the
+  # Swift sources UniFFI writes from it, and calls across into Rust. Apple
+  # silicon only, as the native app will be.
+  swift:
+    name: swift bindings (macos-latest)
+    runs-on: macos-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: mailcrew/core/swift
+    env:
+      CARGO_PROFILE_DEV_DEBUG: 0
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Toolchains
+        run: |
+          rustup update stable
+          rustup default stable
+          rustup target add aarch64-apple-darwin
+          swift --version
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: mailcrew/core
+      - name: Library and bindings
+        run: ./build.sh
+      - name: Swift tests
+        run: swift test -Xlinker -L"$(./build.sh --lib-dir)"
 
   build:
     name: build (${{ matrix.os }})

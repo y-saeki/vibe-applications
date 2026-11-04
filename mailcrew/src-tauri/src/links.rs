@@ -20,7 +20,7 @@ use tauri::Runtime;
 use tauri_plugin_opener::OpenerExt;
 use url::Url;
 
-use crate::commands::is_openable;
+use mailcrew_core::links::is_openable;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Navigation {

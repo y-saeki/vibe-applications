@@ -3,6 +3,8 @@
 Mail Crew をビルド・変更するための情報です。使い方やインストール方法は [README.md](./README.md) を参照してください。
 
 フロントエンドはフレームワークを使わない TypeScript で、シェルは Tauri v2（Rust）です。Gmail との通信、ログイン、メール本文の解析とサニタイズは Rust 側が受け持ち、ページは受け取ったカードを並べるだけです。
+
+Mail Crew は画面を SwiftUI で作るネイティブ版（macOS）に作り直している途中です。Rust 側の中身は `core/` のクレートにまとめてあり、今の Tauri 版（`src-tauri/`）と、これから作るネイティブ版の両方が使います。詳しくは「Rust の中身と Swift からの呼び出し」を参照してください。
 配布対象は macOS（Apple Silicon）と Windows（x64）の 2 つで、どちらも GitHub Actions でビルドします。
 
 ## 開発に必要なもの
@@ -13,6 +15,7 @@ Mail Crew をビルド・変更するための情報です。使い方やイン�
 | Node.js 22 以降 | |
 | [pnpm](https://pnpm.io/) 12 以降 | CI もこのバージョンを使います |
 | macOS: Xcode Command Line Tools | `xcode-select --install` |
+| macOS: Xcode | Swift から Rust を呼ぶ部分（`core/swift/`）のテストに使います |
 | Windows: Visual Studio Build Tools | 「C++ によるデスクトップ開発」を選択。Rust は MSVC ツールチェーンを既定にする |
 
 詳細は [Tauri の Prerequisites](https://v2.tauri.app/start/prerequisites/) を参照してください。動かして確かめるには、README の「初回の準備」で作る OAuth クライアントも要ります。
@@ -45,6 +48,15 @@ pnpm typecheck                     # TypeScript の型検査(src/ と tests/)
 pnpm build                         # フロントエンドのバンドル(dist/)
 pnpm test:e2e                      # フロントエンドの E2E テスト
 cd src-tauri && cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test
+cd core && cargo fmt --check && cargo clippy --all-targets --features ffi -- -D warnings && cargo test --features ffi
+```
+
+Swift から Rust を呼ぶ部分は、Mac でだけ確かめられます。
+
+```sh
+cd core/swift
+./build.sh                                        # Rust の静的ライブラリと Swift のバインディングを作る
+swift test -Xlinker -L"$(./build.sh --lib-dir)"   # Swift から呼んで確かめる
 ```
 
 `pnpm test:e2e` は初回だけブラウザの取得が必要です。
@@ -57,22 +69,26 @@ pnpm exec playwright install chromium webkit
 
 | 場所 | 役割 |
 |---|---|
-| `src-tauri/src/auth.rs` | Google へのログイン（OAuth 2.0、ループバックのリダイレクトと PKCE）、トークンの取得と更新 |
-| `src-tauri/src/credentials.rs` | アカウント情報の保存先（macOS のキーチェーン、Windows の資格情報マネージャー）と、以前のバージョンの保存の形からの移し替え |
-| `src-tauri/src/accounts.rs` | ログイン中のアカウントの一覧と、全アカウントの受信トレイを 1 つの列にまとめる処理 |
-| `src-tauri/src/gmail.rs` | 1 アカウント分の Gmail API の呼び出し。受信トレイのスレッド、ラベル、ラベルの付け外し |
-| `src-tauri/src/views.rs` | カスタムビューの保存先（アプリの設定ディレクトリの `views.json`） |
-| `src-tauri/src/image_senders.rs` | 外部画像を常に表示する差出人の保存先（アプリの設定ディレクトリの `image-senders.json`） |
-| `src-tauri/src/card.rs` | スレッドから 1 枚のカードに載せる内容を組み立てる |
-| `src-tauri/src/mime.rs` | Gmail が返す MIME 構造の読み取り。本文の選択、文字コード（宣言がないか誤っているときは推測する）、RFC 2047 のヘッダー |
-| `src-tauri/src/sanitize.rs` | HTML 本文のサニタイズ（ammonia）と、埋め込み画像の `cid:` を `data:` URL に置き換える処理 |
-| `src-tauri/src/attachments.rs` | 添付ファイルの書き出し。保存するファイル名、上書きしない書き出し先、開いてよい種類 |
-| `src-tauri/src/commands.rs` | ページから呼べるコマンドの一覧 |
+| `core/src/auth.rs` | Google へのログイン（OAuth 2.0、ループバックのリダイレクトと PKCE）、トークンの取得と更新 |
+| `core/src/credentials.rs` | アカウント情報の保存先（macOS のキーチェーン、Windows の資格情報マネージャー）と、以前のバージョンの保存の形からの移し替え |
+| `core/src/accounts.rs` | ログイン中のアカウントの一覧と、全アカウントの受信トレイを 1 つの列にまとめる処理 |
+| `core/src/gmail.rs` | 1 アカウント分の Gmail API の呼び出し。受信トレイのスレッド、ラベル、ラベルの付け外し |
+| `core/src/views.rs` | カスタムビューの保存先（アプリの設定ディレクトリの `views.json`） |
+| `core/src/image_senders.rs` | 外部画像を常に表示する差出人の保存先（アプリの設定ディレクトリの `image-senders.json`） |
+| `core/src/card.rs` | スレッドから 1 枚のカードに載せる内容を組み立てる |
+| `core/src/mime.rs` | Gmail が返す MIME 構造の読み取り。本文の選択、文字コード（宣言がないか誤っているときは推測する）、RFC 2047 のヘッダー |
+| `core/src/sanitize.rs` | HTML 本文のサニタイズ（ammonia）と、埋め込み画像の `cid:` を `data:` URL に置き換える処理 |
+| `core/src/attachments.rs` | 添付ファイルの書き出し。保存するファイル名、上書きしない書き出し先、開いてよい種類 |
+| `core/src/service.rs` | アプリができることの一覧（`Core`）。Tauri のコマンドとネイティブ版のバインディングは、どちらもここを呼ぶ |
+| `core/src/links.rs` | アプリの外で開いてよいリンク（http、https、mailto） |
+| `core/src/ffi.rs` | ネイティブ版が Swift から呼ぶためのバインディング（UniFFI） |
+| `core/swift/` | `core/` を Swift から使うためのパッケージ（`MailCrewCore`）と、そのテスト |
+| `src-tauri/src/commands.rs` | ページから呼べるコマンドの一覧。中身は `Core` に任せ、ブラウザやファイルを開く処理だけを受け持つ |
 | `src-tauri/src/links.rs` | webview がアプリ以外のページへ移動しないようにする。メール中のリンクは既定のアプリで開く |
-| `src-tauri/src/authres.rs` | Gmail が付けた `Authentication-Results` ヘッダーから、SPF・DKIM・DMARC の結果を読み取る |
-| `src-tauri/src/bimi.rs` | BIMI のレコードとマーク証明書（VMC・CMC）の検証。ロゴは証明書から取り出す |
-| `src-tauri/bimi-roots/` | マーク証明書の検証に使うルート証明書 |
-| `src-tauri/src/preferences.rs` | 設定の保存先（アプリの設定ディレクトリの `preferences.json`）。いまは BIMI のロゴを表示するかどうかだけ |
+| `core/src/authres.rs` | Gmail が付けた `Authentication-Results` ヘッダーから、SPF・DKIM・DMARC の結果を読み取る |
+| `core/src/bimi.rs` | BIMI のレコードとマーク証明書（VMC・CMC）の検証。ロゴは証明書から取り出す |
+| `core/bimi-roots/` | マーク証明書の検証に使うルート証明書 |
+| `core/src/preferences.rs` | 設定の保存先（アプリの設定ディレクトリの `preferences.json`）。いまは BIMI のロゴを表示するかどうかだけ |
 | `src/inbox.ts` | カードの列、ボタンの動作、まとめて完了 |
 | `src/views.ts` | サイドバーに並ぶビューと、ビューから取得条件を作る処理 |
 | `src/sidebar.ts` | サイドバーの開閉。閉じたかどうかは `localStorage` に保存する |
@@ -84,6 +100,22 @@ pnpm exec playwright install chromium webkit
 | `src/attachment-menu.ts` | 添付ファイルの一覧のポップアップ。開くと保存のボタン |
 | `src/trust.ts` | 件名の下に並ぶ検証結果の表示 |
 | `src/preferences.ts` | 設定の値。受信トレイと設定画面が同じ値を使う |
+
+### Rust の中身と Swift からの呼び出し
+
+`core/` は、画面に関わらない処理をまとめたライブラリのクレート（`mailcrew-core`）です。Tauri には依存しません。入口は `Core`（`core/src/service.rs`）で、Tauri 版が `State` として持っていたものと、各コマンドの処理をここに移しました。ブラウザを開く、ファイルを OS に渡す、ダウンロード フォルダを探すといった OS の機能だけは、使う側が受け持ちます。たとえばログインは、`start_sign_in` が待ち受けのポートと同意画面の URL を用意し、使う側がその URL をブラウザで開いてから `finish_sign_in` を待ちます。
+
+設定ファイル（`views.json`、`image-senders.json`、`preferences.json`）を置くディレクトリは `Core::new` に渡します。Tauri 版はアプリの設定ディレクトリ（macOS では `~/Library/Application Support/com.ysaeki.mailcrew`）を渡しています。ネイティブ版も同じディレクトリを渡せば、設定がそのまま引き継がれます。アカウント情報は、これまでどおりキーチェーンの同じ項目に入っています。
+
+ネイティブ版は `core/src/ffi.rs` を通して `Core` を呼びます。これは `ffi` フィーチャーを付けたときだけビルドされ、[UniFFI](https://mozilla.github.io/uniffi-rs/) が Swift のバインディングを生成します。
+
+- `MailCrew` が `Core` にあたるオブジェクトです。メソッドは Swift の `async throws` になり、処理は Rust 側で持つ Tokio のランタイムで動きます。失敗は `MailCrewError` で返り、ケースの種類は Tauri 版の `kind` と同じです。
+- ログインは `startSignIn` が返す `SignIn` の `url()` をブラウザで開き、`finish()` を待ちます。
+- 受け渡す型（カード、本文、添付ファイルなど）は `ffi.rs` の中で別に定義し、Rust の型から変換します。Tauri 版のページが受け取る JSON の形を変えないためです。添付ファイルの取得元やメールの差出人のように、Rust の中でだけ使う値は Swift に渡しません。
+
+`core/swift/build.sh` は、`core/` を Apple Silicon 向けの静的ライブラリ（`libmailcrew_core.a`）としてビルドし、そこから C のヘッダーと Swift のソースを生成します。生成したファイルはコミットしません。`core/swift/Package.swift` はそれらを `MailCrewCore` というライブラリにまとめます。
+
+`core/` のバージョンは `0.0.0` のままです。単独では配布しないためで、リリースのバージョンは今までどおり `src-tauri/tauri.conf.json` が決めます。依存ライブラリは `src-tauri/Cargo.lock` と `core/Cargo.lock` の両方に載ります。Dependabot はそれぞれのディレクトリを別に確かめます。
 
 ### ログインとアカウント情報
 
@@ -225,7 +257,7 @@ BIMI は `get_brand` で確かめます。ページは本文を取ったあと�
 
 結果は差出人のアドレスごとに、証明書の検証結果は URL ごとに、1 時間メモリに持ちます。DNS が答えなかったときと、証明書や CRL を取れなかったときは結果を持たず、次に同じ差出人のカードを表示したときに確かめ直します。設定で BIMI をオフにすると、Rust 側は DNS にも証明書のサーバーにも問い合わせません。
 
-ルート証明書は、AuthIndicators Working Group が [Mark Certificate Issuer Information](https://bimigroup.org/vmc-issuers/) に載せている認証局のものを `src-tauri/bimi-roots/` に置いています。一覧にある DigiCert、Entrust、GlobalSign と、SSL.com の ECC と RSA の 2 つで、合わせて 5 つです。一覧が変わったら、このディレクトリの PEM と `bimi.rs` の `ROOTS` を合わせて変えます。
+ルート証明書は、AuthIndicators Working Group が [Mark Certificate Issuer Information](https://bimigroup.org/vmc-issuers/) に載せている認証局のものを `core/bimi-roots/` に置いています。一覧にある DigiCert、Entrust、GlobalSign と、SSL.com の ECC と RSA の 2 つで、合わせて 5 つです。一覧が変わったら、このディレクトリの PEM と `bimi.rs` の `ROOTS` を合わせて変えます。
 
 ## Pull Request のビルド
 
@@ -240,9 +272,12 @@ BIMI は `get_brand` で確かめます。ページは本文を取ったあと�
 | 対象 | 実行 | 場所 |
 |---|---|---|
 | フロントエンド（`src/`）の E2E | `pnpm test:e2e` | `tests/e2e/` |
-| Rust 側の単体テスト | `cargo test` | 各ファイルの `mod tests` |
+| Rust 側の単体テスト | `cargo test`（`core/` と `src-tauri/`） | 各ファイルの `mod tests` |
+| Swift から Rust を呼ぶ部分 | `swift test`（`core/swift/`） | `core/swift/Tests/` |
 
-`cargo test` が確かめるのは、ネットワークを使わない部分です。PKCE とリダイレクトの読み取り（`auth.rs`）、アカウントの一覧の更新と旧形式の読み取り（`credentials.rs`）、複数アカウントのカードを新しい順に並べて切る処理（`accounts.rs`）、ビューの保存と読み込み（`views.rs`）、画像を常に表示する差出人の保存と読み込み（`image_senders.rs`）、MIME の解析と文字コード（ISO-2022-JP、Shift_JIS を含む）、文字コードの宣言がないか誤っているときの推測、RFC 2047 のヘッダー（`mime.rs`）、サニタイズで消えるものと残るもの、埋め込み画像の置き換え（`sanitize.rs`）、添付ファイルの一覧と埋め込み画像の見分け（`mime.rs`、`card.rs`）、保存するファイル名、上書きしない書き出し、開いてよい種類（`attachments.rs`）、スレッドからカードへの変換、メッセージから本文への変換と JSON の形（`card.rs`）、上限で断られたときの判定と待ち時間（`gmail.rs`）、開いてよいリンク（`commands.rs`）、webview に許す遷移（`links.rs`）、Gmail の検証結果の読み取り（`authres.rs`）、DMARC のポリシーと BIMI レコードの判定、テスト用に作ったマーク証明書の検証（`bimi.rs`）、設定の保存と読み込み（`preferences.rs`）を見ます。
+`cargo test` が確かめるのは、ネットワークを使わない部分です。PKCE とリダイレクトの読み取り（`auth.rs`）、アカウントの一覧の更新と旧形式の読み取り（`credentials.rs`）、複数アカウントのカードを新しい順に並べて切る処理（`accounts.rs`）、ビューの保存と読み込み（`views.rs`）、画像を常に表示する差出人の保存と読み込み（`image_senders.rs`）、MIME の解析と文字コード（ISO-2022-JP、Shift_JIS を含む）、文字コードの宣言がないか誤っているときの推測、RFC 2047 のヘッダー（`mime.rs`）、サニタイズで消えるものと残るもの、埋め込み画像の置き換え（`sanitize.rs`）、添付ファイルの一覧と埋め込み画像の見分け（`mime.rs`、`card.rs`）、保存するファイル名、上書きしない書き出し、開いてよい種類（`attachments.rs`）、スレッドからカードへの変換、メッセージから本文への変換と JSON の形（`card.rs`）、上限で断られたときの判定と待ち時間（`gmail.rs`）、開いてよいリンク（`core/src/links.rs`）、webview に許す遷移（`links.rs`）、Gmail の検証結果の読み取り（`authres.rs`）、DMARC のポリシーと BIMI レコードの判定、テスト用に作ったマーク証明書の検証（`bimi.rs`）、設定の保存と読み込み（`preferences.rs`）、ネイティブ版に渡すエラーと型の変換（`ffi.rs`）を見ます。
+
+`swift test` は、生成したバインディングを通して Swift から Rust を呼べることを確かめます。ビューと画像を常に表示する差出人と設定の保存と読み込み、開いてよいリンクの判定、Rust のエラーが `MailCrewError` として届くことを見ます。Google とキーチェーンには触れません。
 
 ### フロントエンドの E2E テスト
 
@@ -288,7 +323,7 @@ BIMI は `get_brand` で確かめます。ページは本文を取ったあと�
 
 ### CI
 
-`mailcrew/` を変更する Pull Request では、3 系統のジョブが同時に走ります。`frontend`（E2E と型検査）、`rust checks (macos-latest / windows-latest)`（`cargo fmt`、`clippy`、`cargo test`）、`build (macos-latest / windows-latest)`（`pnpm tauri build` と成果物のアップロード）です。E2E テストが落ちると、その run に `playwright-report` が添付されます。CI では失敗したテストを 1 回だけ再実行しますが、再実行で通ったもの（flaky）も失敗として扱います。
+`mailcrew/` を変更する Pull Request では、4 系統のジョブが同時に走ります。`frontend`（E2E と型検査）、`rust checks (macos-latest / windows-latest)`（`src-tauri/` と `core/` の `cargo fmt`、`clippy`、`cargo test`）、`swift bindings (macos-latest)`（`core/swift/` のバインディングの生成と `swift test`）、`build (macos-latest / windows-latest)`（`pnpm tauri build` と成果物のアップロード）です。E2E テストが落ちると、その run に `playwright-report` が添付されます。CI では失敗したテストを 1 回だけ再実行しますが、再実行で通ったもの（flaky）も失敗として扱います。
 
 バージョンの検査は `.github/workflows/mailcrew-version.yml` という別のワークフローです。ラベルの付け外しでも走る必要があり、`mailcrew.yml` に足すと macOS / Windows のビルドまで走ってしまうためです。
 

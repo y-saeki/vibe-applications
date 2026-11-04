@@ -118,6 +118,9 @@ impl Brand {
 pub struct DnsFailed;
 
 /// TXT records, each one's strings joined.
+// Only implemented here (the system's DNS, and the tests' fakes), so no
+// caller needs a `Send` bound on the future.
+#[allow(async_fn_in_trait)]
 pub trait Dns {
     async fn txt(&self, name: &str) -> Result<Vec<String>, DnsFailed>;
 }
@@ -126,6 +129,8 @@ pub trait Dns {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FetchFailed;
 
+// Only implemented here, as `Dns` is.
+#[allow(async_fn_in_trait)]
 pub trait Fetch {
     async fn get(&self, url: &str, limit: usize) -> Result<Vec<u8>, FetchFailed>;
 }
@@ -800,6 +805,12 @@ impl Brands {
                 |brand| brand.bimi != BimiResult::Temperror && brand.mark != MarkResult::Temperror,
             )
             .await
+    }
+}
+
+impl Default for Brands {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

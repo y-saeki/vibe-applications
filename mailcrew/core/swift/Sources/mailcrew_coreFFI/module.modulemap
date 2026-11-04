@@ -1,0 +1,5 @@
+module mailcrew_coreFFI {
+    header "mailcrew_coreFFI.h"
+    link "mailcrew_core"
+    export *
+}

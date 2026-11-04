@@ -254,6 +254,12 @@ pub async fn refresh(
     .await
 }
 
+impl Default for Pkce {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -10,17 +10,32 @@ an identifier: the directory, the package names, `identifier`, the credential st
 name, the release tag and the workflow files. Changing `identifier` or the service name would
 strand every stored sign-in, so neither follows the display name.
 
+## What lives where
+
+Mail Crew is being rebuilt as a native macOS app (SwiftUI) in place of the Tauri app, and the
+two share one Rust crate meanwhile. `core/` is that crate: Gmail, sign-in and the stored
+accounts, message bodies and their sanitising, attachments, the sender checks, and the
+settings files, behind `Core` (`core/src/service.rs`). `src-tauri/` is only the Tauri
+front end: the commands hand their work to `Core`, and do themselves only what the OS does
+for them (opening the browser or a file, finding the downloads folder). The native app calls
+the same `Core` through the UniFFI bindings in `core/src/ffi.rs`, which `core/swift/` wraps as
+a Swift package. Anything both apps need goes in `core/`; nothing in `core/` depends on Tauri.
+
+The rules below hold in both apps. Where they name the Tauri app's page or webview, the native
+app keeps the same guarantee with its own pieces (WKWebView without JavaScript, a
+`WKContentRuleList` for what loads from the network).
+
 ## The message frame is a security boundary
 
 A message's HTML is untrusted, and two layers keep it from doing anything:
-`src-tauri/src/sanitize.rs` strips what could run, and `src/message-frame.ts` shows the
+`core/src/sanitize.rs` strips what could run, and `src/message-frame.ts` shows the
 rest in an iframe sandboxed with `allow-same-origin` alone and a Content-Security-Policy of
 its own. `DEVELOPMENT.md` explains both. Changing either keeps these true:
 
 - The frame never gets `allow-scripts`. With `allow-same-origin` beside it, the sandbox
   would no longer hold.
 - Nothing from the network loads in a message until the user presses 表示する for it, or has
-  chosen この差出人は常に表示 for its sender (`src-tauri/src/image_senders.rs`). The choice is
+  chosen この差出人は常に表示 for its sender (`core/src/image_senders.rs`). The choice is
   kept per address, as Gmail keeps it, never per domain.
 - The frame never scrolls; the card body does, and nothing in a card overflows sideways,
   so a horizontal swipe always moves the strip. `tests/e2e/message.spec.ts` holds both.
@@ -44,7 +59,7 @@ with it. Do not remove it without replacing what it does.
 ## Attachments are opened by kind, not trusted
 
 What a file does when opened is decided by its extension, and the sender picks the extension.
-So only the kinds listed in `OPENABLE` in `src-tauri/src/attachments.rs` — documents, images,
+So only the kinds listed in `OPENABLE` in `core/src/attachments.rs` — documents, images,
 audio, video — are ever handed to the OS to open; everything else can only be saved. The check
 is made in Rust on the name as it will be written (`safe_file_name`), not on what the page says,
 and the page shows no 開く for the rest. Do not add a kind that runs code or opens a browser or
@@ -57,12 +72,12 @@ The row under a card's subject shows Gmail's SPF, DKIM and DMARC results and Mai
 and mark certificate checks. `DEVELOPMENT.md` has the steps. Changing them keeps these true:
 
 - Only Gmail's `Authentication-Results` is read: the topmost one, and only when its authserv-id
-  is Gmail's (`GMAIL_AUTHSERV_ID` in `src-tauri/src/authres.rs`). A sender can write the header
+  is Gmail's (`GMAIL_AUTHSERV_ID` in `core/src/authres.rs`). A sender can write the header
   too.
 - Nothing about BIMI is looked up unless Gmail's DMARC result is `pass`, and nothing at all
   while the user has turned BIMI off in the settings (`preferences.json`, on by default).
   Lookups go out from Rust; the page only ever gets a `data:` URL.
-- A logo is shown only from a mark certificate that chains to a root in `src-tauri/bimi-roots/`.
+- A logo is shown only from a mark certificate that chains to a root in `core/bimi-roots/`.
   The record's `l=` file is never fetched.
 
 ## Every action names its account
@@ -104,17 +119,18 @@ covers it changes in the same commit:
 | The attachment button in a card's toolbar, the list it opens, opening and saving | `tests/e2e/attachments.spec.ts` |
 | How a body is shown: the frame, links, images, scaling, lazy mounting, the checks under the subject, the BIMI logo | `tests/e2e/message.spec.ts` |
 | The `csp` in `src-tauri/tauri.conf.json` or `tauri.macos.conf.json`, or anything the page loads from elsewhere | `tests/e2e/csp.spec.ts` |
-| A field on `Card` or `MessageContent` (`src-tauri/src/card.rs`) | `src/backend.ts`, `card()` in `tests/e2e/fixtures.ts`, and `mod tests` in `card.rs` |
+| A field on `Card` or `MessageContent` (`core/src/card.rs`) | `src/backend.ts`, `card()` in `tests/e2e/fixtures.ts`, and `mod tests` in `card.rs` |
 | A command the frontend invokes | `handle` in `tests/e2e/harness/backend.ts`. It throws on a command it does not know |
-| How accounts are stored, or the inbox of several accounts is merged | `mod tests` in `src-tauri/src/credentials.rs` and `src-tauri/src/accounts.rs` |
-| How the senders whose images are always shown are stored | `mod tests` in `src-tauri/src/image_senders.rs` |
-| What the sanitiser removes or keeps, or how embedded images are put in | `mod tests` in `src-tauri/src/sanitize.rs` |
-| Which parts are attachments or embedded images | `mod tests` in `src-tauri/src/mime.rs` and `card.rs` |
-| How attachments are named and written, or which kinds open | `mod tests` in `src-tauri/src/attachments.rs` |
+| How accounts are stored, or the inbox of several accounts is merged | `mod tests` in `core/src/credentials.rs` and `core/src/accounts.rs` |
+| How the senders whose images are always shown are stored | `mod tests` in `core/src/image_senders.rs` |
+| What the sanitiser removes or keeps, or how embedded images are put in | `mod tests` in `core/src/sanitize.rs` |
+| Which parts are attachments or embedded images | `mod tests` in `core/src/mime.rs` and `card.rs` |
+| How attachments are named and written, or which kinds open | `mod tests` in `core/src/attachments.rs` |
 | Which navigations the webview allows | `mod tests` in `src-tauri/src/links.rs` |
-| How Gmail's `Authentication-Results` are read | `mod tests` in `src-tauri/src/authres.rs` |
-| The DMARC, BIMI record and mark certificate checks | `mod tests` in `src-tauri/src/bimi.rs` |
-| How preferences are stored | `mod tests` in `src-tauri/src/preferences.rs` |
+| How Gmail's `Authentication-Results` are read | `mod tests` in `core/src/authres.rs` |
+| The DMARC, BIMI record and mark certificate checks | `mod tests` in `core/src/bimi.rs` |
+| How preferences are stored | `mod tests` in `core/src/preferences.rs` |
+| A function, object or record the native app calls (`core/src/ffi.rs`) | `mod tests` in `ffi.rs`, and `core/swift/Tests/` for what crosses into Swift |
 
 `DEVELOPMENT.md` lists what these tests cannot reach — Google itself, the credential store,
 the browser a link opens in. Assert the `invoke` that was made and leave the rest to the
