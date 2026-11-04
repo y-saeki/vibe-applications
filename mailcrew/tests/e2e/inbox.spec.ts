@@ -184,6 +184,8 @@ test('the cards follow a pull only part of the way', async ({ launch }) => {
     const look = () =>
       `left=${strip.scrollLeft} transform=${getComputedStyle(first).transform} ` +
       `anim=${first.getAnimations().map((a) => `${a.constructor.name}:${a.timeline?.constructor.name}:${a.effect?.getComputedTiming().progress}`)}`
+    const scrolls: number[] = []
+    strip.addEventListener('scroll', () => scrolls.push(strip.scrollLeft))
     const rest = strip.scrollLeft
     const before = first.getBoundingClientRect().left
     const lookBefore = look()
@@ -191,7 +193,7 @@ test('the cards follow a pull only part of the way', async ({ launch }) => {
     await frame()
     await frame()
     const moved = first.getBoundingClientRect().left - before
-    const state = `rest=${rest} class=${strip.className} before[${lookBefore}] after[${look()}]`
+    const state = `rest=${rest} class=${strip.className} before[${lookBefore}] after[${look()}] scrolls=${scrolls.join(',')}`
     // Put it back before letting go.
     strip.scrollTo({ left: rest })
     clearInterval(hold)

@@ -61,8 +61,14 @@ export class PullToReload {
       },
       { passive: true },
     )
-    // The strip has no width while it is hidden; put it back once it has one.
+    // The strip has no width while it is hidden; put it back once it has one,
+    // or when the window's width changes. A change of height alone leaves the
+    // strip where it is, so it cannot undo a pull that has just begun.
+    let width = -1
     new ResizeObserver(() => {
+      const now = this.strip.clientWidth
+      if (now === width) return
+      width = now
       if (this.resting && !this.pulling) this.strip.scrollLeft = this.rest
     }).observe(strip)
   }
