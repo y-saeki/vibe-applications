@@ -175,21 +175,26 @@ test('the cards follow a pull only part of the way', async ({ launch }) => {
   const app = await launch({ inboxes: [cards(3)] })
   await expect(app.cards).toHaveCount(3)
   await expect(app.page.locator('.pull-zone')).toHaveAttribute('data-armed', 'true')
-  const { pulled, moved } = await app.strip.evaluate(async (strip) => {
+  const { pulled, moved, state } = await app.strip.evaluate(async (strip) => {
     const frame = () => new Promise((resolve) => requestAnimationFrame(resolve))
     const first = strip.querySelector<HTMLElement>('.card[data-thread-id]')!
+    const look = () =>
+      `left=${strip.scrollLeft} transform=${getComputedStyle(first).transform} ` +
+      `anim=${first.getAnimations().map((a) => `${a.constructor.name}:${a.timeline?.constructor.name}:${a.effect?.getComputedTiming().progress}`)}`
     const rest = strip.scrollLeft
     const before = first.getBoundingClientRect().left
+    const lookBefore = look()
     strip.scrollTo({ left: 0 })
     await frame()
     await frame()
     const moved = first.getBoundingClientRect().left - before
+    const state = `rest=${rest} class=${strip.className} before[${lookBefore}] after[${look()}]`
     // Put it back before it counts as letting go.
     strip.scrollTo({ left: rest })
-    return { pulled: rest, moved }
+    return { pulled: rest, moved, state }
   })
   // 80px (--pull-lag) less than the strip was pulled.
-  expect(Math.round(moved)).toBe(Math.round(pulled) - 80)
+  expect(Math.round(moved), state).toBe(Math.round(pulled) - 80)
   await app.expectCalls('list_inbox', 1)
 })
 
@@ -198,15 +203,21 @@ test('pulling the zone out and back before letting go does not reload', async ({
   await expect(app.cards).toHaveCount(3)
   await expect(app.page.locator('.pull-zone')).toHaveAttribute('data-armed', 'true')
   await app.strip.evaluate(async (strip) => {
+    const trace: string[] = []
+    ;(strip as HTMLElement & { trace?: string[] }).trace = trace
+    const label = strip.querySelector('.pull-label')!
+    strip.addEventListener('scroll', () => trace.push(`${strip.scrollLeft} ${label.textContent}`))
     const frame = () => new Promise((resolve) => requestAnimationFrame(resolve))
     const rest = strip.scrollLeft
+    trace.push(`rest=${rest}`)
     strip.scrollTo({ left: 0 })
     await frame()
     await frame()
     strip.scrollTo({ left: rest / 2 })
   })
   await expect.poll(() => pulledOut(app.strip)).toBe(0)
-  await app.expectCalls('list_inbox', 1)
+  const trace = await app.strip.evaluate((strip) => (strip as HTMLElement & { trace?: string[] }).trace ?? [])
+  await expect.poll(async () => (await app.callsTo('list_inbox')).length, trace.join(' | ')).toBe(1)
 })
 
 test('a short swipe at the start of the strip springs back without reloading', async ({ launch }) => {
