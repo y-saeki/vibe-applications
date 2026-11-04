@@ -10,7 +10,7 @@ enum AppServices {
     static let http = HatenaHTTPClient(userAgent: UserAgent.tenabuku(version: appVersion))
     static let feed = FeedClient(http: http)
     static let entryInfo = EntryInfoAPI(http: http)
-    static let entryComments = EntryCommentsAPI(http: http)
+    static let popularComments = PopularCommentsAPI(http: http)
     static let myBookmarks = MyBookmarkTimelineStore(
         url: FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("MyBookmarks.json")

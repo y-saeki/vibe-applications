@@ -18,7 +18,7 @@ struct CommentRowData: Identifiable {
 @Observable
 final class EntryCommentsModel {
     enum Tab: String, CaseIterable, Identifiable {
-        case popular = "人気"
+        case popular = "注目"
         case recent = "新着"
 
         var id: Self { self }
@@ -52,9 +52,9 @@ final class EntryCommentsModel {
         }
     }
 
-    // The ranking only exists in the website's undocumented JSON.
+    // The ranking only exists in the website's entry page.
     private func popular() async throws -> [CommentRowData] {
-        try await AppServices.entryComments.comments(for: url, sort: .popular).comments.map {
+        try await AppServices.popularComments.comments(for: url).map {
             CommentRowData(user: $0.user, iconURL: $0.iconURL, comment: $0.comment, tags: $0.tags, date: $0.date)
         }
     }
