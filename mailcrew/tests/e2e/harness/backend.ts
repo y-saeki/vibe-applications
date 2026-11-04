@@ -111,6 +111,15 @@ function handle(cmd: string, args: unknown): unknown {
       const found = findMessage(args)
       return { body: found.body, attachments: found.attachments, authentication: found.authentication }
     }
+    case 'open_attachment':
+      return null
+    case 'save_attachment': {
+      // The name it was saved under, as the Rust side resolves with.
+      const { attachmentId } = args as { attachmentId: string }
+      const found = findMessage(args).attachments.find((attachment) => attachment.id === attachmentId)
+      if (!found) throw new Error(`mailcrew test: no attachment ${attachmentId}`)
+      return found.name
+    }
     case 'get_brand':
       // The Rust side looks nothing up while the preference is off.
       return preferences.brandLogos ? findMessage(args).brand : null

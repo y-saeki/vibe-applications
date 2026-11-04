@@ -9,6 +9,7 @@ use tokio::net::TcpListener;
 use tokio::sync::oneshot;
 
 use crate::accounts::InboxPage;
+use crate::attachments;
 use crate::auth::{self, AccessToken, Pkce};
 use crate::bimi::Brand;
 use crate::card::MessageContent;
@@ -213,6 +214,94 @@ pub async fn get_brand(
     let author = content.author.unwrap_or_default();
     let passed = !author.is_empty() && content.authentication.dmarc_passed();
     Ok(Some(state.brands.brand(&author, passed).await))
+}
+
+/// Opens an attachment in the app the OS picks for it, from a folder of its
+/// own under `opened_dir`. Only the kinds `attachments::is_openable` allows
+/// are opened; the rest can only be saved.
+#[tauri::command]
+pub async fn open_attachment(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    account: String,
+    message_id: String,
+    attachment_id: String,
+) -> Result<()> {
+    let gmail = state.accounts.get(&account).await?;
+    let (attachment, bytes) = state
+        .accounts
+        .check(
+            &account,
+            gmail.attachment(&message_id, &attachment_id).await,
+        )
+        .await?;
+    if !attachment.openable {
+        return Err(CommandError::new(
+            ErrorKind::Internal,
+            "この種類のファイルは Mail Crew からは開けません。保存してから開いてください",
+        ));
+    }
+    let dir = opened_dir(&app)?.join(format!("{:016x}", rand::random::<u64>()));
+    let path = write_file(dir, attachment.name, bytes).await?;
+    app.opener()
+        .open_path(path.to_string_lossy(), None::<&str>)
+        .map_err(|err| {
+            CommandError::new(
+                ErrorKind::Internal,
+                format!("添付ファイルを開けませんでした: {err}"),
+            )
+        })
+}
+
+/// Saves an attachment to the downloads folder, never over another file, and
+/// resolves with the name it was saved under.
+#[tauri::command]
+pub async fn save_attachment(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    account: String,
+    message_id: String,
+    attachment_id: String,
+) -> Result<String> {
+    let gmail = state.accounts.get(&account).await?;
+    let (attachment, bytes) = state
+        .accounts
+        .check(
+            &account,
+            gmail.attachment(&message_id, &attachment_id).await,
+        )
+        .await?;
+    let dir = app.path().download_dir().map_err(|err| {
+        CommandError::new(
+            ErrorKind::Internal,
+            format!("ダウンロード フォルダが見つかりません: {err}"),
+        )
+    })?;
+    let path = write_file(dir, attachment.name, bytes).await?;
+    Ok(path
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default())
+}
+
+/// Where opened attachments are written, emptied each time Mail Crew starts.
+pub fn opened_dir(app: &AppHandle) -> Result<PathBuf> {
+    app.path()
+        .temp_dir()
+        .map(|dir| dir.join("mailcrew-attachments"))
+        .map_err(|err| CommandError::new(ErrorKind::Internal, err.to_string()))
+}
+
+async fn write_file(dir: PathBuf, name: String, bytes: Vec<u8>) -> Result<PathBuf> {
+    tauri::async_runtime::spawn_blocking(move || attachments::write_new(&dir, &name, &bytes))
+        .await
+        .map_err(|err| CommandError::new(ErrorKind::Internal, err.to_string()))?
+        .map_err(|err| {
+            CommandError::new(
+                ErrorKind::Internal,
+                format!("添付ファイルを書き込めませんでした: {err}"),
+            )
+        })
 }
 
 async fn current_preferences(app: &AppHandle, state: &AppState) -> Result<Preferences> {

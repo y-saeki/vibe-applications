@@ -8,6 +8,7 @@ import {
   backend,
   errorMessage,
   isCommandError,
+  type Attachment,
   type Authentication,
   type Brand,
   type Card,
@@ -16,6 +17,7 @@ import {
   type Mailbox,
   type MessageContent,
 } from './backend'
+import { AttachmentMenu, type AttachmentAction } from './attachment-menu'
 import { formatDate } from './format'
 import { ICONS } from './icons'
 import type { ImageSenders } from './image-senders'
@@ -67,6 +69,8 @@ interface Mounted {
   body: MountedBody | null
   /** Set while the message's body is being fetched. */
   fetching: boolean
+  /** The message's attachments, once its body has been fetched. */
+  attachments: Attachment[]
 }
 
 export class Inbox {
@@ -78,6 +82,7 @@ export class Inbox {
   private readonly emptyTitle = document.querySelector<HTMLElement>('#empty-title')!
   private readonly emptyLead = document.querySelector<HTMLElement>('#empty-lead')!
   private readonly picker = new TagPicker()
+  private readonly attachmentMenu = new AttachmentMenu((err) => this.fail(err))
   private readonly mounted = new Map<string, Mounted>()
   /** Each account's labels, as last fetched. */
   private readonly labels = new Map<string, Label[]>()
@@ -126,6 +131,7 @@ export class Inbox {
 
   hide(): void {
     this.picker.close()
+    this.attachmentMenu.close()
     this.root.hidden = true
     this.clear()
   }
@@ -163,6 +169,7 @@ export class Inbox {
     }
     this.loadingNow = true
     this.picker.close()
+    this.attachmentMenu.close()
     this.loading.hidden = false
     try {
       do {
@@ -215,7 +222,7 @@ export class Inbox {
     }
     for (const card of cards) {
       const element = this.buildCard(card)
-      this.mounted.set(keyOf(card), { card, element, body: null, fetching: false })
+      this.mounted.set(keyOf(card), { card, element, body: null, fetching: false, attachments: [] })
       this.strip.append(element)
       this.observer.observe(element)
     }
@@ -307,11 +314,6 @@ export class Inbox {
       count.textContent = `${card.messageCount} 通`
       meta.append(count)
     }
-    // The attachments are known only once the body has been fetched.
-    const attachments = document.createElement('span')
-    attachments.className = 'card-badge card-attachments'
-    attachments.hidden = true
-    meta.append(attachments)
     fromRow.append(logo, from, meta, date)
 
     const images = document.createElement('div')
@@ -366,6 +368,16 @@ export class Inbox {
       if (tool.action === 'star') button.setAttribute('aria-pressed', String(card.starred))
       toolbar.append(button)
     }
+    // Last among the icons, so the others keep their places on every card.
+    // The attachments are known only once the body has been fetched.
+    const attachments = document.createElement('button')
+    attachments.type = 'button'
+    attachments.className = 'tool tool-attachments'
+    attachments.dataset.action = 'attachments'
+    attachments.setAttribute('aria-haspopup', 'dialog')
+    attachments.setAttribute('aria-expanded', 'false')
+    attachments.hidden = true
+    toolbar.append(attachments)
 
     element.append(head, images, bodyWrap, toolbar)
     return element
@@ -432,12 +444,18 @@ export class Inbox {
     const scrollbar = new OverlayScrollbar(container, container.parentElement!)
     for (const child of container.children) scrollbar.watch(child)
     if (remote && !trusted) element.querySelector<HTMLElement>('.card-images')!.hidden = false
+    mounted.attachments = content.attachments
     if (content.attachments.length > 0) {
-      const attachments = element.querySelector<HTMLElement>('.card-attachments')!
-      attachments.innerHTML = ICONS.attachment
-      attachments.append(` ${content.attachments.length}`)
-      attachments.title = content.attachments.join('\n')
-      attachments.hidden = false
+      const button = element.querySelector<HTMLElement>('.tool-attachments')!
+      const label = `添付ファイル ${content.attachments.length} 件`
+      button.innerHTML = ICONS.attachment
+      const count = document.createElement('span')
+      count.className = 'tool-count'
+      count.textContent = String(content.attachments.length)
+      button.append(count)
+      button.title = label
+      button.setAttribute('aria-label', label)
+      button.hidden = false
     }
     const lookUp = this.preferences.brandLogos
     this.showTrust(mounted, content.authentication, undefined, lookUp)
@@ -511,7 +529,32 @@ export class Inbox {
       case 'images-always':
         void this.trustSender(card.from.email, button)
         break
+      case 'attachments':
+        this.toggleAttachments(mounted, button)
+        break
     }
+  }
+
+  /** Opens the list of a card's attachments above its button, or closes it. */
+  private toggleAttachments(mounted: Mounted, button: HTMLButtonElement): void {
+    if (this.attachmentMenu.isOpenFor(button)) {
+      this.attachmentMenu.close()
+      return
+    }
+    this.picker.close()
+    const { card } = mounted
+    this.attachmentMenu.open(button, mounted.attachments, (attachment, action) =>
+      this.runAttachment(card, attachment.id, action),
+    )
+  }
+
+  private async runAttachment(card: Card, attachmentId: string, action: AttachmentAction): Promise<void> {
+    if (action === 'open') {
+      await backend.openAttachment(card.account, card.messageId, attachmentId)
+      return
+    }
+    const name = await backend.saveAttachment(card.account, card.messageId, attachmentId)
+    showNotice(`ダウンロード フォルダに「${name}」を保存しました`)
   }
 
   /** Loads the images from the network in one card's message. */
@@ -543,6 +586,7 @@ export class Inbox {
   /** Takes the card off the strip, and puts it back where it was if `action` fails. */
   private async takeOff(mounted: Mounted, action: () => Promise<void>): Promise<void> {
     const { element, card } = mounted
+    this.attachmentMenu.close()
     const next = element.nextSibling
     this.mounted.delete(keyOf(card))
     element.remove()

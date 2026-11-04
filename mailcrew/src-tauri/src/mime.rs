@@ -1,9 +1,12 @@
 //! Reading a message out of the structure the Gmail API returns with
-//! `format=full`: the headers, the body to show, and the attachments' names.
-//! Bodies arrive as base64url bytes in whatever charset the sender used.
+//! `format=full`: the headers, the body to show, the images the body embeds
+//! and the attachments. Bodies arrive as base64url bytes in whatever charset
+//! the sender used.
 
 use base64::alphabet;
 use base64::engine::{DecodePaddingMode, GeneralPurpose, GeneralPurposeConfig};
+use std::collections::HashSet;
+
 use base64::Engine as _;
 use chardetng::{EncodingDetector, Iso2022JpDetection, Utf8Detection};
 use encoding_rs::Encoding;
@@ -18,6 +21,8 @@ const BASE64URL: GeneralPurpose = GeneralPurpose::new(
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct MessagePart {
+    /// Unique within the message: `0`, `1`, `1.0` and so on.
+    pub part_id: String,
     pub mime_type: String,
     pub filename: String,
     pub headers: Vec<Header>,
@@ -34,8 +39,17 @@ pub struct Header {
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct PartBody {
+    /// The part's bytes, when Gmail sent them along with the message.
     pub data: Option<String>,
+    /// Otherwise the id `messages.attachments.get` takes to fetch them.
     pub attachment_id: Option<String>,
+    /// The bytes' length once decoded.
+    pub size: u64,
+}
+
+/// Bytes Gmail sent as base64url, padded or not.
+pub fn decode_base64url(data: &str) -> Option<Vec<u8>> {
+    BASE64URL.decode(data).ok()
 }
 
 /// The body a card shows.
@@ -66,7 +80,7 @@ impl MessagePart {
 
     /// The part's text, decoded from its charset.
     fn text(&self) -> Option<String> {
-        let bytes = BASE64URL.decode(self.body.data.as_deref()?).ok()?;
+        let bytes = decode_base64url(self.body.data.as_deref()?)?;
         let charset = self
             .header("Content-Type")
             .and_then(|value| content_type_param(value, "charset"));
@@ -101,28 +115,97 @@ impl MessagePart {
         }
     }
 
-    /// The file names of everything attached, in order.
-    pub fn attachments(&self) -> Vec<String> {
-        let mut names = Vec::new();
-        self.collect_attachments(&mut names);
-        names
+    /// The part's `Content-ID` without its angle brackets.
+    pub fn content_id(&self) -> Option<&str> {
+        let id = self.header("Content-ID")?.trim();
+        let id = id.strip_prefix('<').unwrap_or(id);
+        let id = id.strip_suffix('>').unwrap_or(id).trim();
+        (!id.is_empty()).then_some(id)
     }
 
-    fn collect_attachments(&self, names: &mut Vec<String>) {
-        let disposition = self
-            .header("Content-Disposition")
-            .unwrap_or_default()
-            .to_ascii_lowercase();
-        // Images placed in the HTML body are parts of the body, not attachments.
-        let inline =
-            disposition.trim_start().starts_with("inline") && self.header("Content-ID").is_some();
-        if !self.filename.is_empty() && !inline {
-            names.push(decode_encoded_words(&self.filename));
-        }
+    /// This part and every part inside it, in order.
+    fn walk<'a>(&'a self, out: &mut Vec<&'a MessagePart>) {
+        out.push(self);
         for part in &self.parts {
-            part.collect_attachments(names);
+            part.walk(out);
         }
     }
+
+    /// The images `html` shows from inside the message (`<img src="cid:...">`),
+    /// in the order the message holds them.
+    pub fn embedded_images(&self, html: &str) -> Vec<&MessagePart> {
+        let references = cid_references(html);
+        if references.is_empty() {
+            return Vec::new();
+        }
+        let mut parts = Vec::new();
+        self.walk(&mut parts);
+        parts
+            .into_iter()
+            .filter(|part| part.mime_type.to_ascii_lowercase().starts_with("image/"))
+            .filter(|part| {
+                part.content_id()
+                    .is_some_and(|id| references.contains(&id.to_ascii_lowercase()))
+            })
+            .collect()
+    }
+
+    /// Every part attached as a file, in order, but the images in `embedded`:
+    /// those are part of the body.
+    pub fn attachments(&self, embedded: &[&MessagePart]) -> Vec<&MessagePart> {
+        let mut parts = Vec::new();
+        self.walk(&mut parts);
+        parts
+            .into_iter()
+            .filter(|part| !part.filename.is_empty())
+            .filter(|part| !embedded.iter().any(|image| std::ptr::eq(*image, *part)))
+            .collect()
+    }
+
+    /// The part's file name, with any RFC 2047 encoding undone.
+    pub fn file_name(&self) -> String {
+        decode_encoded_words(&self.filename)
+    }
+}
+
+/// The content ids an HTML body refers to with `cid:` URLs, in lower case.
+/// RFC 2392 has the id percent-encoded in the URL; this undoes that.
+pub fn cid_references(html: &str) -> HashSet<String> {
+    let lower = html.to_ascii_lowercase();
+    lower
+        .match_indices("cid:")
+        .filter_map(|(at, _)| {
+            let rest = &html[at + 4..];
+            let end = rest
+                .find(|c: char| c.is_whitespace() || matches!(c, '"' | '\'' | ')' | '>' | '<'))
+                .unwrap_or(rest.len());
+            let id = cid_from_url(&rest[..end]);
+            (!id.is_empty()).then_some(id)
+        })
+        .collect()
+}
+
+/// The content id a `cid:` URL's path names, percent-decoded and in lower
+/// case, which is how ids are compared.
+pub fn cid_from_url(path: &str) -> String {
+    let bytes = path.trim().as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let Some(byte) = std::str::from_utf8(&bytes[i + 1..i + 3])
+                .ok()
+                .and_then(|hex| u8::from_str_radix(hex, 16).ok())
+            {
+                out.push(byte);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).to_ascii_lowercase()
 }
 
 /// One parameter of a `Content-Type` value, unquoted.
@@ -375,7 +458,7 @@ mod tests {
             }],
             body: PartBody {
                 data: Some(b64(data)),
-                attachment_id: None,
+                ..Default::default()
             },
             ..Default::default()
         }
@@ -424,30 +507,91 @@ mod tests {
         assert_eq!(part.body(), Body::Text("シフトJIS".into()));
     }
 
+    fn with_headers(mut part: MessagePart, headers: &[(&str, &str)]) -> MessagePart {
+        for (name, value) in headers {
+            part.headers.push(Header {
+                name: (*name).into(),
+                value: (*value).into(),
+            });
+        }
+        part
+    }
+
+    fn names(parts: &[&MessagePart]) -> Vec<String> {
+        parts.iter().map(|part| part.file_name()).collect()
+    }
+
     #[test]
     fn skips_attached_text_and_lists_attachments() {
         let mut attached = leaf("text/plain", "text/plain", b"attached");
         attached.filename = "notes.txt".into();
-        let mut inline_image = leaf("image/png", "image/png", b"png");
-        inline_image.filename = "logo.png".into();
-        inline_image.headers.push(Header {
-            name: "Content-Disposition".into(),
-            value: "inline; filename=logo.png".into(),
-        });
-        inline_image.headers.push(Header {
-            name: "Content-ID".into(),
-            value: "<logo>".into(),
-        });
+        let message = multipart(
+            "multipart/mixed",
+            vec![attached, leaf("text/plain", "text/plain", b"body")],
+        );
+        assert_eq!(message.body(), Body::Text("body".into()));
+        assert_eq!(names(&message.attachments(&[])), vec!["notes.txt"]);
+    }
+
+    #[test]
+    fn an_image_the_html_shows_is_part_of_the_body() {
+        let mut logo = with_headers(
+            leaf("image/png", "image/png", b"png"),
+            &[
+                ("Content-Disposition", "inline; filename=logo.png"),
+                ("Content-ID", "<Logo@Shop.example>"),
+            ],
+        );
+        logo.filename = "logo.png".into();
+        // Inline too, but nothing in the HTML shows it, so it is listed.
+        let mut photo = with_headers(
+            leaf("image/jpeg", "image/jpeg", b"jpg"),
+            &[
+                ("Content-Disposition", "inline; filename=photo.jpg"),
+                ("Content-ID", "<photo>"),
+            ],
+        );
+        photo.filename = "photo.jpg".into();
+        let mut invoice = leaf("application/pdf", "application/pdf", b"%PDF");
+        invoice.filename = "=?UTF-8?B?6KuL5rGC5pu4?=.pdf".into();
+        let html = r#"<p>hi</p><img src="cid:logo%40shop.example" alt="logo">"#;
         let message = multipart(
             "multipart/mixed",
             vec![
-                attached,
-                leaf("text/plain", "text/plain", b"body"),
-                inline_image,
+                multipart(
+                    "multipart/related",
+                    vec![leaf("text/html", "text/html", html.as_bytes()), logo],
+                ),
+                photo,
+                invoice,
             ],
         );
-        assert_eq!(message.body(), Body::Text("body".into()));
-        assert_eq!(message.attachments(), vec!["notes.txt".to_string()]);
+        let embedded = message.embedded_images(html);
+        assert_eq!(names(&embedded), vec!["logo.png"]);
+        assert_eq!(
+            names(&message.attachments(&embedded)),
+            vec!["photo.jpg", "請求書.pdf"]
+        );
+    }
+
+    #[test]
+    fn reads_cid_references() {
+        let found = cid_references(
+            "<img src='CID:a@b'><td background=\"cid:part1.x%2Fy\"><div style=\"background:url(cid:z)\">",
+        );
+        let mut found: Vec<_> = found.into_iter().collect();
+        found.sort();
+        assert_eq!(found, vec!["a@b", "part1.x/y", "z"]);
+        assert!(cid_references("<p>no images</p>").is_empty());
+    }
+
+    #[test]
+    fn reads_content_ids() {
+        let part = with_headers(MessagePart::default(), &[("Content-ID", " <a@b> ")]);
+        assert_eq!(part.content_id(), Some("a@b"));
+        let bare = with_headers(MessagePart::default(), &[("Content-ID", "x")]);
+        assert_eq!(bare.content_id(), Some("x"));
+        assert_eq!(MessagePart::default().content_id(), None);
     }
 
     #[test]

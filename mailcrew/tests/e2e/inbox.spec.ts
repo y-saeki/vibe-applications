@@ -1,7 +1,7 @@
 // How the inbox lays its threads out.
 
 import type { Locator, Page } from '@playwright/test'
-import { card, cards, expect, LOGO, ME, test } from './fixtures'
+import { attachment, card, cards, expect, LOGO, ME, test } from './fixtures'
 
 test('lays the threads out newest first, left to right', async ({ launch }) => {
   const app = await launch({ inboxes: [cards(5)] })
@@ -20,7 +20,7 @@ test('shows the sender, subject and what the thread holds', async ({ launch }) =
           from: { name: '', email: 'bare@example.com' },
           subject: '',
           messageCount: 3,
-          attachments: ['a.pdf', 'b.png'],
+          attachments: [attachment('1', 'a.pdf'), attachment('2', 'b.png')],
           unread: true,
         }),
       ],
@@ -30,7 +30,7 @@ test('shows the sender, subject and what the thread holds', async ({ launch }) =
   await expect(first.locator('.card-from')).toHaveText('bare@example.com')
   await expect(first.locator('.card-subject')).toHaveText('(件名なし)')
   await expect(first.locator('.card-message-count')).toHaveText('3 通')
-  await expect(first.locator('.card-attachments')).toHaveText('2')
+  await expect(first.locator('.tool-attachments')).toHaveText('2')
   await expect(first).toHaveClass(/card-unread/)
 })
 
@@ -40,7 +40,7 @@ test('every toolbar sits on the same line', async ({ launch }) => {
       [
         card(1, { subject: '短い件名' }),
         card(2, { subject: 'とても長い件名が二行にわたって折り返されるくらいの長さで続いていくスレッドの件名', messageCount: 4 }),
-        card(3, { body: { kind: 'text', text: 'テキスト\n'.repeat(200) }, attachments: ['x.zip'] }),
+        card(3, { body: { kind: 'text', text: 'テキスト\n'.repeat(200) }, attachments: [attachment('1', 'x.zip', { openable: false })] }),
       ],
     ],
   })
@@ -59,7 +59,7 @@ test("every card's head is the same height, whatever it holds", async ({ launch 
         card(2, {
           subject: 'とても長い件名が二行にわたって折り返されるくらいの長さで続いていく、さらにもう少し長いスレッドの件名です',
           messageCount: 4,
-          attachments: ['a.pdf'],
+          attachments: [attachment('1', 'a.pdf')],
           brand: { bimi: 'pass', domain: 'shop.example', mark: 'vmc', logo: LOGO },
         }),
         card(3, { subject: '', brand: { bimi: 'none', domain: '', mark: 'none', logo: null } }),
