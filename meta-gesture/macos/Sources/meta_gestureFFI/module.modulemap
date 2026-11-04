@@ -1,0 +1,5 @@
+module meta_gestureFFI {
+    header "meta_gestureFFI.h"
+    link "meta_gesture"
+    export *
+}

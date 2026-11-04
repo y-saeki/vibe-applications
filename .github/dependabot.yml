@@ -38,6 +38,29 @@ updates:
           - patch
 
   - package-ecosystem: cargo
+    directory: /meta-gesture
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    labels:
+      - dependencies
+      - no-release
+    commit-message:
+      prefix: meta-gesture
+    groups:
+      # windows-reactor-setup lays out the Windows App Runtime that
+      # windows-reactor loads, so the two move together.
+      windows-reactor:
+        patterns:
+          - windows-reactor
+          - windows-reactor-setup
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: cargo
     directory: /winwin
     schedule:
       interval: weekly

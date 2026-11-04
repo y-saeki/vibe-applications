@@ -1,0 +1,5 @@
+# Written by build.sh.
+/.build/
+/Sources/meta_gestureFFI/meta_gestureFFI.h
+/Sources/MetaGesture/Generated/
+/meta-gesture.app/
