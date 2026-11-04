@@ -545,17 +545,26 @@ button {
   flex: none;
   width: var(--pull-width);
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 6px;
   color: var(--text-muted);
+  opacity: 0;
 }
 
 .pull-icon {
   display: flex;
-  opacity: 0;
 }
 
-.pull-ready .pull-icon {
+.pull-label {
+  font-size: 11px;
+  line-height: 1.3;
+  text-align: center;
+}
+
+.pull-ready,
+.pull-busy {
   color: var(--accent);
 }
 

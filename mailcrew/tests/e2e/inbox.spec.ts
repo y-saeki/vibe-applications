@@ -118,25 +118,31 @@ function pulledOut(strip: Locator): Promise<number> {
 }
 
 /**
- * Swipes right at the start of the strip and waits for the second page. When
- * it does not come, the failure lists where the strip scrolled on the way.
+ * Swipes right at the start of the strip, lets go, and waits for the second
+ * page. Resolves with the zone's labels in the order they were shown. When the
+ * page does not come, the failure lists where the strip scrolled on the way.
  */
-async function swipeToReload(page: Page, cards: Locator): Promise<void> {
+async function swipeToReload(page: Page, cards: Locator): Promise<string[]> {
   await page.evaluate(() => {
     const strip = document.querySelector<HTMLElement>('#strip')!
     const zone = strip.querySelector<HTMLElement>('.pull-zone')!
-    const trace: string[] = [`start ${strip.scrollLeft} armed=${zone.dataset.armed}`]
-    ;(window as unknown as { pullTrace: string[] }).pullTrace = trace
-    strip.addEventListener('scroll', () => trace.push(`${strip.scrollLeft} armed=${zone.dataset.armed}`))
+    const label = zone.querySelector<HTMLElement>('.pull-label')!
+    const record = { trace: [`start ${strip.scrollLeft} armed=${zone.dataset.armed}`], labels: [label.textContent!] }
+    ;(window as unknown as { pull: typeof record }).pull = record
+    strip.addEventListener('scroll', () => record.trace.push(`${strip.scrollLeft} armed=${zone.dataset.armed}`))
+    new MutationObserver(() => {
+      if (record.labels.at(-1) !== label.textContent) record.labels.push(label.textContent!)
+    }).observe(label, { childList: true, characterData: true, subtree: true })
   })
   // A run of small steps, as a trackpad sends them.
   for (let i = 0; i < 8; i++) await page.mouse.wheel(-50, 0)
+  const record = () => page.evaluate(() => (window as unknown as { pull: { trace: string[]; labels: string[] } }).pull)
   try {
     await expect(cards).toHaveCount(2)
   } catch (err) {
-    const trace = await page.evaluate(() => (window as unknown as { pullTrace: string[] }).pullTrace)
-    throw new Error(`${(err as Error).message}\nscroll trace: ${trace.join(' | ')}`)
+    throw new Error(`${(err as Error).message}\nscroll trace: ${(await record()).trace.join(' | ')}`)
   }
+  return (await record()).labels
 }
 
 test('swiping right at the start of the strip reloads', async ({ launch }) => {
@@ -146,7 +152,9 @@ test('swiping right at the start of the strip reloads', async ({ launch }) => {
   await expect.poll(() => pulledOut(app.strip)).toBe(0)
   await expect(app.page.locator('.pull-zone')).toHaveAttribute('data-armed', 'true')
   await app.card('t1').locator('.card-head').hover()
-  await swipeToReload(app.page, app.cards)
+  // Says what a pull does, then that letting go reloads, then that it is reloading.
+  const labels = await swipeToReload(app.page, app.cards)
+  expect(labels.slice(0, 3)).toEqual(['引っ張って再読み込み', '離すと再読み込み', '読み込み中'])
   expect(await app.ids()).toEqual(['t9', 't1'])
   // Laid out again from the first card, with the pull zone out of sight.
   await expect.poll(() => pulledOut(app.strip)).toBe(0)
@@ -161,6 +169,22 @@ test("the swipe reloads over a message's body too", async ({ launch }) => {
   await frame.hover()
   await expect(app.page.locator('.pull-zone')).toHaveAttribute('data-armed', 'true')
   await swipeToReload(app.page, app.cards)
+})
+
+test('pulling the zone out and back before letting go does not reload', async ({ launch }) => {
+  const app = await launch({ inboxes: [cards(3)] })
+  await expect(app.cards).toHaveCount(3)
+  await expect(app.page.locator('.pull-zone')).toHaveAttribute('data-armed', 'true')
+  await app.strip.evaluate(async (strip) => {
+    const frame = () => new Promise((resolve) => requestAnimationFrame(resolve))
+    const rest = strip.scrollLeft
+    strip.scrollTo({ left: 0 })
+    await frame()
+    await frame()
+    strip.scrollTo({ left: rest / 2 })
+  })
+  await expect.poll(() => pulledOut(app.strip)).toBe(0)
+  await app.expectCalls('list_inbox', 1)
 })
 
 test('a short swipe at the start of the strip springs back without reloading', async ({ launch }) => {
