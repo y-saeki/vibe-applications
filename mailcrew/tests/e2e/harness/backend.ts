@@ -5,6 +5,7 @@
 //
 // Built to tests/e2e/harness/dist/backend.js by tests/e2e/global-setup.ts.
 
+import { emit } from '@tauri-apps/api/event'
 import { mockIPC } from '@tauri-apps/api/mocks'
 
 import type {
@@ -58,6 +59,8 @@ export interface Call {
 export interface Harness {
   config: BackendConfig
   calls: Call[]
+  /** Sends an event as the Rust side would, such as `trackpad` from AppKit. */
+  emit?: (event: string, payload: unknown) => Promise<void>
 }
 
 const harness = window.__mailcrew
@@ -158,4 +161,6 @@ function handle(cmd: string, args: unknown): unknown {
   }
 }
 
-mockIPC(handle)
+// Events are mocked too, so a spec can send what the Rust side would.
+mockIPC(handle, { shouldMockEvents: true })
+harness.emit = (event, payload) => emit(event, payload)

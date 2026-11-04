@@ -112,95 +112,121 @@ test('reload fetches the inbox again', async ({ launch }) => {
 function pulledOut(strip: Locator): Promise<number> {
   return strip.evaluate((element) => {
     const zone = element.querySelector('.pull-zone')!
-    const rest = zone.nextElementSibling!.getBoundingClientRect().left - zone.getBoundingClientRect().left
+    const rest = (zone.nextElementSibling as HTMLElement).offsetLeft - (zone as HTMLElement).offsetLeft
     return Math.max(0, Math.round(rest - element.scrollLeft))
   })
 }
 
-/**
- * Swipes right at the start of the strip, lets go, and waits for the second
- * page. Resolves with the zone's labels in the order they were shown. When the
- * page does not come, the failure lists where the strip scrolled on the way.
- */
-async function swipeToReload(page: Page, cards: Locator): Promise<string[]> {
-  await page.evaluate(() => {
-    const strip = document.querySelector<HTMLElement>('#strip')!
-    const zone = strip.querySelector<HTMLElement>('.pull-zone')!
-    const label = zone.querySelector<HTMLElement>('.pull-label')!
-    const record = { trace: [`start ${strip.scrollLeft} armed=${zone.dataset.armed}`], labels: [label.textContent!] }
-    ;(window as unknown as { pull: typeof record }).pull = record
-    strip.addEventListener('scroll', () => record.trace.push(`${strip.scrollLeft} armed=${zone.dataset.armed}`))
+/** Starts noting the zone's labels, in the order they are shown, for `labels`. */
+function noteLabels(page: Page): Promise<void> {
+  return page.evaluate(() => {
+    const label = document.querySelector<HTMLElement>('.pull-label')!
+    const seen = [label.textContent!]
+    ;(window as unknown as { labels: string[] }).labels = seen
     new MutationObserver(() => {
-      if (record.labels.at(-1) !== label.textContent) record.labels.push(label.textContent!)
+      if (seen.at(-1) !== label.textContent) seen.push(label.textContent!)
     }).observe(label, { childList: true, characterData: true, subtree: true })
   })
-  // A run of small steps, as a trackpad sends them.
-  for (let i = 0; i < 8; i++) await page.mouse.wheel(-50, 0)
-  const record = () => page.evaluate(() => (window as unknown as { pull: { trace: string[]; labels: string[] } }).pull)
-  try {
-    await expect(cards).toHaveCount(2)
-  } catch (err) {
-    throw new Error(`${(err as Error).message}\nscroll trace: ${(await record()).trace.join(' | ')}`)
-  }
-  return (await record()).labels
 }
 
-test('swiping right at the start of the strip reloads', async ({ launch }) => {
+function labels(page: Page): Promise<string[]> {
+  return page.evaluate(() => (window as unknown as { labels: string[] }).labels)
+}
+
+/**
+ * A trackpad gesture as WebView2 sees it: wheel events every 16 ms over
+ * `target` (the strip, or a message's frame document when `inFrame`) while the
+ * strip scrolls to each of `stops` in turn (or stays put, for a `holdMs`), then
+ * nothing. Events arrive with no pause, so whatever the strip does along the
+ * way is one gesture.
+ */
+function wheelGesture(strip: Locator, stops: (number | { holdMs: number })[], inFrame = false): Promise<void> {
+  return strip.evaluate(
+    async (element, { stops, inFrame }) => {
+      const target: EventTarget = inFrame
+        ? element.querySelector<HTMLIFrameElement>('iframe')!.contentDocument!
+        : element
+      const tick = () => new Promise((resolve) => setTimeout(resolve, 16))
+      for (const stop of stops) {
+        if (typeof stop !== 'number') {
+          // Wheel events keep coming while the strip stays where it is.
+          for (let held = 0; held < stop.holdMs; held += 16) {
+            target.dispatchEvent(new WheelEvent('wheel', { deltaX: -1, bubbles: true }))
+            await tick()
+          }
+          continue
+        }
+        const from = element.scrollLeft
+        for (let step = 1; step <= 6; step++) {
+          target.dispatchEvent(new WheelEvent('wheel', { deltaX: (stop - from) / 6, bubbles: true }))
+          element.scrollTo({ left: from + ((stop - from) * step) / 6 })
+          await tick()
+        }
+      }
+    },
+    { stops, inFrame },
+  )
+}
+
+/** What AppKit reports through `trackpad.rs`: fingers touching or leaving the trackpad. */
+function fingers(page: Page, state: 'down' | 'up'): Promise<void> {
+  return page.evaluate((payload) => window.__mailcrew.emit!('trackpad', payload), state)
+}
+
+/**
+ * Scrolls the strip as momentum or fingers would, without a wheel event, and
+ * waits for the page to have heard of it.
+ */
+function scrollStrip(strip: Locator, left: number): Promise<void> {
+  return strip.evaluate(async (element, to) => {
+    const scrolled = new Promise((resolve) => element.addEventListener('scroll', resolve, { once: true }))
+    element.scrollTo({ left: to })
+    await scrolled
+  }, left)
+}
+
+const RELOADING = ['引っ張って再読み込み', '離すと再読み込み', '読み込み中']
+
+test('pulling the strip right from its first card reloads once the wheel stops', async ({ launch }) => {
   const app = await launch({ inboxes: [[card(1)], [card(9), card(1)]] })
   await expect(app.cards).toHaveCount(1)
   // Hidden even when a single card leaves the strip room to spare.
   await expect.poll(() => pulledOut(app.strip)).toBe(0)
   await expect(app.page.locator('.pull-zone')).toHaveAttribute('data-armed', 'true')
-  await app.card('t1').locator('.card-head').hover()
-  // Says what a pull does, then that letting go reloads, then that it is reloading.
-  const labels = await swipeToReload(app.page, app.cards)
-  expect(labels.slice(0, 3)).toEqual(['引っ張って再読み込み', '離すと再読み込み', '読み込み中'])
+  await noteLabels(app.page)
+  await wheelGesture(app.strip, [0])
+  await expect(app.cards).toHaveCount(2)
   expect(await app.ids()).toEqual(['t9', 't1'])
+  expect((await labels(app.page)).slice(0, 3)).toEqual(RELOADING)
   // Laid out again from the first card, with the pull zone out of sight.
   await expect.poll(() => pulledOut(app.strip)).toBe(0)
 })
 
-test("the swipe reloads over a message's body too", async ({ launch }) => {
+test("a pull over a message's body reloads too", async ({ launch }) => {
   const app = await launch({
     inboxes: [[card(1, { body: { kind: 'html', html: '<p>本文</p>', remoteImages: false } })], [card(9), card(1)]],
   })
-  const frame = app.card('t1').locator('iframe')
-  await expect(frame).toBeVisible()
-  await frame.hover()
+  await expect(app.card('t1').locator('iframe')).toBeVisible()
   await expect(app.page.locator('.pull-zone')).toHaveAttribute('data-armed', 'true')
-  await swipeToReload(app.page, app.cards)
+  await wheelGesture(app.strip, [0], true)
+  await expect(app.cards).toHaveCount(2)
 })
 
-test('the cards follow a pull only part of the way', async ({ launch }) => {
-  const app = await launch({ inboxes: [cards(3)] })
-  await expect(app.cards).toHaveCount(3)
-  await expect(app.page.locator('.pull-zone')).toHaveAttribute('data-armed', 'true')
-  const { pulled, moved, state } = await app.strip.evaluate(async (strip) => {
-    const frame = () => new Promise((resolve) => requestAnimationFrame(resolve))
-    // Keep pushing, as a trackpad does while held, so the pull is not let go
-    // however long a frame takes.
-    const hold = setInterval(() => strip.dispatchEvent(new WheelEvent('wheel')), 30)
-    const first = strip.querySelector<HTMLElement>('.card[data-thread-id]')!
-    const look = () =>
-      `left=${strip.scrollLeft} transform=${getComputedStyle(first).transform} ` +
-      `anim=${first.getAnimations().map((a) => `${a.constructor.name}:${a.timeline?.constructor.name}:${a.effect?.getComputedTiming().progress}`)}`
-    const scrolls: number[] = []
-    strip.addEventListener('scroll', () => scrolls.push(strip.scrollLeft))
-    const rest = strip.scrollLeft
-    const before = first.getBoundingClientRect().left
-    const lookBefore = look()
-    strip.scrollTo({ left: 0 })
-    await frame()
-    await frame()
-    const moved = first.getBoundingClientRect().left - before
-    const state = `rest=${rest} class=${strip.className} before[${lookBefore}] after[${look()}] scrolls=${scrolls.join(',')}`
-    // Put it back before letting go.
-    strip.scrollTo({ left: rest })
-    clearInterval(hold)
-    return { pulled: rest, moved, state }
+test('momentum that carries a fling back to the start springs back without reloading', async ({ launch }) => {
+  const app = await launch({ inboxes: [cards(5)] })
+  await expect(app.cards).toHaveCount(5)
+  await scrollStrip(app.strip, 900)
+  await expect(app.page.locator('.pull-zone')).toHaveAttribute('data-armed', 'false')
+  await app.page.waitForTimeout(300)
+  // One gesture from far along that comes to rest on the first card long enough
+  // to count as at rest, then coasts on to the start.
+  const rest = await app.strip.evaluate((element) => {
+    const zone = element.querySelector<HTMLElement>('.pull-zone')!
+    return (zone.nextElementSibling as HTMLElement).offsetLeft - zone.offsetLeft
   })
-  // 80px (--pull-lag) less than the strip was pulled.
-  expect(Math.round(moved), state).toBe(Math.round(pulled) - 80)
+  await wheelGesture(app.strip, [rest, { holdMs: 300 }, 0])
+  await expect.poll(() => pulledOut(app.strip)).toBe(0)
+  await app.page.waitForTimeout(300)
   await app.expectCalls('list_inbox', 1)
 })
 
@@ -208,26 +234,11 @@ test('pulling the zone out and back before letting go does not reload', async ({
   const app = await launch({ inboxes: [cards(3)] })
   await expect(app.cards).toHaveCount(3)
   await expect(app.page.locator('.pull-zone')).toHaveAttribute('data-armed', 'true')
-  await app.strip.evaluate(async (strip) => {
-    const trace: string[] = []
-    ;(strip as HTMLElement & { trace?: string[] }).trace = trace
-    const label = strip.querySelector('.pull-label')!
-    strip.addEventListener('scroll', () => trace.push(`${strip.scrollLeft} ${label.textContent}`))
-    const frame = () => new Promise((resolve) => requestAnimationFrame(resolve))
-    // Keep pushing, as a trackpad does while held, so the pull is not let go
-    // however long a frame takes.
-    const hold = setInterval(() => strip.dispatchEvent(new WheelEvent('wheel')), 30)
-    const rest = strip.scrollLeft
-    trace.push(`rest=${rest}`)
-    strip.scrollTo({ left: 0 })
-    await frame()
-    await frame()
-    strip.scrollTo({ left: rest / 2 })
-    clearInterval(hold)
-  })
+  const rest = await app.strip.evaluate((element) => element.scrollLeft)
+  await wheelGesture(app.strip, [0, rest / 2])
   await expect.poll(() => pulledOut(app.strip)).toBe(0)
-  const trace = await app.strip.evaluate((strip) => (strip as HTMLElement & { trace?: string[] }).trace ?? [])
-  await expect.poll(async () => (await app.callsTo('list_inbox')).length, trace.join(' | ')).toBe(1)
+  await app.page.waitForTimeout(300)
+  await app.expectCalls('list_inbox', 1)
 })
 
 test('a short swipe at the start of the strip springs back without reloading', async ({ launch }) => {
@@ -239,19 +250,6 @@ test('a short swipe at the start of the strip springs back without reloading', a
   await app.expectCalls('list_inbox', 1)
 })
 
-test('a swipe that runs past the first card does not reload', async ({ launch }) => {
-  const app = await launch({ inboxes: [cards(5)] })
-  await expect(app.cards).toHaveCount(5)
-  await app.card('t1').locator('.card-head').hover()
-  for (let i = 0; i < 6; i++) await app.page.mouse.wheel(200, 0)
-  await expect.poll(() => app.strip.evaluate((strip) => strip.scrollLeft)).toBeGreaterThan(600)
-  // Straight back without stopping at the first card, as a fling does.
-  await app.page.mouse.wheel(-4000, 0)
-  await expect.poll(() => pulledOut(app.strip)).toBe(0)
-  await expect(app.card('t1')).toBeInViewport()
-  await app.expectCalls('list_inbox', 1)
-})
-
 test('a mouse wheel stops at the first card rather than reloading', async ({ launch }) => {
   const app = await launch({ inboxes: [cards(3)] })
   await expect(app.cards).toHaveCount(3)
@@ -260,6 +258,87 @@ test('a mouse wheel stops at the first card rather than reloading', async ({ lau
   await app.page.waitForTimeout(300)
   await app.expectCalls('list_inbox', 1)
   await expect.poll(() => pulledOut(app.strip)).toBe(0)
+})
+
+test('on macOS a pull is held while the fingers stay down, and reloads when they lift', async ({ launch }) => {
+  const app = await launch({ platform: 'macos', inboxes: [cards(3), [card(9), ...cards(3)]] })
+  await expect(app.cards).toHaveCount(3)
+  await expect(app.page.locator('.pull-zone')).toHaveAttribute('data-armed', 'true')
+  await noteLabels(app.page)
+  await fingers(app.page, 'down')
+  await scrollStrip(app.strip, 0)
+  await expect(app.page.locator('.pull-label')).toHaveText('離すと再読み込み')
+  // Resting at the start without lifting is not letting go.
+  await app.page.waitForTimeout(400)
+  await app.expectCalls('list_inbox', 1)
+  await fingers(app.page, 'up')
+  await expect(app.cards).toHaveCount(4)
+  expect((await labels(app.page)).slice(0, 3)).toEqual(RELOADING)
+})
+
+test('on macOS momentum carrying the strip to the start never reloads', async ({ launch }) => {
+  const app = await launch({ platform: 'macos', inboxes: [cards(5)] })
+  await expect(app.cards).toHaveCount(5)
+  // A fling from far along: the fingers lifted long before the strip got here.
+  await fingers(app.page, 'down')
+  await scrollStrip(app.strip, 900)
+  await fingers(app.page, 'up')
+  // It comes to rest on the first card long enough to count as at rest, then
+  // coasts on to the start.
+  await app.strip.evaluate(async (element) => {
+    const zone = element.querySelector<HTMLElement>('.pull-zone')!
+    element.scrollTo({ left: (zone.nextElementSibling as HTMLElement).offsetLeft - zone.offsetLeft })
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    element.scrollTo({ left: 0 })
+  })
+  await expect.poll(() => pulledOut(app.strip)).toBe(0)
+  await app.page.waitForTimeout(300)
+  await app.expectCalls('list_inbox', 1)
+})
+
+test('on macOS fingers that came down away from the first card do not pull', async ({ launch }) => {
+  const app = await launch({ platform: 'macos', inboxes: [cards(5)] })
+  await expect(app.cards).toHaveCount(5)
+  await scrollStrip(app.strip, 900)
+  await expect(app.page.locator('.pull-zone')).toHaveAttribute('data-armed', 'false')
+  await app.page.waitForTimeout(300)
+  await fingers(app.page, 'down')
+  // Dragged back to the first card, held there, then on to the start, all
+  // without lifting.
+  await app.strip.evaluate(async (element) => {
+    const zone = element.querySelector<HTMLElement>('.pull-zone')!
+    element.scrollTo({ left: (zone.nextElementSibling as HTMLElement).offsetLeft - zone.offsetLeft })
+    await new Promise((resolve) => setTimeout(resolve, 300))
+  })
+  await scrollStrip(app.strip, 0)
+  await fingers(app.page, 'up')
+  await expect.poll(() => pulledOut(app.strip)).toBe(0)
+  await app.page.waitForTimeout(300)
+  await app.expectCalls('list_inbox', 1)
+})
+
+test('the cards follow a pull only part of the way', async ({ launch }) => {
+  const app = await launch({ platform: 'macos', inboxes: [cards(3)] })
+  await expect(app.cards).toHaveCount(3)
+  await expect(app.page.locator('.pull-zone')).toHaveAttribute('data-armed', 'true')
+  // Fingers held down throughout, so the pull is never let go.
+  await fingers(app.page, 'down')
+  const { pulled, moved } = await app.strip.evaluate(async (strip) => {
+    const frame = () => new Promise((resolve) => requestAnimationFrame(resolve))
+    const first = strip.querySelector<HTMLElement>('.card[data-thread-id]')!
+    const rest = strip.scrollLeft
+    const before = first.getBoundingClientRect().left
+    strip.scrollTo({ left: 0 })
+    await frame()
+    await frame()
+    const moved = first.getBoundingClientRect().left - before
+    strip.scrollTo({ left: rest })
+    return { pulled: rest, moved }
+  })
+  await fingers(app.page, 'up')
+  // 80px (--pull-lag) less than the strip was pulled.
+  expect(Math.round(moved)).toBe(Math.round(pulled) - 80)
+  await app.expectCalls('list_inbox', 1)
 })
 
 for (const [platform, modifier] of [

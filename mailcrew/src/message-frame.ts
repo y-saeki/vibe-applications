@@ -151,13 +151,15 @@ function renderText(container: HTMLElement, text: string, openLink: OpenLink): v
 
 /**
  * Puts a message's body into `container`, which it fills. Images from the
- * network load from the start only when `allowRemoteImages` says so.
+ * network load from the start only when `allowRemoteImages` says so, and
+ * `onWheel` hears of wheel events over the message's frame.
  */
 export function mountBody(
   container: HTMLElement,
   body: CardBody,
   openLink: OpenLink,
   allowRemoteImages = false,
+  onWheel?: () => void,
 ): MountedBody {
   container.replaceChildren()
   if (body.kind === 'text') {
@@ -180,6 +182,10 @@ export function mountBody(
     const doc = frame.contentDocument
     if (!doc) return
     catchLinks(doc, openLink)
+    // A wheel event over the frame stays in the frame's document. WebView2
+    // runs the page's listeners there (WKWebView does not, and has no need:
+    // pull to reload hears of the fingers from AppKit there).
+    if (onWheel) doc.addEventListener('wheel', onWheel, { passive: true })
     fit(frame)
   })
   frame.srcdoc = frameDocument(body.html, allowRemoteImages)

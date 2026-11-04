@@ -46,6 +46,12 @@ rustls-pki-types = { version = "1", features = ["std"] }
 x509-parser = "0.18"
 flate2 = "1"
 
+# Pull to reload: whether fingers are on the trackpad, from AppKit's scroll
+# events (src/trackpad.rs). The same versions Tauri's own windowing uses.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSEvent", "block2"] }
+block2 = "0.6"
+
 [dev-dependencies]
 # Mark certificates made up for the tests of the BIMI checks.
 rcgen = { version = "0.14", default-features = false, features = ["crypto", "ring", "pem"] }

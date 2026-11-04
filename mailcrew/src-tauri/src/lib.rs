@@ -13,6 +13,7 @@ mod links;
 mod mime;
 mod preferences;
 mod sanitize;
+mod trackpad;
 mod views;
 
 use tokio::sync::{oneshot, Mutex};
@@ -36,6 +37,7 @@ pub fn run() {
             if let Ok(dir) = commands::opened_dir(app.handle()) {
                 let _ = std::fs::remove_dir_all(dir);
             }
+            trackpad::watch(app.handle());
             Ok(())
         })
         .manage(AppState {

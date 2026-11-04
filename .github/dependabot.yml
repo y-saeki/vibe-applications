@@ -156,10 +156,14 @@ updates:
     groups:
       # See the tauri group of /draftpad/src-tauri, including why
       # minor-and-patch excludes it.
+      # objc2-app-kit and block2 (src/trackpad.rs) are the ones Tauri's own
+      # windowing uses, so they move with Tauri.
       tauri:
         patterns:
           - tauri
           - tauri-*
+          - objc2-app-kit
+          - block2
       minor-and-patch:
         update-types:
           - minor
@@ -167,6 +171,8 @@ updates:
         exclude-patterns:
           - tauri
           - tauri-*
+          - objc2-app-kit
+          - block2
 
   - package-ecosystem: npm
     directory: /mailcrew

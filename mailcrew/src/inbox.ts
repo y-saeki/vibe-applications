@@ -440,7 +440,9 @@ export class Inbox {
     const remote = content.body.kind === 'html' && content.body.remoteImages
     // A sender the user chose to trust has their images shown from the start.
     const trusted = remote && this.imageSenders.has(mounted.card.from.email)
-    mounted.body = mountBody(container, content.body, (url) => this.openLink(url), trusted)
+    mounted.body = mountBody(container, content.body, (url) => this.openLink(url), trusted, () =>
+      this.pull.wheel(),
+    )
     const scrollbar = new OverlayScrollbar(container, container.parentElement!)
     for (const child of container.children) scrollbar.watch(child)
     if (remote && !trusted) element.querySelector<HTMLElement>('.card-images')!.hidden = false
