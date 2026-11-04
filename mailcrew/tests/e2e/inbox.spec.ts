@@ -1,6 +1,6 @@
 // How the inbox lays its threads out.
 
-import type { Locator } from '@playwright/test'
+import type { Locator, Page } from '@playwright/test'
 import { card, cards, expect, LOGO, ME, test } from './fixtures'
 
 test('lays the threads out newest first, left to right', async ({ launch }) => {
@@ -117,19 +117,38 @@ function pulledOut(strip: Locator): Promise<number> {
   })
 }
 
+/**
+ * Swipes right at the start of the strip and waits for the second page. When
+ * it does not come, the failure lists where the strip scrolled on the way.
+ */
+async function swipeToReload(page: Page, cards: Locator): Promise<void> {
+  await page.evaluate(() => {
+    const strip = document.querySelector<HTMLElement>('#strip')!
+    const zone = strip.querySelector<HTMLElement>('.pull-zone')!
+    const trace: string[] = [`start ${strip.scrollLeft} armed=${zone.dataset.armed}`]
+    ;(window as unknown as { pullTrace: string[] }).pullTrace = trace
+    strip.addEventListener('scroll', () => trace.push(`${strip.scrollLeft} armed=${zone.dataset.armed}`))
+  })
+  await page.mouse.wheel(-400, 0)
+  try {
+    await expect(cards).toHaveCount(2)
+  } catch (err) {
+    const trace = await page.evaluate(() => (window as unknown as { pullTrace: string[] }).pullTrace)
+    throw new Error(`${(err as Error).message}\nscroll trace: ${trace.join(' | ')}`)
+  }
+}
+
 test('swiping right at the start of the strip reloads', async ({ launch }) => {
   const app = await launch({ inboxes: [[card(1)], [card(9), card(1)]] })
   await expect(app.cards).toHaveCount(1)
   // Hidden even when a single card leaves the strip room to spare.
   await expect.poll(() => pulledOut(app.strip)).toBe(0)
-  // Once the body and the checks are in, so the card is no longer laid out
-  // again while the strip moves: WebKit can snap back to the first card then.
   await expect.poll(() => app.trust('t1').then((items) => items.length)).toBe(5)
-  // A pull starts only once the strip has come to rest.
-  await expect(app.page.locator('.pull-zone')).toHaveAttribute('data-armed', 'true')
+  // Hovering can scroll the card into view, and a pull starts only once the
+  // strip has come to rest again.
   await app.card('t1').locator('.card-head').hover()
-  await app.page.mouse.wheel(-400, 0)
-  await expect(app.cards).toHaveCount(2)
+  await expect(app.page.locator('.pull-zone')).toHaveAttribute('data-armed', 'true')
+  await swipeToReload(app.page, app.cards)
   expect(await app.ids()).toEqual(['t9', 't1'])
   // Laid out again from the first card, with the pull zone out of sight.
   await expect.poll(() => pulledOut(app.strip)).toBe(0)
@@ -141,10 +160,9 @@ test("the swipe reloads over a message's body too", async ({ launch }) => {
   })
   const frame = app.card('t1').locator('iframe')
   await expect(frame).toBeVisible()
-  await expect(app.page.locator('.pull-zone')).toHaveAttribute('data-armed', 'true')
   await frame.hover()
-  await app.page.mouse.wheel(-400, 0)
-  await expect(app.cards).toHaveCount(2)
+  await expect(app.page.locator('.pull-zone')).toHaveAttribute('data-armed', 'true')
+  await swipeToReload(app.page, app.cards)
 })
 
 test('a short swipe at the start of the strip springs back without reloading', async ({ launch }) => {
