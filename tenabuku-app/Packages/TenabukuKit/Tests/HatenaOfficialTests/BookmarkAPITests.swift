@@ -413,3 +413,83 @@ final class MyBookmarkTimelineTests: XCTestCase {
         XCTAssertEqual(timeline.hits.first?.isPrivate, true)
     }
 }
+
+final class MyBookmarkTimelineStoreTests: XCTestCase {
+    private var url: URL!
+
+    override func setUp() {
+        url = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathComponent("MyBookmarks.json")
+    }
+
+    override func tearDown() {
+        try? FileManager.default.removeItem(at: url.deletingLastPathComponent())
+    }
+
+    /// A timeline that has shown one bookmark and waits for more of "https".
+    private func timeline() -> MyBookmarkTimeline {
+        let hit = { (path: String, minutesAgo: Int) in
+            MyBookmarkSearchHit(
+                title: path,
+                url: URL(string: "https://example.com/\(path)")!,
+                bookmarkCount: 3,
+                snippet: "本文",
+                comment: "コメント",
+                isPrivate: true,
+                bookmarkedAt: Date(timeIntervalSince1970: 1_800_000_000 - TimeInterval(minutesAgo * 60))
+            )
+        }
+        var timeline = MyBookmarkTimeline()
+        timeline.receive(
+            MyBookmarkSearchPage(total: 5, hits: [hit("a", 1)]),
+            for: MyBookmarkSearchRequest(query: "https", offset: 0)
+        )
+        timeline.receive(
+            MyBookmarkSearchPage(total: 0, hits: []),
+            for: MyBookmarkSearchRequest(query: "http", offset: 0)
+        )
+        return timeline
+    }
+
+    func testASavedTimelineReadsOnFromWhereItWas() async throws {
+        let store = MyBookmarkTimelineStore(url: url)
+        let saved = MyBookmarkTimelineStore.Saved(user: "sample", savedAt: Date(timeIntervalSince1970: 1_800_000_000), timeline: timeline())
+
+        try await store.save(saved)
+        let loaded = await store.load(user: "sample")
+
+        XCTAssertEqual(loaded, saved)
+        XCTAssertEqual(loaded?.timeline.hits.map(\.title), ["a"])
+        XCTAssertEqual(loaded?.timeline.nextRequests, [MyBookmarkSearchRequest(query: "https", offset: 1)])
+    }
+
+    func testAnotherUsersTimelineIsNotShown() async throws {
+        let store = MyBookmarkTimelineStore(url: url)
+        try await store.save(.init(user: "sample", savedAt: .now, timeline: timeline()))
+
+        let loaded = await store.load(user: "someone")
+
+        XCTAssertNil(loaded)
+    }
+
+    func testClearingForgetsTheTimeline() async throws {
+        let store = MyBookmarkTimelineStore(url: url)
+        try await store.save(.init(user: "sample", savedAt: .now, timeline: timeline()))
+
+        try await store.clear()
+        let loaded = await store.load(user: "sample")
+
+        XCTAssertNil(loaded)
+        try await store.clear()
+    }
+
+    func testAnUnreadableFileIsNoTimeline() async throws {
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("{".utf8).write(to: url)
+
+        let loaded = await MyBookmarkTimelineStore(url: url).load(user: "sample")
+
+        XCTAssertNil(loaded)
+    }
+}

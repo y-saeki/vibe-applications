@@ -11,6 +11,10 @@ enum AppServices {
     static let feed = FeedClient(http: http)
     static let entryInfo = EntryInfoAPI(http: http)
     static let entryComments = EntryCommentsAPI(http: http)
+    static let myBookmarks = MyBookmarkTimelineStore(
+        url: FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("MyBookmarks.json")
+    )
 
     /// Signs with the consumer key the build carries in Info.plist, or nil when
     /// Secrets.xcconfig left it empty.

@@ -12,7 +12,7 @@ import Foundation
 /// them runs into that, the other's older hits cannot be placed among the
 /// ones it can no longer read, so the timeline ends there. A search that runs
 /// out of hits instead lets the other carry on alone.
-public struct MyBookmarkTimeline: MyBookmarkListing, Equatable {
+public struct MyBookmarkTimeline: MyBookmarkListing, Equatable, Codable {
     public static let queries = ["https", "http"]
 
     public private(set) var hits: [MyBookmarkSearchHit] = []
@@ -25,7 +25,7 @@ public struct MyBookmarkTimeline: MyBookmarkListing, Equatable {
         sources = Self.queries.map { Source(query: $0) }
     }
 
-    private struct Source: Equatable, Sendable {
+    private struct Source: Equatable, Sendable, Codable {
         let query: String
         /// Hits read but not yet shown, newest first.
         var waiting: [MyBookmarkSearchHit] = []
