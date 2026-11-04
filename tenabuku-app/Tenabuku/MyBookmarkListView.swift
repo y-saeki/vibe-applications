@@ -42,22 +42,34 @@ final class MyBookmarkListModel {
         }
     }
 
-    /// Reads pages until the list grows or has nothing more. The timeline
-    /// shows nothing until both of its searches have answered, so one call
-    /// can take more than one page.
+    /// Reads pages until the list has grown by a page or has nothing more.
+    /// Each request takes seconds whatever its size, so the pages the
+    /// listing asks for together, such as the timeline's two searches, are
+    /// read at the same time.
     private func fetch(api: BookmarkAPI, accounts: AccountStore) async {
         let generation = generation
         isLoading = true
         defer {
             if generation == self.generation { isLoading = false }
         }
-        let shown = listing.hits.count
+        let target = listing.hits.count + Self.pageSize
+        let limit = Self.pageSize
         do {
-            while let request = listing.nextRequest {
-                let page = try await api.search(request.query, offset: request.offset, limit: Self.pageSize)
+            while listing.hits.count < target {
+                let requests = listing.nextRequests
+                if requests.isEmpty { break }
+                let pages = try await withThrowingTaskGroup(of: (MyBookmarkSearchRequest, MyBookmarkSearchPage).self) { group in
+                    for request in requests {
+                        group.addTask {
+                            (request, try await api.search(request.query, offset: request.offset, limit: limit))
+                        }
+                    }
+                    return try await group.reduce(into: []) { $0.append($1) }
+                }
                 guard generation == self.generation else { return }
-                listing.receive(page, for: request)
-                if listing.hits.count > shown { break }
+                for (request, page) in pages {
+                    listing.receive(page, for: request)
+                }
             }
             hasLoaded = true
             error = nil
@@ -117,6 +129,13 @@ private struct MyBookmarkList: View {
                 NavigationLink(value: FeedItem(title: hit.title, link: hit.url, bookmarkCount: hit.bookmarkCount)) {
                     MyBookmarkRow(hit: hit, isRead: readHistory.isRead(hit.url))
                 }
+                .onAppear {
+                    // Starts on the next page well before the end comes
+                    // into view, since one takes seconds to arrive.
+                    if hit.id == prefetchMark && model.error == nil {
+                        Task { await model.loadMore(api: api, accounts: accounts) }
+                    }
+                }
                 .swipeActions(edge: .leading) {
                     Button("編集", systemImage: "pencil") { editing = hit }
                         .tint(.blue)
@@ -160,8 +179,17 @@ private struct MyBookmarkList: View {
         }
     }
 
-    /// Reads the next page as it scrolls into view. After a failure it waits
-    /// for a tap, so that a page that keeps failing is not asked for in a loop.
+    /// The row whose appearance starts reading the next page.
+    private var prefetchMark: String? {
+        let hits = model.listing.hits
+        return hits.isEmpty ? nil : hits[max(hits.count - Self.prefetchDistance, 0)].id
+    }
+
+    private static let prefetchDistance = 25
+
+    /// Reads the next page as it scrolls into view, if it is not already on
+    /// its way. After a failure it waits for a tap, so that a page that keeps
+    /// failing is not asked for in a loop.
     @ViewBuilder
     private var footer: some View {
         if model.error == nil {

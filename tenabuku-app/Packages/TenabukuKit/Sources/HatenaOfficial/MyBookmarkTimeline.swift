@@ -50,13 +50,13 @@ public struct MyBookmarkTimeline: MyBookmarkListing, Equatable {
         }
     }
 
-    public var nextRequest: MyBookmarkSearchRequest? {
-        guard !isCutShort, let source = sources.first(where: \.needsPage) else { return nil }
-        return MyBookmarkSearchRequest(query: source.query, offset: source.nextOffset)
+    public var nextRequests: [MyBookmarkSearchRequest] {
+        guard !isCutShort else { return [] }
+        return sources.filter(\.needsPage).map { MyBookmarkSearchRequest(query: $0.query, offset: $0.nextOffset) }
     }
 
     public mutating func receive(_ page: MyBookmarkSearchPage, for request: MyBookmarkSearchRequest) {
-        guard request == nextRequest,
+        guard nextRequests.contains(request),
               let index = sources.firstIndex(where: { $0.query == request.query })
         else { return }
         sources[index].total = page.total

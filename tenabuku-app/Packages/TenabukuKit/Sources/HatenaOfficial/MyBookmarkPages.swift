@@ -16,10 +16,11 @@ public struct MyBookmarkSearchRequest: Equatable, Sendable {
 public protocol MyBookmarkListing: Sendable {
     /// What to show, in order, without repeats.
     var hits: [MyBookmarkSearchHit] { get }
-    /// The page to read next, or nil when there is nothing more to show.
-    var nextRequest: MyBookmarkSearchRequest? { get }
-    /// Takes in the answer to `request`. A page asked for under an earlier
-    /// state of the listing is dropped.
+    /// The pages to read next, which can be read at the same time. Empty
+    /// when there is nothing more to show.
+    var nextRequests: [MyBookmarkSearchRequest] { get }
+    /// Takes in the answer to one of `nextRequests`. A page asked for under
+    /// an earlier state of the listing is dropped.
     mutating func receive(_ page: MyBookmarkSearchPage, for request: MyBookmarkSearchRequest)
     /// Reflects a bookmark the user edited from the list, which the search
     /// index only catches up with later.
@@ -29,7 +30,7 @@ public protocol MyBookmarkListing: Sendable {
 }
 
 extension MyBookmarkListing {
-    public var hasMore: Bool { nextRequest != nil }
+    public var hasMore: Bool { !nextRequests.isEmpty }
 }
 
 /// The pages of one search over the user's bookmarks read so far.
@@ -50,14 +51,14 @@ public struct MyBookmarkPages: MyBookmarkListing, Equatable {
     /// A page that comes back empty ends the list even when `total` says
     /// there are more, so that a count the index has not caught up with
     /// cannot ask for pages forever. Hits past `searchDepth` cannot be read.
-    public var nextRequest: MyBookmarkSearchRequest? {
-        if let total, reachedEnd || nextOffset >= total { return nil }
-        guard nextOffset < BookmarkAPI.searchDepth else { return nil }
-        return MyBookmarkSearchRequest(query: query, offset: nextOffset)
+    public var nextRequests: [MyBookmarkSearchRequest] {
+        if let total, reachedEnd || nextOffset >= total { return [] }
+        guard nextOffset < BookmarkAPI.searchDepth else { return [] }
+        return [MyBookmarkSearchRequest(query: query, offset: nextOffset)]
     }
 
     public mutating func receive(_ page: MyBookmarkSearchPage, for request: MyBookmarkSearchRequest) {
-        guard request == nextRequest else { return }
+        guard nextRequests.contains(request) else { return }
         append(page)
     }
 
