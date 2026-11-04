@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 import HatenaShared
 
 /// The "注目コメント" (popular comments) of an entry, read from the website's
