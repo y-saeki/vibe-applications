@@ -536,9 +536,15 @@ button {
   pointer-events: none;
 }
 
+/*
+ * The zone is a snap position of its own. WebKit settles a wheel scroll on the
+ * nearest snap position before it moves, and without one at the zone a pull
+ * would land back on the first card without ever reaching the start.
+ */
 .pull-zone {
   flex: none;
   width: var(--pull-width);
+  scroll-snap-align: start;
   display: flex;
   align-items: center;
   justify-content: center;
