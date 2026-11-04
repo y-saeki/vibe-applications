@@ -53,6 +53,11 @@ export class PullToReload {
   private set resting(value: boolean) {
     this.restingNow = value
     this.zone.dataset.armed = String(value && !this.busy)
+    // Scroll snapping would carry a pull straight back to the first card
+    // (WebKit snaps before the strip reaches the start), so it is off while
+    // the strip is at the first card, and comes back once the strip settles
+    // further along.
+    if (value) this.strip.classList.add('strip-free')
   }
 
   /** The scroll position that shows the first card with the zone out of sight. */
@@ -90,7 +95,8 @@ export class PullToReload {
     const rest = this.rest
     const left = this.strip.scrollLeft
     if (Math.abs(left - rest) <= 1) this.resting = true
-    else if (left < rest && !this.busy) this.strip.scrollTo({ left: rest, behavior: 'smooth' })
+    else if (left > rest) this.strip.classList.remove('strip-free')
+    else if (!this.busy) this.strip.scrollTo({ left: rest, behavior: 'smooth' })
   }
 
   private async fire(): Promise<void> {

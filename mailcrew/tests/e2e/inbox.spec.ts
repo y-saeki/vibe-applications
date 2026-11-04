@@ -129,7 +129,8 @@ async function swipeToReload(page: Page, cards: Locator): Promise<void> {
     ;(window as unknown as { pullTrace: string[] }).pullTrace = trace
     strip.addEventListener('scroll', () => trace.push(`${strip.scrollLeft} armed=${zone.dataset.armed}`))
   })
-  await page.mouse.wheel(-400, 0)
+  // A run of small steps, as a trackpad sends them.
+  for (let i = 0; i < 8; i++) await page.mouse.wheel(-50, 0)
   try {
     await expect(cards).toHaveCount(2)
   } catch (err) {
@@ -144,23 +145,8 @@ test('swiping right at the start of the strip reloads', async ({ launch }) => {
   // Hidden even when a single card leaves the strip room to spare.
   await expect.poll(() => pulledOut(app.strip)).toBe(0)
   await expect(app.page.locator('.pull-zone')).toHaveAttribute('data-armed', 'true')
-  // Scrolled straight to the start: one synthetic wheel event in WebKit moves
-  // the strip only a step and snaps back, where a trackpad keeps pulling.
-  const after = await app.strip.evaluate((strip) => {
-    const zone = strip.querySelector<HTMLElement>('.pull-zone')!
-    const trace: string[] = []
-    ;(window as unknown as { pullTrace: string[] }).pullTrace = trace
-    strip.addEventListener('scroll', () => trace.push(`${strip.scrollLeft} armed=${zone.dataset.armed}`))
-    const before = `${strip.scrollLeft} max=${strip.scrollWidth - strip.clientWidth} zone=${zone.offsetLeft}`
-    strip.scrollTo({ left: 0 })
-    return `${before} -> ${strip.scrollLeft}`
-  })
-  try {
-    await expect(app.cards).toHaveCount(2)
-  } catch (err) {
-    const trace = await app.page.evaluate(() => (window as unknown as { pullTrace: string[] }).pullTrace)
-    throw new Error(`${(err as Error).message}\nscrollTo: ${after}\nscroll trace: ${trace.join(' | ')}`)
-  }
+  await app.card('t1').locator('.card-head').hover()
+  await swipeToReload(app.page, app.cards)
   expect(await app.ids()).toEqual(['t9', 't1'])
   // Laid out again from the first card, with the pull zone out of sight.
   await expect.poll(() => pulledOut(app.strip)).toBe(0)
@@ -190,10 +176,10 @@ test('a swipe that runs past the first card does not reload', async ({ launch })
   const app = await launch({ inboxes: [cards(5)] })
   await expect(app.cards).toHaveCount(5)
   await app.card('t1').locator('.card-head').hover()
-  await app.page.mouse.wheel(300, 0)
-  await expect.poll(() => app.strip.evaluate((strip) => strip.scrollLeft)).toBeGreaterThan(200)
+  for (let i = 0; i < 6; i++) await app.page.mouse.wheel(200, 0)
+  await expect.poll(() => app.strip.evaluate((strip) => strip.scrollLeft)).toBeGreaterThan(600)
   // Straight back without stopping at the first card, as a fling does.
-  await app.page.mouse.wheel(-2000, 0)
+  await app.page.mouse.wheel(-4000, 0)
   await expect.poll(() => pulledOut(app.strip)).toBe(0)
   await expect(app.card('t1')).toBeInViewport()
   await app.expectCalls('list_inbox', 1)
