@@ -122,6 +122,9 @@ test('swiping right at the start of the strip reloads', async ({ launch }) => {
   await expect(app.cards).toHaveCount(1)
   // Hidden even when a single card leaves the strip room to spare.
   await expect.poll(() => pulledOut(app.strip)).toBe(0)
+  // Once the body and the checks are in, so the card is no longer laid out
+  // again while the strip moves: WebKit can snap back to the first card then.
+  await expect.poll(() => app.trust('t1').then((items) => items.length)).toBe(5)
   // A pull starts only once the strip has come to rest.
   await expect(app.page.locator('.pull-zone')).toHaveAttribute('data-armed', 'true')
   await app.card('t1').locator('.card-head').hover()
