@@ -120,6 +120,8 @@ function pulledOut(strip: Locator): Promise<number> {
 test('swiping right at the start of the strip reloads', async ({ launch }) => {
   const app = await launch({ inboxes: [[card(1)], [card(9), card(1)]] })
   await expect(app.cards).toHaveCount(1)
+  // Hidden even when a single card leaves the strip room to spare.
+  await expect.poll(() => pulledOut(app.strip)).toBe(0)
   await app.card('t1').locator('.card-head').hover()
   await app.page.mouse.wheel(-400, 0)
   await expect(app.cards).toHaveCount(2)

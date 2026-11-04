@@ -521,20 +521,18 @@ button {
 
 /*
  * Pull to reload: the zone before the first card is kept scrolled out of
- * sight. The strip always overflows by at least the zone, so a single card
- * still leaves room to hide it.
+ * sight. An empty box ahead of it, as wide as the strip and the zone together,
+ * keeps the strip that much wider even with a single card; one more gap
+ * makes up for the strip's end padding, which does not count after it. Its
+ * negative margin takes all of that back, so it moves nothing.
  */
-.strip {
-  position: relative;
-}
-
-.strip::after {
+.strip::before {
   content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: calc(100% + var(--pull-width) + var(--gap));
+  flex: none;
+  align-self: flex-start;
+  width: calc(100% + var(--pull-width) + 2 * var(--gap));
   height: 1px;
+  margin-right: calc(-100% - var(--pull-width) - 3 * var(--gap));
   pointer-events: none;
 }
 
