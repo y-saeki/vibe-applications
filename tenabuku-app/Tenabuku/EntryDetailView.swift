@@ -31,6 +31,9 @@ final class EntryCommentsModel {
     private(set) var isLoading = false
     /// Where the recent comments continue; nil when all are shown.
     private var nextCursor: String?
+    /// The users hidden on Hatena's website, whose comments are left out as
+    /// the website does.
+    private var ignoredUsers: Set<String> = []
     /// Bumped by every `load`, so that a page arriving for an earlier tab or
     /// an earlier pull is dropped.
     private var generation = 0
@@ -41,7 +44,9 @@ final class EntryCommentsModel {
         self.url = url
     }
 
-    func load() async {
+    /// `refreshIgnored` asks Hatena for the hidden users again rather than
+    /// reusing the ones read a little earlier.
+    func load(webSession: WebSessionStore, refreshIgnored: Bool = false) async {
         generation += 1
         let generation = generation
         nextCursor = nil
@@ -49,6 +54,8 @@ final class EntryCommentsModel {
         defer {
             if generation == self.generation { isLoading = false }
         }
+        // Read alongside the comments, so that hiding costs no extra wait.
+        async let ignored = webSession.ignoredUsers(refresh: refreshIgnored)
         do {
             let loaded: [CommentRowData]
             switch tab {
@@ -60,10 +67,13 @@ final class EntryCommentsModel {
                 nextCursor = page.nextCursor
                 loaded = page.comments.map(CommentRowData.init)
             }
+            let ignoredUsers = await ignored
             guard generation == self.generation else { return }
-            comments = loaded
+            self.ignoredUsers = ignoredUsers
+            comments = loaded.filter { !ignoredUsers.contains($0.user) }
             error = nil
         } catch {
+            _ = await ignored
             guard generation == self.generation else { return }
             FailureLog.record(error)
             comments = []
@@ -84,8 +94,8 @@ final class EntryCommentsModel {
             guard generation == self.generation else { return }
             // A comment can move to a later page when someone edits theirs
             // while the list is being read; the list keys rows by user.
-            let shown = Set(comments.map(\.user))
-            comments += page.comments.map(CommentRowData.init).filter { !shown.contains($0.user) }
+            let skipped = Set(comments.map(\.user)).union(ignoredUsers)
+            comments += page.comments.map(CommentRowData.init).filter { !skipped.contains($0.user) }
             nextCursor = page.nextCursor
         } catch {
             guard generation == self.generation else { return }
@@ -111,6 +121,7 @@ struct EntryDetailView: View {
     @State private var model: EntryCommentsModel
     @State private var isShowingBookmarkEditor = false
     @Environment(\.openURL) private var openURL
+    @Environment(WebSessionStore.self) private var webSession
 
     init(entry: FeedItem) {
         self.entry = entry
@@ -175,8 +186,8 @@ struct EntryDetailView: View {
                 BookmarkEditorView(url: entry.link, title: entry.title)
             }
         }
-        .refreshable { await model.load() }
-        .task(id: model.tab) { await model.load() }
+        .refreshable { await model.load(webSession: webSession, refreshIgnored: true) }
+        .task(id: model.tab) { await model.load(webSession: webSession) }
     }
 }
 

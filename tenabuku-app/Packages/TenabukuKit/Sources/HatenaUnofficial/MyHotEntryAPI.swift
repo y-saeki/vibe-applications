@@ -22,7 +22,7 @@ public struct MyHotEntryAPI: Sendable {
     /// not be sent to the endpoint are left out.
     public init(http: HatenaHTTPClient, cookies: [HTTPCookie]) {
         self.http = http
-        cookieHeader = Self.cookieHeader(for: Self.url, from: cookies)
+        cookieHeader = WebCookies.header(for: Self.url, from: cookies)
     }
 
     /// Today's entries, in Hatena's order (highest score first). Empty when the
@@ -32,34 +32,13 @@ public struct MyHotEntryAPI: Sendable {
     public func entries() async throws -> [MyHotEntry] {
         // Without a cookie Hatena can only answer "login required".
         guard let cookieHeader else { throw HatenaError.unauthorized }
-        var request = URLRequest(url: Self.url)
-        request.setValue(cookieHeader, forHTTPHeaderField: "Cookie")
-        // The cookies are set by hand; letting the session add its own could
-        // send another account's.
-        request.httpShouldHandleCookies = false
-        let (data, response) = try await http.send(request)
+        let (data, response) = try await http.send(WebCookies.request(Self.url, header: cookieHeader))
         // Signed out, the endpoint answers 403 {"reason":"login required"}.
         if response.statusCode == 403 {
             throw HatenaError.unauthorized
         }
         try HatenaHTTPClient.validate(response)
         return try JSONDecoder.hatena(Digest.self, from: data, source: Self.source).entries
-    }
-
-    /// The `Cookie` header a browser would send to `url`, or nil when none of
-    /// `cookies` applies.
-    static func cookieHeader(for url: URL, from cookies: [HTTPCookie], now: Date = Date()) -> String? {
-        guard let host = url.host?.lowercased() else { return nil }
-        let path = url.path.isEmpty ? "/" : url.path
-        let applicable = cookies.filter { cookie in
-            let domain = cookie.domain.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "."))
-            guard host == domain || host.hasSuffix("." + domain) else { return false }
-            guard path.hasPrefix(cookie.path) else { return false }
-            if let expires = cookie.expiresDate, expires <= now { return false }
-            return true
-        }
-        guard !applicable.isEmpty else { return nil }
-        return applicable.map { "\($0.name)=\($0.value)" }.joined(separator: "; ")
     }
 }
 
