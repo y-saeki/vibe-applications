@@ -19,6 +19,7 @@ pub mod gesture;
 mod icon_res;
 pub mod keys;
 pub mod mac;
+pub mod menu;
 pub mod preset;
 pub mod vk;
 

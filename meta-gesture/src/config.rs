@@ -30,6 +30,10 @@
 //! and the keys mean nothing on the other platform, so a file says which
 //! one it is for and is not read on the other.
 //!
+//! On macOS a command can choose an item of the application's menu bar
+//! instead of sending keys: `menu = ["ファイル", "閉じる"]` in place of
+//! `keys`, or `{ menu = [...] }` in place of an application's keys.
+//!
 //! Nothing here touches the operating system, so it is tested on every
 //! platform.
 
@@ -91,16 +95,42 @@ impl App {
     }
 }
 
+/// What a command does in an application.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Action {
+    /// Send these keys.
+    Keys(Combo),
+    /// Choose the item of the menu bar with these titles, from the menu
+    /// bar's item down. macOS only.
+    Menu(Vec<String>),
+}
+
+impl Action {
+    pub fn keys(&self) -> Option<Combo> {
+        match self {
+            Action::Keys(keys) => Some(*keys),
+            Action::Menu(_) => None,
+        }
+    }
+
+    pub fn menu(&self) -> Option<&[String]> {
+        match self {
+            Action::Keys(_) => None,
+            Action::Menu(path) => Some(path),
+        }
+    }
+}
+
 /// A gesture and what it stands for.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Command {
     pub name: String,
     pub gesture: Gesture,
-    /// The keys sent to an application of the set that has none of its own
-    /// in `apps`; to every application, for a command of the common set.
-    pub keys: Option<Combo>,
-    /// Keys for one application of the set, by its id.
-    pub apps: BTreeMap<String, Combo>,
+    /// What an application of the set that has nothing of its own in
+    /// `apps` does; every application, for a command of the common set.
+    pub action: Option<Action>,
+    /// What one application of the set does, by its id.
+    pub apps: BTreeMap<String, Action>,
     /// The command of a preset this one was made from
     /// (`preset::Command::id`), which fills in the keys of an application
     /// added to the set.
@@ -108,13 +138,13 @@ pub struct Command {
 }
 
 impl Command {
-    /// The keys sent to the application `id`.
-    pub fn keys_for(&self, id: &str) -> Option<Combo> {
+    /// What the application `id` does.
+    pub fn action_for(&self, id: &str) -> Option<&Action> {
         self.apps
             .iter()
             .find(|(app, _)| app.eq_ignore_ascii_case(id))
-            .map(|(_, c)| *c)
-            .or(self.keys)
+            .map(|(_, a)| a)
+            .or(self.action.as_ref())
     }
 }
 
@@ -150,6 +180,8 @@ impl Default for Config {
 pub enum Outcome {
     /// Send `keys` to the application: the gesture is `command`.
     Send { command: String, keys: Combo },
+    /// Choose the application's menu item `path`: the gesture is `command`.
+    Menu { command: String, path: Vec<String> },
     /// The gesture is `command`, which has no keys for this application.
     Unassigned { command: String },
     /// No command has this gesture.
@@ -210,52 +242,107 @@ struct FileCommand {
     gesture: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     keys: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    menu: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    apps: BTreeMap<String, String>,
+    apps: BTreeMap<String, FileAction>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     preset: Option<String>,
 }
 
+/// What one application does: keys as text, or a menu item.
+#[derive(Serialize, Deserialize)]
+#[serde(untagged)]
+enum FileAction {
+    Keys(String),
+    Menu { menu: Vec<String> },
+}
+
+/// Reads keys or a menu item, `at` saying where they are for a message.
+/// Menu items are for macOS only.
+fn read_action(
+    keys: Option<String>,
+    menu: Option<Vec<String>>,
+    os: Os,
+    at: &str,
+) -> Result<Option<Action>, String> {
+    match (keys, menu) {
+        (None, None) => Ok(None),
+        (Some(_), Some(_)) => Err(format!("{at}: キーとメニュー項目の両方があります")),
+        (Some(keys), None) => keys
+            .parse()
+            .map(|k| Some(Action::Keys(k)))
+            .map_err(|e| format!("{at}のキー: {e}")),
+        (None, Some(path)) => {
+            if os != Os::Macos {
+                return Err(format!(
+                    "{at}: メニュー項目は {} では使えません",
+                    os.label()
+                ));
+            }
+            if path.is_empty() || path.iter().any(|t| t.trim().is_empty()) {
+                return Err(format!("{at}のメニュー項目に空の名前があります"));
+            }
+            Ok(Some(Action::Menu(path)))
+        }
+    }
+}
+
+fn write_action(action: Option<&Action>, look: Look) -> (Option<String>, Option<Vec<String>>) {
+    match action {
+        None => (None, None),
+        Some(Action::Keys(k)) => (Some(k.text(look)), None),
+        Some(Action::Menu(path)) => (None, Some(path.clone())),
+    }
+}
+
 impl FileCommand {
-    fn read(self, look_up: &str) -> Result<Command, String> {
-        let at = |what: &str| format!("{look_up}「{}」の{what}", self.name);
+    fn read(self, look_up: &str, os: Os) -> Result<Command, String> {
+        let at = format!("{look_up}「{}」", self.name);
         let gesture = self
             .gesture
             .parse()
-            .map_err(|e| format!("{}: {e}", at("ジェスチャー")))?;
-        let keys = self
-            .keys
-            .as_deref()
-            .map(str::parse)
-            .transpose()
-            .map_err(|e| format!("{}: {e}", at("キー")))?;
+            .map_err(|e| format!("{at}のジェスチャー: {e}"))?;
+        let action = read_action(self.keys, self.menu, os, &at)?;
         let apps = self
             .apps
             .into_iter()
-            .map(|(app, keys)| {
-                keys.parse()
-                    .map(|c| (app.clone(), c))
-                    .map_err(|e| format!("{}（{app}）: {e}", at("キー")))
+            .map(|(app, a)| {
+                let (keys, menu) = match a {
+                    FileAction::Keys(keys) => (Some(keys), None),
+                    FileAction::Menu { menu } => (None, Some(menu)),
+                };
+                let action = read_action(keys, menu, os, &format!("{at}（{app}）"))?;
+                Ok(action.map(|a| (app, a)))
             })
-            .collect::<Result<_, _>>()?;
+            .filter_map(Result::transpose)
+            .collect::<Result<_, String>>()?;
         Ok(Command {
             name: self.name,
             gesture,
-            keys,
+            action,
             apps,
             preset: self.preset,
         })
     }
 
     fn write(c: &Command, look: Look) -> FileCommand {
+        let (keys, menu) = write_action(c.action.as_ref(), look);
         FileCommand {
             name: c.name.clone(),
             gesture: c.gesture.to_string(),
-            keys: c.keys.map(|k| k.text(look)),
+            keys,
+            menu,
             apps: c
                 .apps
                 .iter()
-                .map(|(app, k)| (app.clone(), k.text(look)))
+                .map(|(app, a)| {
+                    let a = match a {
+                        Action::Keys(k) => FileAction::Keys(k.text(look)),
+                        Action::Menu(path) => FileAction::Menu { menu: path.clone() },
+                    };
+                    (app.clone(), a)
+                })
                 .collect(),
             preset: c.preset.clone(),
         }
@@ -341,10 +428,14 @@ impl Config {
             .flat_map(|commands| commands.iter())
             .find(|c| c.gesture == *gesture);
         match command {
-            Some(c) => match c.keys_for(id) {
-                Some(keys) => Outcome::Send {
+            Some(c) => match c.action_for(id) {
+                Some(Action::Keys(keys)) => Outcome::Send {
                     command: c.name.clone(),
-                    keys,
+                    keys: *keys,
+                },
+                Some(Action::Menu(path)) => Outcome::Menu {
+                    command: c.name.clone(),
+                    path: path.clone(),
                 },
                 None => Outcome::Unassigned {
                     command: c.name.clone(),
@@ -429,7 +520,7 @@ impl Config {
         let common = file
             .common
             .into_iter()
-            .map(|c| c.read(&format!("セット「{COMMON_NAME}」のコマンド")))
+            .map(|c| c.read(&format!("セット「{COMMON_NAME}」のコマンド"), file.os))
             .collect::<Result<_, _>>()?;
         let sets = file
             .sets
@@ -440,7 +531,7 @@ impl Config {
                     commands: s
                         .commands
                         .into_iter()
-                        .map(|c| c.read(&look_up))
+                        .map(|c| c.read(&look_up, file.os))
                         .collect::<Result<_, String>>()?,
                     name: s.name,
                     apps: s.apps,
@@ -458,9 +549,15 @@ impl Config {
 
     /// Reads a file's text. A file for the other platform is refused.
     pub fn parse(text: &str, path: &Path) -> Result<Config, ConfigError> {
+        Config::parse_on(text, path, Os::CURRENT)
+    }
+
+    /// Reads a file's text as the platform `os` does, so that the tests
+    /// read what macOS reads on any platform.
+    fn parse_on(text: &str, path: &Path, os: Os) -> Result<Config, ConfigError> {
         let file: File =
             toml::from_str(text).map_err(|e| ConfigError::Parse(path.into(), e.to_string()))?;
-        if file.os != Os::CURRENT {
+        if file.os != os {
             return Err(ConfigError::OtherOs(path.into(), file.os));
         }
         Config::from_file(file).map_err(|e| ConfigError::Parse(path.into(), e))
@@ -580,13 +677,16 @@ gesture = "↓→"
         let config = parse(&example()).unwrap();
         assert_eq!(config.os, Os::CURRENT);
         assert_eq!(config.common.len(), 1);
-        assert_eq!(config.common[0].keys, Some(combo("Ctrl+W")));
+        assert_eq!(config.common[0].action, Some(Action::Keys(combo("Ctrl+W"))));
         let set = &config.sets[0];
         assert_eq!(set.name, "ブラウザ");
         assert_eq!(set.apps[1].name, "Firefox");
         assert_eq!(set.commands[0].gesture, g("←"));
-        assert_eq!(set.commands[0].apps["firefox.exe"], combo("Alt+Left"));
-        assert_eq!(set.commands[1].keys, None);
+        assert_eq!(
+            set.commands[0].apps["firefox.exe"],
+            Action::Keys(combo("Alt+Left"))
+        );
+        assert_eq!(set.commands[1].action, None);
     }
 
     #[test]
@@ -609,7 +709,7 @@ gesture = "↓→"
         config.common.push(Command {
             name: "閉じる".into(),
             gesture: g("↓→"),
-            keys: Some(combo("Cmd+Option+W")),
+            action: Some(Action::Keys(combo("Cmd+Option+W"))),
             apps: BTreeMap::new(),
             preset: None,
         });
@@ -653,6 +753,102 @@ gesture = "↓→"
         assert!(
             message(example().replace("gesture = \"←\"", "gesture = \"↓→\""))
                 .contains("同じジェスチャー")
+        );
+    }
+
+    fn parse_mac(text: &str) -> Result<Config, ConfigError> {
+        Config::parse_on(text, Path::new("config.toml"), Os::Macos)
+    }
+
+    const MENUS: &str = r#"
+os = "macos"
+
+[[common]]
+name = "ウィンドウを閉じる"
+gesture = "↓→"
+menu = ["ファイル", "ウインドウを閉じる"]
+
+[[sets]]
+name = "ブラウザ"
+apps = [
+  { id = "com.google.Chrome", name = "Google Chrome" },
+  { id = "com.apple.Safari", name = "Safari" },
+]
+
+[[sets.commands]]
+name = "右側のタブを閉じる"
+gesture = "↓→"
+keys = "Cmd+W"
+apps = { "com.google.Chrome" = { menu = ["タブ", "右側のタブを閉じる"] } }
+"#;
+
+    #[test]
+    fn reads_and_writes_menu_items_on_macos() {
+        let config = parse_mac(MENUS).unwrap();
+        let path = |p: &[&str]| p.iter().map(|t| t.to_string()).collect::<Vec<_>>();
+        assert_eq!(
+            config.common[0].action,
+            Some(Action::Menu(path(&["ファイル", "ウインドウを閉じる"])))
+        );
+        let c = &config.sets[0].commands[0];
+        assert_eq!(c.action, Some(Action::Keys(combo("Cmd+W"))));
+        assert_eq!(
+            c.apps["com.google.Chrome"],
+            Action::Menu(path(&["タブ", "右側のタブを閉じる"]))
+        );
+        assert_eq!(parse_mac(&config.to_toml()).unwrap(), config);
+
+        // The application's menu item, the set's keys, the common menu item.
+        assert_eq!(
+            config.lookup("com.google.Chrome", &g("↓→")),
+            Outcome::Menu {
+                command: "右側のタブを閉じる".into(),
+                path: path(&["タブ", "右側のタブを閉じる"])
+            }
+        );
+        assert_eq!(
+            config.lookup("com.apple.Safari", &g("↓→")),
+            Outcome::Send {
+                command: "右側のタブを閉じる".into(),
+                keys: combo("Cmd+W")
+            }
+        );
+        assert_eq!(
+            config.lookup("com.apple.TextEdit", &g("↓→")),
+            Outcome::Menu {
+                command: "ウィンドウを閉じる".into(),
+                path: path(&["ファイル", "ウインドウを閉じる"])
+            }
+        );
+    }
+
+    #[test]
+    fn menu_items_are_for_macos_only() {
+        let message = |r: Result<Config, ConfigError>| match r {
+            Err(ConfigError::Parse(_, e)) => e,
+            other => panic!("{other:?}"),
+        };
+        let windows = MENUS
+            .replace("os = \"macos\"", "os = \"windows\"")
+            .replace("Cmd+W", "Ctrl+W");
+        let windows = Config::parse_on(&windows, Path::new("config.toml"), Os::Windows);
+        assert!(message(windows).contains("メニュー項目は Windows では使えません"));
+        let both = MENUS.replace(
+            "gesture = \"↓→\"\nmenu",
+            "gesture = \"↓→\"\nkeys = \"Cmd+W\"\nmenu",
+        );
+        assert!(message(parse_mac(&both)).contains("両方"));
+        let empty = MENUS.replace(
+            "[\"ファイル\", \"ウインドウを閉じる\"]",
+            "[\"ファイル\", \" \"]",
+        );
+        assert!(message(parse_mac(&empty)).contains("空の名前"));
+        assert!(
+            message(parse_mac(&MENUS.replace(
+                "menu = [\"タブ\", \"右側のタブを閉じる\"]",
+                "menu = []"
+            )))
+            .contains("空の名前")
         );
     }
 
@@ -731,7 +927,7 @@ gesture = "↓→"
         let mut config = parse(&example()).unwrap();
         config.sets[0].commands[0]
             .apps
-            .insert("firefox.exe".into(), combo("Ctrl+OemComma"));
+            .insert("firefox.exe".into(), Action::Keys(combo("Ctrl+OemComma")));
         let back = |app| config.lookup(app, &g("←"));
         assert_eq!(
             back("FIREFOX.EXE"),

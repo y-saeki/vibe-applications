@@ -9,10 +9,11 @@
 use std::path::Path;
 use std::sync::{Arc, Mutex, MutexGuard};
 
-use crate::config::{App, Config, Outcome};
+use crate::config::{Action, App, Config, Outcome};
 use crate::editor::Editor;
 use crate::gesture::{Direction, Tracker};
-use crate::keys::{Look, Press, Recorder};
+use crate::keys::{Combo, Look, Press, Recorder};
+use crate::menu::{self, MenuItem};
 use crate::{art, mac, preset};
 
 /// A lock that is never poisoned: a panic aborts the process.
@@ -34,6 +35,9 @@ pub enum GestureResult {
         code: u16,
         flags: u64,
     },
+    /// The gesture is `command`: choose the application's menu item whose
+    /// titles, from the menu bar down, are `path`.
+    Menu { command: String, path: Vec<String> },
     /// The gesture is `command`, which has no keys for this application.
     Unassigned { command: String },
     /// The gesture is `command`, whose key a Mac keyboard does not have.
@@ -120,6 +124,7 @@ impl Resident {
                 },
                 None => GestureResult::Unsendable { command },
             },
+            Outcome::Menu { command, path } => GestureResult::Menu { command, path },
             Outcome::Unassigned { command } => GestureResult::Unassigned { command },
             Outcome::Unknown => GestureResult::Unknown {
                 gesture: gesture.to_string(),
@@ -156,6 +161,81 @@ pub struct KeyEntry {
     /// The keys as caps, in a Mac's order and symbols; empty when none are
     /// set on the line.
     pub caps: Vec<String>,
+    /// The menu item chosen on the line as `ファイル › 閉じる`; empty when
+    /// none is.
+    pub menu: String,
+}
+
+fn caps(keys: Combo) -> Vec<String> {
+    keys.caps(Look::Mac).into_iter().map(|c| c.text()).collect()
+}
+
+/// An item of an application's menu bar as the accessibility API reports
+/// it.
+#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+pub struct MenuEntry {
+    /// The titles from the menu bar's item down to this one.
+    pub path: Vec<String>,
+    /// kAXMenuItemCmdChar.
+    pub character: Option<String>,
+    /// kAXMenuItemCmdVirtualKey.
+    pub code: Option<u16>,
+    /// kAXMenuItemCmdModifiers.
+    pub modifiers: u32,
+}
+
+/// A line of the list of menu items a search found.
+#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+pub struct MenuLine {
+    /// The item's place among those the catalog was made from.
+    pub item: u32,
+    pub path: String,
+    /// The item's shortcut as caps; empty when it has none meta-gesture
+    /// can send.
+    pub caps: Vec<String>,
+}
+
+/// The items of one application's menu bar, to search and to choose from.
+#[derive(uniffi::Object)]
+pub struct MenuCatalog {
+    items: Vec<MenuItem>,
+}
+
+#[uniffi::export]
+impl MenuCatalog {
+    #[uniffi::constructor]
+    pub fn new(entries: Vec<MenuEntry>) -> MenuCatalog {
+        let items = entries
+            .into_iter()
+            .map(|e| MenuItem {
+                keys: mac::menu_shortcut(e.character.as_deref(), e.code, e.modifiers)
+                    .filter(|k| mac::code(k.key).is_some()),
+                path: e.path,
+            })
+            .collect();
+        MenuCatalog { items }
+    }
+
+    /// The items `query` finds, best first.
+    pub fn search(&self, query: String) -> Vec<MenuLine> {
+        menu::search(&self.items, &query)
+            .into_iter()
+            .map(|i| {
+                let item = &self.items[i];
+                MenuLine {
+                    item: i as u32,
+                    path: menu::path_text(&item.path),
+                    caps: item.keys.map(caps).unwrap_or_default(),
+                }
+            })
+            .collect()
+    }
+}
+
+impl MenuCatalog {
+    fn item(&self, item: u32) -> Option<&MenuItem> {
+        self.items.get(index(item))
+    }
 }
 
 /// The settings window's state: the config being edited and what is
@@ -358,11 +438,36 @@ impl SettingsEditor {
             .map(|r| KeyEntry {
                 label: r.label,
                 caps: r
-                    .keys
-                    .map(|k| k.caps(Look::Mac).into_iter().map(|c| c.text()).collect())
+                    .action
+                    .as_ref()
+                    .and_then(Action::keys)
+                    .map(caps)
+                    .unwrap_or_default(),
+                menu: r
+                    .action
+                    .as_ref()
+                    .and_then(Action::menu)
+                    .map(menu::path_text)
                     .unwrap_or_default(),
             })
             .collect()
+    }
+
+    /// Line `line` sends the shortcut of the catalog's item `item`, when it
+    /// has one.
+    pub fn use_menu_keys(&self, line: u32, catalog: Arc<MenuCatalog>, item: u32) {
+        if let Some(keys) = catalog.item(item).and_then(|i| i.keys) {
+            self.editor()
+                .set_action(index(line), Some(Action::Keys(keys)));
+        }
+    }
+
+    /// Line `line` chooses the catalog's item `item`.
+    pub fn use_menu_item(&self, line: u32, catalog: Arc<MenuCatalog>, item: u32) {
+        if let Some(i) = catalog.item(item) {
+            self.editor()
+                .set_action(index(line), Some(Action::Menu(i.path.clone())));
+        }
     }
 
     /// Starts `recorder` out showing the keys of line `line`.
@@ -371,7 +476,7 @@ impl SettingsEditor {
             .editor()
             .key_rows()
             .get(index(line))
-            .and_then(|r| r.keys);
+            .and_then(|r| r.action.as_ref().and_then(Action::keys));
         let mut state = lock(&recorder.state);
         state.recorder = Recorder::showing(keys);
         state.flags = 0;
@@ -380,13 +485,14 @@ impl SettingsEditor {
     /// 決定: the keys `recorder` recorded go on line `line`.
     pub fn take_recording(&self, line: u32, recorder: Arc<KeyRecorder>) {
         let keys = lock(&recorder.state).recorder.result();
-        if keys.is_some() {
-            self.editor().set_keys(index(line), keys);
+        if let Some(keys) = keys {
+            self.editor()
+                .set_action(index(line), Some(Action::Keys(keys)));
         }
     }
 
     pub fn clear_keys(&self, line: u32) {
-        self.editor().set_keys(index(line), None);
+        self.editor().set_action(index(line), None);
     }
 
     pub fn is_changed(&self) -> bool {
@@ -701,6 +807,69 @@ gesture = "↓→"
                 flags: CONTROL,
             }
         );
+    }
+
+    fn entry(path: &[&str], character: Option<&str>, modifiers: u32) -> MenuEntry {
+        MenuEntry {
+            path: path.iter().map(|t| t.to_string()).collect(),
+            character: character.map(String::from),
+            code: None,
+            modifiers,
+        }
+    }
+
+    #[test]
+    fn chooses_a_menu_item_or_its_keys_for_a_line() {
+        let path = browsers();
+        let s = SettingsEditor::open(path.clone()).unwrap();
+        s.select_set(1);
+        s.select_command(Some(1));
+        let catalog = Arc::new(MenuCatalog::new(vec![
+            entry(&["ファイル", "新規タブ"], Some("T"), 0),
+            entry(&["ファイル", "タブを閉じる"], Some("W"), 0),
+            entry(&["ウインドウ", "右側のタブを閉じる"], None, 0),
+            // A shortcut with a key meta-gesture cannot send is none.
+            entry(&["表示", "拡大"], Some("\u{F702}"), 0),
+        ]));
+        let lines = catalog.search("右側のタブを閉じる".into());
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0].item, 2);
+        assert_eq!(lines[0].path, "ウインドウ › 右側のタブを閉じる");
+        assert!(lines[0].caps.is_empty());
+        let lines = catalog.search("閉じる".into());
+        assert_eq!(lines[0].path, "ファイル › タブを閉じる");
+        assert_eq!(lines[0].caps, ["⌘", "W"].map(String::from).to_vec());
+        assert!(catalog.search("拡大".into())[0].caps.is_empty());
+
+        // Safari chooses the menu item; the set sends ⌘W.
+        s.use_menu_item(1, catalog.clone(), 2);
+        s.use_menu_keys(0, catalog.clone(), 1);
+        // An item without a shortcut changes nothing.
+        s.use_menu_keys(0, catalog.clone(), 2);
+        let lines = s.key_lines();
+        assert_eq!(lines[0].caps, ["⌘", "W"].map(String::from).to_vec());
+        assert_eq!(lines[0].menu, "");
+        assert!(lines[1].caps.is_empty());
+        assert_eq!(lines[1].menu, "ウインドウ › 右側のタブを閉じる");
+
+        // A Windows file has no menu items, so only macOS reads it back.
+        if Os::CURRENT == Os::Macos {
+            assert_eq!(s.save(path.clone()), None);
+            let r = Resident::new();
+            assert_eq!(r.load(path), None);
+            let (_, result) = draw(
+                &r,
+                "com.apple.Safari",
+                &[(0.0, 0.0), (0.0, 80.0), (80.0, 80.0)],
+            );
+            assert_eq!(
+                result,
+                GestureResult::Menu {
+                    command: "右側のタブを閉じる".into(),
+                    path: vec!["ウインドウ".into(), "右側のタブを閉じる".into()],
+                }
+            );
+        }
     }
 
     #[test]
