@@ -18,10 +18,17 @@ struct CardView: View {
             ScrollView(.vertical) {
                 MessageBodyView(card: card, model: model)
             }
+            Divider()
+            CardToolbar(card: card, model: model)
         }
         .frame(maxHeight: .infinity, alignment: .top)
-        .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
-        .shadow(color: .black.opacity(0.12), radius: 3, y: 1)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        // On the card's shape alone: on the stack, every piece inside would cast one.
+        .background {
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color(nsColor: .textBackgroundColor))
+                .shadow(color: .black.opacity(0.12), radius: 3, y: 1)
+        }
     }
 
     private var head: some View {
