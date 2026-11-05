@@ -4,7 +4,7 @@ Mail Crew をビルド・変更するための情報です。使い方やイン�
 
 フロントエンドはフレームワークを使わない TypeScript で、シェルは Tauri v2（Rust）です。Gmail との通信、ログイン、メール本文の解析とサニタイズは Rust 側が受け持ち、ページは受け取ったカードを並べるだけです。
 
-Mail Crew は画面を SwiftUI で作るネイティブ版（macOS）に作り直している途中です。Rust 側の中身は `core/` のクレートにまとめてあり、今の Tauri 版（`src-tauri/`）と、これから作るネイティブ版の両方が使います。詳しくは「Rust の中身と Swift からの呼び出し」を参照してください。
+Mail Crew は画面を SwiftUI で作るネイティブ版（macOS）に作り直している途中です。Rust 側の中身は `core/` のクレートにまとめてあり、今の Tauri 版（`src-tauri/`）とネイティブ版（`MailCrew/`）の両方が使います。詳しくは「Rust の中身と Swift からの呼び出し」と「ネイティブ版」を参照してください。
 配布対象は macOS（Apple Silicon）と Windows（x64）の 2 つで、どちらも GitHub Actions でビルドします。
 
 ## 開発に必要なもの
@@ -15,7 +15,8 @@ Mail Crew は画面を SwiftUI で作るネイティブ版（macOS）に作り�
 | Node.js 22 以降 | |
 | [pnpm](https://pnpm.io/) 12 以降 | CI もこのバージョンを使います |
 | macOS: Xcode Command Line Tools | `xcode-select --install` |
-| macOS: Xcode | Swift から Rust を呼ぶ部分（`core/swift/`）のテストに使います |
+| macOS: Xcode | ネイティブ版（`MailCrew/`）と、Swift から Rust を呼ぶ部分（`core/swift/`）に使います |
+| macOS: [XcodeGen](https://github.com/yonaskolb/XcodeGen) | ネイティブ版の Xcode プロジェクトを `project.yml` から作ります。`brew install xcodegen` |
 | Windows: Visual Studio Build Tools | 「C++ によるデスクトップ開発」を選択。Rust は MSVC ツールチェーンを既定にする |
 
 詳細は [Tauri の Prerequisites](https://v2.tauri.app/start/prerequisites/) を参照してください。動かして確かめるには、README の「初回の準備」で作る OAuth クライアントも要ります。
@@ -59,6 +60,15 @@ cd core/swift
 swift test -Xlinker -L"$(./build.sh --lib-dir)"   # Swift から呼んで確かめる
 ```
 
+ネイティブ版は、上の `build.sh` のあとで Xcode のプロジェクトを作ってから、ビルドとテストをします。プロジェクト（`MailCrew.xcodeproj`）はコミットしないので、pull のたびに作り直します。
+
+```sh
+core/swift/build.sh       # Rust の静的ライブラリとバインディング。Rust 側を変えたら作り直す
+xcodegen generate         # project.yml から MailCrew.xcodeproj を作る
+xcodebuild test -project MailCrew.xcodeproj -scheme MailCrew -destination 'platform=macOS,arch=arm64'
+open MailCrew.xcodeproj   # Xcode で開いて実行する
+```
+
 `pnpm test:e2e` は初回だけブラウザの取得が必要です。
 
 ```sh
@@ -83,6 +93,10 @@ pnpm exec playwright install chromium webkit
 | `core/src/links.rs` | アプリの外で開いてよいリンク（http、https、mailto） |
 | `core/src/ffi.rs` | ネイティブ版が Swift から呼ぶためのバインディング（UniFFI） |
 | `core/swift/` | `core/` を Swift から使うためのパッケージ（`MailCrewCore`）と、そのテスト |
+| `project.yml` | ネイティブ版の Xcode プロジェクトの定義（XcodeGen） |
+| `MailCrew/AppModel.swift` | ネイティブ版の状態。どの画面を出すか、ログイン、受信トレイの取得と失敗の扱い。`MailCrew` を呼ぶのはここだけ |
+| `MailCrew/SignInView.swift`、`InboxView.swift`、`CardView.swift` | ネイティブ版の画面。ログイン、カードの列、カード |
+| `MailCrewTests/` | ネイティブ版の単体テスト |
 | `src-tauri/src/commands.rs` | ページから呼べるコマンドの一覧。中身は `Core` に任せ、ブラウザやファイルを開く処理だけを受け持つ |
 | `src-tauri/src/links.rs` | webview がアプリ以外のページへ移動しないようにする。メール中のリンクは既定のアプリで開く |
 | `core/src/authres.rs` | Gmail が付けた `Authentication-Results` ヘッダーから、SPF・DKIM・DMARC の結果を読み取る |
@@ -114,6 +128,16 @@ pnpm exec playwright install chromium webkit
 - 受け渡す型（カード、本文、添付ファイルなど）は `ffi.rs` の中で別に定義し、Rust の型から変換します。Tauri 版のページが受け取る JSON の形を変えないためです。添付ファイルの取得元やメールの差出人のように、Rust の中でだけ使う値は Swift に渡しません。
 
 `core/swift/build.sh` は、`core/` を Apple Silicon 向けの静的ライブラリ（`libmailcrew_core.a`）としてビルドし、そこから C のヘッダーと Swift のソースを生成します。生成したファイルはコミットしません。`core/swift/Package.swift` はそれらを `MailCrewCore` というライブラリにまとめます。
+
+### ネイティブ版
+
+ネイティブ版は SwiftUI の macOS アプリで、`project.yml` から XcodeGen で Xcode のプロジェクトを作ります。`MailCrewCore`（`core/swift/`）をローカルのパッケージとして使い、`build.sh` が作った `libmailcrew_core.a` をリンクします。Apple Silicon 向けだけで、対応する macOS は 14 以降です。`build.sh` は Rust のライブラリも同じ macOS 14 向けにビルドします。
+
+バンドル識別子は Tauri 版と同じ `com.ysaeki.mailcrew` です。キーチェーンの項目と設定のディレクトリが、そのまま引き継がれます。今は証明書で署名せず、アドホック署名でビルドします。
+
+`MailCrewCore` の `View` と `Label` は、SwiftUI の同じ名前の型と衝突します。そのため画面のファイルは `MailCrewCore` を読み込まず、Rust 側を呼ぶのは `AppModel` だけにしています。画面が使う型（`Card` など）には、`AppModel.swift` で別名を付けています。
+
+作り直しは #298 の「進め方の案」の順に進めています。今あるのは、ログイン、受信トレイのカードの列、カードの見出しと抜粋までです。本文、ボタン、ビュー、設定、添付ファイル、検証結果、引っ張って再読み込みは、まだ Tauri 版にしかありません。配布しているのも、まだ Tauri 版です。
 
 `core/` のバージョンは `0.0.0` のままです。単独では配布しないためで、リリースのバージョンは今までどおり `src-tauri/tauri.conf.json` が決めます。依存ライブラリは `src-tauri/Cargo.lock` と `core/Cargo.lock` の両方に載ります。Dependabot はそれぞれのディレクトリを別に確かめます。
 
@@ -267,17 +291,20 @@ BIMI は `get_brand` で確かめます。ページは本文を取ったあと�
 
 ## テスト
 
-手元と CI で走るものは 2 つです。
+手元と CI で走るものは次のとおりです。
 
 | 対象 | 実行 | 場所 |
 |---|---|---|
 | フロントエンド（`src/`）の E2E | `pnpm test:e2e` | `tests/e2e/` |
 | Rust 側の単体テスト | `cargo test`（`core/` と `src-tauri/`） | 各ファイルの `mod tests` |
 | Swift から Rust を呼ぶ部分 | `swift test`（`core/swift/`） | `core/swift/Tests/` |
+| ネイティブ版 | `xcodebuild test` | `MailCrewTests/` |
 
 `cargo test` が確かめるのは、ネットワークを使わない部分です。PKCE とリダイレクトの読み取り（`auth.rs`）、アカウントの一覧の更新と旧形式の読み取り（`credentials.rs`）、複数アカウントのカードを新しい順に並べて切る処理（`accounts.rs`）、ビューの保存と読み込み（`views.rs`）、画像を常に表示する差出人の保存と読み込み（`image_senders.rs`）、MIME の解析と文字コード（ISO-2022-JP、Shift_JIS を含む）、文字コードの宣言がないか誤っているときの推測、RFC 2047 のヘッダー（`mime.rs`）、サニタイズで消えるものと残るもの、埋め込み画像の置き換え（`sanitize.rs`）、添付ファイルの一覧と埋め込み画像の見分け（`mime.rs`、`card.rs`）、保存するファイル名、上書きしない書き出し、開いてよい種類（`attachments.rs`）、スレッドからカードへの変換、メッセージから本文への変換と JSON の形（`card.rs`）、上限で断られたときの判定と待ち時間（`gmail.rs`）、開いてよいリンク（`core/src/links.rs`）、webview に許す遷移（`links.rs`）、Gmail の検証結果の読み取り（`authres.rs`）、DMARC のポリシーと BIMI レコードの判定、テスト用に作ったマーク証明書の検証（`bimi.rs`）、設定の保存と読み込み（`preferences.rs`）、ネイティブ版に渡すエラーと型の変換（`ffi.rs`）を見ます。
 
 `swift test` は、生成したバインディングを通して Swift から Rust を呼べることを確かめます。ビューと画像を常に表示する差出人と設定の保存と読み込み、開いてよいリンクの判定、Rust のエラーが `MailCrewError` として届くことを見ます。Google とキーチェーンには触れません。
+
+ネイティブ版のテストは、`AppModel` を Rust 側の代わり（`MailCrewTests/FakeCore.swift`）につないで確かめます。起動時にどの画面を出すか、全アカウントの受信トレイを取ること、答えなかったアカウントの知らせ、Google が受け付けなくなったアカウントのカードを外すこと、最後のアカウントが外れたらログイン画面に戻ること、ログインが始められなかったときと中止したときの表示を見ます。カードの日付の書き方（`CardDate`）も、Tauri 版の `formatDate` と同じ例で確かめます。本物のログイン（`SignIn` はブラウザと Google を待つ）、画面の見た目、スクロールの動きは確かめられません。
 
 ### フロントエンドの E2E テスト
 
@@ -323,7 +350,7 @@ BIMI は `get_brand` で確かめます。ページは本文を取ったあと�
 
 ### CI
 
-`mailcrew/` を変更する Pull Request では、4 系統のジョブが同時に走ります。`frontend`（E2E と型検査）、`rust checks (macos-latest / windows-latest)`（`src-tauri/` と `core/` の `cargo fmt`、`clippy`、`cargo test`）、`swift bindings (macos-latest)`（`core/swift/` のバインディングの生成と `swift test`）、`build (macos-latest / windows-latest)`（`pnpm tauri build` と成果物のアップロード）です。E2E テストが落ちると、その run に `playwright-report` が添付されます。CI では失敗したテストを 1 回だけ再実行しますが、再実行で通ったもの（flaky）も失敗として扱います。
+`mailcrew/` を変更する Pull Request では、4 系統のジョブが同時に走ります。`frontend`（E2E と型検査）、`rust checks (macos-latest / windows-latest)`（`src-tauri/` と `core/` の `cargo fmt`、`clippy`、`cargo test`）、`native app (macos-latest)`（`core/swift/` のバインディングの生成と `swift test`、ネイティブ版のビルドと `xcodebuild test`）、`build (macos-latest / windows-latest)`（`pnpm tauri build` と成果物のアップロード）です。E2E テストが落ちると、その run に `playwright-report` が添付されます。CI では失敗したテストを 1 回だけ再実行しますが、再実行で通ったもの（flaky）も失敗として扱います。
 
 バージョンの検査は `.github/workflows/mailcrew-version.yml` という別のワークフローです。ラベルの付け外しでも走る必要があり、`mailcrew.yml` に足すと macOS / Windows のビルドまで走ってしまうためです。
 

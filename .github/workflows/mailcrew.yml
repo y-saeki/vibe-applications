@@ -130,11 +130,12 @@ jobs:
         working-directory: mailcrew/core
         run: cargo test --features ffi
 
-  # The Swift side of the bindings: the core crate as a static library, the
-  # Swift sources UniFFI writes from it, and calls across into Rust. Apple
-  # silicon only, as the native app will be.
+  # The native app: the core crate as a static library, the Swift sources
+  # UniFFI writes from it, calls across into Rust, then the SwiftUI app built
+  # and its unit tests run. Apple silicon only. Nothing is signed or shipped
+  # yet; the release still ships the Tauri app.
   swift:
-    name: swift bindings (macos-latest)
+    name: native app (macos-latest)
     runs-on: macos-latest
     timeout-minutes: 30
     defaults:
@@ -157,6 +158,19 @@ jobs:
         run: ./build.sh
       - name: Swift tests
         run: swift test -Xlinker -L"$(./build.sh --lib-dir)"
+      - name: XcodeGen
+        working-directory: mailcrew
+        run: |
+          brew install xcodegen
+          xcodegen generate
+      - name: App tests
+        working-directory: mailcrew
+        run: |
+          xcodebuild -version
+          xcodebuild test \
+            -project MailCrew.xcodeproj \
+            -scheme MailCrew \
+            -destination 'platform=macOS,arch=arm64'
 
   build:
     name: build (${{ matrix.os }})

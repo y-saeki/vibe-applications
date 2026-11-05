@@ -16,6 +16,10 @@ case "${1:-}" in
     *) echo "usage: $0 [--lib-dir]" >&2; exit 2 ;;
 esac
 
+# The oldest macOS the package and the app support (Package.swift,
+# ../../project.yml); without it the library is built for the Mac building it.
+export MACOSX_DEPLOYMENT_TARGET=14.0
+
 cargo rustc --manifest-path "$manifest" --locked --release --target "$triple" \
     --lib --features ffi --crate-type staticlib
 lib="$lib_dir/libmailcrew_core.a"

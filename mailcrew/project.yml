@@ -1,0 +1,76 @@
+# XcodeGen spec (https://github.com/yonaskolb/XcodeGen/blob/master/Docs/ProjectSpec.md)
+# for the native macOS app. MailCrew.xcodeproj is generated from this file and
+# is not committed: run `core/swift/build.sh`, then `xcodegen generate`, in
+# this order after every pull (DEVELOPMENT.md).
+name: MailCrew
+
+options:
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+  developmentLanguage: ja
+
+settings:
+  base:
+    # Not shipped yet: the release is still the Tauri app, whose version is in
+    # src-tauri/tauri.conf.json. The version moves here when this app ships.
+    MARKETING_VERSION: 0.0.1
+    CURRENT_PROJECT_VERSION: 1
+    SWIFT_VERSION: "5.0"
+    # The Rust library is built for Apple silicon only (core/swift/build.sh).
+    ARCHS: arm64
+    # Not signed with a certificate: ad hoc, as the Tauri app's bundle is.
+    CODE_SIGN_IDENTITY: "-"
+    CODE_SIGN_STYLE: Manual
+
+packages:
+  MailCrewCore:
+    path: core/swift
+
+targets:
+  MailCrew:
+    type: application
+    platform: macOS
+    sources:
+      - MailCrew
+    info:
+      path: MailCrew/Info.plist
+      properties:
+        CFBundleDisplayName: Mail Crew
+        CFBundleName: Mail Crew
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSApplicationCategoryType: public.app-category.productivity
+        NSHumanReadableCopyright: ""
+    settings:
+      base:
+        # The Tauri app's identifier: the Keychain item and the settings folder
+        # (~/Library/Application Support/com.ysaeki.mailcrew) carry over.
+        PRODUCT_BUNDLE_IDENTIFIER: com.ysaeki.mailcrew
+        PRODUCT_NAME: Mail Crew
+        PRODUCT_MODULE_NAME: MailCrewMac
+        # Where build.sh leaves libmailcrew_core.a, which the package's
+        # module map links.
+        LIBRARY_SEARCH_PATHS: $(SRCROOT)/core/target/aarch64-apple-darwin/release
+        ENABLE_HARDENED_RUNTIME: NO
+        GENERATE_INFOPLIST_FILE: NO
+    dependencies:
+      - package: MailCrewCore
+        product: MailCrewCore
+    scheme:
+      testTargets:
+        - MailCrewTests
+
+  MailCrewTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - MailCrewTests
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        LIBRARY_SEARCH_PATHS: $(SRCROOT)/core/target/aarch64-apple-darwin/release
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/Mail Crew.app/Contents/MacOS/Mail Crew
+        BUNDLE_LOADER: $(TEST_HOST)
+    dependencies:
+      - target: MailCrew
