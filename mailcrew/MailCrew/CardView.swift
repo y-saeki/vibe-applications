@@ -59,6 +59,8 @@ struct CardView: View {
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
             }
+            // As tall as the logo, whether there is one or not, so every head lines up.
+            .frame(height: 20)
             // Two lines whether the subject needs them or not, so every head is as tall.
             Text(card.subject.isEmpty ? "(件名なし)" : card.subject)
                 .font(.system(size: 17, weight: .bold))
