@@ -2,7 +2,8 @@
 //! meta-gesture's own types: the virtual key codes (`kVK_*` of HIToolbox's
 //! Events.h) and modifier flags (`CGEventFlags`) of a key event. The app
 //! hears them while the settings window records a combination, and sends
-//! them when a gesture is made.
+//! them when a gesture is made. Also the shortcut a menu item shows, as the
+//! accessibility API reports it (`kAXMenuItemCmd*Attribute`).
 //!
 //! Nothing here touches the operating system, so it is tested on every
 //! platform.
@@ -14,6 +15,48 @@ const FLAG_SHIFT: u64 = 0x0002_0000;
 const FLAG_CONTROL: u64 = 0x0004_0000;
 const FLAG_OPTION: u64 = 0x0008_0000;
 const FLAG_COMMAND: u64 = 0x0010_0000;
+
+// The masks of AXMenuItemModifiers, which a menu item's
+// kAXMenuItemCmdModifiersAttribute holds. Command is held unless NoCommand
+// says it is not.
+const MENU_SHIFT: u32 = 1 << 0;
+const MENU_OPTION: u32 = 1 << 1;
+const MENU_CONTROL: u32 = 1 << 2;
+const MENU_NO_COMMAND: u32 = 1 << 3;
+
+/// Keys by the characters a menu item names them by: as the US layout
+/// prints them, unshifted and shifted.
+const CHARS: &[(char, Option<char>, Key)] = &[
+    ('1', Some('!'), Key::Digit(1)),
+    ('2', Some('@'), Key::Digit(2)),
+    ('3', Some('#'), Key::Digit(3)),
+    ('4', Some('$'), Key::Digit(4)),
+    ('5', Some('%'), Key::Digit(5)),
+    ('6', Some('^'), Key::Digit(6)),
+    ('7', Some('&'), Key::Digit(7)),
+    ('8', Some('*'), Key::Digit(8)),
+    ('9', Some('('), Key::Digit(9)),
+    ('0', Some(')'), Key::Digit(0)),
+    ('`', Some('~'), Key::Oem3),
+    ('-', Some('_'), Key::OemMinus),
+    ('=', Some('+'), Key::OemPlus),
+    ('[', Some('{'), Key::Oem4),
+    (']', Some('}'), Key::Oem6),
+    ('\\', Some('|'), Key::Oem5),
+    (';', Some(':'), Key::Oem1),
+    ('\'', Some('"'), Key::Oem7),
+    (',', Some('<'), Key::OemComma),
+    ('.', Some('>'), Key::OemPeriod),
+    ('/', Some('?'), Key::Oem2),
+    (' ', None, Key::Space),
+    ('\r', None, Key::Enter),
+    ('\t', None, Key::Tab),
+    ('\u{1B}', None, Key::Escape),
+    // NSMenuItem's keyEquivalent documents Backspace and forward delete as
+    // these.
+    ('\u{08}', None, Key::Backspace),
+    ('\u{7F}', None, Key::Delete),
+];
 
 /// Keys by their codes. A key's position decides its code, as the US layout
 /// places it; the punctuation keys are meta-gesture's `Oem*` keys at the same
@@ -173,6 +216,56 @@ pub fn combo(code: u16, flags: u64) -> Option<Combo> {
     Some(Combo::new(modifiers(flags), key(code)?))
 }
 
+/// The shortcut a menu item shows: its key as the character
+/// `character` (kAXMenuItemCmdChar) or else the virtual key code `code`
+/// (kAXMenuItemCmdVirtualKey), held with the AXMenuItemModifiers
+/// `modifiers`. `None` when it has no key meta-gesture can name.
+pub fn menu_shortcut(character: Option<&str>, code: Option<u16>, modifiers: u32) -> Option<Combo> {
+    let (key, shifted) = character
+        .and_then(char_key)
+        .or_else(|| code.and_then(key).map(|k| (k, false)))?;
+    let held = [
+        (MENU_CONTROL, Modifiers::CTRL),
+        (MENU_OPTION, Modifiers::ALT),
+        (MENU_SHIFT, Modifiers::SHIFT),
+    ]
+    .into_iter()
+    .filter(|(mask, _)| modifiers & mask != 0)
+    .fold(Modifiers::NONE, |m, (_, modifier)| m | modifier);
+    let shift = if shifted {
+        Modifiers::SHIFT
+    } else {
+        Modifiers::NONE
+    };
+    let command = if modifiers & MENU_NO_COMMAND == 0 {
+        Modifiers::META
+    } else {
+        Modifiers::NONE
+    };
+    Some(Combo::new(held | shift | command, key))
+}
+
+/// The key a single character names, and whether it is the key's shifted
+/// character. A letter is its key in either case.
+fn char_key(text: &str) -> Option<(Key, bool)> {
+    let mut chars = text.chars();
+    let (c, None) = (chars.next()?, chars.next()) else {
+        return None;
+    };
+    if c.is_ascii_alphabetic() {
+        return Some((Key::Letter(c.to_ascii_uppercase() as u8), false));
+    }
+    CHARS.iter().find_map(|(plain, shifted, key)| {
+        if *plain == c {
+            Some((*key, false))
+        } else if *shifted == Some(c) {
+            Some((*key, true))
+        } else {
+            None
+        }
+    })
+}
+
 /// What a change of the modifier flags from `before` to `after` presses
 /// and lets go of, as a flags-changed event reports it: each modifier that
 /// went down or up, and whether it went down. Those let go of come first.
@@ -267,6 +360,35 @@ mod tests {
             modifier_changes(FLAG_CONTROL, FLAG_CONTROL | 0x0080_0000),
             []
         );
+    }
+
+    #[test]
+    fn reads_a_menu_items_shortcut() {
+        let k = |s: &str| Some(s.parse::<Combo>().unwrap());
+        // Command is held unless the item says it is not.
+        assert_eq!(menu_shortcut(Some("W"), None, 0), k("Cmd+W"));
+        assert_eq!(menu_shortcut(Some("w"), None, MENU_SHIFT), k("Shift+Cmd+W"));
+        assert_eq!(
+            menu_shortcut(Some("T"), None, MENU_CONTROL | MENU_OPTION),
+            k("Ctrl+Option+Cmd+T")
+        );
+        assert_eq!(
+            menu_shortcut(Some("Q"), None, MENU_NO_COMMAND | MENU_CONTROL),
+            k("Ctrl+Q")
+        );
+        // Punctuation by where the US layout has it; a shifted character
+        // holds Shift.
+        assert_eq!(menu_shortcut(Some("["), None, 0), k("Cmd+Oem4"));
+        assert_eq!(menu_shortcut(Some("}"), None, 0), k("Shift+Cmd+Oem6"));
+        assert_eq!(menu_shortcut(Some("?"), None, 0), k("Shift+Cmd+Oem2"));
+        assert_eq!(menu_shortcut(Some("1"), None, 0), k("Cmd+1"));
+        assert_eq!(menu_shortcut(Some("\u{08}"), None, 0), k("Cmd+Backspace"));
+        // The key code where the character names no key.
+        assert_eq!(menu_shortcut(Some(""), Some(0x7B), 0), k("Cmd+Left"));
+        assert_eq!(menu_shortcut(None, Some(0x7A), MENU_NO_COMMAND), k("F1"));
+        assert_eq!(menu_shortcut(Some("\u{F702}"), None, 0), None);
+        assert_eq!(menu_shortcut(Some("ab"), None, 0), None);
+        assert_eq!(menu_shortcut(None, None, 0), None);
     }
 
     #[test]

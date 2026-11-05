@@ -1,8 +1,8 @@
 import AppKit
 
 /// What a gesture does to the application: finding which one is under the
-/// pointer, bringing it forward and sending it keys, or giving it back the
-/// click the tap kept from it. Every event posted carries `postedMark`.
+/// pointer, bringing it forward and sending it keys or choosing its menu
+/// item, or giving it back the click the tap kept from it. Every event posted carries `postedMark`.
 @MainActor
 enum Sender {
     /// The application whose window is at `point`, in the coordinates of
@@ -39,6 +39,18 @@ enum Sender {
         waitUntilActive(app, tries: 10) { active in
             post(code: code, flags: flags, to: active ? nil : app.processIdentifier)
         }
+    }
+
+    /// Brings `app` forward as `send` does, and then chooses its menu item
+    /// `path`: the titles from the menu bar down.
+    static func choose(_ path: [String], in app: NSRunningApplication, then done: @escaping (Menus.Pressed) -> Void) {
+        let press = { done(Menus.press(path, in: app.processIdentifier)) }
+        if app.isActive {
+            press()
+            return
+        }
+        app.activate(options: [])
+        waitUntilActive(app, tries: 10) { _ in press() }
     }
 
     private static func waitUntilActive(_ app: NSRunningApplication, tries: Int, then: @escaping (Bool) -> Void) {

@@ -21,7 +21,7 @@ use windows_reactor::*;
 
 use super::filedialog::{self, Choose};
 use super::{autostart, config_path, error_box, icon, keyhook, process};
-use meta_gesture::config::{App as Application, Config};
+use meta_gesture::config::{Action, App as Application, Config};
 use meta_gesture::editor::Editor;
 use meta_gesture::gesture::Direction;
 use meta_gesture::keys::{Arrow, Keycap, Look, Recorder};
@@ -234,10 +234,10 @@ impl Component for Settings {
                     && result == ContentDialogResult::Primary
                     && let Some(combo) = r.result()
                 {
-                    self.editor.set_keys(row, Some(combo));
+                    self.editor.set_action(row, Some(Action::Keys(combo)));
                 }
             }
-            Msg::ClearKeys(row) => e.set_keys(row, None),
+            Msg::ClearKeys(row) => e.set_action(row, None),
             Msg::Autostart(on) => self.autostart = on,
             Msg::Save => self.save(context),
             Msg::Export => self.export(context),
@@ -418,7 +418,12 @@ impl Settings {
     }
 
     fn start_recording(&mut self, row: usize, context: &ComponentContext<Self>) {
-        let Some(keys) = self.editor.key_rows().get(row).map(|r| r.keys) else {
+        let Some(keys) = self
+            .editor
+            .key_rows()
+            .get(row)
+            .map(|r| r.action.as_ref().and_then(Action::keys))
+        else {
             return;
         };
         let sender = context.sender();
@@ -752,7 +757,7 @@ impl Settings {
             .into_iter()
             .enumerate()
             .map(|(i, row)| {
-                let caps: View = match row.keys {
+                let caps: View = match row.action.as_ref().and_then(Action::keys) {
                     Some(combo) => keycaps(combo.caps(Look::Windows), Caps::SMALL),
                     None => TextBlock::new()
                         .text(if i == 0 {
@@ -794,7 +799,7 @@ impl Settings {
                                             .children((FontIcon::new().glyph("\u{E70F}"), "変更")),
                                     ),
                                 Button::new()
-                                    .is_enabled(row.keys.is_some())
+                                    .is_enabled(row.action.is_some())
                                     .on_click(context.message(Msg::ClearKeys(i)))
                                     .content("クリア"),
                             )),

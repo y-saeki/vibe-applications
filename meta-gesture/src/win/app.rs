@@ -238,7 +238,8 @@ fn on_gesture() {
                 toast::show(&format!("{command}: ウィンドウを前面に出せませんでした"));
             }
         }
-        Outcome::Unassigned { command } => {
+        // A Windows config has no menu items: reading it refuses them.
+        Outcome::Unassigned { command } | Outcome::Menu { command, .. } => {
             toast::show(&format!("{command}: このアプリには未設定"));
         }
         Outcome::Unknown => toast::show(&format!("{gesture}: 未登録のジェスチャー")),
