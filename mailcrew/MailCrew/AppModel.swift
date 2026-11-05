@@ -47,21 +47,59 @@ final class AppModel {
     /// The cards, by `Card.key`, whose star is on its way to Gmail.
     private(set) var starring: Set<String> = []
 
+    /// The sender's BIMI checks, by `Card.bodyKey`. A message without an
+    /// entry shows Gmail's checks alone: BIMI is off, or the body is not here.
+    private(set) var brands: [String: BrandCheck] = [:]
+    /// Whether the user lets Mail Crew look up BIMI; on by default, as the
+    /// Rust side has it.
+    private(set) var looksUpBrands = true
+
     @ObservationIgnored private let core: MailCrewProtocol
     @ObservationIgnored private let openURL: (URL) -> Void
+    @ObservationIgnored private let files: Files
+    /// The BIMI lookups on their way, by `Card.bodyKey`.
+    @ObservationIgnored private var brandLookups: [String: Task<Void, Never>] = [:]
     /// Set when a load is asked for while one is running, so the newer one wins.
     @ObservationIgnored private var loadAgain = false
     /// The bodies on their way, by `Card.bodyKey`.
     @ObservationIgnored private var fetching: Set<String> = []
 
-    init(core: MailCrewProtocol, openURL: @escaping (URL) -> Void = { NSWorkspace.shared.open($0) }) {
+    /// Where attachments go, and how a file is handed to the OS.
+    struct Files {
+        /// Where 保存 writes.
+        var downloads: URL
+        /// Where 開く writes what it hands to the OS, each file in a folder of its own.
+        var opened: URL
+        /// Opens a file in the app the OS picks for it; false when it could not.
+        var open: (URL) -> Bool
+
+        static func live() -> Files {
+            let temporary = FileManager.default.temporaryDirectory.path
+            return Files(
+                downloads: FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0],
+                opened: URL(fileURLWithPath: openedAttachmentsDir(tempDir: temporary), isDirectory: true),
+                open: { NSWorkspace.shared.open($0) }
+            )
+        }
+    }
+
+    init(
+        core: MailCrewProtocol,
+        openURL: @escaping (URL) -> Void = { NSWorkspace.shared.open($0) },
+        files: Files = .live()
+    ) {
         self.core = core
         self.openURL = openURL
+        self.files = files
     }
 
     /// The model over the real Rust side.
     static func live() -> AppModel {
-        AppModel(core: MailCrew(configDir: configDirectory().path))
+        let files = Files.live()
+        // What was opened last time is not needed any more. A file a viewer
+        // still holds open stays, and goes next time.
+        try? FileManager.default.removeItem(at: files.opened)
+        return AppModel(core: MailCrew(configDir: configDirectory().path), files: files)
     }
 
     /// Where the views, the senders whose images are shown and the
@@ -86,8 +124,21 @@ final class AppModel {
             showSignIn(message: nil)
         } else {
             screen = .inbox
-            await loadImageSenders()
+            await loadSettings()
             await load()
+        }
+    }
+
+    private func loadSettings() async {
+        await loadImageSenders()
+        await loadPreferences()
+    }
+
+    /// Reads whether BIMI is looked up. When it cannot be read, the default
+    /// holds; the Rust side reads the file again before every lookup.
+    private func loadPreferences() async {
+        if let preferences = try? await core.preferences() {
+            looksUpBrands = preferences.brandLogos
         }
     }
 
@@ -120,7 +171,7 @@ final class AppModel {
             _ = try await pending.finish()
             accounts = try await core.accountEmails()
             screen = .inbox
-            await loadImageSenders()
+            await loadSettings()
             await load()
         } catch MailCrewError.Cancelled {
             // What the user asked for; nothing to report.
@@ -138,6 +189,7 @@ final class AppModel {
         cards = []
         bodies = [:]
         remoteImagesShown = []
+        brands = [:]
         labels = [:]
         signInError = message
         screen = .signIn
@@ -244,6 +296,7 @@ final class AppModel {
             // The strip may have been loaded again while the body was on its way.
             guard cards.contains(where: { $0.bodyKey == key }) else { return }
             bodies[key] = content
+            checkBrand(card, authentication: content.authentication)
         } catch {
             await fail(error)
         }
@@ -253,6 +306,7 @@ final class AppModel {
     private func forgetBodiesOffTheStrip() {
         let keys = Set(cards.map(\.bodyKey))
         bodies = bodies.filter { keys.contains($0.key) }
+        brands = brands.filter { keys.contains($0.key) }
         remoteImagesShown.formIntersection(keys)
     }
 
@@ -287,6 +341,203 @@ final class AppModel {
         } catch {
             notice = Self.message(of: error)
         }
+    }
+
+    // MARK: Sender checks
+
+    /// Starts the BIMI checks of a message whose body just came in. They are
+    /// looked up only when Gmail's DMARC result is `pass`; otherwise they
+    /// say so without asking anything. While the user has BIMI off, Gmail's
+    /// checks show alone.
+    private func checkBrand(_ card: Card, authentication: Authentication) {
+        guard looksUpBrands else { return }
+        let key = card.bodyKey
+        guard authentication.dmarc?.result == "pass" else {
+            brands[key] = .checked(Brand(bimi: .skipped, domain: "", mark: .none, logo: nil))
+            return
+        }
+        brands[key] = .pending
+        brandLookups[key] = Task { await lookUpBrand(card) }
+    }
+
+    /// The BIMI lookup of a card's message, while it is on its way.
+    func brandLookup(for card: Card) -> Task<Void, Never>? {
+        brandLookups[card.bodyKey]
+    }
+
+    private func lookUpBrand(_ card: Card) async {
+        let key = card.bodyKey
+        defer { brandLookups[key] = nil }
+        let result: BrandCheck?
+        do {
+            // Nothing, when the user turned BIMI off since the settings were read.
+            result = try await core.getBrand(account: card.account, messageId: card.messageId).map { .checked($0) }
+        } catch {
+            // Nothing to tell beyond what the checks show.
+            result = .failed
+        }
+        guard bodies[key] != nil else { return }
+        brands[key] = result
+        if result == nil { looksUpBrands = false }
+    }
+
+    /// The checks under a card's subject; none until its body is here.
+    func trustItems(of card: Card) -> [TrustItem] {
+        guard let content = bodies[card.bodyKey] else { return [] }
+        return Self.trustItems(authentication: content.authentication, brand: brands[card.bodyKey])
+    }
+
+    /// What the row under a card's subject shows: Gmail's SPF, DKIM and
+    /// DMARC, then the BIMI and mark certificate checks when there are any.
+    /// The words and the tooltips are the Tauri app's (`src/trust.ts`).
+    nonisolated static func trustItems(authentication: Authentication, brand: BrandCheck?) -> [TrustItem] {
+        [
+            gmailItem("spf", "SPF", authentication.spf),
+            gmailItem("dkim", "DKIM", authentication.dkim),
+            gmailItem("dmarc", "DMARC", authentication.dmarc),
+        ] + (brand.map(brandItems) ?? [])
+    }
+
+    private nonisolated static let resultText = [
+        "pass": "合格",
+        "fail": "不合格",
+        "softfail": "不合格（ソフトフェイル）",
+        "neutral": "判定なし",
+        "none": "設定なし",
+        "temperror": "一時的なエラー",
+        "permerror": "設定の誤り",
+        "policy": "ポリシーにより不合格",
+    ]
+
+    private nonisolated static func gmailItem(_ key: String, _ label: String, _ check: Check?) -> TrustItem {
+        guard let check else {
+            return TrustItem(key: key, label: label, tone: .neutral, detail: "\(label): Gmail の検証結果がありません")
+        }
+        let tone: TrustItem.Tone
+        switch check.result {
+        case "pass": tone = .pass
+        case "fail", "softfail", "permerror": tone = .fail
+        default: tone = .neutral
+        }
+        let text = resultText[check.result] ?? check.result
+        let domain = check.domain.isEmpty ? "" : "（\(check.domain)）"
+        return TrustItem(key: key, label: label, tone: tone, detail: "\(label): \(text)\(domain)")
+    }
+
+    private nonisolated static func brandItems(_ brand: BrandCheck) -> [TrustItem] {
+        switch brand {
+        case .pending:
+            return [
+                TrustItem(key: "bimi", label: "BIMI", tone: .pending, detail: "BIMI: 確認しています"),
+                TrustItem(key: "mark", label: "VMC", tone: .pending, detail: "VMC: 確認しています"),
+            ]
+        case .failed:
+            return [
+                TrustItem(key: "bimi", label: "BIMI", tone: .neutral, detail: "BIMI: 確認できませんでした"),
+                TrustItem(key: "mark", label: "VMC", tone: .neutral, detail: "VMC: 確認できませんでした"),
+            ]
+        case .checked(let brand):
+            let (bimiTone, bimiText): (TrustItem.Tone, String) = switch brand.bimi {
+            case .pass: (.pass, "登録あり")
+            case .none: (.neutral, "登録なし")
+            case .declined: (.neutral, "送信元が使わないと宣言しています")
+            case .fail: (.fail, "レコードに誤りがあります")
+            case .skipped: (.neutral, "DMARC の条件を満たさないため確認していません")
+            case .temperror: (.neutral, "DNS に問い合わせられませんでした")
+            }
+            let (markTone, markText): (TrustItem.Tone, String) = switch brand.mark {
+            case .vmc: (.pass, "認証局が登録商標を確認したロゴです")
+            case .cmc: (.pass, "認証局が使用実績を確認したロゴです")
+            case .none: (.neutral, "証明書はありません")
+            case .fail: (.fail, "証明書を確認できませんでした")
+            case .temperror: (.neutral, "証明書を取得できませんでした")
+            }
+            let domain = brand.domain.isEmpty ? "" : "（\(brand.domain)）"
+            let markLabel = markLabel(brand.mark)
+            return [
+                TrustItem(key: "bimi", label: "BIMI", tone: bimiTone, detail: "BIMI: \(bimiText)\(domain)"),
+                TrustItem(key: "mark", label: markLabel, tone: markTone, detail: "\(markLabel): \(markText)"),
+            ]
+        }
+    }
+
+    private nonisolated static func markLabel(_ mark: MarkResult) -> String {
+        mark == .cmc ? "CMC" : "VMC"
+    }
+
+    /// The sender's logo for a card, once its certificate held up: a
+    /// `data:image/svg+xml` URL, and nothing else, so that showing it never
+    /// reaches the network.
+    func logo(of card: Card) -> BrandLogo? {
+        guard case .checked(let brand) = brands[card.bodyKey] else { return nil }
+        return Self.logo(of: brand)
+    }
+
+    nonisolated static func logo(of brand: Brand) -> BrandLogo? {
+        guard let url = brand.logo, url.hasPrefix("data:image/svg+xml") else { return nil }
+        return BrandLogo(
+            url: url,
+            title: "\(brand.domain) のロゴ（\(markLabel(brand.mark)) で確認済み）"
+        )
+    }
+
+    // MARK: Attachments
+
+    /// The files attached to the message a card shows, once its body is here.
+    func attachments(of card: Card) -> [Attachment] {
+        bodies[card.bodyKey]?.attachments ?? []
+    }
+
+    /// 開く: writes the file where opened attachments go and hands it to the
+    /// OS. Only the kinds the Rust side calls openable get here, and the Rust
+    /// side checks again. Says whether it was opened.
+    func openAttachment(_ attachment: Attachment, of card: Card) async -> Bool {
+        guard attachment.openable else { return false }
+        do {
+            let path = try await core.attachmentToOpen(
+                account: card.account, messageId: card.messageId,
+                attachmentId: attachment.id, openedDir: files.opened.path
+            )
+            guard files.open(URL(fileURLWithPath: path)) else {
+                notice = "添付ファイルを開けませんでした"
+                return false
+            }
+            return true
+        } catch {
+            await fail(error)
+            return false
+        }
+    }
+
+    /// 保存: writes the file to the Downloads folder, never over another one,
+    /// and says under which name. Says whether it was saved.
+    func saveAttachment(_ attachment: Attachment, of card: Card) async -> Bool {
+        do {
+            let path = try await core.saveAttachment(
+                account: card.account, messageId: card.messageId,
+                attachmentId: attachment.id, dir: files.downloads.path
+            )
+            let name = URL(fileURLWithPath: path).lastPathComponent
+            notice = "ダウンロード フォルダに「\(name)」を保存しました"
+            return true
+        } catch {
+            await fail(error)
+            return false
+        }
+    }
+
+    /// A size in bytes as people read it, as the Tauri app's `formatSize` writes it.
+    nonisolated static func formatSize(_ bytes: UInt64) -> String {
+        if bytes < 1024 { return "\(bytes) B" }
+        let units = ["KB", "MB", "GB"]
+        var value = Double(bytes) / 1024
+        var unit = 0
+        while value >= 1024 && unit < units.count - 1 {
+            value /= 1024
+            unit += 1
+        }
+        let number = value < 10 ? String(format: "%.1f", value) : String(Int(value.rounded()))
+        return "\(number) \(units[unit])"
     }
 
     // MARK: Actions
@@ -452,6 +703,38 @@ typealias Card = MailCrewCore.Card
 typealias MessageContent = MailCrewCore.MessageContent
 typealias CardBody = MailCrewCore.CardBody
 typealias Mailbox = MailCrewCore.Mailbox
+typealias Attachment = MailCrewCore.Attachment
+typealias Authentication = MailCrewCore.Authentication
+typealias Brand = MailCrewCore.Brand
+typealias Check = MailCrewCore.Check
+typealias MarkResult = MailCrewCore.MarkResult
+
+/// Where a message's BIMI checks stand.
+enum BrandCheck: Equatable {
+    case pending
+    /// The lookup failed; nothing to tell beyond that.
+    case failed
+    case checked(Brand)
+}
+
+/// One check in the row under a card's subject: a word with a dot whose
+/// colour says how it went, and a tooltip that says the rest.
+struct TrustItem: Equatable {
+    enum Tone: Equatable {
+        case pass, fail, neutral, pending
+    }
+
+    let key: String
+    let label: String
+    let tone: Tone
+    let detail: String
+}
+
+/// A sender's logo, as a `data:` URL, with what its tooltip says.
+struct BrandLogo: Equatable {
+    let url: String
+    let title: String
+}
 /// A Gmail label, shown as a タグ. SwiftUI has a `Label` of its own.
 typealias TagLabel = MailCrewCore.Label
 

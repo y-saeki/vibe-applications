@@ -82,7 +82,9 @@ and mark certificate checks. `DEVELOPMENT.md` has the steps. Changing them keeps
   too.
 - Nothing about BIMI is looked up unless Gmail's DMARC result is `pass`, and nothing at all
   while the user has turned BIMI off in the settings (`preferences.json`, on by default).
-  Lookups go out from Rust; the page only ever gets a `data:` URL.
+  Lookups go out from Rust; the page only ever gets a `data:` URL. The native app draws that
+  URL in a WKWebView under the message's locks (no JavaScript, the blocking `WKContentRuleList`,
+  a CSP of `img-src data:`), and only when it starts with `data:image/svg+xml`.
 - A logo is shown only from a mark certificate that chains to a root in `core/bimi-roots/`.
   The record's `l=` file is never fetched.
 
@@ -140,6 +142,7 @@ covers it changes in the same commit:
 | What the native app shows at startup, after a sign-in or sign-out, or how it loads the inbox (`MailCrew/AppModel.swift`) | `MailCrewTests/AppModelTests.swift`, and `FakeCore` for a call it newly makes |
 | When the native app fetches a body, which images it lets in, or which links it opens (`AppModel.swift`) | `MailCrewTests/MessageBodyTests.swift`, and `FakeCore` for a call it newly makes |
 | What a card's 完了, タグ, あとで読む or スター asks of the Rust side, how the card leaves the strip or comes back, or the tag picker's rows (`AppModel.swift`) | `MailCrewTests/CardActionsTests.swift`, and `FakeCore` for a call it newly makes |
+| The native app's checks under the subject, when it looks up BIMI, which logo it shows or the logo's document (`AppModel.swift`, `TrustRow.swift`), or what a card's attachment button lists, opens and saves | `MailCrewTests/TrustAndAttachmentsTests.swift`, and `FakeCore` for a call it newly makes |
 | The native app's message document, content rules or navigation policy (`MessageFrame.swift`), or how `MessageWebView.swift` loads, measures and scales a body | `MailCrewTests/MessageFrameTests.swift` and `MessageWebViewTests.swift` |
 
 `DEVELOPMENT.md` lists what these tests cannot reach — Google itself, the credential store,

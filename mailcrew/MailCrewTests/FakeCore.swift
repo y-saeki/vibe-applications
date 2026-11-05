@@ -24,6 +24,20 @@ final class FakeCore: MailCrewProtocol, @unchecked Sendable {
     /// Each account's labels. One that is missing fails.
     var labels: [String: [MailCrewCore.Label]] = [:]
     private(set) var labelCalls: [String] = []
+    /// Answers to `getBrand`, by message id. One that is missing fails.
+    var brands: [String: Result<Brand?, MailCrewError>] = [:]
+    private(set) var brandCalls: [(account: String, messageId: String)] = []
+    var brandLogos = true
+    var preferencesError: MailCrewError?
+    /// What `attachmentToOpen` and `saveAttachment` were asked for, in order.
+    private(set) var attachmentCalls: [AttachmentCall] = []
+    /// Thrown by the next attachment call, then cleared.
+    var attachmentError: MailCrewError?
+
+    enum AttachmentCall: Equatable {
+        case open(account: String, messageId: String, attachmentId: String, openedDir: String)
+        case save(account: String, messageId: String, attachmentId: String, dir: String)
+    }
 
     enum Action: Equatable {
         case archive(account: String, messageIds: [String], mailbox: Mailbox)
@@ -109,12 +123,39 @@ final class FakeCore: MailCrewProtocol, @unchecked Sendable {
         return labels
     }
 
+    func getBrand(account: String, messageId: String) async throws -> Brand? {
+        brandCalls.append((account, messageId))
+        guard let answer = brands[messageId] else { throw MailCrewError.Network(message: "not scripted") }
+        return try answer.get()
+    }
+
+    func preferences() async throws -> Preferences {
+        if let preferencesError { throw preferencesError }
+        return Preferences(brandLogos: brandLogos)
+    }
+
+    private func attachment(_ call: AttachmentCall) throws {
+        attachmentCalls.append(call)
+        if let error = attachmentError {
+            attachmentError = nil
+            throw error
+        }
+    }
+
+    /// The path the Rust side would write the file to: a folder of its own under `openedDir`.
+    func attachmentToOpen(account: String, messageId: String, attachmentId: String, openedDir: String) async throws -> String {
+        try attachment(.open(account: account, messageId: messageId, attachmentId: attachmentId, openedDir: openedDir))
+        return "\(openedDir)/0123456789abcdef/\(attachmentId).pdf"
+    }
+
+    /// Saves under the attachment's id, with " (1)" as if a file of that name were there.
+    func saveAttachment(account: String, messageId: String, attachmentId: String, dir: String) async throws -> String {
+        try attachment(.save(account: account, messageId: messageId, attachmentId: attachmentId, dir: dir))
+        return "\(dir)/\(attachmentId) (1).pdf"
+    }
+
     // Not called by AppModel yet.
-    func attachmentToOpen(account: String, messageId: String, attachmentId: String, openedDir: String) async throws -> String { unscripted() }
-    func getBrand(account: String, messageId: String) async throws -> Brand? { unscripted() }
     func listViews() async throws -> [View] { unscripted() }
-    func preferences() async throws -> Preferences { unscripted() }
-    func saveAttachment(account: String, messageId: String, attachmentId: String, dir: String) async throws -> String { unscripted() }
     func savePreferences(preferences: Preferences) async throws { unscripted() }
     func saveViews(views: [View]) async throws { unscripted() }
     func signOut(account: String) async throws { unscripted() }
@@ -138,8 +179,11 @@ func card(
     )
 }
 
-func content(_ body: CardBody) -> MessageContent {
-    MessageContent(body: body, attachments: [], authentication: Authentication(spf: nil, dkim: nil, dmarc: nil))
+func content(
+    _ body: CardBody, attachments: [MailCrewCore.Attachment] = [],
+    authentication: MailCrewCore.Authentication = MailCrewCore.Authentication(spf: nil, dkim: nil, dmarc: nil)
+) -> MessageContent {
+    MessageContent(body: body, attachments: attachments, authentication: authentication)
 }
 
 func html(_ markup: String = "<p>本文</p>", remoteImages: Bool = false) -> MessageContent {
