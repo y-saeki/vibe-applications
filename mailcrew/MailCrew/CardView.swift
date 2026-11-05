@@ -34,6 +34,9 @@ struct CardView: View {
     private var head: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
+                if let logo = model.logo(of: card) {
+                    BrandLogoView(logo: logo)
+                }
                 if card.unread {
                     Circle()
                         .fill(Color.accentColor)
@@ -56,10 +59,13 @@ struct CardView: View {
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
             }
+            // As tall as the logo, whether there is one or not, so every head lines up.
+            .frame(height: 20)
             // Two lines whether the subject needs them or not, so every head is as tall.
             Text(card.subject.isEmpty ? "(件名なし)" : card.subject)
                 .font(.system(size: 17, weight: .bold))
                 .lineLimit(2, reservesSpace: true)
+            TrustRow(items: model.trustItems(of: card))
         }
     }
 }

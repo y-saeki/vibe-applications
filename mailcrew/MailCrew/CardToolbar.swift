@@ -1,11 +1,13 @@
 import SwiftUI
 
-/// The row of buttons at the foot of a card: タグ, あとで読む and スター at
-/// the left, 完了 at the right. Each one acts on the card's own account.
+/// The row of buttons at the foot of a card: タグ, あとで読む, スター and,
+/// once the body is here and has any, the attachments at the left, 完了 at
+/// the right. Each one acts on the card's own account.
 struct CardToolbar: View {
     let card: Card
     let model: AppModel
     @State private var picking = false
+    @State private var listingAttachments = false
 
     var body: some View {
         HStack(spacing: 2) {
@@ -33,6 +35,16 @@ struct CardToolbar: View {
             }
             .disabled(model.starring.contains(card.key))
             .accessibilityAddTraits(card.starred ? .isSelected : [])
+            // Last among the icons, so the others keep their places on every card.
+            let attachments = model.attachments(of: card)
+            if !attachments.isEmpty {
+                AttachmentButton(count: attachments.count) { listingAttachments.toggle() }
+                    .popover(isPresented: $listingAttachments, arrowEdge: .top) {
+                        AttachmentList(attachments: attachments, card: card, model: model) {
+                            listingAttachments = false
+                        }
+                    }
+            }
             Spacer(minLength: 8)
             Button {
                 Task { await model.archive(card) }
@@ -68,6 +80,107 @@ private struct ToolButton: View {
         .buttonStyle(.borderless)
         .help(title)
         .accessibilityLabel(title)
+    }
+}
+
+/// The paper clip with how many files there are.
+private struct AttachmentButton: View {
+    let count: Int
+    let action: () -> Void
+
+    var body: some View {
+        let title = "添付ファイル \(count) 件"
+        Button(action: action) {
+            HStack(spacing: 3) {
+                Image(systemName: "paperclip")
+                    .font(.system(size: 15))
+                Text("\(count)")
+                    .font(.system(size: 12, weight: .semibold))
+                    .monospacedDigit()
+            }
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 8)
+            .frame(minWidth: 34, minHeight: 30)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.borderless)
+        .help(title)
+        .accessibilityLabel(title)
+    }
+}
+
+/// The list that opens from a card's attachment button: each file's name and
+/// size, with 開く for the kinds Mail Crew opens and 保存 for all of them.
+/// It closes once a file has been opened or saved.
+struct AttachmentList: View {
+    let attachments: [Attachment]
+    let card: Card
+    let model: AppModel
+    let close: () -> Void
+
+    var body: some View {
+        ScrollView(.vertical) {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(attachments, id: \.id) { attachment in
+                    AttachmentRow(attachment: attachment, card: card, model: model, close: close)
+                }
+            }
+            .padding(6)
+        }
+        .frame(width: 340)
+        .frame(maxHeight: 280)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+private struct AttachmentRow: View {
+    enum Action {
+        case open, save
+    }
+
+    let attachment: Attachment
+    let card: Card
+    let model: AppModel
+    let close: () -> Void
+    /// The button whose file is on its way; fetching it from Gmail can take a few seconds.
+    @State private var busy: Action?
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Text(attachment.name)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .help(attachment.name)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Text(AppModel.formatSize(attachment.size))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+            // Programs and the like are never opened from here, only saved.
+            if attachment.openable {
+                button(.open, idle: "開く", working: "開いています…")
+            }
+            button(.save, idle: "保存", working: "保存しています…")
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+    }
+
+    private func button(_ action: Action, idle: String, working: String) -> some View {
+        Button(busy == action ? working : idle) {
+            busy = action
+            Task {
+                let done = switch action {
+                case .open: await model.openAttachment(attachment, of: card)
+                case .save: await model.saveAttachment(attachment, of: card)
+                }
+                busy = nil
+                if done { close() }
+            }
+        }
+        .buttonStyle(.link)
+        .disabled(busy != nil)
+        .accessibilityLabel("\(attachment.name) を\(idle)")
     }
 }
 
