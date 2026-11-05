@@ -17,6 +17,21 @@ final class FakeCore: MailCrewProtocol, @unchecked Sendable {
     var imageSenders: [String] = []
     var imageSendersError: MailCrewError?
     private(set) var savedImageSenders: [[String]] = []
+    /// What the card actions were asked to do, in order.
+    private(set) var actions: [Action] = []
+    /// Thrown by the next card action, then cleared.
+    var actionError: MailCrewError?
+    /// Each account's labels. One that is missing fails.
+    var labels: [String: [MailCrewCore.Label]] = [:]
+    private(set) var labelCalls: [String] = []
+
+    enum Action: Equatable {
+        case archive(account: String, messageIds: [String], mailbox: Mailbox)
+        case setAside(account: String, messageIds: [String])
+        case createLabel(account: String, name: String)
+        case applyLabel(account: String, messageIds: [String], labelId: String, mailbox: Mailbox)
+        case setStarred(account: String, messageId: String, messageIds: [String], starred: Bool)
+    }
 
     func accountEmails() async throws -> [String] {
         if let accountsError { throw accountsError }
@@ -58,20 +73,50 @@ final class FakeCore: MailCrewProtocol, @unchecked Sendable {
         return kept
     }
 
+    private func act(_ action: Action) throws {
+        actions.append(action)
+        if let error = actionError {
+            actionError = nil
+            throw error
+        }
+    }
+
+    func archive(account: String, messageIds: [String], mailbox: Mailbox) async throws {
+        try act(.archive(account: account, messageIds: messageIds, mailbox: mailbox))
+    }
+
+    func setAside(account: String, messageIds: [String]) async throws {
+        try act(.setAside(account: account, messageIds: messageIds))
+    }
+
+    func applyLabel(account: String, messageIds: [String], labelId: String, mailbox: Mailbox) async throws {
+        try act(.applyLabel(account: account, messageIds: messageIds, labelId: labelId, mailbox: mailbox))
+    }
+
+    /// Makes the label with an id of its name, as Gmail would with one of its own.
+    func createLabel(account: String, name: String) async throws -> MailCrewCore.Label {
+        try act(.createLabel(account: account, name: name))
+        return MailCrewCore.Label(id: "Label_\(name)", name: name)
+    }
+
+    func setStarred(account: String, messageId: String, messageIds: [String], starred: Bool) async throws {
+        try act(.setStarred(account: account, messageId: messageId, messageIds: messageIds, starred: starred))
+    }
+
+    func listLabels(account: String) async throws -> [MailCrewCore.Label] {
+        labelCalls.append(account)
+        guard let labels = labels[account] else { throw MailCrewError.Network(message: "not scripted") }
+        return labels
+    }
+
     // Not called by AppModel yet.
-    func applyLabel(account: String, messageIds: [String], labelId: String, mailbox: Mailbox) async throws { unscripted() }
-    func archive(account: String, messageIds: [String], mailbox: Mailbox) async throws { unscripted() }
     func attachmentToOpen(account: String, messageId: String, attachmentId: String, openedDir: String) async throws -> String { unscripted() }
-    func createLabel(account: String, name: String) async throws -> Label { unscripted() }
     func getBrand(account: String, messageId: String) async throws -> Brand? { unscripted() }
-    func listLabels(account: String) async throws -> [Label] { unscripted() }
     func listViews() async throws -> [View] { unscripted() }
     func preferences() async throws -> Preferences { unscripted() }
     func saveAttachment(account: String, messageId: String, attachmentId: String, dir: String) async throws -> String { unscripted() }
     func savePreferences(preferences: Preferences) async throws { unscripted() }
     func saveViews(views: [View]) async throws { unscripted() }
-    func setAside(account: String, messageIds: [String]) async throws { unscripted() }
-    func setStarred(account: String, messageId: String, messageIds: [String], starred: Bool) async throws { unscripted() }
     func signOut(account: String) async throws { unscripted() }
 
     private func unscripted(function: StaticString = #function) -> Never {
@@ -81,13 +126,15 @@ final class FakeCore: MailCrewProtocol, @unchecked Sendable {
 
 func card(
     _ id: String, account: String = "a@example.com", subject: String = "件名",
-    from: String = "from@example.com", messageId: String? = nil
+    from: String = "from@example.com", messageId: String? = nil, messageIds: [String]? = nil,
+    starred: Bool = false
 ) -> Card {
-    Card(
+    let shown = messageId ?? "m-\(id)"
+    return Card(
         id: id, account: account, subject: subject,
         from: Person(name: "差出人", email: from),
-        date: 0, messageCount: 1, unread: true, starred: false,
-        messageId: messageId ?? "m-\(id)", messageIds: [messageId ?? "m-\(id)"], snippet: "本文の抜粋"
+        date: 0, messageCount: UInt32(messageIds?.count ?? 1), unread: true, starred: starred,
+        messageId: shown, messageIds: messageIds ?? [shown], snippet: "本文の抜粋"
     )
 }
 

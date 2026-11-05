@@ -139,6 +139,7 @@ covers it changes in the same commit:
 | A function, object or record the native app calls (`core/src/ffi.rs`) | `mod tests` in `ffi.rs`, and `core/swift/Tests/` for what crosses into Swift |
 | What the native app shows at startup, after a sign-in or sign-out, or how it loads the inbox (`MailCrew/AppModel.swift`) | `MailCrewTests/AppModelTests.swift`, and `FakeCore` for a call it newly makes |
 | When the native app fetches a body, which images it lets in, or which links it opens (`AppModel.swift`) | `MailCrewTests/MessageBodyTests.swift`, and `FakeCore` for a call it newly makes |
+| What a card's 完了, タグ, あとで読む or スター asks of the Rust side, how the card leaves the strip or comes back, or the tag picker's rows (`AppModel.swift`) | `MailCrewTests/CardActionsTests.swift`, and `FakeCore` for a call it newly makes |
 | The native app's message document, content rules or navigation policy (`MessageFrame.swift`), or how `MessageWebView.swift` loads, measures and scales a body | `MailCrewTests/MessageFrameTests.swift` and `MessageWebViewTests.swift` |
 
 `DEVELOPMENT.md` lists what these tests cannot reach — Google itself, the credential store,

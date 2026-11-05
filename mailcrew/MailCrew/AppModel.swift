@@ -39,6 +39,14 @@ final class AppModel {
     /// The messages, by `Card.bodyKey`, whose images the user let in with 表示する.
     private(set) var remoteImagesShown: Set<String> = []
 
+    /// The pile the cards on the strip came from; every action takes a card out of it.
+    private(set) var mailbox: Mailbox = .inbox
+    /// Each account's labels, as last fetched. Label ids are only unique
+    /// within one account, so the picker shows the card's account's alone.
+    private(set) var labels: [String: [TagLabel]] = [:]
+    /// The cards, by `Card.key`, whose star is on its way to Gmail.
+    private(set) var starring: Set<String> = []
+
     @ObservationIgnored private let core: MailCrewProtocol
     @ObservationIgnored private let openURL: (URL) -> Void
     /// Set when a load is asked for while one is running, so the newer one wins.
@@ -130,6 +138,7 @@ final class AppModel {
         cards = []
         bodies = [:]
         remoteImagesShown = []
+        labels = [:]
         signInError = message
         screen = .signIn
     }
@@ -151,6 +160,7 @@ final class AppModel {
                 if loadAgain { continue }
                 cards = page.cards
                 forgetBodiesOffTheStrip()
+                refreshLabels()
                 await report(page.failures)
             } catch {
                 await fail(error)
@@ -192,6 +202,7 @@ final class AppModel {
             showSignIn(message: message)
         } else {
             cards.removeAll { !accounts.contains($0.account) }
+            labels = labels.filter { accounts.contains($0.key) }
             forgetBodiesOffTheStrip()
             notice = message
         }
@@ -278,6 +289,138 @@ final class AppModel {
         }
     }
 
+    // MARK: Actions
+
+    /// Whether a card offers あとで読む: not on the pile it would go to.
+    var offersSetAside: Bool { mailbox == .inbox }
+
+    /// 完了: read, and out of the pile the strip shows.
+    func archive(_ card: Card) async {
+        let mailbox = mailbox
+        await takeOff(card) {
+            try await core.archive(account: card.account, messageIds: card.messageIds, mailbox: mailbox)
+        }
+    }
+
+    /// あとで読む: tagged SetAside, and out of the inbox.
+    func setAside(_ card: Card) async {
+        await takeOff(card) {
+            try await core.setAside(account: card.account, messageIds: card.messageIds)
+        }
+    }
+
+    /// タグ: tags the card's messages, creating the tag first when it is new,
+    /// and takes the card out of the pile the strip shows.
+    func applyTag(_ choice: TagChoice, to card: Card) async {
+        let account = card.account
+        let mailbox = mailbox
+        await takeOff(card) {
+            let label: TagLabel
+            switch choice {
+            case .existing(let existing):
+                label = existing
+            case .new(let name):
+                label = try await core.createLabel(account: account, name: name)
+                remember(label, in: account)
+            }
+            try await core.applyLabel(
+                account: account, messageIds: card.messageIds, labelId: label.id, mailbox: mailbox
+            )
+        }
+    }
+
+    /// スター: stars the message the card shows, or unstars the whole thread.
+    /// The star changes at once, and goes back if Gmail refuses.
+    func toggleStar(_ card: Card) async {
+        let key = card.key
+        guard let index = cards.firstIndex(where: { $0.key == key }), !starring.contains(key) else { return }
+        let starred = !cards[index].starred
+        cards[index].starred = starred
+        starring.insert(key)
+        defer { starring.remove(key) }
+        do {
+            try await core.setStarred(
+                account: card.account, messageId: card.messageId, messageIds: card.messageIds, starred: starred
+            )
+        } catch {
+            if let index = cards.firstIndex(where: { $0.key == key }), cards[index].starred == starred {
+                cards[index].starred = !starred
+            }
+            await fail(error)
+        }
+    }
+
+    /// Takes a card off the strip at once, and puts it back where it was if
+    /// `action` fails. The strip shows a page of the pile at a time; once it
+    /// has been worked through, the next page is fetched.
+    private func takeOff(_ card: Card, _ action: () async throws -> Void) async {
+        let key = card.key
+        guard let index = cards.firstIndex(where: { $0.key == key }) else { return }
+        let taken = cards.remove(at: index)
+        let next = cards.indices.contains(index) ? cards[index].key : nil
+        do {
+            try await action()
+        } catch {
+            // The strip may have changed meanwhile, a load among other things.
+            if !cards.contains(where: { $0.key == key }) {
+                let at = next.flatMap { next in cards.firstIndex(where: { $0.key == next }) } ?? cards.endIndex
+                cards.insert(taken, at: at)
+            }
+            await fail(error)
+            return
+        }
+        forgetBodiesOffTheStrip()
+        if cards.isEmpty { await load() }
+    }
+
+    // MARK: Tags
+
+    /// The labels of the card's account the picker offers, as last fetched.
+    func labels(of card: Card) -> [TagLabel] {
+        labels[card.account] ?? []
+    }
+
+    /// The picker opened on a card: fetches its account's labels when none are here yet.
+    func tagPickerOpened(for card: Card) {
+        guard labels(of: card).isEmpty else { return }
+        Task { await fetchLabels(card.account) }
+    }
+
+    /// Fetches the labels of every account on the strip, for the picker.
+    private func refreshLabels() {
+        for account in Set(cards.map(\.account)) {
+            Task { await fetchLabels(account) }
+        }
+    }
+
+    /// When they cannot be fetched the picker shows what it has, and asks
+    /// again when it next opens.
+    func fetchLabels(_ account: String) async {
+        guard let fetched = try? await core.listLabels(account: account) else { return }
+        guard accounts.contains(account) else { return }
+        labels[account] = fetched
+    }
+
+    /// Adds a label just made to its account's, in the order the picker shows.
+    private func remember(_ label: TagLabel, in account: String) {
+        let known = (labels[account] ?? []).filter { $0.id != label.id }
+        labels[account] = (known + [label]).sorted { $0.name.localizedCompare($1.name) == .orderedAscending }
+    }
+
+    /// The picker's rows for what is typed: the labels whose names hold it,
+    /// then one that creates it, when no label is called that already.
+    nonisolated static func tagRows(labels: [TagLabel], filter: String) -> [TagRow] {
+        let query = filter.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lower = query.lowercased()
+        var rows = labels
+            .filter { lower.isEmpty || $0.name.lowercased().contains(lower) }
+            .map { TagRow(text: $0.name, choice: .existing($0)) }
+        if !query.isEmpty, !labels.contains(where: { $0.name.lowercased() == lower }) {
+            rows.append(TagRow(text: "「\(query)」を作成", choice: .new(query)))
+        }
+        return rows
+    }
+
     // MARK: Links
 
     /// Opens a link from a message outside Mail Crew: http, https and mailto
@@ -308,6 +451,20 @@ final class AppModel {
 typealias Card = MailCrewCore.Card
 typealias MessageContent = MailCrewCore.MessageContent
 typealias CardBody = MailCrewCore.CardBody
+typealias Mailbox = MailCrewCore.Mailbox
+/// A Gmail label, shown as a タグ. SwiftUI has a `Label` of its own.
+typealias TagLabel = MailCrewCore.Label
+
+/// What the tag picker resolves with: a label the account has, or a name to create.
+enum TagChoice: Equatable {
+    case existing(TagLabel)
+    case new(String)
+}
+
+struct TagRow: Equatable {
+    let text: String
+    let choice: TagChoice
+}
 
 extension Card {
     /// Thread ids are only unique within one account.

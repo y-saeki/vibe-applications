@@ -18,6 +18,8 @@ struct CardView: View {
             ScrollView(.vertical) {
                 MessageBodyView(card: card, model: model)
             }
+            Divider()
+            CardToolbar(card: card, model: model)
         }
         .frame(maxHeight: .infinity, alignment: .top)
         .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
