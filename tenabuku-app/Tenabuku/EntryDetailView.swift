@@ -29,42 +29,80 @@ final class EntryCommentsModel {
     private(set) var comments: [CommentRowData] = []
     private(set) var error: Error?
     private(set) var isLoading = false
+    /// Where the recent comments continue; nil when all are shown.
+    private var nextCursor: String?
+    /// Bumped by every `load`, so that a page arriving for an earlier tab or
+    /// an earlier pull is dropped.
+    private var generation = 0
+
+    var hasMore: Bool { nextCursor != nil }
 
     init(url: URL) {
         self.url = url
     }
 
     func load() async {
+        generation += 1
+        let generation = generation
+        nextCursor = nil
         isLoading = true
-        defer { isLoading = false }
+        defer {
+            if generation == self.generation { isLoading = false }
+        }
         do {
+            let loaded: [CommentRowData]
             switch tab {
             case .popular:
-                comments = try await popular()
+                loaded = try await popular()
             case .recent:
-                comments = try await recent()
+                let page = try await AppServices.recentComments.comments(for: url)
+                guard generation == self.generation else { return }
+                nextCursor = page.nextCursor
+                loaded = page.comments.map(CommentRowData.init)
             }
+            guard generation == self.generation else { return }
+            comments = loaded
             error = nil
         } catch {
+            guard generation == self.generation else { return }
             FailureLog.record(error)
             comments = []
             self.error = error
         }
     }
 
-    // The ranking only exists in the website's entry page.
-    private func popular() async throws -> [CommentRowData] {
-        try await AppServices.popularComments.comments(for: url).map {
-            CommentRowData(user: $0.user, iconURL: $0.iconURL, comment: $0.comment, tags: $0.tags, date: $0.date)
+    /// Appends the next page of recent comments.
+    func loadMore() async {
+        guard tab == .recent, let cursor = nextCursor, !isLoading, error == nil else { return }
+        let generation = generation
+        isLoading = true
+        defer {
+            if generation == self.generation { isLoading = false }
+        }
+        do {
+            let page = try await AppServices.recentComments.comments(for: url, cursor: cursor)
+            guard generation == self.generation else { return }
+            // A comment can move to a later page when someone edits theirs
+            // while the list is being read; the list keys rows by user.
+            let shown = Set(comments.map(\.user))
+            comments += page.comments.map(CommentRowData.init).filter { !shown.contains($0.user) }
+            nextCursor = page.nextCursor
+        } catch {
+            guard generation == self.generation else { return }
+            FailureLog.record(error)
+            self.error = error
         }
     }
 
-    // Newest first through the documented API, leaving out bookmarks with no comment.
-    private func recent() async throws -> [CommentRowData] {
-        let entry = try await AppServices.entryInfo.entry(for: url)
-        return (entry?.bookmarks ?? []).filter { !$0.comment.isEmpty }.map {
-            CommentRowData(user: $0.user, iconURL: nil, comment: $0.comment, tags: $0.tags, date: $0.date)
-        }
+    // The ranking only exists in the website's entry page.
+    private func popular() async throws -> [CommentRowData] {
+        try await AppServices.popularComments.comments(for: url).map(CommentRowData.init)
+    }
+}
+
+extension CommentRowData {
+    init(_ comment: EntryComment) {
+        self.init(user: comment.user, iconURL: comment.iconURL, comment: comment.comment, tags: comment.tags, date: comment.date)
     }
 }
 
@@ -77,6 +115,12 @@ struct EntryDetailView: View {
     init(entry: FeedItem) {
         self.entry = entry
         _model = State(initialValue: EntryCommentsModel(url: entry.link))
+    }
+
+    /// The row that starts loading the next page: some way before the end.
+    private var prefetchMark: String? {
+        let comments = model.comments
+        return comments.isEmpty ? nil : comments[max(0, comments.count - 20)].id
     }
 
     var body: some View {
@@ -99,6 +143,17 @@ struct EntryDetailView: View {
                 }
                 ForEach(model.comments) { comment in
                     CommentRow(comment: comment)
+                        .onAppear {
+                            // Starts on the next page before the end comes into view.
+                            if comment.id == prefetchMark {
+                                Task { await model.loadMore() }
+                            }
+                        }
+                }
+                if model.hasMore && model.error == nil {
+                    // Also catches a short list, whose mark is already on screen.
+                    ProgressView().frame(maxWidth: .infinity)
+                        .task(id: model.comments.count) { await model.loadMore() }
                 }
             }
         }
