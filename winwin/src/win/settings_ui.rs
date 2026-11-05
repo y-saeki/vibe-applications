@@ -26,7 +26,7 @@ use windows_reactor::*;
 use super::{
     autostart, config_path, error_box, filedialog, icon, keyhook, modifiers_held, testwin,
 };
-use winwin::config::{Config, Theme};
+use winwin::config::{Config, Platform, Theme};
 use winwin::draft::{self, Click, Draft, Editor, Frame, Picture};
 use winwin::hotkey::{self, Arrow, Hotkey, Keycap, Modifiers, Recorder};
 use winwin::layout::{Anchor, Rect};
@@ -280,7 +280,9 @@ impl Component for Settings {
                 let owner = window_number();
                 context.spawn_background(move |_| {
                     Msg::Imported(match filedialog::choose(owner, false) {
-                        Ok(Some(path)) => Config::read(&path).map(Some).map_err(|e| e.to_string()),
+                        Ok(Some(path)) => Config::import(&path, Platform::Windows)
+                            .map(Some)
+                            .map_err(|e| e.to_string()),
                         Ok(None) => Ok(None),
                         Err(e) => Err(e),
                     })
@@ -612,7 +614,9 @@ impl Settings {
         let owner = window_number();
         context.spawn_background(move |_| {
             Msg::Exported(match filedialog::choose(owner, true) {
-                Ok(Some(path)) => config.save(&path).map_err(|e| e.to_string()),
+                Ok(Some(path)) => config
+                    .export(&path, Platform::Windows)
+                    .map_err(|e| e.to_string()),
                 Ok(None) => Ok(()),
                 Err(e) => Err(e),
             })
