@@ -4,8 +4,8 @@ import HatenaUnofficial
 import WebKit
 
 /// The login to Hatena's website, as opposed to the OAuth token in
-/// `AccountStore`. Some lists, such as My hot entries, are only served to the
-/// website and need its login cookies.
+/// `AccountStore`. Some lists, such as My hot entries and the hidden users,
+/// are only served to the website and need its login cookies.
 ///
 /// The cookies live in WebKit's default store, the one every web view in the
 /// app shares, so a login made on Hatena's OAuth approval page or in the
@@ -29,6 +29,12 @@ final class WebSessionStore {
 
     private static let signedInKey = "webSessionSignedIn"
     @ObservationIgnored private let cookieStore = WKWebsiteDataStore.default().httpCookieStore
+    /// The hidden users last read from Hatena, and when.
+    @ObservationIgnored private var ignoredUsersCache: (users: Set<String>, readAt: Date)?
+    /// How long the hidden users are reused before Hatena is asked again.
+    /// Someone hidden on the website shows up within this, or at once when
+    /// the comment list is pulled to refresh.
+    private static let ignoredUsersLifetime: TimeInterval = 10 * 60
 
     init() {
         isSignedIn = UserDefaults.standard.bool(forKey: Self.signedInKey)
@@ -46,8 +52,32 @@ final class WebSessionStore {
         }
     }
 
+    /// The users hidden on Hatena's website, whose comments are left out of
+    /// the comment lists. Empty without the website login. A failure to read
+    /// them does not stop the comments: the last list read is used, or none.
+    func ignoredUsers(refresh: Bool = false) async -> Set<String> {
+        if !refresh, let cache = ignoredUsersCache, Date().timeIntervalSince(cache.readAt) < Self.ignoredUsersLifetime {
+            return cache.users
+        }
+        let cookies = await cookieStore.allCookies()
+        do {
+            let users = try await IgnoredUsersAPI(http: AppServices.http, cookies: cookies).users()
+            isSignedIn = true
+            ignoredUsersCache = (users, Date())
+            return users
+        } catch HatenaError.unauthorized {
+            isSignedIn = false
+            ignoredUsersCache = ([], Date())
+            return []
+        } catch {
+            FailureLog.record(error)
+            return ignoredUsersCache?.users ?? []
+        }
+    }
+
     func didSignIn() {
         isSignedIn = true
+        ignoredUsersCache = nil
     }
 
     /// Forgets the website login by deleting Hatena's cookies. The OAuth token
@@ -57,6 +87,7 @@ final class WebSessionStore {
             await cookieStore.deleteCookie(cookie)
         }
         isSignedIn = false
+        ignoredUsersCache = nil
     }
 
     private static func isHatena(_ cookie: HTTPCookie) -> Bool {

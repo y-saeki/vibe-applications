@@ -127,9 +127,9 @@ final class MyHotEntryAPITests: XCTestCase {
         ]
 
         XCTAssertEqual(
-            MyHotEntryAPI.cookieHeader(for: MyHotEntryAPI.url, from: cookies, now: now),
+            WebCookies.header(for: MyHotEntryAPI.url, from: cookies, now: now),
             "parent=1; bare=2; host=3; live=8"
         )
-        XCTAssertNil(MyHotEntryAPI.cookieHeader(for: MyHotEntryAPI.url, from: [], now: now))
+        XCTAssertNil(WebCookies.header(for: MyHotEntryAPI.url, from: [], now: now))
     }
 }
