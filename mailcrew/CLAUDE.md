@@ -52,6 +52,12 @@ its own. `DEVELOPMENT.md` explains both. Changing either keeps these true:
   `sanitize.rs` puts in place of their `cid:` URLs, so the frame's `img-src data:` is enough
   and nothing about them goes to the network from the page.
 
+In the native app the same guarantees are held by `MailCrew/MessageFrame.swift` and
+`MessageWebView.swift`: `allowsContentJavaScript` stays off, a `WKContentRuleList` blocks every
+load but the document and `data:` (and, once allowed, images over http and https) alongside the
+same CSP, only the app's own `about:blank` document may load, and a clicked link leaves only
+through `isOpenableLink`. Link previews stay off, since they load the link.
+
 `dangerousDisableAssetCspModification: ["style-src"]` in `tauri.conf.json` is deliberate:
 Tauri's style nonce would switch off `'unsafe-inline'`, and every message's inline styles
 with it. Do not remove it without replacing what it does.
@@ -132,6 +138,8 @@ covers it changes in the same commit:
 | How preferences are stored | `mod tests` in `core/src/preferences.rs` |
 | A function, object or record the native app calls (`core/src/ffi.rs`) | `mod tests` in `ffi.rs`, and `core/swift/Tests/` for what crosses into Swift |
 | What the native app shows at startup, after a sign-in or sign-out, or how it loads the inbox (`MailCrew/AppModel.swift`) | `MailCrewTests/AppModelTests.swift`, and `FakeCore` for a call it newly makes |
+| When the native app fetches a body, which images it lets in, or which links it opens (`AppModel.swift`) | `MailCrewTests/MessageBodyTests.swift`, and `FakeCore` for a call it newly makes |
+| The native app's message document, content rules or navigation policy (`MessageFrame.swift`), or how `MessageWebView.swift` loads, measures and scales a body | `MailCrewTests/MessageFrameTests.swift` and `MessageWebViewTests.swift` |
 
 `DEVELOPMENT.md` lists what these tests cannot reach — Google itself, the credential store,
 the browser a link opens in. Assert the `invoke` that was made and leave the rest to the

@@ -51,8 +51,9 @@ struct InboxView: View {
             ScrollView(.horizontal) {
                 LazyHStack(spacing: Self.gap) {
                     ForEach(model.cards, id: \.key) { card in
-                        CardView(card: card, showsAccount: model.showsAccounts)
+                        CardView(card: card, model: model)
                             .frame(width: width)
+                            .onAppear { model.cardAppeared(card) }
                     }
                 }
                 .scrollTargetLayout()

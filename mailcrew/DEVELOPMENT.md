@@ -96,6 +96,8 @@ pnpm exec playwright install chromium webkit
 | `project.yml` | ネイティブ版の Xcode プロジェクトの定義（XcodeGen） |
 | `MailCrew/AppModel.swift` | ネイティブ版の状態。どの画面を出すか、ログイン、受信トレイの取得と失敗の扱い。`MailCrew` を呼ぶのはここだけ |
 | `MailCrew/SignInView.swift`、`InboxView.swift`、`CardView.swift` | ネイティブ版の画面。ログイン、カードの列、カード |
+| `MailCrew/MessageFrame.swift` | ネイティブ版で HTML 本文を表示するときの決まり。文書と CSP、`WKContentRuleList` のルール、遷移の判定、テキスト本文のリンク |
+| `MailCrew/MessageWebView.swift` | ネイティブ版の HTML 本文の WKWebView。高さと縮小の計算、リンクを外で開く処理 |
 | `MailCrewTests/` | ネイティブ版の単体テスト |
 | `src-tauri/src/commands.rs` | ページから呼べるコマンドの一覧。中身は `Core` に任せ、ブラウザやファイルを開く処理だけを受け持つ |
 | `src-tauri/src/links.rs` | webview がアプリ以外のページへ移動しないようにする。メール中のリンクは既定のアプリで開く |
@@ -137,7 +139,7 @@ pnpm exec playwright install chromium webkit
 
 `MailCrewCore` の `View` と `Label` は、SwiftUI の同じ名前の型と衝突します。そのため画面のファイルは `MailCrewCore` を読み込まず、Rust 側を呼ぶのは `AppModel` だけにしています。画面が使う型（`Card` など）には、`AppModel.swift` で別名を付けています。
 
-作り直しは #298 の「進め方の案」の順に進めています。今あるのは、ログイン、受信トレイのカードの列、カードの見出しと抜粋までです。本文、ボタン、ビュー、設定、添付ファイル、検証結果、引っ張って再読み込みは、まだ Tauri 版にしかありません。配布しているのも、まだ Tauri 版です。
+作り直しは #298 の「進め方の案」の順に進めています。今あるのは、ログイン、受信トレイのカードの列、カードの見出しと本文までです。ボタン、ビュー、設定、添付ファイル、検証結果、引っ張って再読み込みは、まだ Tauri 版にしかありません。配布しているのも、まだ Tauri 版です。
 
 `core/` のバージョンは `0.0.0` のままです。単独では配布しないためで、リリースのバージョンは今までどおり `src-tauri/tauri.conf.json` が決めます。依存ライブラリは `src-tauri/Cargo.lock` と `core/Cargo.lock` の両方に載ります。Dependabot はそれぞれのディレクトリを別に確かめます。
 
@@ -254,6 +256,14 @@ HTML 本文は 2 段階で守ります。
 
 WebView2 はトップレベルの遷移しか問い合わせないため、ページの側でクリックを拾う処理も必要です。opener プラグインの権限はページに与えていません（`capabilities/default.json`）。
 
+ネイティブ版では、2 段階目を iframe ではなく WKWebView で作ります（`MessageFrame.swift`、`MessageWebView.swift`）。守る決まりは Tauri 版と同じです。
+
+- `WKWebpagePreferences.allowsContentJavaScript` を切るので、メールの中のスクリプトは動きません。高さを測るスクリプトはアプリが入れるもので、メールとは別のコンテンツワールドで動きます。
+- 文書には Tauri 版と同じ CSP と `no-referrer` を付けます。それに加えて `WKContentRuleList` で、文書（`about:`）と `data:` 以外の読み込みをすべて止めます。「表示する」を押したときと、差出人が「画像を常に表示する差出人」にあるときは、http と https の画像だけを通すルールに替えて読み込み直します。CSP とルールのどちらか一方だけでも外部の読み込みは止まります。ルールの正規表現には `|` が使えないので、許す URL は 1 つずつ別のルールにしています。
+- WebView が読み込んでよいのは、アプリが `loadHTMLString` で渡した文書（`about:blank`）だけです。ほかの遷移はすべて止めます。クリックしたリンクのうち、`is_openable_link`（Rust 側）が通した http、https、mailto だけを既定のアプリで開きます。新しいウィンドウは作りません。
+- Force Touch のリンクのプレビューは、リンク先を読み込むので切っています。データストアは保存しないもの（`nonPersistent()`）を使い、許可した画像が送った Cookie はアプリを終了すると消えます。
+- WebView はスクロールしません。スクロールのイベントはすべてカードの本文に渡し、本文の高さに合わせて WebView を伸ばします。幅の広いメールは Tauri 版と同じく CSS の `zoom` で縮めます。高さは本文の最後に置いた目印の位置で測るので、メールが `html` や `body` に `height: 100%` を付けていても WebView ほど高くなりません。
+
 `srcdoc` の文書はアプリ本体の CSP も引き継ぎます。Tauri は既定で `style-src` に nonce を足しますが、nonce があると `'unsafe-inline'` が無視され、メールのインラインスタイルがすべて効かなくなります。そのため `tauri.conf.json` の `dangerousDisableAssetCspModification` で `style-src` だけを対象から外しています。アプリ本体の `img-src` に `https:` と `http:` があるのも、許可した外部画像を通すためです。
 
 ### 画像を常に表示する差出人
@@ -304,7 +314,7 @@ BIMI は `get_brand` で確かめます。ページは本文を取ったあと�
 
 `swift test` は、生成したバインディングを通して Swift から Rust を呼べることを確かめます。ビューと画像を常に表示する差出人と設定の保存と読み込み、開いてよいリンクの判定、Rust のエラーが `MailCrewError` として届くことを見ます。Google とキーチェーンには触れません。
 
-ネイティブ版のテストは、`AppModel` を Rust 側の代わり（`MailCrewTests/FakeCore.swift`）につないで確かめます。起動時にどの画面を出すか、全アカウントの受信トレイを取ること、答えなかったアカウントの知らせ、Google が受け付けなくなったアカウントのカードを外すこと、最後のアカウントが外れたらログイン画面に戻ること、ログインが始められなかったときと中止したときの表示を見ます。カードの日付の書き方（`CardDate`）も、Tauri 版の `formatDate` と同じ例で確かめます。本物のログイン（`SignIn` はブラウザと Google を待つ）、画面の見た目、スクロールの動きは確かめられません。
+ネイティブ版のテストは、`AppModel` を Rust 側の代わり（`MailCrewTests/FakeCore.swift`）につないで確かめます。起動時にどの画面を出すか、全アカウントの受信トレイを取ること、答えなかったアカウントの知らせ、Google が受け付けなくなったアカウントのカードを外すこと、最後のアカウントが外れたらログイン画面に戻ること、ログインが始められなかったときと中止したときの表示を見ます。カードの日付の書き方（`CardDate`）も、Tauri 版の `formatDate` と同じ例で確かめます。本文については、カードが見えたときにそのカードと前後 2 枚の本文を取ること、取れなかったら抜粋のまま次に見えたときに取り直すこと、外部画像の「表示する」と「この差出人は常に表示」、開くリンクの種類、CSP とルールと遷移の判定を見ます。`MessageWebViewTests` は本物の WKWebView に本文を入れ、この Mac の上に立てた HTTP サーバーに届いた読み込みを数えます。許可するまで何も届かないこと、許可すると画像だけが届くこと、スクリプトが動かないこと、高さと縮小を確かめます。本物のログイン（`SignIn` はブラウザと Google を待つ）、画面の見た目、スクロールの動き、リンクを開いたあとのブラウザは確かめられません。
 
 ### フロントエンドの E2E テスト
 
