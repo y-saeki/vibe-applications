@@ -17,14 +17,13 @@ options:
 
 settings:
   base:
-    # Not shipped yet: the release is still the Tauri app, whose version is in
-    # src-tauri/tauri.conf.json. The version moves here when this app ships.
-    MARKETING_VERSION: 0.0.1
-    CURRENT_PROJECT_VERSION: 1
+    # The version of Mail Crew. A release is made when this goes up on main
+    # (DEVELOPMENT.md); CFBundleVersion follows it.
+    MARKETING_VERSION: 0.8.0
     SWIFT_VERSION: "5.0"
     # The Rust library is built for Apple silicon only (core/swift/build.sh).
     ARCHS: arm64
-    # Not signed with a certificate: ad hoc, as the Tauri app's bundle is.
+    # Not signed with a certificate: ad hoc, as the Tauri app's bundle was.
     CODE_SIGN_IDENTITY: "-"
     CODE_SIGN_STYLE: Manual
 
@@ -44,13 +43,16 @@ targets:
         CFBundleDisplayName: Mail Crew
         CFBundleName: Mail Crew
         CFBundleShortVersionString: $(MARKETING_VERSION)
-        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        CFBundleVersion: $(MARKETING_VERSION)
+        # MailCrew/AppIcon.icns, drawn from icon.svg.
+        CFBundleIconFile: AppIcon
+        LSMinimumSystemVersion: $(MACOSX_DEPLOYMENT_TARGET)
         LSApplicationCategoryType: public.app-category.productivity
         NSHumanReadableCopyright: ""
     settings:
       base:
         # The Tauri app's identifier: the Keychain item and the settings folder
-        # (~/Library/Application Support/com.ysaeki.mailcrew) carry over.
+        # (~/Library/Application Support/com.ysaeki.mailcrew) carried over.
         PRODUCT_BUNDLE_IDENTIFIER: com.ysaeki.mailcrew
         PRODUCT_NAME: Mail Crew
         PRODUCT_MODULE_NAME: MailCrewMac

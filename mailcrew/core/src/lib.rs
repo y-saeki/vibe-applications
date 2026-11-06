@@ -3,9 +3,8 @@
 //! changing mail through the Gmail API, turning messages into cards and
 //! sanitised bodies, and the sender checks under a card's subject.
 //!
-//! Two front ends use it: the Tauri app in `../src-tauri`, through `Core`,
-//! and the native macOS app, through the bindings in `ffi` (the `ffi`
-//! feature).
+//! The native macOS app uses it through the bindings in `ffi` (the `ffi`
+//! feature), which wrap `Core`.
 
 pub mod accounts;
 pub mod attachments;
