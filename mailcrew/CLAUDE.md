@@ -143,6 +143,7 @@ covers it changes in the same commit:
 | When the native app fetches a body, which images it lets in, or which links it opens (`AppModel.swift`) | `MailCrewTests/MessageBodyTests.swift`, and `FakeCore` for a call it newly makes |
 | What a card's 完了, タグ, あとで読む or スター asks of the Rust side, how the card leaves the strip or comes back, or the tag picker's rows (`AppModel.swift`) | `MailCrewTests/CardActionsTests.swift`, and `FakeCore` for a call it newly makes |
 | The native app's checks under the subject, when it looks up BIMI, which logo it shows or the logo's document (`AppModel.swift`, `TrustRow.swift`), or what a card's attachment button lists, opens and saves | `MailCrewTests/TrustAndAttachmentsTests.swift`, and `FakeCore` for a call it newly makes |
+| The native app's sidebar and its tabs, what each tab fetches, まとめて完了 or the end of the strip, or what the settings window asks of the Rust side (`AppModel.swift`, `InboxView.swift`, `SettingsView.swift`) | `MailCrewTests/SidebarAndSettingsTests.swift`, and `FakeCore` for a call it newly makes |
 | The native app's message document, content rules or navigation policy (`MessageFrame.swift`), or how `MessageWebView.swift` loads, measures and scales a body | `MailCrewTests/MessageFrameTests.swift` and `MessageWebViewTests.swift` |
 
 `DEVELOPMENT.md` lists what these tests cannot reach — Google itself, the credential store,

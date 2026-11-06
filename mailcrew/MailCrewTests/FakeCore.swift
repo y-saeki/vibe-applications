@@ -33,6 +33,17 @@ final class FakeCore: MailCrewProtocol, @unchecked Sendable {
     private(set) var attachmentCalls: [AttachmentCall] = []
     /// Thrown by the next attachment call, then cleared.
     var attachmentError: MailCrewError?
+    var views: [MailCrewCore.View] = []
+    var viewsError: MailCrewError?
+    private(set) var savedViews: [[MailCrewCore.View]] = []
+    /// Thrown by the next `saveViews`, then cleared.
+    var saveViewsError: MailCrewError?
+    private(set) var savedPreferences: [Preferences] = []
+    /// Thrown by the next `savePreferences`, then cleared.
+    var savePreferencesError: MailCrewError?
+    private(set) var signOutCalls: [String] = []
+    /// Thrown by the next `signOut`, then cleared.
+    var signOutError: MailCrewError?
 
     enum AttachmentCall: Equatable {
         case open(account: String, messageId: String, attachmentId: String, openedDir: String)
@@ -154,14 +165,37 @@ final class FakeCore: MailCrewProtocol, @unchecked Sendable {
         return "\(dir)/\(attachmentId) (1).pdf"
     }
 
-    // Not called by AppModel yet.
-    func listViews() async throws -> [View] { unscripted() }
-    func savePreferences(preferences: Preferences) async throws { unscripted() }
-    func saveViews(views: [View]) async throws { unscripted() }
-    func signOut(account: String) async throws { unscripted() }
+    func listViews() async throws -> [MailCrewCore.View] {
+        if let viewsError { throw viewsError }
+        return views
+    }
 
-    private func unscripted(function: StaticString = #function) -> Never {
-        fatalError("FakeCore.\(function) is not scripted")
+    func saveViews(views: [MailCrewCore.View]) async throws {
+        savedViews.append(views)
+        if let error = saveViewsError {
+            saveViewsError = nil
+            throw error
+        }
+        self.views = views
+    }
+
+    func savePreferences(preferences: Preferences) async throws {
+        savedPreferences.append(preferences)
+        if let error = savePreferencesError {
+            savePreferencesError = nil
+            throw error
+        }
+        brandLogos = preferences.brandLogos
+    }
+
+    /// Removes the account, as the Rust side does.
+    func signOut(account: String) async throws {
+        signOutCalls.append(account)
+        if let error = signOutError {
+            signOutError = nil
+            throw error
+        }
+        accounts.removeAll { $0 == account }
     }
 }
 
