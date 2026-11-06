@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="ink" gradientUnits="userSpaceOnUse" x1="0" y1="221.9" x2="0" y2="819.2">
+      <stop offset="0" stop-color="#34307a"/>
+      <stop offset="1" stop-color="#17143d"/>
+    </linearGradient>
+  </defs>
+  <polyline points="179.2,281.6 349.9,742.4 512,375.5" fill="none" stroke="url(#ink)" stroke-width="153.6" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

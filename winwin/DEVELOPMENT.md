@@ -96,9 +96,23 @@ open winwin/macos/winwin.app
   そのときは、システム設定の一覧から winwin を削除して、許可し直してください(「macOS 版の署名」の節)
 - アプリのアイコンは、`build.sh` がビルドしたアプリ自身に `--iconset` で書き出させ、`iconutil` で `.icns` にします。
   絵は Windows 版と同じ `art.rs` のもので、macOS のアプリアイコンの余白(1024px のうち中央の 824px に描く)を取ります。
-  余白がないと、macOS 26 以降ではアイコンが縮められて灰色の枠に入れられます
+  余白がないと、macOS 26 以降ではアイコンが縮められて灰色の枠に入れられます。ただし macOS 26 以降で
+  実際に出るのは、下に書く Liquid Glass のアイコンです
 - メニューバーのアイコンは `art.rs` の `menu_bar_pixels` が描きます。黒一色の W で、右半分だけを薄く(不透明度 45%)します。
   テンプレート画像(`isTemplate`)にするので、ライト・ダーク・クリック中の色はメニューバーが付けます
+
+macOS 26 以降では、`.icns` ではなく Liquid Glass のアイコンを使います。元は Icon Composer のデータ `macos/AppIcon.icon` で、背景の色と、前景の層(左の濃い紺の V と、右のティールの V。ティールが手前)を分けて持っています。光沢や透け感は OS が付けるので、絵には描き込んでいません。`build.sh` は、これを `actool` で変換した `macos/Assets.car` をアプリに入れます。`Info.plist` の `CFBundleIconName` がこれを指し、macOS 26 より前の OS では `CFBundleIconFile` の `.icns` が使われます。`actool` は Xcode にしかないので、コマンドラインツールだけでもビルドできるよう、変換した結果をコミットしてあります。
+
+層の SVG は `art.rs` の座標を 1024 倍して手で書き写したものです(角丸の枠と余白はありません)。図柄を変えるときは、`art.rs` と層の SVG の両方を直してください。座標と線の太さが `art.rs` と合っているかは、`art.rs` のテストが確かめます。`AppIcon.icon` を変えたら、Xcode 26 以降が入った Mac で次を実行し、できた `Assets.car` を差し替えてコミットします。`actool` には絶対パスを渡します。相対パスはシェルのカレントディレクトリでなく別の場所を基準に解決されることがあるためです。
+
+```sh
+cd winwin/macos
+mkdir -p out && xcrun actool "$PWD/AppIcon.icon" --compile "$PWD/out" --output-format human-readable-text --errors \
+  --output-partial-info-plist "$PWD/out/info.plist" --app-icon AppIcon --include-all-app-icons \
+  --enable-on-demand-resources NO --development-region en --target-device mac \
+  --minimum-deployment-target 26.0 --platform macosx
+mv out/Assets.car Assets.car && rm -r out
+```
 
 キーの行き先は、そのときの状態で切り替えます(`AppDelegate.swift`)。設定画面を開いている間は、常駐部分のショートカットを
 受け取りません(Windows 版が登録を解除するのと同じです)。テスト用ウィンドウを開いている間は、編集中の行でできる
@@ -211,6 +225,8 @@ winwin/
 ├── macos/              # macOS 版。「macOS 版」の節を参照
 │   ├── build.sh        # ライブラリ・バインディング・アプリをビルドし、winwin.app にまとめる
 │   ├── Info.plist      # アプリのバンドルの情報。build.sh がバージョンを埋める
+│   ├── AppIcon.icon/   # macOS 26 以降の Liquid Glass のアイコン(Icon Composer のデータ)
+│   ├── Assets.car      # AppIcon.icon を actool で変換したもの。build.sh がアプリに入れる
 │   ├── Package.swift
 │   └── Sources/
 │       ├── winwinFFI/  # バインディングの C 側(build.sh が書くヘッダーと、静的ライブラリを指す module.modulemap)
