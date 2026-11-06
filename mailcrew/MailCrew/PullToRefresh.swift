@@ -13,9 +13,9 @@ import SwiftUI
 /// bounces, and so does a mouse wheel.
 struct PullGesture: Equatable {
     /// How far the cards must be pulled to reload.
-    static let threshold: CGFloat = 130
+    static let threshold: CGFloat = 195
     /// How far the cards can be pulled at most; the pull slows toward it.
-    static let limit: CGFloat = 320
+    static let limit: CGFloat = 480
 
     enum Phase: Equatable {
         /// No gesture, or one this pull leaves to the scroll view.
@@ -98,30 +98,38 @@ struct PullIndicator: View {
     let width: CGFloat
 
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 10) {
             if refreshing {
-                ProgressView().controlSize(.small)
+                ProgressView()
+                    .frame(height: 32)
                 Text("読み込み中")
             } else if gesture.armed {
                 Image(systemName: "arrow.clockwise.circle.fill")
-                    .font(.title)
+                    .font(.system(size: 30))
                     .foregroundStyle(.tint)
+                    .frame(height: 32)
                     .symbolEffect(.bounce, value: gesture.armed)
                 Text("離すと再読み込み")
                     .fontWeight(.semibold)
                     .foregroundStyle(.tint)
             } else {
                 Image(systemName: "arrow.clockwise")
-                    .font(.title2)
+                    .font(.system(size: 22, weight: .medium))
+                    .frame(height: 32)
                     .rotationEffect(.degrees(gesture.progress * 300))
+                // Only once the gap is wide enough to show it whole.
                 Text("引っ張って再読み込み")
+                    .opacity(width >= 130 ? 1 : 0)
             }
         }
-        .font(.caption)
+        .font(.callout)
         .foregroundStyle(.secondary)
-        .multilineTextAlignment(.center)
-        .opacity(refreshing ? 1 : 0.3 + 0.7 * gesture.progress)
-        .frame(width: PullGesture.threshold - 16)
+        .lineLimit(1)
+        .fixedSize()
+        .opacity(refreshing ? 1 : 0.5 + 0.5 * gesture.progress)
+        // Switching between the states never fades one over the other; only
+        // the gap around them animates.
+        .transaction { $0.animation = nil }
         .frame(width: max(0, width))
         .frame(maxHeight: .infinity)
         .clipped()

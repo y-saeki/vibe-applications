@@ -51,7 +51,7 @@ struct StripView: View {
     @State private var refreshing = false
 
     /// The gap kept open left of the first card while a pull's reload runs.
-    static let refreshingGap: CGFloat = 96
+    static let refreshingGap: CGFloat = 120
 
     /// How far the cards sit right of where they rest.
     private var pullGap: CGFloat {
@@ -125,9 +125,10 @@ struct StripView: View {
             }
             .scrollTargetBehavior(.viewAligned)
             .overlay(alignment: .leading) {
-                if pullGap > 0 {
-                    PullIndicator(gesture: pull, refreshing: refreshing, width: pullGap)
-                }
+                // Always there, so it narrows with the gap as the cards
+                // spring back instead of fading out over the first card.
+                PullIndicator(gesture: pull, refreshing: refreshing, width: pullGap)
+                    .allowsHitTesting(false)
             }
         }
     }
