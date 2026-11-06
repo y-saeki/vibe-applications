@@ -212,9 +212,19 @@ macOS Sequoia (15.0) 以降では、以前あった Control クリック →「�
 - `src-tauri/icon.svg`: `src-tauri/icons/` の PNG、`icon.icns`、`icon.ico` はすべて、この SVG を書き出したものです。図柄を変えるときは SVG を直し、全部を書き出し直します。
 - `src-tauri/icons/AppIcon.icon`: macOS 26 以降で Liquid Glass の表現にするための Icon Composer のデータです。背景の色と、前景の 2 つの層(青い丸と白い I ビーム)を分けて持っています。光沢や透け感は描き込まず、OS に任せています。Xcode に入っている Icon Composer で開いて編集できます。
 
-`AppIcon.icon` はビルドのときに Tauri が `actool` で `Assets.car` に変換し、`Info.plist` の `CFBundleIconName` から指します。変換には Xcode 26 以降の `actool` が必要です。古い Xcode でビルドすると、Tauri はエラーを記録して変換を飛ばし、`.app` には `icon.icns` だけが入ります。macOS 26 より前の OS でも、この `icon.icns` が使われます。
+`bundle.icon` に入れているのは、`AppIcon.icon` を変換した `src-tauri/icons/Assets.car` です。Tauri は `.icon` を渡されるとビルドのたびに自分で `actool` を呼びますが、Tauri から起動した `actool` は例外で落ち、ビルドが止まります([tauri-apps/tauri#15315](https://github.com/tauri-apps/tauri/issues/15315))。そこで、変換は手元で済ませて結果をコミットしています。Tauri は `Assets.car` をそのまま `.app` に入れ、`Info.plist` の `CFBundleIconName` から指します。macOS 26 より前の OS では、これまでどおり `icon.icns` が使われます。
 
-図柄を変えるときは、`icon.svg` と `AppIcon.icon` の層の両方を直してください。層の SVG は、`icon.svg` と同じ座標で角丸の枠だけを外したものです。
+`AppIcon.icon` を変えたら、Xcode 26 以降が入った Mac の `draftpad/src-tauri/icons` で次を実行し、できた `Assets.car` を差し替えてコミットします。
+
+```sh
+mkdir -p out && xcrun actool AppIcon.icon --compile out --output-format human-readable-text --errors \
+  --output-partial-info-plist out/info.plist --app-icon AppIcon --include-all-app-icons \
+  --enable-on-demand-resources NO --development-region en --target-device mac \
+  --minimum-deployment-target 26.0 --platform macosx
+mv out/Assets.car Assets.car && rm -r out
+```
+
+図柄を変えるときは、`icon.svg` と `AppIcon.icon` の層の両方を直し、`Assets.car` も作り直してください。層の SVG は、`icon.svg` と同じ座標で角丸の枠だけを外したものです。
 
 ## 空白文字の表示
 
