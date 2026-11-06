@@ -46,6 +46,7 @@ struct Sidebar: View {
 /// The cards of the tab picked in the sidebar.
 struct StripView: View {
     let model: AppModel
+    @State private var pull = PullGesture()
 
     /// The Tauri app's `--card-width` and `--gap`.
     static let cardWidth: CGFloat = 570
@@ -105,8 +106,18 @@ struct StripView: View {
                 }
                 .scrollTargetLayout()
                 .padding(Self.gap)
+                .background {
+                    PullToRefreshMonitor(gesture: $pull, enabled: !model.loading) {
+                        Task { await model.load() }
+                    }
+                }
             }
             .scrollTargetBehavior(.viewAligned)
+            .overlay(alignment: .leading) {
+                if pull.tracking && pull.distance > 0 {
+                    PullIndicator(gesture: pull)
+                }
+            }
         }
     }
 }
