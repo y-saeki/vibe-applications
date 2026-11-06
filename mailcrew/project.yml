@@ -19,7 +19,7 @@ settings:
   base:
     # The version of Mail Crew. A release is made when this goes up on main
     # (DEVELOPMENT.md); CFBundleVersion follows it.
-    MARKETING_VERSION: 0.8.0
+    MARKETING_VERSION: 0.8.1
     SWIFT_VERSION: "5.0"
     # The Rust library is built for Apple silicon only (core/swift/build.sh).
     ARCHS: arm64

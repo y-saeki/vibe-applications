@@ -1,6 +1,7 @@
 //! Every signed-in account, each with its own `Gmail`, and the inbox they make
 //! up together.
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use serde::Serialize;
@@ -38,14 +39,17 @@ pub struct InboxPage {
 
 pub struct Accounts {
     http: reqwest::Client,
+    /// The app's config folder, where macOS keeps the accounts.
+    config_dir: PathBuf,
     /// `None` until the credential store has been read.
     list: Mutex<Option<Vec<Arc<Gmail>>>>,
 }
 
 impl Accounts {
-    pub fn new() -> Self {
+    pub fn new(config_dir: PathBuf) -> Self {
         Self {
             http: gmail::http_client(),
+            config_dir,
             list: Mutex::new(None),
         }
     }
@@ -58,7 +62,8 @@ impl Accounts {
     async fn lock(&self) -> Result<MutexGuard<'_, Option<Vec<Arc<Gmail>>>>> {
         let mut list = self.list.lock().await;
         if list.is_none() {
-            let stored = blocking(credentials::load_all).await?;
+            let dir = self.config_dir.clone();
+            let stored = blocking(move || credentials::load_all(&dir)).await?;
             let http = self.http.clone();
             *list = Some(
                 stored
@@ -77,9 +82,14 @@ impl Accounts {
 
     /// Stores exactly `next` and starts using it. The list stays locked
     /// meanwhile, so two changes cannot overwrite each other in the store.
-    async fn replace(list: &mut Option<Vec<Arc<Gmail>>>, next: Vec<Arc<Gmail>>) -> Result<()> {
+    async fn replace(
+        &self,
+        list: &mut Option<Vec<Arc<Gmail>>>,
+        next: Vec<Arc<Gmail>>,
+    ) -> Result<()> {
         let stored: Vec<Account> = next.iter().map(|gmail| gmail.account().clone()).collect();
-        blocking(move || credentials::save_all(&stored)).await?;
+        let dir = self.config_dir.clone();
+        blocking(move || credentials::save_all(&dir, &stored)).await?;
         *list = Some(next);
         Ok(())
     }
@@ -125,7 +135,7 @@ impl Accounts {
             Some(at) => next[at] = gmail,
             None => next.push(gmail),
         }
-        Self::replace(&mut list, next).await
+        self.replace(&mut list, next).await
     }
 
     /// Stops using the account with this address and forgets it.
@@ -133,7 +143,7 @@ impl Accounts {
         let mut list = self.lock().await?;
         let mut next = list.clone().unwrap_or_default();
         next.retain(|gmail| gmail.email() != email);
-        Self::replace(&mut list, next).await
+        self.replace(&mut list, next).await
     }
 
     /// Forgets the account when `result` says Google no longer accepts it;
@@ -193,12 +203,6 @@ pub fn newest(pages: Vec<Vec<Card>>, limit: usize) -> Vec<Card> {
     cards.sort_by_key(|card| std::cmp::Reverse(card.date));
     cards.truncate(limit);
     cards
-}
-
-impl Default for Accounts {
-    fn default() -> Self {
-        Self::new()
-    }
 }
 
 #[cfg(test)]

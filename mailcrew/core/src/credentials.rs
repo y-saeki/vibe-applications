@@ -1,21 +1,32 @@
-//! The signed-in accounts, kept in the OS credential store (the macOS Keychain,
-//! the Windows Credential Manager). Nothing about an account is written
-//! anywhere else.
+//! The signed-in accounts. On macOS they are a file in the app's config
+//! folder, readable only by the user; on Windows they are in the Credential
+//! Manager. Nothing about an account is written anywhere else.
 //!
-//! On macOS every account goes in one entry. The Keychain asks before an
-//! updated build reads an entry, once for each entry, so one entry means one
-//! question per update however many accounts there are. Windows asks nothing
-//! but caps an entry at 2,560 bytes, a handful of accounts, so there each
-//! account is an entry of its own, and one more lists their addresses in the
-//! order they were added, since the store cannot be asked what it holds.
-//! macOS used that layout too before 0.4, and moves out of it once.
+//! macOS kept them in the Keychain up to 0.8.0. The Keychain tells apps apart by
+//! their signature, and an app not signed with a certificate Apple issued is
+//! told apart by the hash of its code, so it asked for the password after
+//! every update. Thunderbird, without a Primary Password, keeps its sign-ins
+//! the same way as this file. The Keychain is read once, moved to the file and
+//! emptied; see `from_keychain` for the layouts it may be in.
+//!
+//! Windows asks nothing but caps an entry at 2,560 bytes, a handful of
+//! accounts, so there each account is an entry of its own, and one more lists
+//! their addresses in the order they were added, since the store cannot be
+//! asked what it holds.
+
+use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
 use crate::error::{CommandError, ErrorKind, Result};
 
+/// Every account, as a JSON array of `Account`, in the config folder. macOS
+/// only.
+#[cfg(target_os = "macos")]
+pub const FILE_NAME: &str = "accounts.json";
+
 const SERVICE: &str = "com.ysaeki.mailcrew";
-/// Every account, as a JSON array of `Account`. macOS only.
+/// Where macOS 0.4 to 0.8.0 kept every account, as the file has them now.
 #[cfg(target_os = "macos")]
 const ALL_USER: &str = "all-accounts";
 /// The addresses of the accounts kept one entry each, as a JSON array.
@@ -50,6 +61,7 @@ fn read(user: &str) -> Result<Option<String>> {
     }
 }
 
+#[cfg(not(target_os = "macos"))]
 fn write(user: &str, json: &str) -> Result<()> {
     entry(user)?.set_password(json)?;
     Ok(())
@@ -130,31 +142,94 @@ fn write_entries(accounts: &[Account]) -> Result<()> {
     Ok(())
 }
 
-/// The stored accounts, in the order they were added. Accounts kept the way
-/// an earlier version kept them are moved to where this one keeps them.
+/// The accounts in the Keychain, wherever an earlier version put them, and
+/// the entries they were read from.
 #[cfg(target_os = "macos")]
-pub fn load_all() -> Result<Vec<Account>> {
+fn from_keychain() -> Result<(Vec<Account>, Vec<String>)> {
     if let Some(json) = read(ALL_USER)? {
-        return serde_json::from_str(&json).map_err(broken);
+        let accounts = serde_json::from_str(&json).map_err(broken)?;
+        return Ok((accounts, vec![ALL_USER.to_string()]));
     }
+    // Before 0.4 macOS kept the Windows layout.
     let (accounts, legacy) = read_entries()?;
     if accounts.is_empty() {
-        return Ok(accounts);
+        return Ok((accounts, Vec::new()));
     }
-    write(ALL_USER, &to_json(&accounts)?)?;
-    // Once the new entry exists the old ones are never read again, so one that
-    // the Keychain will not let go of is left behind rather than failing the
-    // start-up over it.
     let mut old = if legacy {
         vec![LEGACY_USER.to_string()]
     } else {
         vec![INDEX_USER.to_string()]
     };
     old.extend(accounts.iter().map(|account| account_user(&account.email)));
+    Ok((accounts, old))
+}
+
+#[cfg(target_os = "macos")]
+fn file_failed(what: &str, err: impl std::fmt::Display) -> CommandError {
+    CommandError::new(
+        ErrorKind::Internal,
+        format!("ログイン情報を{what}できませんでした: {err}"),
+    )
+}
+
+#[cfg(target_os = "macos")]
+fn read_file(path: &Path) -> Result<Option<Vec<Account>>> {
+    match std::fs::read_to_string(path) {
+        Ok(json) => Ok(Some(serde_json::from_str(&json).map_err(broken)?)),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(err) => Err(file_failed("読み込み", err)),
+    }
+}
+
+/// Writes `accounts` to `path`, readable and writable by the user alone.
+#[cfg(target_os = "macos")]
+fn write_file(path: &Path, accounts: &[Account]) -> Result<()> {
+    use std::io::Write;
+    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+
+    let failed = |err: std::io::Error| file_failed("保存", err);
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir).map_err(failed)?;
+    }
+    // Written beside the file and moved over it, so a crash halfway leaves the
+    // old file rather than half of the new one. The mode is set again in case
+    // a partial file was left with another one.
+    let partial = path.with_extension("json.partial");
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(&partial)
+        .map_err(failed)?;
+    file.set_permissions(std::fs::Permissions::from_mode(0o600))
+        .map_err(failed)?;
+    file.write_all(to_json(&accounts)?.as_bytes())
+        .map_err(failed)?;
+    file.sync_all().map_err(failed)?;
+    std::fs::rename(&partial, path).map_err(failed)
+}
+
+/// The stored accounts in `config_dir`, in the order they were added.
+/// Accounts still in the Keychain are moved to the file first.
+#[cfg(target_os = "macos")]
+pub fn load_all(config_dir: &Path) -> Result<Vec<Account>> {
+    let path = config_dir.join(FILE_NAME);
+    if let Some(accounts) = read_file(&path)? {
+        return Ok(accounts);
+    }
+    let (accounts, old) = from_keychain()?;
+    if old.is_empty() {
+        return Ok(accounts);
+    }
+    write_file(&path, &accounts)?;
+    // Once the file exists the Keychain is never read again, so an entry that
+    // it will not let go of is left behind rather than failing the start-up
+    // over it.
     for user in old {
         if let Err(err) = delete(&user) {
             eprintln!(
-                "mailcrew: could not delete the old entry {user}: {}",
+                "mailcrew: could not delete the Keychain entry {user}: {}",
                 err.message
             );
         }
@@ -165,7 +240,7 @@ pub fn load_all() -> Result<Vec<Account>> {
 /// The stored accounts, in the order they were added. An account kept by a
 /// version that knew only one is moved to where this one keeps it.
 #[cfg(not(target_os = "macos"))]
-pub fn load_all() -> Result<Vec<Account>> {
+pub fn load_all(_config_dir: &Path) -> Result<Vec<Account>> {
     let (accounts, legacy) = read_entries()?;
     if legacy {
         write_entries(&accounts)?;
@@ -175,13 +250,14 @@ pub fn load_all() -> Result<Vec<Account>> {
 }
 
 /// Keeps exactly `accounts`, in this order, in place of what was stored.
-pub fn save_all(accounts: &[Account]) -> Result<()> {
+pub fn save_all(config_dir: &Path, accounts: &[Account]) -> Result<()> {
     #[cfg(target_os = "macos")]
     {
-        write(ALL_USER, &to_json(&accounts)?)
+        write_file(&config_dir.join(FILE_NAME), accounts)
     }
     #[cfg(not(target_os = "macos"))]
     {
+        let _ = config_dir;
         write_entries(accounts)
     }
 }
@@ -234,6 +310,28 @@ mod tests {
         let json = to_json(&accounts).unwrap();
         let read: Vec<Account> = serde_json::from_str(&json).unwrap();
         assert_eq!(read, accounts);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn the_file_keeps_the_order_and_only_the_user_can_read_it() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = std::env::temp_dir().join(format!("mailcrew-credentials-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let accounts = vec![account("b@x"), account("a@x")];
+        save_all(&dir, &accounts).unwrap();
+        assert_eq!(load_all(&dir).unwrap(), accounts);
+        let mode = std::fs::metadata(dir.join(FILE_NAME))
+            .unwrap()
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o777, 0o600);
+        // With every account gone the file stays, empty, so the Keychain is
+        // not read again.
+        save_all(&dir, &[]).unwrap();
+        assert!(load_all(&dir).unwrap().is_empty());
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

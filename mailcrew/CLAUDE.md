@@ -75,10 +75,13 @@ and mark certificate checks. `DEVELOPMENT.md` has the steps. Changing them keeps
 A card carries the address of the account its thread is in (`Card.account`), and every command
 that reads or changes mail takes that address. Thread, message and label ids are only unique
 within one account, so nothing in the app is keyed by an id alone. On macOS the stored sign-ins
-are one credential entry, `all-accounts`, since the Keychain asks once per entry after every
-update; on Windows, whose entries are capped at 2,560 bytes, they are one entry per account plus
-an `accounts` index. Both older layouts (that index on macOS before 0.4, and `google-account`,
-the pre-0.2 single account) are read once and moved.
+are `accounts.json` in the config folder, mode 0600, not the Keychain: the app is not signed
+with a certificate Apple issued, so the Keychain asked for the password after every update.
+Do not move them back into the Keychain until the app is signed with a Developer ID. Up to
+0.8.0 they were the Keychain entry `all-accounts`, and before 0.4 the Windows layout; whatever
+is in the Keychain is read once, written to the file and deleted. On Windows, whose entries are
+capped at 2,560 bytes, they are one Credential Manager entry per account plus an `accounts`
+index, and `google-account`, the pre-0.2 single account, is read once and moved.
 
 ## Mind the Gmail quota
 

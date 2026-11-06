@@ -60,7 +60,7 @@ impl Core {
     /// files before the native app took its place.
     pub fn new(config_dir: PathBuf) -> Self {
         Self {
-            accounts: Accounts::new(),
+            accounts: Accounts::new(config_dir.clone()),
             cancel_sign_in: Mutex::new(None),
             brands: Brands::new(),
             preferences: Mutex::new(None),
