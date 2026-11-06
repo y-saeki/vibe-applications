@@ -34,5 +34,8 @@ iconset="$(mktemp -d)/winwin.iconset"
 "$app/Contents/MacOS/winwin" --iconset "$iconset"
 iconutil -c icns -o "$app/Contents/Resources/winwin.icns" "$iconset"
 rm -rf "$(dirname "$iconset")"
+# macOS 26 and later show the Liquid Glass icon in Assets.car instead, compiled
+# from AppIcon.icon by actool and committed (see DEVELOPMENT.md).
+cp Assets.car "$app/Contents/Resources/Assets.car"
 codesign --force --sign "${WINWIN_SIGN_IDENTITY:--}" "$app"
 echo "built $(pwd)/$app"

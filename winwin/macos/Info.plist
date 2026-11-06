@@ -6,6 +6,8 @@
 	<string>winwin</string>
 	<key>CFBundleIconFile</key>
 	<string>winwin</string>
+	<key>CFBundleIconName</key>
+	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
 	<string>io.github.y-saeki.winwin</string>
 	<key>CFBundleName</key>
