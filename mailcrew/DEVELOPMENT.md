@@ -60,14 +60,21 @@ cd core/swift
 swift test -Xlinker -L"$(./build.sh --lib-dir)"   # Swift から呼んで確かめる
 ```
 
-ネイティブ版は、上の `build.sh` のあとで Xcode のプロジェクトを作ってから、ビルドとテストをします。プロジェクト（`MailCrew.xcodeproj`）はコミットしないので、pull のたびに作り直します。
+ネイティブ版は、Xcode のプロジェクト（`MailCrew.xcodeproj`）を作ってから、ビルドとテストをします。プロジェクトはコミットしないので、最初に一度作ります。作り直すのは、`project.yml` が変わったときだけです。
 
 ```sh
-core/swift/build.sh       # Rust の静的ライブラリとバインディング。Rust 側を変えたら作り直す
 xcodegen generate         # project.yml から MailCrew.xcodeproj を作る
+open MailCrew.xcodeproj   # Xcode で開き、⌘R で実行、⌘U でテスト
 xcodebuild test -project MailCrew.xcodeproj -scheme MailCrew -destination 'platform=macOS,arch=arm64'
-open MailCrew.xcodeproj   # Xcode で開いて実行する
 ```
+
+ふだんは、pull したら Xcode で ⌘R を押すだけです。
+
+- スキームのビルド前の処理が `core/swift/build.sh` を呼び、Rust のライブラリとバインディングを作ります。Rust 側が変わっていなければ、cargo も `build.sh` も何もしないので、数秒で終わります。
+- Xcode から呼ばれるときは PATH に cargo がないので、`build.sh` は `~/.cargo/bin` を足し、それでもなければ `rustup which cargo` で探します。Homebrew の rustup は cargo を PATH に置かないためです。
+- スキームのビルド前の処理は、失敗してもビルドを止めません。そこで、`build.sh` が失敗したときは出力を `core/target/xcode-build.failed` に残します。続くアプリのターゲットの最初のビルド フェーズ（Check the Rust build）が、それをビルドのエラーとして出します。
+- `build.sh` は、生成したバインディングのうち中身が変わったファイルだけを書き換えます。同じ中身で書き直すと、毎回パッケージがビルドし直されるためです。
+- `MailCrew/` と `MailCrewTests/` は同期フォルダ（Xcode 16 の synchronized folders）です。Swift のファイルを足したり消したりしても、`xcodegen generate` は要りません。
 
 `pnpm test:e2e` は初回だけブラウザの取得が必要です。
 
@@ -135,7 +142,7 @@ pnpm exec playwright install chromium webkit
 
 ### ネイティブ版
 
-ネイティブ版は SwiftUI の macOS アプリで、`project.yml` から XcodeGen で Xcode のプロジェクトを作ります。`MailCrewCore`（`core/swift/`）をローカルのパッケージとして使い、`build.sh` が作った `libmailcrew_core.a` をリンクします。Apple Silicon 向けだけで、対応する macOS は 14 以降です。`build.sh` は Rust のライブラリも同じ macOS 14 向けにビルドします。
+ネイティブ版は SwiftUI の macOS アプリで、`project.yml` から XcodeGen で Xcode のプロジェクトを作ります。プロジェクトの形式は、同期フォルダを使うために `xcode16_0` にしています。`MailCrewCore`（`core/swift/`）をローカルのパッケージとして使い、`build.sh` が作った `libmailcrew_core.a` をリンクします。Apple Silicon 向けだけで、対応する macOS は 14 以降です。`build.sh` は Rust のライブラリも同じ macOS 14 向けにビルドします。
 
 バンドル識別子は Tauri 版と同じ `com.ysaeki.mailcrew` です。キーチェーンの項目と設定のディレクトリが、そのまま引き継がれます。今は証明書で署名せず、アドホック署名でビルドします。
 
