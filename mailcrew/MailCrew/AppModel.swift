@@ -54,6 +54,31 @@ final class AppModel {
     /// Rust side has it.
     private(set) var looksUpBrands = true
 
+    /// The custom views, in the order the sidebar lists them.
+    private(set) var views: [SavedView] = []
+    /// The sidebar's tab the strip shows: `inboxView`, `setAsideView` or a view's id.
+    private(set) var activeView = AppModel.inboxView
+    /// What the cards on the strip were fetched for; it says what an empty strip means.
+    private(set) var shownFilter: InboxFilter? = .inbox
+
+    /// Set while まとめて完了 waits for Gmail.
+    private(set) var archivingAll = false
+
+    /// Set while the settings' sign-in waits for the browser.
+    private(set) var addingAccount = false
+    /// Why the settings' last sign-in, or removing an account, failed.
+    private(set) var accountError: String?
+    /// The account the settings are removing.
+    private(set) var removingAccount: String?
+    /// Why the views could not be saved.
+    private(set) var viewError: String?
+    /// Why a sender could not be removed.
+    private(set) var imageSenderError: String?
+    /// Why the BIMI setting could not be saved.
+    private(set) var brandSettingError: String?
+    /// Set while the BIMI setting is on its way to the file.
+    private(set) var savingBrandSetting = false
+
     @ObservationIgnored private let core: MailCrewProtocol
     @ObservationIgnored private let openURL: (URL) -> Void
     @ObservationIgnored private let files: Files
@@ -130,8 +155,20 @@ final class AppModel {
     }
 
     private func loadSettings() async {
+        await loadViews()
         await loadImageSenders()
         await loadPreferences()
+    }
+
+    /// Reads the custom views. When they cannot be read, the sidebar has the
+    /// inbox and あとで読む alone.
+    private func loadViews() async {
+        do {
+            views = try await core.listViews()
+        } catch {
+            notice = Self.message(of: error)
+        }
+        if !Self.tabExists(activeView, views: views) { activeView = Self.inboxView }
     }
 
     /// Reads whether BIMI is looked up. When it cannot be read, the default
@@ -187,6 +224,7 @@ final class AppModel {
 
     private func showSignIn(message: String?) {
         cards = []
+        activeView = Self.inboxView
         bodies = [:]
         remoteImagesShown = []
         brands = [:]
@@ -197,7 +235,7 @@ final class AppModel {
 
     // MARK: Inbox
 
-    /// Fetches the newest threads of every account.
+    /// Fetches the newest threads of what the active tab shows.
     func load() async {
         if loading {
             loadAgain = true
@@ -207,10 +245,18 @@ final class AppModel {
         defer { loading = false }
         repeat {
             loadAgain = false
+            let filter = Self.filter(for: activeView, views: views, accounts: accounts)
             do {
-                let page = try await core.listInbox(accounts: [], mailbox: .inbox, query: "")
+                // A view whose accounts have all been removed shows nothing.
+                let page = if let filter {
+                    try await core.listInbox(accounts: filter.accounts, mailbox: filter.mailbox, query: filter.query)
+                } else {
+                    InboxPage(cards: [], failures: [])
+                }
                 if loadAgain { continue }
                 cards = page.cards
+                shownFilter = filter
+                mailbox = filter?.mailbox ?? .inbox
                 forgetBodiesOffTheStrip()
                 refreshLabels()
                 await report(page.failures)
@@ -218,6 +264,117 @@ final class AppModel {
                 await fail(error)
             }
         } while loadAgain
+    }
+
+    // MARK: Views
+
+    /// The tab for the inbox of every account.
+    nonisolated static let inboxView = ""
+    /// The tab for what あとで読む set aside. No saved view can have this id.
+    nonisolated static let setAsideView = "@set-aside"
+
+    /// The sidebar's tabs: the inbox, あとで読む, then each custom view.
+    var tabs: [ViewTab] {
+        [
+            ViewTab(id: Self.inboxView, name: "受信トレイ", systemImage: "tray"),
+            ViewTab(id: Self.setAsideView, name: "あとで読む", systemImage: "clock"),
+        ] + views.map { ViewTab(id: $0.id, name: $0.name, systemImage: "line.3.horizontal.decrease.circle") }
+    }
+
+    /// The window's title: the name of the tab the strip shows.
+    var title: String {
+        tabs.first { $0.id == activeView }?.name ?? "受信トレイ"
+    }
+
+    /// A tab was picked in the sidebar: the strip shows what it holds.
+    func select(view id: String) async {
+        guard id != activeView, Self.tabExists(id, views: views) else { return }
+        activeView = id
+        await load()
+    }
+
+    /// What the strip fetches for the tab `id`, given the views and who is
+    /// signed in now; nil when every account the view was made for has gone.
+    nonisolated static func filter(for id: String, views: [SavedView], accounts: [String]) -> InboxFilter? {
+        if id == setAsideView { return InboxFilter(mailbox: .setAside, accounts: [], query: "", custom: false) }
+        guard let view = views.first(where: { $0.id == id }) else { return .inbox }
+        let chosen = view.accounts.filter { accounts.contains($0) }
+        if !view.accounts.isEmpty && chosen.isEmpty { return nil }
+        return InboxFilter(
+            mailbox: .inbox, accounts: chosen,
+            query: view.query.trimmingCharacters(in: .whitespacesAndNewlines), custom: true
+        )
+    }
+
+    nonisolated static func tabExists(_ id: String, views: [SavedView]) -> Bool {
+        id == inboxView || id == setAsideView || views.contains { $0.id == id }
+    }
+
+    /// One line on what a view shows, for the settings.
+    nonisolated static func describe(_ view: SavedView) -> String {
+        let accounts = view.accounts.isEmpty ? "すべてのアカウント" : view.accounts.joined(separator: "、")
+        let query = view.query.trimmingCharacters(in: .whitespacesAndNewlines)
+        return query.isEmpty ? accounts : "\(accounts) ・ \(query)"
+    }
+
+    /// What an empty strip says, by what it was fetched for.
+    var emptyState: (title: String, lead: String) {
+        if shownFilter?.custom ?? true {
+            return ("このビューに当てはまるメールはありません", "条件に合うメールが届いたら、再読み込みで表示されます。")
+        }
+        if shownFilter?.mailbox == .setAside {
+            return ("あとで読むメールはありません", "受信トレイで「あとで読む」を押したメールが、ここに並びます。")
+        }
+        return ("受信トレイは空です", "新しいメールが届いたら、再読み込みで表示されます。")
+    }
+
+    /// What the end of the strip says まとめて完了 does.
+    var endSummary: String {
+        mailbox == .setAside
+            ? "ここまでの \(cards.count) 件を既読にして「あとで読む」から外し、続きを読み込みます。"
+            : "ここまでの \(cards.count) 件を既読にしてアーカイブし、次の受信トレイを読み込みます。"
+    }
+
+    /// まとめて完了: archives every card on the strip, one request per
+    /// account, then fetches the next page. When some accounts' requests
+    /// fail, the next page shows which threads are still there.
+    func archiveAll() async {
+        guard !archivingAll, !cards.isEmpty else { return }
+        var byAccount: [(account: String, messageIds: [String])] = []
+        for card in cards {
+            if let index = byAccount.firstIndex(where: { $0.account == card.account }) {
+                byAccount[index].messageIds += card.messageIds
+            } else {
+                byAccount.append((card.account, card.messageIds))
+            }
+        }
+        archivingAll = true
+        defer { archivingAll = false }
+        let core = core
+        let mailbox = mailbox
+        let failures = await withTaskGroup(of: Error?.self) { group in
+            for (account, messageIds) in byAccount {
+                group.addTask {
+                    do {
+                        try await core.archive(account: account, messageIds: messageIds, mailbox: mailbox)
+                        return nil
+                    } catch {
+                        return error
+                    }
+                }
+            }
+            var failures: [Error] = []
+            for await failure in group {
+                if let failure { failures.append(failure) }
+            }
+            return failures
+        }
+        if failures.count == byAccount.count, let failure = failures.first {
+            await fail(failure)
+            return
+        }
+        await load()
+        if let failure = failures.first { await fail(failure) }
     }
 
     /// Says which accounts did not answer; the others' cards are shown all the same.
@@ -376,7 +533,8 @@ final class AppModel {
             // Nothing to tell beyond what the checks show.
             result = .failed
         }
-        guard bodies[key] != nil else { return }
+        // Turning BIMI off cancels the lookups on their way.
+        guard !Task.isCancelled, bodies[key] != nil else { return }
         brands[key] = result
         if result == nil { looksUpBrands = false }
     }
@@ -672,6 +830,162 @@ final class AppModel {
         return rows
     }
 
+    // MARK: Settings
+
+    /// Google でログインして追加: signs another account in. Empty fields use
+    /// the client of the first account.
+    func addAccount(clientId: String, clientSecret: String) async {
+        accountError = nil
+        addingAccount = true
+        defer { addingAccount = false }
+        do {
+            let pending = try await core.startSignIn(
+                clientId: Self.blankToNil(clientId), clientSecret: Self.blankToNil(clientSecret)
+            )
+            guard let url = URL(string: pending.url()) else {
+                accountError = "ログインのページを開けませんでした"
+                await core.cancelSignIn()
+                return
+            }
+            openURL(url)
+            _ = try await pending.finish()
+        } catch MailCrewError.Cancelled {
+            return
+        } catch {
+            accountError = Self.message(of: error)
+            return
+        }
+        await accountsChanged()
+    }
+
+    /// 削除 beside an account: Mail Crew stops reading it; its mail on Gmail
+    /// stays as it is. Back to the sign-in once nobody is left.
+    func removeAccount(_ account: String) async {
+        accountError = nil
+        removingAccount = account
+        defer { removingAccount = nil }
+        do {
+            try await core.signOut(account: account)
+        } catch {
+            accountError = Self.message(of: error)
+            return
+        }
+        await accountsChanged()
+    }
+
+    /// Asks who is signed in now, and fetches the strip again for them.
+    private func accountsChanged() async {
+        do {
+            accounts = try await core.accountEmails()
+        } catch {
+            accountError = Self.message(of: error)
+            return
+        }
+        if accounts.isEmpty {
+            showSignIn(message: nil)
+            return
+        }
+        cards.removeAll { !accounts.contains($0.account) }
+        labels = labels.filter { accounts.contains($0.key) }
+        forgetBodiesOffTheStrip()
+        await load()
+    }
+
+    /// The view form's 保存 and a view's 削除: replaces the saved views. The
+    /// strip follows when the tab it shows changed or went.
+    @discardableResult
+    func saveViews(_ next: [SavedView]) async -> Bool {
+        do {
+            try await core.saveViews(views: next)
+        } catch {
+            viewError = Self.message(of: error)
+            return false
+        }
+        viewError = nil
+        let before = Self.filter(for: activeView, views: views, accounts: accounts)
+        views = next
+        if !Self.tabExists(activeView, views: views) { activeView = Self.inboxView }
+        if Self.filter(for: activeView, views: views, accounts: accounts) != before { await load() }
+        return true
+    }
+
+    /// A view the form makes or edits: the name and the search trimmed, and
+    /// only the accounts still signed in. Nil, with why, when it has no name.
+    func view(id: String?, name: String, accounts chosen: Set<String>, query: String) -> SavedView? {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else {
+            viewError = "ビューの名前を入力してください"
+            return nil
+        }
+        return SavedView(
+            id: id ?? Self.newViewId(), name: name,
+            accounts: accounts.filter { chosen.contains($0) },
+            query: query.trimmingCharacters(in: .whitespacesAndNewlines)
+        )
+    }
+
+    /// Adds a view the form made, or puts an edited one in its place.
+    func saveView(_ view: SavedView) async -> Bool {
+        let next = views.contains { $0.id == view.id }
+            ? views.map { $0.id == view.id ? view : $0 }
+            : views + [view]
+        return await saveViews(next)
+    }
+
+    func deleteView(_ id: String) async {
+        await saveViews(views.filter { $0.id != id })
+    }
+
+    func clearViewError() { viewError = nil }
+
+    nonisolated static func newViewId() -> String {
+        let time = String(Int(Date().timeIntervalSince1970 * 1000), radix: 36)
+        let random = String(UInt32.random(in: 0...UInt32.max), radix: 36)
+        return "v\(time)\(random)"
+    }
+
+    /// 削除 beside a sender: their messages ask again before showing images.
+    func removeImageSender(_ email: String) async {
+        imageSenderError = nil
+        do {
+            imageSenders = try await core.saveImageSenders(senders: imageSenders.filter { $0 != email })
+        } catch {
+            imageSenderError = Self.message(of: error)
+        }
+    }
+
+    /// BIMI のロゴを表示する. Turned off, the checks already made go; turned
+    /// on, the messages already here are looked up.
+    func setLooksUpBrands(_ on: Bool) async {
+        guard on != looksUpBrands, !savingBrandSetting else { return }
+        brandSettingError = nil
+        savingBrandSetting = true
+        defer { savingBrandSetting = false }
+        do {
+            try await core.savePreferences(preferences: Preferences(brandLogos: on))
+        } catch {
+            brandSettingError = Self.message(of: error)
+            return
+        }
+        looksUpBrands = on
+        if on {
+            for card in cards {
+                if let content = bodies[card.bodyKey], brands[card.bodyKey] == nil {
+                    checkBrand(card, authentication: content.authentication)
+                }
+            }
+        } else {
+            brandLookups.values.forEach { $0.cancel() }
+            brandLookups = [:]
+            brands = [:]
+        }
+    }
+
+    private nonisolated static func blankToNil(_ text: String) -> String? {
+        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.isEmpty ? nil : text
+    }
+
     // MARK: Links
 
     /// Opens a link from a message outside Mail Crew: http, https and mailto
@@ -708,6 +1022,28 @@ typealias Authentication = MailCrewCore.Authentication
 typealias Brand = MailCrewCore.Brand
 typealias Check = MailCrewCore.Check
 typealias MarkResult = MailCrewCore.MarkResult
+/// A custom view. SwiftUI has a `View` of its own.
+typealias SavedView = MailCrewCore.View
+typealias Preferences = MailCrewCore.Preferences
+
+/// What the strip fetches: a pile, across some accounts (every one when
+/// empty), narrowed by a Gmail search.
+struct InboxFilter: Equatable {
+    let mailbox: Mailbox
+    let accounts: [String]
+    let query: String
+    /// A custom view rather than a whole pile, which changes what "empty" says.
+    let custom: Bool
+
+    static let inbox = InboxFilter(mailbox: .inbox, accounts: [], query: "", custom: false)
+}
+
+/// A tab in the sidebar.
+struct ViewTab: Equatable, Identifiable {
+    let id: String
+    let name: String
+    let systemImage: String
+}
 
 /// Where a message's BIMI checks stand.
 enum BrandCheck: Equatable {

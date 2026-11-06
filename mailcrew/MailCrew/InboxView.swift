@@ -1,7 +1,50 @@
 import SwiftUI
 
-/// The inbox: one card per thread, newest at the left, across every account.
+/// The inbox: the views in a sidebar, and one card per thread, newest at the left.
 struct InboxView: View {
+    let model: AppModel
+
+    var body: some View {
+        NavigationSplitView {
+            Sidebar(model: model)
+                .navigationSplitViewColumnWidth(min: 180, ideal: 220, max: 320)
+        } detail: {
+            StripView(model: model)
+        }
+    }
+}
+
+/// The tabs: the inbox and あとで読む across every account, then each custom
+/// view made in the settings. The settings open from the bottom.
+struct Sidebar: View {
+    let model: AppModel
+
+    var body: some View {
+        List(selection: Binding(
+            get: { model.activeView },
+            set: { id in
+                if let id { Task { await model.select(view: id) } }
+            }
+        )) {
+            ForEach(model.tabs) { tab in
+                Label(tab.name, systemImage: tab.systemImage)
+                    .lineLimit(1)
+                    .tag(tab.id)
+            }
+        }
+        .safeAreaInset(edge: .bottom) {
+            SettingsLink {
+                Label("設定", systemImage: "gearshape")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .buttonStyle(.borderless)
+            .padding(12)
+        }
+    }
+}
+
+/// The cards of the tab picked in the sidebar.
+struct StripView: View {
     let model: AppModel
 
     /// The Tauri app's `--card-width` and `--gap`.
@@ -12,15 +55,15 @@ struct InboxView: View {
         Group {
             if model.cards.isEmpty && !model.loading {
                 ContentUnavailableView(
-                    "受信トレイは空です",
+                    model.emptyState.title,
                     systemImage: "tray",
-                    description: Text("新しいメールが届いたら、再読み込みで表示されます。")
+                    description: Text(model.emptyState.lead)
                 )
             } else {
                 strip
             }
         }
-        .navigationTitle("受信トレイ")
+        .navigationTitle(model.title)
         .navigationSubtitle(model.cards.isEmpty ? "" : "\(model.cards.count) 件")
         .toolbar {
             ToolbarItem {
@@ -55,12 +98,43 @@ struct InboxView: View {
                             .frame(width: width)
                             .onAppear { model.cardAppeared(card) }
                     }
+                    if !model.cards.isEmpty {
+                        StripEnd(model: model)
+                            .frame(width: width)
+                    }
                 }
                 .scrollTargetLayout()
                 .padding(Self.gap)
             }
             .scrollTargetBehavior(.viewAligned)
         }
+    }
+}
+
+/// The end of the strip: what まとめて完了 does, and the button.
+struct StripEnd: View {
+    let model: AppModel
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Text(model.endSummary)
+                .multilineTextAlignment(.center)
+                .foregroundStyle(.secondary)
+            Button {
+                Task { await model.archiveAll() }
+            } label: {
+                if model.archivingAll {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Text("まとめて完了")
+                }
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .disabled(model.archivingAll || model.loading)
+        }
+        .padding(24)
+        .frame(maxHeight: .infinity)
     }
 }
 

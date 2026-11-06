@@ -19,6 +19,10 @@ struct MailCrewApp: App {
                     .disabled(model.screen != .inbox)
             }
         }
+
+        Settings {
+            SettingsView(model: model)
+        }
     }
 }
 
