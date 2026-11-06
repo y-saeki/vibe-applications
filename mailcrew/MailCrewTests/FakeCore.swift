@@ -3,47 +3,54 @@ import MailCrewCore
 
 /// The Rust side as the tests want it to answer. Only what `AppModel` calls
 /// so far is scripted; anything else fails the test that reaches it.
+///
+/// The model calls it from Tasks of its own (the labels of each account on
+/// the strip, say), so two calls can run at once. Each call holds `lock`
+/// while it records and answers, and each property sits behind a lock of its
+/// own, so the tests can read one while such a Task is still at work.
 final class FakeCore: MailCrewProtocol, @unchecked Sendable {
-    var accounts: [String] = []
-    var accountsError: MailCrewError?
+    private let lock = NSLock()
+
+    @Guarded var accounts: [String] = []
+    @Guarded var accountsError: MailCrewError?
     /// Answers to `listInbox`, one per call, in order.
-    var inboxAnswers: [Result<InboxPage, MailCrewError>] = []
-    var startSignInError: MailCrewError = .Internal(message: "not scripted")
-    private(set) var inboxCalls: [(accounts: [String], mailbox: Mailbox, query: String)] = []
-    private(set) var cancelledSignIns = 0
+    @Guarded var inboxAnswers: [Result<InboxPage, MailCrewError>] = []
+    @Guarded var startSignInError: MailCrewError = .Internal(message: "not scripted")
+    @Guarded private(set) var inboxCalls: [(accounts: [String], mailbox: Mailbox, query: String)] = []
+    @Guarded private(set) var cancelledSignIns = 0
     /// Answers to `getMessage`, by message id. One that is missing fails.
-    var messages: [String: Result<MessageContent, MailCrewError>] = [:]
-    private(set) var messageCalls: [(account: String, messageId: String)] = []
-    var imageSenders: [String] = []
-    var imageSendersError: MailCrewError?
-    private(set) var savedImageSenders: [[String]] = []
+    @Guarded var messages: [String: Result<MessageContent, MailCrewError>] = [:]
+    @Guarded private(set) var messageCalls: [(account: String, messageId: String)] = []
+    @Guarded var imageSenders: [String] = []
+    @Guarded var imageSendersError: MailCrewError?
+    @Guarded private(set) var savedImageSenders: [[String]] = []
     /// What the card actions were asked to do, in order.
-    private(set) var actions: [Action] = []
+    @Guarded private(set) var actions: [Action] = []
     /// Thrown by the next card action, then cleared.
-    var actionError: MailCrewError?
+    @Guarded var actionError: MailCrewError?
     /// Each account's labels. One that is missing fails.
-    var labels: [String: [MailCrewCore.Label]] = [:]
-    private(set) var labelCalls: [String] = []
+    @Guarded var labels: [String: [MailCrewCore.Label]] = [:]
+    @Guarded private(set) var labelCalls: [String] = []
     /// Answers to `getBrand`, by message id. One that is missing fails.
-    var brands: [String: Result<Brand?, MailCrewError>] = [:]
-    private(set) var brandCalls: [(account: String, messageId: String)] = []
-    var brandLogos = true
-    var preferencesError: MailCrewError?
+    @Guarded var brands: [String: Result<Brand?, MailCrewError>] = [:]
+    @Guarded private(set) var brandCalls: [(account: String, messageId: String)] = []
+    @Guarded var brandLogos = true
+    @Guarded var preferencesError: MailCrewError?
     /// What `attachmentToOpen` and `saveAttachment` were asked for, in order.
-    private(set) var attachmentCalls: [AttachmentCall] = []
+    @Guarded private(set) var attachmentCalls: [AttachmentCall] = []
     /// Thrown by the next attachment call, then cleared.
-    var attachmentError: MailCrewError?
-    var views: [MailCrewCore.View] = []
-    var viewsError: MailCrewError?
-    private(set) var savedViews: [[MailCrewCore.View]] = []
+    @Guarded var attachmentError: MailCrewError?
+    @Guarded var views: [MailCrewCore.View] = []
+    @Guarded var viewsError: MailCrewError?
+    @Guarded private(set) var savedViews: [[MailCrewCore.View]] = []
     /// Thrown by the next `saveViews`, then cleared.
-    var saveViewsError: MailCrewError?
-    private(set) var savedPreferences: [Preferences] = []
+    @Guarded var saveViewsError: MailCrewError?
+    @Guarded private(set) var savedPreferences: [Preferences] = []
     /// Thrown by the next `savePreferences`, then cleared.
-    var savePreferencesError: MailCrewError?
-    private(set) var signOutCalls: [String] = []
+    @Guarded var savePreferencesError: MailCrewError?
+    @Guarded private(set) var signOutCalls: [String] = []
     /// Thrown by the next `signOut`, then cleared.
-    var signOutError: MailCrewError?
+    @Guarded var signOutError: MailCrewError?
 
     enum AttachmentCall: Equatable {
         case open(account: String, messageId: String, attachmentId: String, openedDir: String)
@@ -59,43 +66,57 @@ final class FakeCore: MailCrewProtocol, @unchecked Sendable {
     }
 
     func accountEmails() async throws -> [String] {
-        if let accountsError { throw accountsError }
-        return accounts
+        return try lock.withLock {
+            if let accountsError { throw accountsError }
+            return accounts
+        }
     }
 
     func listInbox(accounts: [String], mailbox: Mailbox, query: String) async throws -> InboxPage {
-        inboxCalls.append((accounts, mailbox, query))
-        guard !inboxAnswers.isEmpty else { return InboxPage(cards: [], failures: []) }
-        return try inboxAnswers.removeFirst().get()
+        return try lock.withLock {
+            inboxCalls.append((accounts, mailbox, query))
+            guard !inboxAnswers.isEmpty else { return InboxPage(cards: [], failures: []) }
+            return try inboxAnswers.removeFirst().get()
+        }
     }
 
     func startSignIn(clientId: String?, clientSecret: String?) async throws -> SignIn {
-        // A real `SignIn` waits on Google, which the tests cannot reach.
-        throw startSignInError
+        return try lock.withLock {
+            // A real `SignIn` waits on Google, which the tests cannot reach.
+            throw startSignInError
+        }
     }
 
-    func cancelSignIn() async { cancelledSignIns += 1 }
+    func cancelSignIn() async {
+        lock.withLock { cancelledSignIns += 1 }
+    }
 
     func getMessage(account: String, messageId: String) async throws -> MessageContent {
-        messageCalls.append((account, messageId))
-        guard let answer = messages[messageId] else { throw MailCrewError.Network(message: "not scripted") }
-        return try answer.get()
+        return try lock.withLock {
+            messageCalls.append((account, messageId))
+            guard let answer = messages[messageId] else { throw MailCrewError.Network(message: "not scripted") }
+            return try answer.get()
+        }
     }
 
     func listImageSenders() async throws -> [String] {
-        if let imageSendersError { throw imageSendersError }
-        return imageSenders
+        return try lock.withLock {
+            if let imageSendersError { throw imageSendersError }
+            return imageSenders
+        }
     }
 
     /// Stores them as the Rust side does: trimmed, in lower case, once each.
     func saveImageSenders(senders: [String]) async throws -> [String] {
-        savedImageSenders.append(senders)
-        var kept: [String] = []
-        for sender in senders.map({ $0.trimmingCharacters(in: .whitespaces).lowercased() }) where !kept.contains(sender) {
-            kept.append(sender)
+        return try lock.withLock {
+            savedImageSenders.append(senders)
+            var kept: [String] = []
+            for sender in senders.map({ $0.trimmingCharacters(in: .whitespaces).lowercased() }) where !kept.contains(sender) {
+                kept.append(sender)
+            }
+            imageSenders = kept
+            return kept
         }
-        imageSenders = kept
-        return kept
     }
 
     private func act(_ action: Action) throws {
@@ -107,42 +128,58 @@ final class FakeCore: MailCrewProtocol, @unchecked Sendable {
     }
 
     func archive(account: String, messageIds: [String], mailbox: Mailbox) async throws {
-        try act(.archive(account: account, messageIds: messageIds, mailbox: mailbox))
+        try lock.withLock {
+            try act(.archive(account: account, messageIds: messageIds, mailbox: mailbox))
+        }
     }
 
     func setAside(account: String, messageIds: [String]) async throws {
-        try act(.setAside(account: account, messageIds: messageIds))
+        try lock.withLock {
+            try act(.setAside(account: account, messageIds: messageIds))
+        }
     }
 
     func applyLabel(account: String, messageIds: [String], labelId: String, mailbox: Mailbox) async throws {
-        try act(.applyLabel(account: account, messageIds: messageIds, labelId: labelId, mailbox: mailbox))
+        try lock.withLock {
+            try act(.applyLabel(account: account, messageIds: messageIds, labelId: labelId, mailbox: mailbox))
+        }
     }
 
     /// Makes the label with an id of its name, as Gmail would with one of its own.
     func createLabel(account: String, name: String) async throws -> MailCrewCore.Label {
-        try act(.createLabel(account: account, name: name))
-        return MailCrewCore.Label(id: "Label_\(name)", name: name)
+        return try lock.withLock {
+            try act(.createLabel(account: account, name: name))
+            return MailCrewCore.Label(id: "Label_\(name)", name: name)
+        }
     }
 
     func setStarred(account: String, messageId: String, messageIds: [String], starred: Bool) async throws {
-        try act(.setStarred(account: account, messageId: messageId, messageIds: messageIds, starred: starred))
+        try lock.withLock {
+            try act(.setStarred(account: account, messageId: messageId, messageIds: messageIds, starred: starred))
+        }
     }
 
     func listLabels(account: String) async throws -> [MailCrewCore.Label] {
-        labelCalls.append(account)
-        guard let labels = labels[account] else { throw MailCrewError.Network(message: "not scripted") }
-        return labels
+        return try lock.withLock {
+            labelCalls.append(account)
+            guard let labels = labels[account] else { throw MailCrewError.Network(message: "not scripted") }
+            return labels
+        }
     }
 
     func getBrand(account: String, messageId: String) async throws -> Brand? {
-        brandCalls.append((account, messageId))
-        guard let answer = brands[messageId] else { throw MailCrewError.Network(message: "not scripted") }
-        return try answer.get()
+        return try lock.withLock {
+            brandCalls.append((account, messageId))
+            guard let answer = brands[messageId] else { throw MailCrewError.Network(message: "not scripted") }
+            return try answer.get()
+        }
     }
 
     func preferences() async throws -> Preferences {
-        if let preferencesError { throw preferencesError }
-        return Preferences(brandLogos: brandLogos)
+        return try lock.withLock {
+            if let preferencesError { throw preferencesError }
+            return Preferences(brandLogos: brandLogos)
+        }
     }
 
     private func attachment(_ call: AttachmentCall) throws {
@@ -155,47 +192,75 @@ final class FakeCore: MailCrewProtocol, @unchecked Sendable {
 
     /// The path the Rust side would write the file to: a folder of its own under `openedDir`.
     func attachmentToOpen(account: String, messageId: String, attachmentId: String, openedDir: String) async throws -> String {
-        try attachment(.open(account: account, messageId: messageId, attachmentId: attachmentId, openedDir: openedDir))
-        return "\(openedDir)/0123456789abcdef/\(attachmentId).pdf"
+        return try lock.withLock {
+            try attachment(.open(account: account, messageId: messageId, attachmentId: attachmentId, openedDir: openedDir))
+            return "\(openedDir)/0123456789abcdef/\(attachmentId).pdf"
+        }
     }
 
     /// Saves under the attachment's id, with " (1)" as if a file of that name were there.
     func saveAttachment(account: String, messageId: String, attachmentId: String, dir: String) async throws -> String {
-        try attachment(.save(account: account, messageId: messageId, attachmentId: attachmentId, dir: dir))
-        return "\(dir)/\(attachmentId) (1).pdf"
+        return try lock.withLock {
+            try attachment(.save(account: account, messageId: messageId, attachmentId: attachmentId, dir: dir))
+            return "\(dir)/\(attachmentId) (1).pdf"
+        }
     }
 
     func listViews() async throws -> [MailCrewCore.View] {
-        if let viewsError { throw viewsError }
-        return views
+        return try lock.withLock {
+            if let viewsError { throw viewsError }
+            return views
+        }
     }
 
     func saveViews(views: [MailCrewCore.View]) async throws {
-        savedViews.append(views)
-        if let error = saveViewsError {
-            saveViewsError = nil
-            throw error
+        try lock.withLock {
+            savedViews.append(views)
+            if let error = saveViewsError {
+                saveViewsError = nil
+                throw error
+            }
+            self.views = views
         }
-        self.views = views
     }
 
     func savePreferences(preferences: Preferences) async throws {
-        savedPreferences.append(preferences)
-        if let error = savePreferencesError {
-            savePreferencesError = nil
-            throw error
+        try lock.withLock {
+            savedPreferences.append(preferences)
+            if let error = savePreferencesError {
+                savePreferencesError = nil
+                throw error
+            }
+            brandLogos = preferences.brandLogos
         }
-        brandLogos = preferences.brandLogos
     }
 
     /// Removes the account, as the Rust side does.
     func signOut(account: String) async throws {
-        signOutCalls.append(account)
-        if let error = signOutError {
-            signOutError = nil
-            throw error
+        try lock.withLock {
+            signOutCalls.append(account)
+            if let error = signOutError {
+                signOutError = nil
+                throw error
+            }
+            accounts.removeAll { $0 == account }
         }
-        accounts.removeAll { $0 == account }
+    }
+}
+
+/// One value behind a lock of its own.
+@propertyWrapper
+final class Guarded<Value>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: Value
+
+    init(wrappedValue: Value) {
+        value = wrappedValue
+    }
+
+    var wrappedValue: Value {
+        get { lock.withLock { value } }
+        set { lock.withLock { value = newValue } }
     }
 }
 
