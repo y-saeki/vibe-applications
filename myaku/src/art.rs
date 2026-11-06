@@ -221,4 +221,44 @@ mod tests {
     fn rgba_bytes_reorders_the_channels() {
         assert_eq!(rgba_bytes(&[0x80_11_22_33]), [0x11, 0x22, 0x33, 0x80]);
     }
+
+    /// The `points` and `stroke-width` of the one polyline in a layer of
+    /// `macos/AppIcon.icon`, in its 1024-unit canvas.
+    fn layer_polyline(svg: &str) -> (Vec<Point>, f32) {
+        let attr = |name: &str| {
+            let start = svg.find(&format!(" {name}=\"")).expect(name) + name.len() + 3;
+            let end = start + svg[start..].find('"').unwrap();
+            &svg[start..end]
+        };
+        let points = attr("points")
+            .split_whitespace()
+            .map(|p| {
+                let (x, y) = p.split_once(',').unwrap();
+                (x.parse().unwrap(), y.parse().unwrap())
+            })
+            .collect();
+        (points, attr("stroke-width").parse().unwrap())
+    }
+
+    /// Whether a layer's polyline is `expected` (fractions of the tile's
+    /// edge) drawn `stroke` wide, to a tenth of a unit.
+    fn assert_layer(svg: &str, expected: &[Point], stroke: f32) {
+        let (points, width) = layer_polyline(svg);
+        assert_eq!(points.len(), expected.len());
+        for (p, e) in points.iter().zip(expected) {
+            assert!(
+                (p.0 - e.0 * 1024.0).abs() < 0.1 && (p.1 - e.1 * 1024.0).abs() < 0.1,
+                "{p:?} {e:?}"
+            );
+        }
+        assert!((width - stroke * 1024.0).abs() < 0.1, "{width}");
+    }
+
+    /// The Liquid Glass icon's layer is drawn by hand from the same
+    /// geometry; this catches the two drifting apart.
+    #[test]
+    fn liquid_glass_layer_matches_the_tile() {
+        let pulse = include_str!("../macos/AppIcon.icon/Assets/pulse.svg");
+        assert_layer(pulse, &LINE, TILE_STROKE);
+    }
 }

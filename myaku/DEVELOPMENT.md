@@ -85,6 +85,19 @@ Swift のアプリをリンクして `.app` にまとめます。バインディ
 (`macos/Sources/myakuFFI/myakuFFI.h`)は生成物で、コミットしません。アプリのアイコンは、ビルドしたアプリ自身に
 `--iconset` で書き出させ、`iconutil` で `.icns` にします。絵は Windows 版と同じ `art.rs` のものです。
 
+macOS 26 以降では、`.icns` ではなく Liquid Glass のアイコンを使います。元は Icon Composer のデータ `macos/AppIcon.icon` で、背景の色と、前景の層(緑の脈の線)を分けて持っています。光沢や透け感は OS が付けるので、絵には描き込んでいません。`build.sh` は、これを `actool` で変換した `macos/Assets.car` をアプリに入れます。`Info.plist` の `CFBundleIconName` がこれを指し、macOS 26 より前の OS では `CFBundleIconFile` の `.icns` が使われます。`actool` は Xcode にしかないので、コマンドラインツールだけでもビルドできるよう、変換した結果をコミットしてあります。
+
+層の SVG は `art.rs` の座標を 1024 倍して手で書き写したものです(角丸の枠と余白はありません)。図柄を変えるときは、`art.rs` と層の SVG の両方を直してください。座標と線の太さが `art.rs` と合っているかは、`art.rs` のテストが確かめます。`AppIcon.icon` を変えたら、Xcode 26 以降が入った Mac で次を実行し、できた `Assets.car` を差し替えてコミットします。`actool` には絶対パスを渡します。相対パスはシェルのカレントディレクトリでなく別の場所を基準に解決されることがあるためです。
+
+```sh
+cd myaku/macos
+mkdir -p out && xcrun actool "$PWD/AppIcon.icon" --compile "$PWD/out" --output-format human-readable-text --errors \
+  --output-partial-info-plist "$PWD/out/info.plist" --app-icon AppIcon --include-all-app-icons \
+  --enable-on-demand-resources NO --development-region en --target-device mac \
+  --minimum-deployment-target 26.0 --platform macosx
+mv out/Assets.car Assets.car && rm -r out
+```
+
 署名はアドホックです。myaku は OS の許可(アクセシビリティなど)を求めないので、ビルドごとに署名が変わっても困りません。
 
 ## 検証コマンド
@@ -155,6 +168,8 @@ myaku/
 ├── macos/              # macOS 版
 │   ├── build.sh        # ライブラリ・バインディング・アプリをビルドし、myaku.app にまとめる
 │   ├── Info.plist      # アプリのバンドルの情報。build.sh がバージョンを埋める
+│   ├── AppIcon.icon/   # macOS 26 以降の Liquid Glass のアイコン(Icon Composer のデータ)
+│   ├── Assets.car      # AppIcon.icon を actool で変換したもの。build.sh がアプリに入れる
 │   ├── Package.swift
 │   └── Sources/
 │       ├── myakuFFI/   # バインディングの C 側(build.sh が書くヘッダーと、静的ライブラリを指す module.modulemap)

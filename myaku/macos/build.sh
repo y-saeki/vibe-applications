@@ -30,6 +30,9 @@ iconset="$(mktemp -d)/myaku.iconset"
 "$app/Contents/MacOS/myaku" --iconset "$iconset"
 iconutil -c icns -o "$app/Contents/Resources/myaku.icns" "$iconset"
 rm -rf "$(dirname "$iconset")"
+# macOS 26 and later show the Liquid Glass icon in Assets.car instead, compiled
+# from AppIcon.icon by actool and committed (see DEVELOPMENT.md).
+cp Assets.car "$app/Contents/Resources/Assets.car"
 # Ad hoc: myaku asks for no permission that a stable signature would keep.
 codesign --force --sign - "$app"
 echo "built $(pwd)/$app"

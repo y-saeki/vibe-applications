@@ -6,6 +6,8 @@
 	<string>myaku</string>
 	<key>CFBundleIconFile</key>
 	<string>myaku</string>
+	<key>CFBundleIconName</key>
+	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
 	<string>io.github.y-saeki.myaku</string>
 	<key>CFBundleName</key>
