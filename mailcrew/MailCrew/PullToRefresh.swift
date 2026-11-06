@@ -13,9 +13,9 @@ import SwiftUI
 /// bounces, and so does a mouse wheel.
 struct PullGesture: Equatable {
     /// How far the cards must be pulled to reload.
-    static let threshold: CGFloat = 195
+    static let threshold: CGFloat = 240
     /// How far the cards can be pulled at most; the pull slows toward it.
-    static let limit: CGFloat = 480
+    static let limit: CGFloat = 560
 
     enum Phase: Equatable {
         /// No gesture, or one this pull leaves to the scroll view.
@@ -113,13 +113,18 @@ struct PullIndicator: View {
                     .fontWeight(.semibold)
                     .foregroundStyle(.tint)
             } else {
+                // A square frame, so the arrow turns about its own centre
+                // rather than the middle of a frame taller than it is wide.
                 Image(systemName: "arrow.clockwise")
                     .font(.system(size: 22, weight: .medium))
-                    .frame(height: 32)
+                    .frame(width: 32, height: 32)
                     .rotationEffect(.degrees(gesture.progress * 300))
+                    // Faded out while the gap is narrower than the arrow, so
+                    // no sliver of it is left at the gap's edge.
+                    .opacity(min(1, max(0, (width - 24) / 32)))
                 // Only once the gap is wide enough to show it whole.
                 Text("引っ張って再読み込み")
-                    .opacity(width >= 130 ? 1 : 0)
+                    .opacity(width >= 150 ? 1 : 0)
             }
         }
         .font(.callout)

@@ -33,8 +33,8 @@ final class PullGestureTests: XCTestCase {
     func testThePullSlowsTowardItsLimit() {
         XCTAssertEqual(PullGesture.distance(travel: 0), 0)
         XCTAssertEqual(PullGesture.distance(travel: 10), 10, accuracy: 0.2)
-        let half = PullGesture.distance(travel: 300)
-        let whole = PullGesture.distance(travel: 600)
+        let half = PullGesture.distance(travel: 400)
+        let whole = PullGesture.distance(travel: 800)
         XCTAssertGreaterThan(half, PullGesture.threshold)
         XCTAssertGreaterThan(whole, half)
         XCTAssertLessThan(whole - half, half)
