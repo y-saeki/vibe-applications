@@ -155,7 +155,7 @@ open Tenabuku.xcodeproj
 
 Xcode でスキーム `Tenabuku` を選び、シミュレーターか実機で実行します。
 
-ファイルを足したり消したりしたときも `xcodegen generate` を実行します。`project.yml` の `sources` はディレクトリ単位で指定しているので、`Tenabuku/` の下に置いたファイルは自動で入ります。
+ファイルを足したり消したりしても、`xcodegen generate` は要りません。`Tenabuku/` は同期フォルダ（Xcode 16 からの synchronized folders）なので、その下に置いたファイルは Xcode が自分で見つけてビルドに入れます。同期フォルダを使うために、プロジェクトの形式は `xcode16_0` にしています。`Info.plist` だけは、XcodeGen がリソースから外します。
 
 pull やブランチの切り替えのたびに生成し直すのが面倒なら、git のフックを一度だけ入れておきます。
 

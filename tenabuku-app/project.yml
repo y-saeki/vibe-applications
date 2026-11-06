@@ -1,6 +1,8 @@
 # XcodeGen spec (https://github.com/yonaskolb/XcodeGen/blob/master/Docs/ProjectSpec.md).
 # Tenabuku.xcodeproj is generated from this file and is not committed:
-# run `xcodegen generate` in this directory after every pull.
+# run `xcodegen generate` in this directory whenever this file changes (the
+# git hooks in scripts/ do it after every pull). The sources are synced
+# folders, so a Swift file added or removed needs nothing.
 name: Tenabuku
 
 options:
@@ -8,6 +10,9 @@ options:
     iOS: "17.0"
   createIntermediateGroups: true
   developmentLanguage: ja
+  # Synced folders: Xcode lists what is in Tenabuku/ itself.
+  projectFormat: xcode16_0
+  defaultSourceDirectoryType: syncedFolder
 
 # Base.xcconfig holds the defaults and optionally includes Secrets.xcconfig,
 # which carries the Hatena consumer key and the signing team and stays local.
