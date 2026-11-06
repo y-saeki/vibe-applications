@@ -39,7 +39,7 @@ private struct TrustBadge: View {
         .accessibilityLabel(item.detail)
     }
 
-    /// The Tauri app's `.trust::before`: quiet unless the check passed or failed.
+    /// As the Tauri app drew it: quiet unless the check passed or failed.
     private var dot: Color {
         switch item.tone {
         case .pass: TrustColor.pass
@@ -50,7 +50,7 @@ private struct TrustBadge: View {
     }
 }
 
-/// The Tauri app's `--pass`, `--danger` and `--text-muted`, light and dark.
+/// The colours the Tauri app used for passed, failed and no result, light and dark.
 private enum TrustColor {
     static let pass = adaptive(light: 0x248A3D, dark: 0x30D158)
     static let danger = adaptive(light: 0xD70015, dark: 0xFF453A)

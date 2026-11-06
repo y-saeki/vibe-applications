@@ -1,7 +1,7 @@
 [package]
 name = "mailcrew-core"
-# Never released on its own: what ships is the app, whose version is in
-# ../src-tauri/tauri.conf.json.
+# Never released on its own: what ships is the app, whose version is
+# MARKETING_VERSION in ../project.yml.
 version = "0.0.0"
 description = "What Mail Crew does, without its screens: Gmail, sign-in, message bodies, BIMI"
 edition = "2021"

@@ -1,6 +1,6 @@
-//! The one error type every command returns. It crosses into the frontend as
-//! `{ kind, message }`, and `kind` is what the page acts on: `signedOut` sends
-//! it back to the sign-in screen, everything else is shown as a notice.
+//! The one error type every call into `Core` returns. `ffi` turns it into
+//! `MailCrewError`, and `kind` is what the app acts on: `signedOut` sends it
+//! back to the sign-in screen, everything else is shown as a notice.
 
 use serde::Serialize;
 

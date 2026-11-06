@@ -2,16 +2,16 @@
 //!
 //! This is the first of two layers. Here everything that could run or submit
 //! anything is removed: scripts, event handlers, forms, frames, embeds,
-//! `javascript:` links, `<meta>` and `<base>`. The page then shows what is left
-//! inside a sandboxed iframe that may not run scripts at all and whose
-//! Content-Security-Policy refuses every load but inline styles and, until the
-//! user asks for them, `data:` images (`src/message-frame.ts`).
+//! `javascript:` links, `<meta>` and `<base>`. The app then shows what is left
+//! in a WKWebView that runs no JavaScript, under a Content-Security-Policy and
+//! content rules that refuse every load but inline styles and, until the user
+//! asks for them, `data:` images (`MailCrew/MessageFrame.swift`).
 //!
 //! Styles stay. Mail is laid out with inline styles and `<style>` blocks, and
-//! CSS cannot run code; what it could fetch, the iframe's policy blocks.
+//! CSS cannot run code; what it could fetch, the document's policy blocks.
 //!
 //! Images the message carries inside itself (`cid:` URLs) are swapped for the
-//! `data:` URLs the caller fetched for them, which the iframe's policy lets
+//! `data:` URLs the caller fetched for them, which the document's policy lets
 //! through; one it has none for loses its URL.
 
 use std::borrow::Cow;

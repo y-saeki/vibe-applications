@@ -4,8 +4,7 @@
 //! that runtime, where reqwest, hickory and the sign-in's listener expect it.
 //!
 //! The records here mirror the crate's own types instead of exporting them,
-//! so that the JSON the Tauri app's page reads stays as it is, and fields that
-//! only Rust needs (where an attachment's bytes are, a message's author) stay
+//! so that fields that only Rust needs (where an attachment's bytes are, a message's author) stay
 //! in Rust.
 //!
 //! Built with the `ffi` feature only.
@@ -57,8 +56,8 @@ async fn on_runtime<T: Send + 'static>(
 
 // --- Errors ------------------------------------------------------------------
 
-/// Why a call failed. The variant is what the app acts on, as `kind` is for
-/// the Tauri app's page: `SignedOut` sends it back to the sign-in screen,
+/// Why a call failed. The variant is what the app acts on: `SignedOut` sends
+/// it back to the sign-in screen,
 /// everything else is shown as a notice with `message`.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Error)]
 pub enum MailCrewError {

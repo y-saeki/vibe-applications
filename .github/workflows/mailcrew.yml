@@ -22,53 +22,17 @@ permissions:
   contents: read
 
 jobs:
-  # The frontend is the same code in both webviews, so its end-to-end tests run
-  # once on Linux against Chromium (WebView2's engine) and WebKit
-  # (WKWebView's), with the Rust side faked. See mailcrew/tests/e2e/.
-  frontend:
-    name: frontend tests
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    defaults:
-      run:
-        working-directory: mailcrew
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      # pnpm ships a self-contained binary and installs Node.js itself, so
-      # one step covers both. It needs pnpm 11 or newer.
-      - uses: pnpm/setup@fa36a5ef7dcdefc3a7cb25655c122e00cf6e636e # v3.1.2
-        with:
-          version: 12
-          runtime: node@22
-          cache: true
-          cache-dependency-path: mailcrew/pnpm-lock.yaml
-          # `pnpm install --frozen-lockfile` is a step of its own below.
-          install: false
-      - run: pnpm install --frozen-lockfile
-      # TypeScript sees the same sources on every platform, so the Windows and
-      # macOS runners do not need to repeat this.
-      - run: pnpm typecheck
-      - run: pnpm exec playwright install --with-deps chromium webkit
-      - run: pnpm test:e2e
-      - if: failure()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
-        with:
-          name: playwright-report
-          path: mailcrew/playwright-report
-          retention-days: 7
-
-  # The Rust side is checked on both platforms because what it leans on differs
-  # on each: the credential store (Keychain / Credential Manager) and the TLS
-  # stack (Security.framework / SChannel). This runs beside `build` rather than
-  # ahead of it: the two compile the same dependencies in different profiles,
-  # so chaining them would only make the run as long as their sum.
+  # The core crate is checked on both platforms because what it leans on
+  # differs on each: the credential store (Keychain / Credential Manager) and
+  # the TLS stack (Security.framework / SChannel). Only the macOS app ships,
+  # but the Windows side is kept compiling for the WinUI app that is to come.
   rust:
     name: rust checks (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
+    timeout-minutes: 30
     defaults:
       run:
-        working-directory: mailcrew
+        working-directory: mailcrew/core
     strategy:
       fail-fast: false
       matrix:
@@ -79,68 +43,37 @@ jobs:
       CARGO_PROFILE_DEV_DEBUG: 0
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      # pnpm ships a self-contained binary and installs Node.js itself, so
-      # one step covers both. It needs pnpm 11 or newer.
-      - uses: pnpm/setup@fa36a5ef7dcdefc3a7cb25655c122e00cf6e636e # v3.1.2
-        with:
-          version: 12
-          runtime: node@22
-          cache: true
-          cache-dependency-path: mailcrew/pnpm-lock.yaml
-          # `pnpm install --frozen-lockfile` is a step of its own below.
-          install: false
       - name: Rust toolchain
         run: |
           rustup update stable
           rustup default stable
           rustup component add rustfmt clippy
       # After the toolchain, whose version is part of the cache key.
-      # Every push writes a cache, pull requests included. Splitting the jobs
-      # moved the dependency download onto `tauri build`, which a cache main
-      # alone writes cannot take back: a pull request only reads that one on
-      # its first push, and it is the later ones that pay for a rebuild.
       # Caches are evicted least-recently-used past 10 GB per repository, and
       # the ones a pull request wrote go away when it closes.
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
-          workspaces: |
-            mailcrew/src-tauri
-            mailcrew/core
-      - run: pnpm install --frozen-lockfile
-      # `tauri::generate_context!` verifies that frontendDist (dist/) exists.
-      - run: pnpm build
-      - name: Rust lint
-        working-directory: mailcrew/src-tauri
-        run: |
-          cargo fmt --check
-          cargo clippy --all-targets -- -D warnings
-      - name: Rust tests
-        working-directory: mailcrew/src-tauri
-        run: cargo test
-      # The core crate on its own, with and without the bindings the native
-      # app calls it through. Its tests are the ones that cover what it does;
-      # src-tauri's are only the Tauri side's.
-      - name: Core lint
-        working-directory: mailcrew/core
+          workspaces: mailcrew/core
+      # With and without the bindings the app calls the crate through.
+      - name: Lint
         run: |
           cargo fmt --check
           cargo clippy --all-targets -- -D warnings
           cargo clippy --all-targets --features ffi -- -D warnings
-      - name: Core tests
-        working-directory: mailcrew/core
+      - name: Tests
         run: cargo test --features ffi
 
-  # The native app: the core crate as a static library, the Swift sources
-  # UniFFI writes from it, calls across into Rust, then the SwiftUI app built
-  # and its unit tests run. Apple silicon only. Nothing is signed or shipped
-  # yet; the release still ships the Tauri app.
-  swift:
-    name: native app (macos-latest)
+  # The app: the core crate as a static library, the Swift sources UniFFI
+  # writes from it, calls across into Rust, then the SwiftUI app's unit tests,
+  # and the Release build the pull request comment and the release hand out.
+  # Apple silicon only.
+  app:
+    name: app (macos-latest)
     runs-on: macos-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     defaults:
       run:
-        working-directory: mailcrew/core/swift
+        working-directory: mailcrew
     env:
       CARGO_PROFILE_DEV_DEBUG: 0
     steps:
@@ -151,78 +84,63 @@ jobs:
           rustup default stable
           rustup target add aarch64-apple-darwin
           swift --version
+          xcodebuild -version
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: mailcrew/core
       - name: Library and bindings
+        working-directory: mailcrew/core/swift
         run: ./build.sh
       - name: Swift tests
+        working-directory: mailcrew/core/swift
         run: swift test -Xlinker -L"$(./build.sh --lib-dir)"
       - name: XcodeGen
-        working-directory: mailcrew
         run: |
           brew install xcodegen
           xcodegen generate
       - name: App tests
-        working-directory: mailcrew
         run: |
-          xcodebuild -version
           xcodebuild test \
             -project MailCrew.xcodeproj \
             -scheme MailCrew \
             -destination 'platform=macOS,arch=arm64'
-
-  build:
-    name: build (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
-    defaults:
-      run:
-        working-directory: mailcrew
-    strategy:
-      fail-fast: false
-      matrix:
-        # One glob per runner: given several path patterns, upload-artifact
-        # roots the archive at their least common ancestor, which would bury
-        # each binary under a dmg/ or nsis/ directory inside the zip.
-        include:
-          - os: macos-latest
-            bundle: dmg/*.dmg
-          - os: windows-latest
-            bundle: nsis/*.exe
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      # pnpm ships a self-contained binary and installs Node.js itself, so
-      # one step covers both. It needs pnpm 11 or newer.
-      - uses: pnpm/setup@fa36a5ef7dcdefc3a7cb25655c122e00cf6e636e # v3.1.2
-        with:
-          version: 12
-          runtime: node@22
-          cache: true
-          cache-dependency-path: mailcrew/pnpm-lock.yaml
-          # `pnpm install --frozen-lockfile` is a step of its own below.
-          install: false
-      - name: Rust toolchain
+      - name: Release build
         run: |
-          rustup update stable
-          rustup default stable
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-        with:
-          workspaces: mailcrew/src-tauri
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm build
-      - run: pnpm tauri build
+          xcodebuild build \
+            -project MailCrew.xcodeproj \
+            -scheme MailCrew \
+            -configuration Release \
+            -destination 'generic/platform=macOS' \
+            -derivedDataPath build/DerivedData
+      # The disk image holds the app and a link to /Applications, so that it
+      # can be dragged across. Named as the Tauri app's was, so that the
+      # release's files keep their names.
+      - name: Disk image
+        run: |
+          app="build/DerivedData/Build/Products/Release/Mail Crew.app"
+          version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "${app}/Contents/Info.plist")"
+          codesign --verify --strict "${app}"
+          staging="$(mktemp -d)"
+          cp -R "${app}" "${staging}/"
+          ln -s /Applications "${staging}/Applications"
+          mkdir -p build/dmg
+          hdiutil create \
+            -volname "Mail Crew" \
+            -srcfolder "${staging}" \
+            -format UDZO \
+            -ov \
+            "build/dmg/Mail Crew_${version}_aarch64.dmg"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: mailcrew-${{ matrix.os }}
+          name: mailcrew-macos-latest
           if-no-files-found: error
-          path: mailcrew/src-tauri/target/release/bundle/${{ matrix.bundle }}
+          path: mailcrew/build/dmg/*.dmg
 
   # The pull request itself only shows a check mark, so point at the binaries
   # the run just uploaded instead of making the reader walk the Actions tab.
   notify:
-    needs: build
-    if: github.event_name == 'pull_request' && needs.build.result == 'success'
+    needs: app
+    if: github.event_name == 'pull_request' && needs.app.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -240,17 +158,18 @@ jobs:
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      # The comment is what gets read before installing the build, on either
-      # platform, so it is where an unchanged version is worth saying out loud.
+      # The comment is what gets read before installing the build, so it is
+      # where an unchanged version is worth saying out loud.
       # mailcrew-version.yml already fails the pull request over it; this is
       # the same fact where the person about to install is looking.
       - name: Work out what the build's version means
         run: |
-          version="$(jq -re .version mailcrew/src-tauri/tauri.conf.json)"
+          read_version() { awk '$1 == "MARKETING_VERSION:" { gsub(/"/, "", $2); print $2; exit }'; }
+          version="$(read_version < mailcrew/project.yml)"
           git fetch --depth=1 origin "${BASE_REF}"
-          if ! git cat-file -e FETCH_HEAD:mailcrew/src-tauri/tauri.conf.json 2>/dev/null; then
+          if ! base="$(git show FETCH_HEAD:mailcrew/project.yml 2>/dev/null | read_version)" || [ -z "${base}" ]; then
             note="✅ 最初のリリースとして \`${version}\` が作られます。"
-          elif base="$(git show FETCH_HEAD:mailcrew/src-tauri/tauri.conf.json | jq -re .version)" && [ "${version}" = "${base}" ]; then
+          elif [ "${version}" = "${base}" ]; then
             note="⚠️ バージョンは \`${version}\` のままです。**このままマージしても Release は作られません。**"
           else
             note="✅ バージョンは \`${base}\` から \`${version}\` に上がります。"
@@ -293,20 +212,13 @@ jobs:
           fi
           jq -r --arg run_url "${RUN_URL}" --arg sha "${HEAD_SHA}" --arg version_note "${VERSION_NOTE}" '
             def platform: {
-              "mailcrew-windows-latest": "Windows (.exe)",
               "mailcrew-macos-latest": "macOS (.dmg)"
             }[.] // .;
-            # The install order the comment asks for: Windows needs nothing
-            # beyond the installer, macOS needs the quarantine attribute gone.
-            def platform_rank: {
-              "mailcrew-windows-latest": 0,
-              "mailcrew-macos-latest": 1
-            }[.] // 2;
             def megabytes: . / 1048576 * 10 | round / 10;
             "<!-- mailcrew-build-artifacts -->",
             "## ビルド成果物",
             "",
-            (.artifacts | sort_by([(.name | platform_rank), .name])[]
+            (.artifacts | sort_by(.name)[]
               | "- [ ] [\(.name | platform)](\($run_url)/artifacts/\(.id)) — \(.size_in_bytes | megabytes) MB"),
             "",
             "> [!TIP]",
@@ -337,11 +249,11 @@ jobs:
               }' >/dev/null || echo "::warning::could not collapse the comment ${id}"
           done < "${RUNNER_TEMP}/previous-comments.txt"
 
-  # Publishes the binaries built above whenever the version in tauri.conf.json
-  # names a release that does not exist yet. Merging without a version bump is
-  # therefore a no-op.
+  # Publishes the disk image built above whenever MARKETING_VERSION in
+  # project.yml names a release that does not exist yet. Merging without a
+  # version bump is therefore a no-op.
   release:
-    needs: [build, frontend, rust]
+    needs: [app, rust]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -353,7 +265,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - id: meta
         run: |
-          version="$(jq -re .version mailcrew/src-tauri/tauri.conf.json)"
+          version="$(awk '$1 == "MARKETING_VERSION:" { gsub(/"/, "", $2); print $2; exit }' mailcrew/project.yml)"
+          if [ -z "${version}" ]; then
+            echo "::error::could not read MARKETING_VERSION out of mailcrew/project.yml"
+            exit 1
+          fi
           tag="mailcrew-v${version}"
           echo "version=${version}" >> "$GITHUB_OUTPUT"
           echo "tag=${tag}" >> "$GITHUB_OUTPUT"
@@ -373,17 +289,16 @@ jobs:
         run: |
           # Collect by name rather than by path: how deeply upload-artifact
           # nests the files depends on the glob patterns it was given.
-          mapfile -t assets < <(find artifacts -type f \( -name '*.dmg' -o -name '*.exe' \) | sort)
-          if [ "${#assets[@]}" -ne 2 ]; then
-            echo "::error::expected one .dmg and one .exe, found ${#assets[@]}"
+          mapfile -t assets < <(find artifacts -type f -name '*.dmg' | sort)
+          if [ "${#assets[@]}" -ne 1 ]; then
+            echo "::error::expected one .dmg, found ${#assets[@]}"
             find artifacts -type f
             exit 1
           fi
           cat > notes.md <<'NOTES'
           ## ダウンロード
 
-          - macOS 11 以降(Apple Silicon): `.dmg`
-          - Windows 10 (1809) / 11 (x64): `-setup.exe`
+          - macOS 14 以降(Apple Silicon): `.dmg`
 
           インストール手順は [README](${{ github.server_url }}/${{ github.repository }}/blob/${{ steps.meta.outputs.tag }}/mailcrew/README.md) を参照してください。
           NOTES

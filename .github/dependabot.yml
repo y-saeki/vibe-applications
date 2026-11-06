@@ -166,35 +166,6 @@ updates:
           - "@tauri-apps/*"
 
   - package-ecosystem: cargo
-    directory: /mailcrew/src-tauri
-    schedule:
-      interval: weekly
-    cooldown:
-      default-days: 7
-    labels:
-      - dependencies
-      - no-release
-    commit-message:
-      prefix: mailcrew
-    groups:
-      # See the tauri group of /draftpad/src-tauri, including why
-      # minor-and-patch excludes it.
-      tauri:
-        patterns:
-          - tauri
-          - tauri-*
-      minor-and-patch:
-        update-types:
-          - minor
-          - patch
-        exclude-patterns:
-          - tauri
-          - tauri-*
-
-  # The core crate the Tauri app and the native app share. src-tauri's entry
-  # covers the same libraries through its own lockfile; this one keeps
-  # core/Cargo.lock, which the native app builds with, in step.
-  - package-ecosystem: cargo
     directory: /mailcrew/core
     schedule:
       interval: weekly
@@ -210,29 +181,6 @@ updates:
         update-types:
           - minor
           - patch
-
-  - package-ecosystem: npm
-    directory: /mailcrew
-    schedule:
-      interval: weekly
-    cooldown:
-      default-days: 7
-    labels:
-      - dependencies
-      - no-release
-    commit-message:
-      prefix: mailcrew
-    groups:
-      # See the tauri group of /draftpad/src-tauri.
-      tauri:
-        patterns:
-          - "@tauri-apps/*"
-      minor-and-patch:
-        update-types:
-          - minor
-          - patch
-        exclude-patterns:
-          - "@tauri-apps/*"
 
   # TenabukuKit has no dependencies today. The entry is here so that one added
   # later is watched from the start.

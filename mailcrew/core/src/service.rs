@@ -1,7 +1,7 @@
 //! Everything a front end can ask of Mail Crew, with nothing about how it is
-//! shown. The Tauri commands and the native app's bindings are thin layers
-//! over `Core`; what the OS does for them (opening a URL or a file, where the
-//! downloads folder is) stays with them.
+//! shown. The native app's bindings (`ffi`) are a thin layer over
+//! `Core`; what the OS does for the app (opening a URL or a file, where the
+//! downloads folder is) stays with the app.
 
 use std::path::{Path, PathBuf};
 
@@ -56,8 +56,8 @@ async fn blocking<T: Send + 'static>(f: impl FnOnce() -> Result<T> + Send + 'sta
 }
 
 impl Core {
-    /// `config_dir` is the app's config folder, which the Tauri app has
-    /// always kept its files in.
+    /// `config_dir` is the app's config folder, where the Tauri app kept its
+    /// files before the native app took its place.
     pub fn new(config_dir: PathBuf) -> Self {
         Self {
             accounts: Accounts::new(),

@@ -5,3 +5,6 @@
 # Xcode output
 DerivedData/
 xcuserdata/
+
+# Release builds and disk images (DEVELOPMENT.md)
+/build/
