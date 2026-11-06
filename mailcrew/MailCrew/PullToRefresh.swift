@@ -13,9 +13,9 @@ import SwiftUI
 /// bounces, and so does a mouse wheel.
 struct PullGesture: Equatable {
     /// How far the cards must be pulled to reload.
-    static let threshold: CGFloat = 240
+    static let threshold: CGFloat = 336
     /// How far the cards can be pulled at most; the pull slows toward it.
-    static let limit: CGFloat = 560
+    static let limit: CGFloat = 784
 
     enum Phase: Equatable {
         /// No gesture, or one this pull leaves to the scroll view.
@@ -113,10 +113,8 @@ struct PullIndicator: View {
                     .fontWeight(.semibold)
                     .foregroundStyle(.tint)
             } else {
-                // A square frame, so the arrow turns about its own centre
-                // rather than the middle of a frame taller than it is wide.
-                Image(systemName: "arrow.clockwise")
-                    .font(.system(size: 22, weight: .medium))
+                ReloadArrow()
+                    .frame(width: 24, height: 24)
                     .frame(width: 32, height: 32)
                     .rotationEffect(.degrees(gesture.progress * 300))
                     // Faded out while the gap is narrower than the arrow, so
@@ -139,6 +137,65 @@ struct PullIndicator: View {
         .frame(maxHeight: .infinity)
         .clipped()
         .accessibilityHidden(true)
+    }
+}
+
+/// A clockwise arrow drawn on a circle centred in its frame. SF Symbols'
+/// `arrow.clockwise` is not: its arrowhead stands out of the circle, so its
+/// frame's centre is off the circle's and the arrow wobbles as it turns.
+struct ReloadArrow: View {
+    /// Where the arc starts and how far it runs, clockwise from the right.
+    static let start = Angle.degrees(-40)
+    static let sweep = Angle.degrees(300)
+
+    var body: some View {
+        GeometryReader { proxy in
+            let size = min(proxy.size.width, proxy.size.height)
+            let line = size * 0.11
+            // Room for the arrowhead, which is wider than the line.
+            let radius = size / 2 - line * 1.4
+            let center = CGPoint(x: proxy.size.width / 2, y: proxy.size.height / 2)
+            // One path, filled once, so a translucent colour does not
+            // darken where the line and the head overlap.
+            Path { path in
+                path.addPath(Self.arc(center: center, radius: radius)
+                    .strokedPath(StrokeStyle(lineWidth: line, lineCap: .round)))
+                path.addPath(Self.head(center: center, radius: radius, line: line))
+            }
+            .fill(style: FillStyle(eoFill: false))
+        }
+    }
+
+    /// In a view, y points down, so a growing angle turns clockwise.
+    private static func point(_ center: CGPoint, _ radius: CGFloat, _ angle: Angle) -> CGPoint {
+        CGPoint(x: center.x + radius * cos(angle.radians), y: center.y + radius * sin(angle.radians))
+    }
+
+    private static func arc(center: CGPoint, radius: CGFloat) -> Path {
+        Path { path in
+            let steps = 60
+            for step in 0...steps {
+                let angle = start + sweep * (Double(step) / Double(steps))
+                let p = point(center, radius, angle)
+                if step == 0 { path.move(to: p) } else { path.addLine(to: p) }
+            }
+        }
+    }
+
+    /// A triangle at the arc's end, pointing the way the arrow turns.
+    private static func head(center: CGPoint, radius: CGFloat, line: CGFloat) -> Path {
+        let end = start + sweep
+        let base = point(center, radius, end)
+        let tangent = CGPoint(x: -sin(end.radians), y: cos(end.radians))
+        let outward = CGPoint(x: cos(end.radians), y: sin(end.radians))
+        let length = line * 2.6
+        let half = line * 1.4
+        return Path { path in
+            path.move(to: CGPoint(x: base.x + tangent.x * length, y: base.y + tangent.y * length))
+            path.addLine(to: CGPoint(x: base.x + outward.x * half, y: base.y + outward.y * half))
+            path.addLine(to: CGPoint(x: base.x - outward.x * half, y: base.y - outward.y * half))
+            path.closeSubpath()
+        }
     }
 }
 
