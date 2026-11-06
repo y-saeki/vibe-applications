@@ -205,6 +205,27 @@ Release が作られないことをそこで警告します。動作確認の前
 書いてあります。自分でビルドした `.app` には quarantine 属性が付かないため、開発中にこの操作は要りません。
 macOS Sequoia (15.0) 以降では、以前あった Control クリック →「開く」による回避はできません。
 
+## アプリのアイコン
+
+アイコンの元データは 2 つあります。
+
+- `src-tauri/icon.svg`: `src-tauri/icons/` の PNG、`icon.icns`、`icon.ico` はすべて、この SVG を書き出したものです。図柄を変えるときは SVG を直し、全部を書き出し直します。
+- `src-tauri/icons/AppIcon.icon`: macOS 26 以降で Liquid Glass の表現にするための Icon Composer のデータです。背景の色と、前景の 2 つの層(青い丸と白い I ビーム)を分けて持っています。光沢や透け感は描き込まず、OS に任せています。Xcode に入っている Icon Composer で開いて編集できます。
+
+`bundle.icon` に入れているのは、`AppIcon.icon` を変換した `src-tauri/icons/Assets.car` です。Tauri は `.icon` を渡されるとビルドのたびに自分で `actool` を呼びますが、Tauri から起動した `actool` は例外で落ち、ビルドが止まります([tauri-apps/tauri#15315](https://github.com/tauri-apps/tauri/issues/15315))。そこで、変換は手元で済ませて結果をコミットしています。Tauri は `Assets.car` をそのまま `.app` に入れ、`Info.plist` の `CFBundleIconName` から指します。macOS 26 より前の OS では、これまでどおり `icon.icns` が使われます。
+
+`AppIcon.icon` を変えたら、Xcode 26 以降が入った Mac の `draftpad/src-tauri/icons` で次を実行し、できた `Assets.car` を差し替えてコミットします。
+
+```sh
+mkdir -p out && xcrun actool AppIcon.icon --compile out --output-format human-readable-text --errors \
+  --output-partial-info-plist out/info.plist --app-icon AppIcon --include-all-app-icons \
+  --enable-on-demand-resources NO --development-region en --target-device mac \
+  --minimum-deployment-target 26.0 --platform macosx
+mv out/Assets.car Assets.car && rm -r out
+```
+
+図柄を変えるときは、`icon.svg` と `AppIcon.icon` の層の両方を直し、`Assets.car` も作り直してください。層の SVG は、`icon.svg` と同じ座標で角丸の枠だけを外したものです。
+
 ## 空白文字の表示
 
 環境設定の「空白文字を表示」を入れると、本文の空白文字に印が付きます(`src/whitespace.ts`)。設定は
