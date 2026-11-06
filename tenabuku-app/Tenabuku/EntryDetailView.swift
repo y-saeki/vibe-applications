@@ -34,7 +34,7 @@ final class EntryCommentsModel {
     private(set) var isLoading = false
     /// The stars each comment has, by its star URI. A comment missing here
     /// has not been counted yet, or its count could not be read.
-    private(set) var starCounts: [URL: Int] = [:]
+    private(set) var starCounts: [URL: StarCount] = [:]
     /// Comments whose star is on its way to Hatena, so that it is not sent twice.
     private(set) var addingStars: Set<URL> = []
     /// Where the recent comments continue; nil when all are shown.
@@ -139,7 +139,7 @@ final class EntryCommentsModel {
         addingStars.insert(uri)
         defer { addingStars.remove(uri) }
         try await webSession.addStar(to: uri)
-        starCounts[uri, default: 0] += 1
+        starCounts[uri, default: .none].yellow += 1
     }
 
     // The ranking only exists in the website's entry page.
@@ -282,7 +282,7 @@ struct EntryDetailView: View {
 struct CommentRow: View {
     let comment: CommentRowData
     /// Nil until the count is read, or when it could not be.
-    var stars: Int?
+    var stars: StarCount?
     var isAddingStar = false
     /// Nil when the comment cannot take a star.
     var addStar: (() -> Void)?
@@ -313,36 +313,74 @@ struct CommentRow: View {
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
-                if let addStar {
-                    starButton(addStar)
+                if addStar != nil || (stars?.total ?? 0) > 0 {
+                    starRow
                 }
             }
         }
         .padding(.vertical, 2)
     }
 
-    private func starButton(_ addStar: @escaping () -> Void) -> some View {
-        Button(action: addStar) {
-            HStack(spacing: 3) {
-                Image(systemName: (stars ?? 0) > 0 ? "star.fill" : "star")
-                    .foregroundStyle(.yellow)
-                if let stars {
-                    Text(stars, format: .number)
-                        .monospacedDigit()
-                        // Plain grey: `.secondary` would take the button's tint.
-                        .foregroundStyle(Color.secondary)
-                }
+    /// The coloured stars, then the yellow ones as the button that adds one,
+    /// as Hatena shows them.
+    private var starRow: some View {
+        HStack(spacing: 10) {
+            ForEach(stars?.colored ?? [], id: \.color) { colored in
+                starCount(colored.count, color: Self.color(named: colored.color))
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("\(Self.colorName(colored.color))のスター \(colored.count) 個")
             }
-            .font(.caption)
-            .opacity(isAddingStar ? 0.4 : 1)
-            // A target large enough to hit without hitting the row.
-            .frame(minWidth: 44, minHeight: 28, alignment: .leading)
-            .contentShape(Rectangle())
+            if let addStar {
+                Button(action: addStar) {
+                    starCount(stars?.yellow, color: .yellow)
+                        .opacity(isAddingStar ? 0.4 : 1)
+                        // A target large enough to hit without hitting the row.
+                        .frame(minWidth: 44, minHeight: 28, alignment: .leading)
+                        .contentShape(Rectangle())
+                }
+                // Only the star reacts to a tap, not the whole row.
+                .buttonStyle(.borderless)
+                .disabled(isAddingStar)
+                .accessibilityLabel("スターを付ける")
+                .accessibilityValue(stars.map { "\($0.yellow) 個" } ?? "")
+            }
         }
-        // Only the star reacts to a tap, not the whole row.
-        .buttonStyle(.borderless)
-        .disabled(isAddingStar)
-        .accessibilityLabel("スターを付ける")
-        .accessibilityValue(stars.map { "\($0) 個" } ?? "")
+        .font(.caption)
+        .frame(minHeight: 28)
+    }
+
+    /// A star and how many there are; an empty star while nil or none.
+    private func starCount(_ count: Int?, color: Color) -> some View {
+        HStack(spacing: 3) {
+            Image(systemName: (count ?? 0) > 0 ? "star.fill" : "star")
+                .foregroundStyle(color)
+            if let count {
+                Text(count, format: .number)
+                    .monospacedDigit()
+                    // Plain grey: `.secondary` would take the button's tint.
+                    .foregroundStyle(Color.secondary)
+            }
+        }
+    }
+
+    private static func color(named name: String) -> Color {
+        switch name {
+        case "green": .green
+        case "red": .red
+        case "blue": .blue
+        case "purple": .purple
+        // A colour Hatena adds later still shows, in a neutral tone.
+        default: .gray
+        }
+    }
+
+    private static func colorName(_ name: String) -> String {
+        switch name {
+        case "green": "グリーン"
+        case "red": "レッド"
+        case "blue": "ブルー"
+        case "purple": "パープル"
+        default: name
+        }
     }
 }

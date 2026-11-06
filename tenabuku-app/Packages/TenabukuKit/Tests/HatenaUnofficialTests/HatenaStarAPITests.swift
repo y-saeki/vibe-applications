@@ -21,7 +21,9 @@ private let entries = #"""
    "stars":[{"quote":"","name":"dave"},67,{"name":"erin","quote":"引用"}]},
   {"uri":"https://b.hatena.ne.jp/bob/20261107#bookmark-1","can_comment":0,
    "stars":[{"quote":"","name":"dave","count":"3"}],
-   "colored_stars":[{"color":"green","stars":[{"name":"erin","quote":""},2]}]}
+   "colored_stars":[{"color":"green","stars":[{"name":"erin","quote":""},2]},
+                    {"color":"red","stars":[{"name":"frank","quote":""}]},
+                    {"color":"blue","stars":[]}]}
 ]}
 """#
 
@@ -40,12 +42,17 @@ final class HatenaStarAPITests: XCTestCase {
         )
     }
 
-    func testCountsEveryStarOfEveryColourAndZeroForTheUnstarred() async throws {
+    func testCountsEachColourAndNoneForTheUnstarred() async throws {
         let transport = StubTransport(body: entries)
 
         let counts = try await HatenaStarAPI(http: .stub(transport)).counts(for: [alice, bob, carol])
 
-        XCTAssertEqual(counts, [alice: 69, bob: 6, carol: 0])
+        XCTAssertEqual(counts, [
+            alice: StarCount(yellow: 69, colored: []),
+            bob: StarCount(yellow: 3, colored: [.init(color: "green", count: 3), .init(color: "red", count: 1)]),
+            carol: .none,
+        ])
+        XCTAssertEqual(counts[bob]?.total, 7)
         let request = try XCTUnwrap(transport.requests.first)
         XCTAssertEqual(
             request.url?.absoluteString,

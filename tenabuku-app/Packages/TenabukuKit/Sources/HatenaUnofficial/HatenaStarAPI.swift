@@ -38,9 +38,9 @@ public struct HatenaStarAPI: Sendable {
         return URL(string: "https://b.hatena.ne.jp/\(user)/\(HatenaDate.compactDay(date))#bookmark-\(eid)")
     }
 
-    /// How many stars each of `uris` has, of every colour. A comment nobody
-    /// has starred is left out of Hatena's answer and counts 0.
-    public func counts(for uris: [URL]) async throws -> [URL: Int] {
+    /// How many stars each of `uris` has, by colour. A comment nobody has
+    /// starred is left out of Hatena's answer and has none.
+    public func counts(for uris: [URL]) async throws -> [URL: StarCount] {
         let batches = stride(from: 0, to: uris.count, by: Self.batchSize).map {
             Array(uris[$0..<min($0 + Self.batchSize, uris.count)])
         }
@@ -48,11 +48,11 @@ public struct HatenaStarAPI: Sendable {
             for batch in batches {
                 group.addTask { try await entries(for: batch, withCookies: false) }
             }
-            var counts = Dictionary(uris.map { ($0, 0) }, uniquingKeysWith: { first, _ in first })
+            var counts = Dictionary(uris.map { ($0, StarCount.none) }, uniquingKeysWith: { first, _ in first })
             for try await entries in group {
                 for entry in entries.entries {
                     guard let uri = URL(string: entry.uri), counts[uri] != nil else { continue }
-                    counts[uri] = entry.count
+                    counts[uri] = entry.starCount
                 }
             }
             return counts
@@ -111,19 +111,59 @@ public struct HatenaStarAPI: Sendable {
     }
 }
 
+/// The stars on one comment: the ordinary yellow ones, which anyone can
+/// give, and the coloured ones, which are bought or earned.
+public struct StarCount: Equatable, Sendable {
+    public struct Colored: Equatable, Sendable {
+        /// Hatena's name for the colour: `green`, `red`, `blue` or `purple`.
+        public let color: String
+        public var count: Int
+
+        public init(color: String, count: Int) {
+            self.color = color
+            self.count = count
+        }
+    }
+
+    public var yellow: Int
+    /// In Hatena's order, without colours that have no star.
+    public var colored: [Colored]
+
+    public static let none = StarCount(yellow: 0, colored: [])
+
+    public init(yellow: Int, colored: [Colored]) {
+        self.yellow = yellow
+        self.colored = colored
+    }
+
+    public var total: Int {
+        colored.reduce(yellow) { $0 + $1.count }
+    }
+}
+
 private struct Entries: Decodable {
     struct Entry: Decodable {
-        struct Colored: Decodable {
-            let stars: [Star]
-        }
-
         let uri: String
         let stars: [Star]?
         let colored_stars: [Colored]?
 
-        var count: Int {
-            (stars ?? []).reduce(0) { $0 + $1.count }
-                + (colored_stars ?? []).flatMap(\.stars).reduce(0) { $0 + $1.count }
+        struct Colored: Decodable {
+            let color: String
+            let stars: [Star]
+        }
+
+        var starCount: StarCount {
+            // Hatena lists each colour once; the order it gives is kept.
+            var colored: [StarCount.Colored] = []
+            for group in colored_stars ?? [] {
+                let count = group.stars.reduce(0) { $0 + $1.count }
+                if let index = colored.firstIndex(where: { $0.color == group.color }) {
+                    colored[index].count += count
+                } else if count > 0 {
+                    colored.append(.init(color: group.color, count: count))
+                }
+            }
+            return StarCount(yellow: (stars ?? []).reduce(0) { $0 + $1.count }, colored: colored)
         }
     }
 
