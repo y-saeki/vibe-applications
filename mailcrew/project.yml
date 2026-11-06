@@ -1,7 +1,9 @@
 # XcodeGen spec (https://github.com/yonaskolb/XcodeGen/blob/master/Docs/ProjectSpec.md)
 # for the native macOS app. MailCrew.xcodeproj is generated from this file and
-# is not committed: run `core/swift/build.sh`, then `xcodegen generate`, in
-# this order after every pull (DEVELOPMENT.md).
+# is not committed: run `xcodegen generate` once, and again whenever this file
+# changes (DEVELOPMENT.md). The sources are synced folders, so a Swift file
+# added or removed needs nothing, and the scheme builds the Rust library
+# before every build.
 name: MailCrew
 
 options:
@@ -9,6 +11,9 @@ options:
     macOS: "14.0"
   createIntermediateGroups: true
   developmentLanguage: ja
+  # Synced folders: Xcode lists what is in MailCrew/ and MailCrewTests/ itself.
+  projectFormat: xcode16_0
+  defaultSourceDirectoryType: syncedFolder
 
 settings:
   base:
@@ -57,9 +62,36 @@ targets:
     dependencies:
       - package: MailCrewCore
         product: MailCrewCore
+    # A pre-action cannot fail the build, so it leaves its log behind when the
+    # Rust build failed, and this phase reports it as the build's error.
+    preBuildScripts:
+      - name: Check the Rust build
+        basedOnDependencyAnalysis: false
+        script: |
+          failed="$SRCROOT/core/target/xcode-build.failed"
+          if [ -f "$failed" ]; then
+            echo "error: core/swift/build.sh failed; its output follows"
+            sed 's/^/    /' "$failed"
+            exit 1
+          fi
     scheme:
       testTargets:
         - MailCrewTests
+      # Before anything is built: the package compiles the bindings that
+      # build.sh writes, so they have to be in place first. Quick when the
+      # Rust side has not changed, since cargo and build.sh skip what is fresh.
+      preActions:
+        - name: Build the Rust library
+          settingsTarget: MailCrew
+          script: |
+            cd "$SRCROOT"
+            mkdir -p core/target
+            failed=core/target/xcode-build.failed
+            if core/swift/build.sh > "$failed.log" 2>&1; then
+              rm -f "$failed" "$failed.log"
+            else
+              mv "$failed.log" "$failed"
+            fi
 
   MailCrewTests:
     type: bundle.unit-test
