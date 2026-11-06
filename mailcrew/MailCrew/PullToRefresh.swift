@@ -4,35 +4,76 @@ import SwiftUI
 /// Pulling the strip right past its first card, then letting go, reloads it.
 ///
 /// Only a pull with a finger counts: the gesture must start while the strip
-/// rests at its first card, and the finger must leave the trackpad while the
-/// strip is pulled at least `threshold` past the edge. Momentum that carries
-/// the strip back from older mail past the edge only bounces, and so does a
-/// mouse wheel. The bounce itself is the scroll view's own (#298).
+/// rests at its first card and move right first. From then on the strip does
+/// not scroll: the scroll events go to the pull, which moves the cards itself
+/// with a resistance of its own. The scroll view's own bounce stops after a
+/// few dozen points however far the fingers travel, too short to pull on.
+/// The fingers must leave the trackpad while the cards are pulled at least
+/// `threshold`. Momentum that carries the strip back from older mail only
+/// bounces, and so does a mouse wheel.
 struct PullGesture: Equatable {
-    /// How far past the first card the strip must be pulled.
-    static let threshold: CGFloat = 72
+    /// How far the cards must be pulled to reload.
+    static let threshold: CGFloat = 130
+    /// How far the cards can be pulled at most; the pull slows toward it.
+    static let limit: CGFloat = 320
 
-    /// The gesture started at the first card, so it may reload.
-    private(set) var tracking = false
-    /// How far past the first card the strip is pulled now.
-    private(set) var distance: CGFloat = 0
+    enum Phase: Equatable {
+        /// No gesture, or one this pull leaves to the scroll view.
+        case idle
+        /// Fingers started at the first card; the first movement decides.
+        case pending
+        /// The fingers are pulling the cards.
+        case pulling
+    }
 
+    private(set) var phase = Phase.idle
+    /// How far the fingers have moved right since the pull began.
+    private(set) var travel: CGFloat = 0
+
+    var pulling: Bool { phase == .pulling }
+    /// How far the cards are pulled: the fingers' travel, slowing toward `limit`.
+    var distance: CGFloat { pulling ? Self.distance(travel: travel) : 0 }
     /// Letting go now reloads.
-    var armed: Bool { tracking && distance >= Self.threshold }
+    var armed: Bool { distance >= Self.threshold }
     /// From 0 to 1 as the pull nears the threshold.
-    var progress: CGFloat { tracking ? min(1, distance / Self.threshold) : 0 }
+    var progress: CGFloat { min(1, distance / Self.threshold) }
+
+    static func distance(travel: CGFloat) -> CGFloat {
+        guard travel > 0 else { return 0 }
+        return limit * (1 - exp(-travel / limit))
+    }
 
     /// Fingers started moving on the trackpad, with the strip scrolled
     /// `offset` from its first card.
     mutating func began(offset: CGFloat) {
-        tracking = offset <= 1
-        distance = tracking ? max(0, -offset) : 0
+        phase = offset <= 1 ? .pending : .idle
+        travel = 0
     }
 
-    /// The strip scrolled to `offset`; past the first card it is negative.
-    mutating func scrolled(offset: CGFloat) {
-        guard tracking else { return }
-        distance = max(0, -offset)
+    /// The fingers moved by `dx` (right is positive) and `dy`. True when the
+    /// pull takes the movement, so the strip must not scroll by it.
+    mutating func moved(dx: CGFloat, dy: CGFloat) -> Bool {
+        switch phase {
+        case .idle:
+            return false
+        case .pending:
+            if dx == 0 && dy == 0 { return false }
+            // Right and mostly sideways pulls; anything else scrolls as usual.
+            guard dx > 0, abs(dx) >= abs(dy) else {
+                phase = .idle
+                return false
+            }
+            phase = .pulling
+            travel = dx
+            return true
+        case .pulling:
+            travel += dx
+            if travel <= 0 {
+                // Pushed back past the first card: the strip scrolls again.
+                self = PullGesture()
+            }
+            return true
+        }
     }
 
     /// The fingers left the trackpad. True when that should reload.
@@ -48,31 +89,48 @@ struct PullGesture: Equatable {
     }
 }
 
-/// What appears in the gap the pull opens left of the first card.
+/// What appears in the gap the pull opens left of the first card: an arrow
+/// that turns as the pull grows, a filled one once letting go would reload,
+/// and a spinner while the reload runs.
 struct PullIndicator: View {
     let gesture: PullGesture
+    let refreshing: Bool
+    let width: CGFloat
 
     var body: some View {
-        VStack(spacing: 6) {
-            Image(systemName: "arrow.clockwise")
-                .font(.title3)
-                .rotationEffect(.degrees(gesture.progress * 270))
-            Text(gesture.armed ? "離すと再読み込み" : "引っ張って再読み込み")
-                .font(.caption2)
-                .multilineTextAlignment(.center)
+        VStack(spacing: 8) {
+            if refreshing {
+                ProgressView().controlSize(.small)
+                Text("読み込み中")
+            } else if gesture.armed {
+                Image(systemName: "arrow.clockwise.circle.fill")
+                    .font(.title)
+                    .foregroundStyle(.tint)
+                    .symbolEffect(.bounce, value: gesture.armed)
+                Text("離すと再読み込み")
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.tint)
+            } else {
+                Image(systemName: "arrow.clockwise")
+                    .font(.title2)
+                    .rotationEffect(.degrees(gesture.progress * 300))
+                Text("引っ張って再読み込み")
+            }
         }
-        .foregroundStyle(gesture.armed ? .primary : .secondary)
-        .opacity(gesture.progress)
-        .frame(width: PullGesture.threshold - 8)
-        .frame(width: gesture.distance)
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .multilineTextAlignment(.center)
+        .opacity(refreshing ? 1 : 0.3 + 0.7 * gesture.progress)
+        .frame(width: PullGesture.threshold - 16)
+        .frame(width: max(0, width))
         .frame(maxHeight: .infinity)
         .clipped()
         .accessibilityHidden(true)
     }
 }
 
-/// Watches the scroll view that holds it: fingers on the trackpad from the
-/// scroll events, and how far the strip is pulled from its clip view.
+/// Watches the scroll view that holds it: the fingers on the trackpad from
+/// the scroll events, which it keeps from the scroll view while they pull.
 struct PullToRefreshMonitor: NSViewRepresentable {
     @Binding var gesture: PullGesture
     let enabled: Bool
@@ -87,8 +145,15 @@ struct PullToRefreshMonitor: NSViewRepresentable {
         return view
     }
 
-    /// Finds the scroll view as soon as it is in a window, so the clip
-    /// view's movements are followed from the first gesture on.
+    func updateNSView(_ view: NSView, context: Context) {
+        context.coordinator.parent = self
+    }
+
+    static func dismantleNSView(_ view: NSView, coordinator: Coordinator) {
+        coordinator.detach()
+    }
+
+    /// Finds the scroll view as soon as it is in a window.
     final class MonitorView: NSView {
         weak var coordinator: Coordinator?
 
@@ -98,50 +163,33 @@ struct PullToRefreshMonitor: NSViewRepresentable {
         }
     }
 
-    func updateNSView(_ view: NSView, context: Context) {
-        context.coordinator.parent = self
-    }
-
-    static func dismantleNSView(_ view: NSView, coordinator: Coordinator) {
-        coordinator.detach()
-    }
-
     @MainActor
     final class Coordinator {
         var parent: PullToRefreshMonitor?
         private weak var view: NSView?
         private(set) weak var scrollView: NSScrollView?
         private var monitor: Any?
-        private var boundsObserver: NSObjectProtocol?
+        /// The momentum after a pull is the pull's too: the strip stays put.
+        private var swallowingMomentum = false
 
         func attach(to view: NSView) {
             self.view = view
             monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
-                MainActor.assumeIsolated { self?.handle(event) }
-                return event
+                guard let self else { return event }
+                return MainActor.assumeIsolated { self.handle(event) } ? nil : event
             }
         }
 
         func detach() {
             if let monitor { NSEvent.removeMonitor(monitor) }
-            if let boundsObserver { NotificationCenter.default.removeObserver(boundsObserver) }
             monitor = nil
-            boundsObserver = nil
         }
 
         /// The scroll view this monitor sits in, found once it is on screen.
         func resolveScrollView() -> NSScrollView? {
             if let scrollView { return scrollView }
-            guard let found = view?.enclosingScrollView else { return nil }
-            scrollView = found
-            let clip = found.contentView
-            clip.postsBoundsChangedNotifications = true
-            boundsObserver = NotificationCenter.default.addObserver(
-                forName: NSView.boundsDidChangeNotification, object: clip, queue: .main
-            ) { [weak self] _ in
-                MainActor.assumeIsolated { self?.scrolled() }
-            }
-            return found
+            scrollView = view?.enclosingScrollView
+            return scrollView
         }
 
         /// How far the strip is scrolled from its first card. The clip view's
@@ -153,38 +201,68 @@ struct PullToRefreshMonitor: NSViewRepresentable {
             return clip.bounds.origin.x + clip.contentInsets.left
         }
 
-        private func handle(_ event: NSEvent) {
+        /// True when the event belongs to the pull and must not scroll the strip.
+        private func handle(_ event: NSEvent) -> Bool {
             guard let parent, let scrollView = resolveScrollView(),
                   event.window === scrollView.window
-            else { return }
-            // Momentum and mouse wheels carry no finger: never a pull.
-            guard event.momentumPhase.isEmpty, !event.phase.isEmpty else { return }
-            if event.phase.contains(.began) {
-                let point = scrollView.convert(event.locationInWindow, from: nil)
-                guard parent.enabled, scrollView.bounds.contains(point) else { return }
-                var gesture = parent.gesture
-                gesture.began(offset: offset(of: scrollView))
-                parent.gesture = gesture
-            } else if event.phase.contains(.ended) {
-                guard parent.gesture.tracking else { return }
-                var gesture = parent.gesture
-                gesture.scrolled(offset: offset(of: scrollView))
-                let reload = gesture.ended()
-                parent.gesture = gesture
-                if reload && parent.enabled { parent.reload() }
-            } else if event.phase.contains(.cancelled) {
-                guard parent.gesture.tracking else { return }
-                var gesture = parent.gesture
-                gesture.cancelled()
-                parent.gesture = gesture
+            else { return false }
+
+            if !event.momentumPhase.isEmpty {
+                let swallowed = swallowingMomentum
+                if event.momentumPhase.contains(.ended) || event.momentumPhase.contains(.cancelled) {
+                    swallowingMomentum = false
+                }
+                return swallowed
             }
+            // A mouse wheel carries no finger: never a pull.
+            guard !event.phase.isEmpty else { return false }
+
+            var gesture = parent.gesture
+            if event.phase.contains(.began) {
+                swallowingMomentum = false
+                let point = scrollView.convert(event.locationInWindow, from: nil)
+                if parent.enabled, scrollView.bounds.contains(point) {
+                    gesture.began(offset: offset(of: scrollView))
+                    _ = gesture.moved(dx: event.scrollingDeltaX, dy: event.scrollingDeltaY)
+                } else {
+                    gesture.cancelled()
+                }
+                update(gesture, from: parent)
+                // The scroll view still sees the start, so it is not left
+                // waiting for a gesture that never began.
+                return false
+            }
+            if event.phase.contains(.changed) {
+                let taken = gesture.moved(dx: event.scrollingDeltaX, dy: event.scrollingDeltaY)
+                update(gesture, from: parent)
+                return taken
+            }
+            if event.phase.contains(.ended) || event.phase.contains(.cancelled) {
+                guard gesture.phase != .idle else { return false }
+                swallowingMomentum = gesture.pulling
+                let reload = event.phase.contains(.ended) ? gesture.ended() : false
+                gesture.cancelled()
+                withAnimation(.spring(duration: 0.35)) {
+                    parent.gesture = gesture
+                }
+                if reload && parent.enabled { parent.reload() }
+                // The scroll view sees the end of what it saw begin.
+                return false
+            }
+            return false
         }
 
-        private func scrolled() {
-            guard let parent, parent.gesture.tracking, let scrollView else { return }
-            var gesture = parent.gesture
-            gesture.scrolled(offset: offset(of: scrollView))
-            if gesture != parent.gesture { parent.gesture = gesture }
+        private func update(_ gesture: PullGesture, from parent: PullToRefreshMonitor) {
+            let before = parent.gesture
+            guard gesture != before else { return }
+            if gesture.armed != before.armed {
+                // A tick under the fingers where letting go starts to count, and
+                // a lighter one where it stops counting again.
+                NSHapticFeedbackManager.defaultPerformer.perform(
+                    gesture.armed ? .levelChange : .alignment, performanceTime: .now
+                )
+            }
+            parent.gesture = gesture
         }
     }
 }

@@ -2,75 +2,104 @@ import SwiftUI
 import XCTest
 @testable import MailCrewMac
 
-/// Pull to reload: only a finger that starts at the first card and lets go
-/// past the threshold reloads.
+/// Pull to reload: only fingers that start at the first card, move right
+/// first and let go past the threshold reload.
 final class PullGestureTests: XCTestCase {
-    private let past = -(PullGesture.threshold + 10)
+    /// Finger travel that pulls the cards just past the threshold.
+    private var armingTravel: CGFloat {
+        -PullGesture.limit * log(1 - PullGesture.threshold / PullGesture.limit) + 1
+    }
 
-    func testPullingPastTheThresholdAndLettingGoReloads() {
+    private func pulled(by travel: CGFloat) -> PullGesture {
         var gesture = PullGesture()
         gesture.began(offset: 0)
-        gesture.scrolled(offset: -20)
-        XCTAssertTrue(gesture.tracking)
+        XCTAssertTrue(gesture.moved(dx: travel, dy: 0))
+        return gesture
+    }
+
+    func testPullingPastTheThresholdAndLettingGoReloads() {
+        var gesture = pulled(by: 20)
+        XCTAssertTrue(gesture.pulling)
         XCTAssertFalse(gesture.armed)
-        XCTAssertEqual(gesture.progress, 20 / PullGesture.threshold, accuracy: 0.001)
-        gesture.scrolled(offset: past)
+        XCTAssertTrue(gesture.moved(dx: armingTravel - 20, dy: 0))
         XCTAssertTrue(gesture.armed)
         XCTAssertEqual(gesture.progress, 1)
         XCTAssertTrue(gesture.ended())
         XCTAssertEqual(gesture, PullGesture())
     }
 
+    /// The cards follow the fingers closely at first and slow down toward
+    /// the limit, so a long swipe pulls far without leaving the window.
+    func testThePullSlowsTowardItsLimit() {
+        XCTAssertEqual(PullGesture.distance(travel: 0), 0)
+        XCTAssertEqual(PullGesture.distance(travel: 10), 10, accuracy: 0.2)
+        let half = PullGesture.distance(travel: 300)
+        let whole = PullGesture.distance(travel: 600)
+        XCTAssertGreaterThan(half, PullGesture.threshold)
+        XCTAssertGreaterThan(whole, half)
+        XCTAssertLessThan(whole - half, half)
+        XCTAssertLessThan(PullGesture.distance(travel: 10_000), PullGesture.limit)
+    }
+
     func testLettingGoShortOfTheThresholdDoesNotReload() {
-        var gesture = PullGesture()
-        gesture.began(offset: 0)
-        gesture.scrolled(offset: -(PullGesture.threshold - 1))
+        var gesture = pulled(by: armingTravel - 2)
+        XCTAssertFalse(gesture.armed)
         XCTAssertFalse(gesture.ended())
     }
 
     func testPullingBackBeforeLettingGoDoesNotReload() {
-        var gesture = PullGesture()
-        gesture.began(offset: 0)
-        gesture.scrolled(offset: past)
+        var gesture = pulled(by: armingTravel)
         XCTAssertTrue(gesture.armed)
-        gesture.scrolled(offset: -10)
+        XCTAssertTrue(gesture.moved(dx: -armingTravel / 2, dy: 0))
         XCTAssertFalse(gesture.armed)
+        XCTAssertFalse(gesture.ended())
+    }
+
+    /// Pushed back past the first card, the fingers scroll the strip again.
+    func testPushingBackPastTheFirstCardHandsTheStripBack() {
+        var gesture = pulled(by: 30)
+        XCTAssertTrue(gesture.moved(dx: -40, dy: 0))
+        XCTAssertFalse(gesture.pulling)
+        XCTAssertFalse(gesture.moved(dx: -40, dy: 0))
         XCTAssertFalse(gesture.ended())
     }
 
     /// A swipe that starts at older mail and runs on past the first card
     /// only bounces.
-    func testAGestureStartedAwayFromTheFirstCardNeverReloads() {
+    func testAGestureStartedAwayFromTheFirstCardNeverPulls() {
         var gesture = PullGesture()
         gesture.began(offset: 600)
-        gesture.scrolled(offset: 0)
-        gesture.scrolled(offset: past)
-        XCTAssertFalse(gesture.tracking)
-        XCTAssertEqual(gesture.distance, 0)
+        XCTAssertFalse(gesture.moved(dx: 600, dy: 0))
+        XCTAssertFalse(gesture.moved(dx: 400, dy: 0))
+        XCTAssertFalse(gesture.pulling)
         XCTAssertFalse(gesture.ended())
     }
 
-    func testAGestureStartedWhileStillBouncingCounts() {
-        var gesture = PullGesture()
-        gesture.began(offset: -30)
-        XCTAssertTrue(gesture.tracking)
-        XCTAssertEqual(gesture.distance, 30)
+    /// At the first card, scrolling into the strip or a body scrolls as usual.
+    func testOnlyARightwardSidewaysMoveStartsAPull() {
+        var left = PullGesture()
+        left.began(offset: 0)
+        XCTAssertFalse(left.moved(dx: -10, dy: 0))
+        XCTAssertFalse(left.moved(dx: 300, dy: 0))
+        XCTAssertFalse(left.pulling)
+
+        var down = PullGesture()
+        down.began(offset: 0)
+        XCTAssertFalse(down.moved(dx: 3, dy: -12))
+        XCTAssertFalse(down.moved(dx: 300, dy: 0))
+        XCTAssertFalse(down.pulling)
+
+        var still = PullGesture()
+        still.began(offset: 0)
+        XCTAssertFalse(still.moved(dx: 0, dy: 0))
+        XCTAssertTrue(still.moved(dx: 5, dy: 1))
+        XCTAssertTrue(still.pulling)
     }
 
     func testCancellingDoesNotReload() {
-        var gesture = PullGesture()
-        gesture.began(offset: 0)
-        gesture.scrolled(offset: past)
+        var gesture = pulled(by: armingTravel)
         gesture.cancelled()
         XCTAssertEqual(gesture, PullGesture())
-        XCTAssertFalse(gesture.ended())
-    }
-
-    func testScrollingIntoTheStripKeepsTheDistanceAtZero() {
-        var gesture = PullGesture()
-        gesture.began(offset: 0)
-        gesture.scrolled(offset: 200)
-        XCTAssertEqual(gesture.distance, 0)
         XCTAssertFalse(gesture.ended())
     }
 }

@@ -47,6 +47,16 @@ struct Sidebar: View {
 struct StripView: View {
     let model: AppModel
     @State private var pull = PullGesture()
+    /// A pull let go past the threshold, until the reload it started ends.
+    @State private var refreshing = false
+
+    /// The gap kept open left of the first card while a pull's reload runs.
+    static let refreshingGap: CGFloat = 96
+
+    /// How far the cards sit right of where they rest.
+    private var pullGap: CGFloat {
+        refreshing ? max(Self.refreshingGap, pull.distance) : pull.distance
+    }
 
     /// The Tauri app's `--card-width` and `--gap`.
     static let cardWidth: CGFloat = 570
@@ -106,18 +116,28 @@ struct StripView: View {
                 }
                 .scrollTargetLayout()
                 .padding(Self.gap)
+                .offset(x: pullGap)
                 .background {
-                    PullToRefreshMonitor(gesture: $pull, enabled: !model.loading) {
-                        Task { await model.load() }
+                    PullToRefreshMonitor(gesture: $pull, enabled: !model.loading && !refreshing) {
+                        reloadFromPull()
                     }
                 }
             }
             .scrollTargetBehavior(.viewAligned)
             .overlay(alignment: .leading) {
-                if pull.tracking && pull.distance > 0 {
-                    PullIndicator(gesture: pull)
+                if pullGap > 0 {
+                    PullIndicator(gesture: pull, refreshing: refreshing, width: pullGap)
                 }
             }
+        }
+    }
+
+    /// Keeps the gap open with a spinner in it until the reload ends.
+    private func reloadFromPull() {
+        withAnimation(.spring(duration: 0.35)) { refreshing = true }
+        Task {
+            await model.load()
+            withAnimation(.spring(duration: 0.35)) { refreshing = false }
         }
     }
 }
