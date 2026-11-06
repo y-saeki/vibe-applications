@@ -144,8 +144,13 @@ struct PullToRefreshMonitor: NSViewRepresentable {
             return found
         }
 
-        private func offset(of scrollView: NSScrollView) -> CGFloat {
-            scrollView.contentView.bounds.origin.x
+        /// How far the strip is scrolled from its first card. The clip view's
+        /// origin alone is not that: with the sidebar floating over the
+        /// strip, the scroll view runs under it and insets its content by the
+        /// sidebar's width, so the origin rests at minus that width.
+        func offset(of scrollView: NSScrollView) -> CGFloat {
+            let clip = scrollView.contentView
+            return clip.bounds.origin.x + clip.contentInsets.left
         }
 
         private func handle(_ event: NSEvent) {

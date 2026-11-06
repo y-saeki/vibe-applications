@@ -76,26 +76,45 @@ final class PullGestureTests: XCTestCase {
 }
 
 /// The monitor relies on SwiftUI's horizontal scroll view being an
-/// NSScrollView it can reach from inside the content.
+/// NSScrollView it can reach from inside the content, and reads how far the
+/// strip is scrolled from it.
 @MainActor
 final class PullToRefreshMonitorTests: XCTestCase {
-    func testTheMonitorFindsTheStripsScrollView() throws {
+    /// In the inbox the sidebar floats over the strip, and the scroll view
+    /// insets its content by the sidebar's width. The strip at rest must
+    /// still read as 0, or the smallest pull would count the inset as well.
+    func testTheOffsetIgnoresTheSidebarsInset() throws {
         var coordinator: PullToRefreshMonitor.Coordinator?
-        let root = ScrollView(.horizontal) {
-            HStack { Color.red.frame(width: 2000, height: 100) }
-                .background {
-                    Probe { coordinator = $0 }
-                }
+        let root = NavigationSplitView {
+            List { Text("受信トレイ") }
+        } detail: {
+            ScrollView(.horizontal) {
+                HStack { Color.red.frame(width: 3000, height: 100) }
+                    .background {
+                        Probe { coordinator = $0 }
+                    }
+            }
         }
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 600, height: 200),
-                              styleMask: [.titled], backing: .buffered, defer: false)
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1200, height: 600),
+                              styleMask: [.titled, .resizable, .fullSizeContentView],
+                              backing: .buffered, defer: false)
         window.contentView = NSHostingView(rootView: root)
-        window.layoutIfNeeded()
-        RunLoop.main.run(until: Date().addingTimeInterval(0.2))
-        let scrollView = try XCTUnwrap(coordinator?.scrollView)
-        XCTAssertTrue(scrollView.hasHorizontalScroller || scrollView.documentView != nil)
-        XCTAssertEqual(scrollView.contentView.bounds.origin.x, 0)
-        coordinator?.detach()
+        window.makeKeyAndOrderFront(nil)
+        RunLoop.main.run(until: Date().addingTimeInterval(1))
+        defer {
+            coordinator?.detach()
+            window.orderOut(nil)
+        }
+        let monitor = try XCTUnwrap(coordinator)
+        let scrollView = try XCTUnwrap(monitor.scrollView)
+        let clip = scrollView.contentView
+        XCTAssertEqual(monitor.offset(of: scrollView), 0)
+
+        // Only the bounce moves the origin past the first card, so the test
+        // can only scroll into the strip; the same sum reads the pull.
+        // Scrolled 200 into the strip.
+        clip.setBoundsOrigin(NSPoint(x: -clip.contentInsets.left + 200, y: clip.bounds.origin.y))
+        XCTAssertEqual(monitor.offset(of: scrollView), 200)
     }
 
     /// Hands out the monitor's coordinator.
