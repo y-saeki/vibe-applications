@@ -41,6 +41,9 @@ final class RecentCommentsAPITests: XCTestCase {
         XCTAssertEqual(page.comments[0].iconURL, URL(string: "https://cdn.profile-image.st-hatena.com/users/alice/profile.png"))
         XCTAssertEqual(page.comments[0].date, HatenaDate.parseISO8601("2026-11-05T19:04:25Z"))
         XCTAssertNil(page.comments[1].iconURL)
+        // 19:04 UTC on the 5th is the 6th in Japan, the day the permalink names.
+        XCTAssertEqual(page.comments[0].starURI, URL(string: "https://b.hatena.ne.jp/alice/20261106#bookmark-4795164888309493922"))
+        XCTAssertNil(page.comments[1].starURI)
         XCTAssertEqual(page.nextCursor, "MTc5MzQyMTUxMiwyNzY2ODg2MzA2MzU4MDE5Mw==")
         let request = try XCTUnwrap(transport.requests.first)
         XCTAssertEqual(

@@ -64,7 +64,10 @@ public struct PopularCommentsAPI: Sendable {
                 comment: HTML.text(text),
                 tags: HTML.allMatches(#"<a [^>]*>(.*?)</a>"#, in: tagList).map(HTML.text),
                 date: HTML.firstMatch(#"itemprop="datePublished" content="([^"]+)""#, in: item)
-                    .flatMap(HatenaDate.parseISO8601)
+                    .flatMap(HatenaDate.parseISO8601),
+                // The page links each comment's date to its permalink.
+                starURI: HTML.firstMatch(#"class="js-bookmark-anchor-path"[^>]*href="([^"]+)""#, in: item)
+                    .flatMap { URL(string: HTML.decodeEntities($0)) }
             )
         }
     }
@@ -77,6 +80,9 @@ public struct EntryComment: Equatable, Sendable, Identifiable {
     public let comment: String
     public let tags: [String]
     public let date: Date?
+    /// The bookmark's permalink, which Hatena Star names it by. Nil when the
+    /// response did not say enough to build it.
+    public let starURI: URL?
 }
 
 /// Just enough HTML handling for the entry page, without a parser dependency.

@@ -21,6 +21,11 @@ public enum HatenaDate {
         formatter("yyyy-MM-dd").string(from: date)
     }
 
+    /// `20261031` in Japan time, as a bookmark's permalink names its day.
+    public static func compactDay(_ date: Date) -> String {
+        formatter("yyyyMMdd").string(from: date)
+    }
+
     private static func formatter(_ format: String) -> DateFormatter {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")

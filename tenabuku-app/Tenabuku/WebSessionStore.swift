@@ -5,7 +5,8 @@ import WebKit
 
 /// The login to Hatena's website, as opposed to the OAuth token in
 /// `AccountStore`. Some lists, such as My hot entries and the hidden users,
-/// are only served to the website and need its login cookies.
+/// are only served to the website and need its login cookies, and so does
+/// adding a star.
 ///
 /// The cookies live in WebKit's default store, the one every web view in the
 /// app shares, so a login made on Hatena's OAuth approval page or in the
@@ -72,6 +73,19 @@ final class WebSessionStore {
         } catch {
             FailureLog.record(error)
             return ignoredUsersCache?.users ?? []
+        }
+    }
+
+    /// Adds a star to a comment as the signed-in user. Throws
+    /// `HatenaError.unauthorized` without the website login.
+    func addStar(to uri: URL) async throws {
+        let cookies = await cookieStore.allCookies()
+        do {
+            try await HatenaStarAPI(http: AppServices.http, cookies: cookies).addStar(to: uri)
+            isSignedIn = true
+        } catch HatenaError.unauthorized {
+            isSignedIn = false
+            throw HatenaError.unauthorized
         }
     }
 

@@ -6,26 +6,44 @@ import WebKit
 /// WebKit's default store, where `WebSessionStore` reads them.
 struct WebSignInButton: View {
     var title = "Web でログイン"
-    @Environment(WebSessionStore.self) private var webSession
     @State private var isPresenting = false
 
     var body: some View {
         Button(title) { isPresenting = true }
-            .sheet(isPresented: $isPresenting) {
-                NavigationStack {
-                    WebSignInWebView(url: WebSessionStore.signInURL) {
-                        isPresenting = false
-                        webSession.didSignIn()
-                    }
-                    .navigationTitle("はてなにログイン")
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbar {
-                        ToolbarItem(placement: .cancellationAction) {
-                            Button("キャンセル") { isPresenting = false }
-                        }
+            .webSignInSheet(isPresented: $isPresenting)
+    }
+}
+
+extension View {
+    /// Presents the website's login page. `onSignedIn` runs once the login is
+    /// done and the sheet has been told to close.
+    func webSignInSheet(isPresented: Binding<Bool>, onSignedIn: @escaping () -> Void = {}) -> some View {
+        modifier(WebSignInSheet(isPresented: isPresented, onSignedIn: onSignedIn))
+    }
+}
+
+private struct WebSignInSheet: ViewModifier {
+    @Binding var isPresented: Bool
+    let onSignedIn: () -> Void
+    @Environment(WebSessionStore.self) private var webSession
+
+    func body(content: Content) -> some View {
+        content.sheet(isPresented: $isPresented) {
+            NavigationStack {
+                WebSignInWebView(url: WebSessionStore.signInURL) {
+                    isPresented = false
+                    webSession.didSignIn()
+                    onSignedIn()
+                }
+                .navigationTitle("はてなにログイン")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("キャンセル") { isPresented = false }
                     }
                 }
             }
+        }
     }
 }
 
