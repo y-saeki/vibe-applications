@@ -189,7 +189,6 @@ tenabuku-app/
 ├── Config/
 │   ├── Base.xcconfig        既定値。Secrets.xcconfig があれば読み込む
 │   └── Secrets.example.xcconfig
-├── Design/AppIcon/          アイコンの元の SVG
 ├── Tenabuku/                アプリ本体（SwiftUI）
 ├── scripts/                 git のフックを入れるスクリプト
 └── Packages/TenabukuKit/    データ取得層、既読の記録、ミュート（Swift Package）
@@ -365,18 +364,15 @@ Web でログインしていないときは、何も除かずにコメントを�
 
 ## アイコン
 
-アイコンの元は `Design/AppIcon/` にある 3 つの SVG です。`AppIcon.svg` が通常、`AppIcon-Dark.svg` がダーク、`AppIcon-Tinted.svg` がティントのアイコンです。ダークとティントは背景を透明にしています。ダークの背景はシステムが描き、ティントはグレースケールの絵にシステムが色を付けるためです。
+アイコンは Icon Composer のデータ `Tenabuku/AppIcon.icon` です。iOS 26 以降の Liquid Glass の表現は、OS がこれから描きます。背景の色と、前景の 2 つの層（白い「て」と、オレンジのしおり）を分けて持っています。光沢や透け感は OS が付けるので、絵には描き込んでいません。
+
+ダークとティントの色も `icon.json` に書いてあります。ダークでは背景をシステムの暗い色にし、「て」を水色、しおりを明るいオレンジにします。ティントでは「て」を白、しおりを灰色にし、色はシステムが付けます。
+
+`Tenabuku/` は同期フォルダなので、`AppIcon.icon` は置くだけでターゲットに入ります。アプリのアイコンの名前（`AppIcon`）とファイル名が同じなので、設定も要りません。iOS 26 より前の OS に向けた平らなアイコン（ダークとティントも）は、ビルドのときに Xcode がこのデータから作ります。
 
 「て」の字は M PLUS Rounded 1c ExtraBold（SIL Open Font License）の字形をパスにしたものです。書き出すときにフォントは要りません。
 
-SVG を変えたら、1024×1024 の PNG に書き出し、`Tenabuku/Assets.xcassets/AppIcon.appiconset/` の同じ名前のファイルと置き換えます。書き出しには rsvg-convert（`brew install librsvg`）を使います。
-
-```bash
-cd tenabuku-app
-for n in AppIcon AppIcon-Dark AppIcon-Tinted; do
-  rsvg-convert -w 1024 -h 1024 "Design/AppIcon/$n.svg" -o "Tenabuku/Assets.xcassets/AppIcon.appiconset/$n.png"
-done
-```
+図柄は Icon Composer（Xcode 26 以降に付属）で `AppIcon.icon` を開いて直します。層の SVG（`AppIcon.icon/Assets/`）を直接書き換えてもかまいません。座標は 1024×1024 で、角丸の枠はありません。
 
 ## テスト
 
