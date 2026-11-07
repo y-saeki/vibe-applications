@@ -137,6 +137,7 @@ struct ArticleBrowserView: View {
         // and CSS, and many pages run under a toolbar on iPhone Duo's side.
         WebViewContainer(webView: model.webView)
             .ignoresSafeArea(edges: .vertical)
+            .background(EdgeOnlyPopGesture())
             .overlay(alignment: .top) {
                 if model.isLoading {
                     ProgressView(value: model.progress).progressViewStyle(.linear)
@@ -200,4 +201,42 @@ private struct WebViewContainer: UIViewRepresentable {
 
     func makeUIView(context: Context) -> WKWebView { webView }
     func updateUIView(_ uiView: WKWebView, context: Context) {}
+}
+
+/// Leaves going back to the list to a swipe from the screen's leading edge.
+/// Since iOS 26 a navigation stack also goes back on a swipe that starts
+/// anywhere, which takes the swipes of pages that use them themselves, such as
+/// maps and carousels.
+private struct EdgeOnlyPopGesture: UIViewControllerRepresentable {
+    func makeUIViewController(context: Context) -> Controller { Controller() }
+    func updateUIViewController(_ uiViewController: Controller, context: Context) {}
+
+    final class Controller: UIViewController {
+        override func loadView() {
+            view = UIView()
+            view.isUserInteractionEnabled = false
+        }
+
+        override func viewWillAppear(_ animated: Bool) {
+            super.viewWillAppear(animated)
+            setContentPopEnabled(false)
+        }
+
+        override func viewDidAppear(_ animated: Bool) {
+            super.viewDidAppear(animated)
+            // The navigation controller may be reachable only once on screen.
+            setContentPopEnabled(false)
+        }
+
+        override func viewWillDisappear(_ animated: Bool) {
+            super.viewWillDisappear(animated)
+            // The rest of the stack keeps the system's behaviour.
+            setContentPopEnabled(true)
+        }
+
+        private func setContentPopEnabled(_ isEnabled: Bool) {
+            guard #available(iOS 26.0, *) else { return }
+            navigationController?.interactiveContentPopGestureRecognizer?.isEnabled = isEnabled
+        }
+    }
 }
