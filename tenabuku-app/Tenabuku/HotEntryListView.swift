@@ -284,18 +284,57 @@ struct EntryRow: View {
                     .accessibilitySortPriority(1)
             }
             Spacer(minLength: 0)
-            if let imageURL = item.imageURL {
-                AsyncImage(url: imageURL) { image in
-                    image.resizable().scaledToFill()
-                } placeholder: {
-                    Color.secondary.opacity(0.1)
-                }
-                .frame(width: 64, height: 64)
-                .clipShape(RoundedRectangle(cornerRadius: 6))
-            }
+            EntryThumbnail(url: item.imageURL)
         }
         .padding(.vertical, 4)
         .accessibilityElement(children: .combine)
         .accessibilityValue(isRead ? Text("既読") : Text(""))
+    }
+}
+
+/// The square image at the end of an entry row. Every row keeps the slot, so
+/// titles line up whether or not the page has an `og:image`: when there is
+/// none, or it fails to load, the slot shows a globe on a faint gray, the same
+/// glyph `FaviconView` falls back to.
+struct EntryThumbnail: View {
+    let url: URL?
+
+    private static let size: CGFloat = 64
+    private static let shape = RoundedRectangle(cornerRadius: 6)
+
+    var body: some View {
+        Group {
+            if let url {
+                AsyncImage(url: url) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image.resizable().scaledToFill()
+                    case .failure:
+                        fallback
+                    case .empty:
+                        Self.background
+                    @unknown default:
+                        fallback
+                    }
+                }
+            } else {
+                fallback
+            }
+        }
+        .frame(width: Self.size, height: Self.size)
+        .clipShape(Self.shape)
+        .accessibilityHidden(true)
+    }
+
+    private static var background: some View {
+        Color.secondary.opacity(0.1)
+    }
+
+    private var fallback: some View {
+        Self.background.overlay {
+            Image(systemName: "globe")
+                .font(.system(size: 24, weight: .light))
+                .foregroundStyle(.quaternary)
+        }
     }
 }
