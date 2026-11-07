@@ -76,6 +76,7 @@ final class PopularCommentsAPITests: XCTestCase {
         XCTAssertEqual(comments[1].tags, [])
         XCTAssertEqual(comments[0].iconURL, URL(string: "https://cdn.profile-image.st-hatena.com/users/alice/profile.png"))
         XCTAssertEqual(comments[0].date, HatenaDate.parseISO8601("2026-11-04T04:28:19Z"))
+        XCTAssertEqual(comments[1].starURI, URL(string: "https://b.hatena.ne.jp/bob/20261104#bookmark-1"))
         XCTAssertEqual(
             transport.requests.first?.url?.absoluteString,
             "https://b.hatena.ne.jp/entry?url=https%3A%2F%2Fexample.com%2F"

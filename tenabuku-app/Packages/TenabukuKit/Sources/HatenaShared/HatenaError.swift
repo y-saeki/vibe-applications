@@ -12,6 +12,8 @@ public enum HatenaError: Error, Equatable, Sendable {
     case unauthorized
     /// Any other status outside 2xx.
     case httpStatus(Int)
+    /// The server understood the request and refused it, saying why.
+    case rejected(String)
     /// The response arrived but did not have the expected shape.
     /// `source` names the endpoint, e.g. `feed.hotentry`.
     case parseFailed(source: String, detail: String)

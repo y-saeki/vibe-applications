@@ -73,6 +73,8 @@ extension CommentPage: Decodable {
         let comment: String?
         let tags: [String]?
         let created: String?
+        /// The entry's eid.
+        let location_id: LooseString?
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -81,13 +83,19 @@ extension CommentPage: Decodable {
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        comments = try container.decode([Bookmark].self, forKey: .bookmarks).map {
-            EntryComment(
-                user: $0.user.name,
-                iconURL: $0.user.image?.image_url.flatMap(URL.init(string:)),
-                comment: $0.comment ?? "",
-                tags: $0.tags ?? [],
-                date: $0.created.flatMap(HatenaDate.parseISO8601)
+        comments = try container.decode([Bookmark].self, forKey: .bookmarks).map { bookmark in
+            let date = bookmark.created.flatMap(HatenaDate.parseISO8601)
+            var starURI: URL?
+            if let date, let eid = bookmark.location_id?.value {
+                starURI = HatenaStarAPI.uri(user: bookmark.user.name, eid: eid, date: date)
+            }
+            return EntryComment(
+                user: bookmark.user.name,
+                iconURL: bookmark.user.image?.image_url.flatMap(URL.init(string:)),
+                comment: bookmark.comment ?? "",
+                tags: bookmark.tags ?? [],
+                date: date,
+                starURI: starURI
             )
         }
         // The last page has no cursor, or an empty one.

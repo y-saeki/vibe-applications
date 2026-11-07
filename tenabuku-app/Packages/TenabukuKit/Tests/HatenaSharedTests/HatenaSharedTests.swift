@@ -33,6 +33,7 @@ final class HatenaDateTests: XCTestCase {
     func testDayIsJapanTime() {
         // 23:00 UTC on the 30th is already the 31st in Tokyo.
         XCTAssertEqual(HatenaDate.day(HatenaDate.parseISO8601("2026-10-30T23:00:00Z")!), "2026-10-31")
+        XCTAssertEqual(HatenaDate.compactDay(HatenaDate.parseISO8601("2026-10-30T23:00:00Z")!), "20261031")
     }
 }
 

@@ -1,5 +1,6 @@
 import HatenaFeed
 import HatenaOfficial
+import HatenaShared
 import HatenaUnofficial
 import SwiftUI
 
@@ -10,6 +11,8 @@ struct CommentRowData: Identifiable {
     let comment: String
     let tags: [String]
     let date: Date?
+    /// What Hatena Star names the comment by; nil when it could not be told.
+    let starURI: URL?
 
     var id: String { user }
 }
@@ -29,6 +32,11 @@ final class EntryCommentsModel {
     private(set) var comments: [CommentRowData] = []
     private(set) var error: Error?
     private(set) var isLoading = false
+    /// The stars each comment has, by its star URI. A comment missing here
+    /// has not been counted yet, or its count could not be read.
+    private(set) var starCounts: [URL: StarCount] = [:]
+    /// Comments whose star is on its way to Hatena, so that it is not sent twice.
+    private(set) var addingStars: Set<URL> = []
     /// Where the recent comments continue; nil when all are shown.
     private var nextCursor: String?
     /// The users hidden on Hatena's website, whose comments are left out as
@@ -72,6 +80,8 @@ final class EntryCommentsModel {
             self.ignoredUsers = ignoredUsers
             comments = loaded.filter { !ignoredUsers.contains($0.user) }
             error = nil
+            starCounts = [:]
+            loadStars(for: comments, generation: generation)
         } catch {
             _ = await ignored
             guard generation == self.generation else { return }
@@ -95,13 +105,41 @@ final class EntryCommentsModel {
             // A comment can move to a later page when someone edits theirs
             // while the list is being read; the list keys rows by user.
             let skipped = Set(comments.map(\.user)).union(ignoredUsers)
-            comments += page.comments.map(CommentRowData.init).filter { !skipped.contains($0.user) }
+            let added = page.comments.map(CommentRowData.init).filter { !skipped.contains($0.user) }
+            comments += added
             nextCursor = page.nextCursor
+            loadStars(for: added, generation: generation)
         } catch {
             guard generation == self.generation else { return }
             FailureLog.record(error)
             self.error = error
         }
+    }
+
+    /// Reads the star counts after the comments are on screen, so that the
+    /// comments never wait for them. A failure only leaves the counts out.
+    private func loadStars(for comments: [CommentRowData], generation: Int) {
+        let uris = comments.compactMap(\.starURI)
+        guard !uris.isEmpty else { return }
+        Task {
+            do {
+                let counts = try await AppServices.stars.counts(for: uris)
+                guard generation == self.generation else { return }
+                starCounts.merge(counts) { _, new in new }
+            } catch {
+                FailureLog.record(error)
+            }
+        }
+    }
+
+    /// Adds one star to `comment` as the signed-in user. The count goes up
+    /// once Hatena has taken it.
+    func addStar(to comment: CommentRowData, webSession: WebSessionStore) async throws {
+        guard let uri = comment.starURI, !addingStars.contains(uri) else { return }
+        addingStars.insert(uri)
+        defer { addingStars.remove(uri) }
+        try await webSession.addStar(to: uri)
+        starCounts[uri, default: .none].yellow += 1
     }
 
     // The ranking only exists in the website's entry page.
@@ -112,7 +150,10 @@ final class EntryCommentsModel {
 
 extension CommentRowData {
     init(_ comment: EntryComment) {
-        self.init(user: comment.user, iconURL: comment.iconURL, comment: comment.comment, tags: comment.tags, date: comment.date)
+        self.init(
+            user: comment.user, iconURL: comment.iconURL, comment: comment.comment, tags: comment.tags,
+            date: comment.date, starURI: comment.starURI
+        )
     }
 }
 
@@ -120,6 +161,11 @@ struct EntryDetailView: View {
     let entry: FeedItem
     @State private var model: EntryCommentsModel
     @State private var isShowingBookmarkEditor = false
+    /// The comment a star was meant for when Hatena asked for the website
+    /// login; the star is sent once the login is done.
+    @State private var pendingStar: CommentRowData?
+    @State private var isShowingWebSignIn = false
+    @State private var starError: Error?
     @Environment(\.openURL) private var openURL
     @Environment(WebSessionStore.self) private var webSession
 
@@ -153,13 +199,18 @@ struct EntryDetailView: View {
                     Text("コメントはまだありません").foregroundStyle(.secondary)
                 }
                 ForEach(model.comments) { comment in
-                    CommentRow(comment: comment)
-                        .onAppear {
-                            // Starts on the next page before the end comes into view.
-                            if comment.id == prefetchMark {
-                                Task { await model.loadMore() }
-                            }
+                    CommentRow(
+                        comment: comment,
+                        stars: comment.starURI.flatMap { model.starCounts[$0] },
+                        isAddingStar: comment.starURI.map(model.addingStars.contains) ?? false,
+                        addStar: comment.starURI == nil ? nil : { Task { await addStar(to: comment) } }
+                    )
+                    .onAppear {
+                        // Starts on the next page before the end comes into view.
+                        if comment.id == prefetchMark {
+                            Task { await model.loadMore() }
                         }
+                    }
                 }
                 if model.hasMore && model.error == nil {
                     // Also catches a short list, whose mark is already on screen.
@@ -186,13 +237,55 @@ struct EntryDetailView: View {
                 BookmarkEditorView(url: entry.link, title: entry.title)
             }
         }
+        .webSignInSheet(isPresented: $isShowingWebSignIn) {
+            if let comment = pendingStar {
+                Task { await addStar(to: comment) }
+            }
+        }
+        .onChange(of: isShowingWebSignIn) { _, isShowing in
+            // Cancelling the login drops the star it was for.
+            if !isShowing { pendingStar = nil }
+        }
+        .alert(
+            "スターを付けられませんでした",
+            isPresented: Binding(get: { starError != nil }, set: { if !$0 { starError = nil } }),
+            presenting: starError
+        ) { _ in
+            Button("OK") {}
+        } message: { error in
+            Text(Self.starErrorMessage(error))
+        }
         .refreshable { await model.load(webSession: webSession, refreshIgnored: true) }
         .task(id: model.tab) { await model.load(webSession: webSession) }
+    }
+
+    private func addStar(to comment: CommentRowData) async {
+        do {
+            try await model.addStar(to: comment, webSession: webSession)
+        } catch HatenaError.unauthorized {
+            pendingStar = comment
+            isShowingWebSignIn = true
+        } catch {
+            FailureLog.record(error)
+            starError = error
+        }
+    }
+
+    private static func starErrorMessage(_ error: Error) -> String {
+        if case let .rejected(reason)? = error as? HatenaError {
+            return "はてなが受け付けませんでした（\(reason)）"
+        }
+        return ErrorBanner.title(for: error) + "\n" + ErrorBanner.detail(for: error)
     }
 }
 
 struct CommentRow: View {
     let comment: CommentRowData
+    /// Nil until the count is read, or when it could not be.
+    var stars: StarCount?
+    var isAddingStar = false
+    /// Nil when the comment cannot take a star.
+    var addStar: (() -> Void)?
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -220,8 +313,74 @@ struct CommentRow: View {
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
+                if addStar != nil || (stars?.total ?? 0) > 0 {
+                    starRow
+                }
             }
         }
         .padding(.vertical, 2)
+    }
+
+    /// The coloured stars, then the yellow ones as the button that adds one,
+    /// as Hatena shows them.
+    private var starRow: some View {
+        HStack(spacing: 10) {
+            ForEach(stars?.colored ?? [], id: \.color) { colored in
+                starCount(colored.count, color: Self.color(named: colored.color))
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("\(Self.colorName(colored.color))のスター \(colored.count) 個")
+            }
+            if let addStar {
+                Button(action: addStar) {
+                    starCount(stars?.yellow, color: .yellow)
+                        .opacity(isAddingStar ? 0.4 : 1)
+                        // A target large enough to hit without hitting the row.
+                        .frame(minWidth: 44, minHeight: 28, alignment: .leading)
+                        .contentShape(Rectangle())
+                }
+                // Only the star reacts to a tap, not the whole row.
+                .buttonStyle(.borderless)
+                .disabled(isAddingStar)
+                .accessibilityLabel("スターを付ける")
+                .accessibilityValue(stars.map { "\($0.yellow) 個" } ?? "")
+            }
+        }
+        .font(.caption)
+        .frame(minHeight: 28)
+    }
+
+    /// A star and how many there are; an empty star while nil or none.
+    private func starCount(_ count: Int?, color: Color) -> some View {
+        HStack(spacing: 3) {
+            Image(systemName: (count ?? 0) > 0 ? "star.fill" : "star")
+                .foregroundStyle(color)
+            if let count {
+                Text(count, format: .number)
+                    .monospacedDigit()
+                    // Plain grey: `.secondary` would take the button's tint.
+                    .foregroundStyle(Color.secondary)
+            }
+        }
+    }
+
+    private static func color(named name: String) -> Color {
+        switch name {
+        case "green": .green
+        case "red": .red
+        case "blue": .blue
+        case "purple": .purple
+        // A colour Hatena adds later still shows, in a neutral tone.
+        default: .gray
+        }
+    }
+
+    private static func colorName(_ name: String) -> String {
+        switch name {
+        case "green": "グリーン"
+        case "red": "レッド"
+        case "blue": "ブルー"
+        case "purple": "パープル"
+        default: name
+        }
     }
 }
