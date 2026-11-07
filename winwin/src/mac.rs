@@ -1,6 +1,7 @@
 //! What the macOS app hears from the system, in winwin's own types: the
 //! virtual key codes (`kVK_*` of HIToolbox's Events.h) and modifier flags
-//! (`CGEventFlags`) of a key event, and the screens' frames. The app follows
+//! (`CGEventFlags`) of a key event, the screens' frames, and the area a
+//! placement may fill on a screen. The app follows
 //! key presses through an event tap, so only that direction is needed: from
 //! what a key event says to a `Hotkey`.
 //!
@@ -180,6 +181,47 @@ pub fn to_appkit(rect: Rect, main_height: f64) -> (f64, f64, f64, f64) {
     (f64::from(rect.left), y, width, height)
 }
 
+/// The screen edge the Dock is kept on, as the `orientation` preference of
+/// `com.apple.dock` names it. The Dock is at the bottom when it names none.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DockEdge {
+    Bottom,
+    Left,
+    Right,
+}
+
+impl DockEdge {
+    pub fn from_orientation(orientation: Option<&str>) -> DockEdge {
+        match orientation {
+            Some("left") => DockEdge::Left,
+            Some("right") => DockEdge::Right,
+            _ => DockEdge::Bottom,
+        }
+    }
+}
+
+/// The area a placement may fill on a screen whose frame is `screen` and
+/// visible frame `visible`. `hidden_dock` is the Dock's edge when the Dock
+/// hides itself.
+///
+/// The visible frame leaves out the menu bar and the Dock. A Dock that
+/// hides itself still keeps a thin strip there, and the visible frame has
+/// been seen to leave out a whole Dock's height for a while, as if it were
+/// always shown, after the system changes its screens. So with such a Dock
+/// the edge it is on runs to the screen's own; the other edges, the menu
+/// bar's among them, stay as the visible frame has them. On a screen
+/// without the Dock that edge is the screen's already.
+pub fn work_area(screen: Rect, visible: Rect, hidden_dock: Option<DockEdge>) -> Rect {
+    let mut area = visible;
+    match hidden_dock {
+        None => {}
+        Some(DockEdge::Bottom) => area.bottom = screen.bottom,
+        Some(DockEdge::Left) => area.left = screen.left,
+        Some(DockEdge::Right) => area.right = screen.right,
+    }
+    area
+}
+
 /// What a change of the modifier flags from `before` to `after` presses
 /// and lets go of, as a flags-changed event reports it: each modifier that
 /// went down or up, and whether it went down. Those let go of come first.
@@ -297,6 +339,61 @@ mod tests {
                 (x, y, w, h)
             );
         }
+    }
+
+    #[test]
+    fn the_dock_is_at_the_bottom_unless_it_says_otherwise() {
+        assert_eq!(DockEdge::from_orientation(Some("left")), DockEdge::Left);
+        assert_eq!(DockEdge::from_orientation(Some("right")), DockEdge::Right);
+        assert_eq!(DockEdge::from_orientation(Some("bottom")), DockEdge::Bottom);
+        assert_eq!(DockEdge::from_orientation(None), DockEdge::Bottom);
+        assert_eq!(DockEdge::from_orientation(Some("")), DockEdge::Bottom);
+    }
+
+    #[test]
+    fn a_hiding_dock_gives_its_edge_back() {
+        let rect = |left, top, right, bottom| Rect {
+            left,
+            top,
+            right,
+            bottom,
+        };
+        let screen = rect(0, 0, 1440, 900);
+        // A Dock that is always shown keeps its place.
+        let shown = rect(0, 25, 1440, 830);
+        assert_eq!(work_area(screen, shown, None), shown);
+        // A visible frame that still leaves a whole Dock out, or the thin
+        // strip a hiding Dock keeps, on whichever edge the Dock is.
+        assert_eq!(
+            work_area(screen, shown, Some(DockEdge::Bottom)),
+            rect(0, 25, 1440, 900)
+        );
+        assert_eq!(
+            work_area(screen, rect(0, 25, 1440, 896), Some(DockEdge::Bottom)),
+            rect(0, 25, 1440, 900)
+        );
+        assert_eq!(
+            work_area(screen, rect(70, 25, 1440, 900), Some(DockEdge::Left)),
+            rect(0, 25, 1440, 900)
+        );
+        assert_eq!(
+            work_area(screen, rect(0, 25, 1436, 900), Some(DockEdge::Right)),
+            rect(0, 25, 1440, 900)
+        );
+        // The menu bar stays out, and a menu bar that hides itself is left
+        // to the visible frame too.
+        assert_eq!(
+            work_area(screen, rect(0, 0, 1440, 830), Some(DockEdge::Bottom)),
+            screen
+        );
+        // Only the Dock's edge moves: a screen off the main one, without
+        // the Dock, keeps its visible frame.
+        let other = rect(-1920, 120, 0, 1200);
+        let other_visible = rect(-1920, 145, 0, 1200);
+        assert_eq!(
+            work_area(other, other_visible, Some(DockEdge::Left)),
+            rect(-1920, 145, 0, 1200)
+        );
     }
 
     #[test]

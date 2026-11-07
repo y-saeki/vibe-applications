@@ -24,12 +24,17 @@ enum Screens {
         NSScreen.screens.map { frame(of: $0.frame) }
     }
 
-    /// The visible frame, less the menu bar and the Dock, of the screen the
-    /// window at `window` is on.
+    /// The area a placement may fill, less the menu bar and the Dock, on the
+    /// screen the window at `window` is on.
     static func work(for window: Frame) -> Frame? {
         let screens = NSScreen.screens
         guard let i = areaOf(window: window, areas: screens.map { frame(of: $0.frame) }) else { return nil }
-        return frame(of: screens[Int(i)].visibleFrame)
+        let screen = screens[Int(i)]
+        let dock = Dock.read()
+        return workArea(
+            screen: frame(of: screen.frame), visible: frame(of: screen.visibleFrame),
+            dockAutohide: dock.autohide, dockOrientation: dock.orientation
+        )
     }
 
     /// The frames of the ordinary windows on screen, front to back, as a
@@ -54,6 +59,18 @@ enum Screens {
             let owner = info[kCGWindowOwnerPID as String] as? pid_t ?? 0
             return skipping(owner, frame) ? nil : frame
         }
+    }
+}
+
+/// What the Dock's preferences say, read afresh each time: they are
+/// cached once read, and the Dock's own changes are not seen otherwise.
+enum Dock {
+    static func read() -> (autohide: Bool, orientation: String?) {
+        let domain = "com.apple.dock" as CFString
+        CFPreferencesAppSynchronize(domain)
+        let autohide = CFPreferencesCopyAppValue("autohide" as CFString, domain) as? Bool ?? false
+        let orientation = CFPreferencesCopyAppValue("orientation" as CFString, domain) as? String
+        return (autohide, orientation)
     }
 }
 

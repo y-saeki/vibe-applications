@@ -464,6 +464,21 @@ pub fn from_appkit(x: f64, y: f64, width: f64, height: f64, main_height: f64) ->
     mac::from_appkit(x, y, width, height, main_height).into()
 }
 
+/// The area a placement may fill on the screen with the frame `screen` and
+/// the visible frame `visible`, given what `com.apple.dock` says: whether
+/// the Dock hides itself (`autohide`) and the edge it is on
+/// (`orientation`).
+#[uniffi::export]
+pub fn work_area(
+    screen: Frame,
+    visible: Frame,
+    dock_autohide: bool,
+    dock_orientation: Option<String>,
+) -> Frame {
+    let edge = dock_autohide.then(|| mac::DockEdge::from_orientation(dock_orientation.as_deref()));
+    mac::work_area(screen.into(), visible.into(), edge).into()
+}
+
 /// A `Frame` back in AppKit's coordinates, to set a window of winwin's own
 /// to it.
 #[derive(Clone, Copy, Debug, PartialEq, uniffi::Record)]
