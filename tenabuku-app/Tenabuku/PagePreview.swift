@@ -173,7 +173,7 @@ private struct PagePreviewMenu: UIViewRepresentable {
                     PagePreviewController(
                         webView: PagePreloader.shared.start(menu.url),
                         title: menu.title,
-                        host: menu.url.host() ?? menu.url.absoluteString
+                        pageURL: menu.url
                     )
                 },
                 actionProvider: { _ in
@@ -305,20 +305,21 @@ private final class RestingTouchRecognizer: UIGestureRecognizer {
     }
 }
 
-/// The page under preview. Until the page has drawn something, its title
-/// stands in for it, so that the preview does not open on a blank sheet.
+/// The page under preview. Until the page has drawn something, the row's
+/// site and title stand in for it above gray lines where the text will be,
+/// so that the preview does not open on a blank sheet.
 private final class PagePreviewController: UIViewController {
     private let webView: WKWebView
     private let pageTitle: String
-    private let host: String
+    private let pageURL: URL
     private let placeholder = UIView()
     private let progressBar = UIProgressView(progressViewStyle: .bar)
     private var observations: [NSKeyValueObservation] = []
 
-    init(webView: WKWebView, title: String, host: String) {
+    init(webView: WKWebView, title: String, pageURL: URL) {
         self.webView = webView
         self.pageTitle = title
-        self.host = host
+        self.pageURL = pageURL
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -336,27 +337,17 @@ private final class PagePreviewController: UIViewController {
         placeholder.backgroundColor = .systemBackground
         placeholder.frame = view.bounds
         placeholder.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        let hostLabel = UILabel()
-        hostLabel.text = host
-        hostLabel.font = .preferredFont(forTextStyle: .caption1)
-        hostLabel.textColor = .secondaryLabel
-        let titleLabel = UILabel()
-        titleLabel.text = pageTitle
-        titleLabel.font = .preferredFont(forTextStyle: .title3).withTraits(.traitBold)
-        titleLabel.numberOfLines = 0
-        let spinner = UIActivityIndicatorView(style: .medium)
-        spinner.startAnimating()
-        let stack = UIStackView(arrangedSubviews: [hostLabel, titleLabel, spinner])
+        let stack = UIStackView(arrangedSubviews: [siteLine(), titleLabel(), skeleton()])
         stack.axis = .vertical
-        stack.alignment = .leading
-        stack.spacing = 8
-        stack.setCustomSpacing(20, after: titleLabel)
+        stack.alignment = .fill
+        stack.spacing = 10
+        stack.setCustomSpacing(28, after: stack.arrangedSubviews[1])
         stack.translatesAutoresizingMaskIntoConstraints = false
         placeholder.addSubview(stack)
         NSLayoutConstraint.activate([
-            stack.topAnchor.constraint(equalTo: placeholder.topAnchor, constant: 24),
+            stack.topAnchor.constraint(equalTo: placeholder.topAnchor, constant: 28),
             stack.leadingAnchor.constraint(equalTo: placeholder.leadingAnchor, constant: 20),
-            stack.trailingAnchor.constraint(lessThanOrEqualTo: placeholder.trailingAnchor, constant: -20),
+            stack.trailingAnchor.constraint(equalTo: placeholder.trailingAnchor, constant: -20),
         ])
         view.addSubview(placeholder)
 
@@ -372,6 +363,71 @@ private final class PagePreviewController: UIViewController {
                 MainActor.assumeIsolated { self?.update() }
             },
         ]
+    }
+
+    /// The site's icon and host, as the list row shows them.
+    private func siteLine() -> UIView {
+        let hostLabel = UILabel()
+        hostLabel.text = pageURL.host() ?? pageURL.absoluteString
+        hostLabel.font = .preferredFont(forTextStyle: .footnote)
+        hostLabel.textColor = .secondaryLabel
+        let line = UIStackView(arrangedSubviews: [hostLabel])
+        line.axis = .horizontal
+        line.alignment = .center
+        line.spacing = 6
+        if case let icon?? = FaviconCache.shared.cached(pageURL) {
+            let iconView = UIImageView(image: icon)
+            iconView.contentMode = .scaleAspectFit
+            iconView.layer.cornerRadius = 3
+            iconView.clipsToBounds = true
+            NSLayoutConstraint.activate([
+                iconView.widthAnchor.constraint(equalToConstant: 16),
+                iconView.heightAnchor.constraint(equalToConstant: 16),
+            ])
+            line.insertArrangedSubview(iconView, at: 0)
+        }
+        // Keeps the icon and host together at the leading edge.
+        let row = UIStackView(arrangedSubviews: [line, UIView()])
+        row.axis = .horizontal
+        return row
+    }
+
+    private func titleLabel() -> UIView {
+        let label = UILabel()
+        label.text = pageTitle
+        label.font = .preferredFont(forTextStyle: .title2).withTraits(.traitBold)
+        label.numberOfLines = 0
+        return label
+    }
+
+    /// Lines of text yet to come, pulsing gently while the page loads. The
+    /// bar along the top already says how far along it is.
+    private func skeleton() -> UIView {
+        let lines = UIStackView()
+        lines.axis = .vertical
+        lines.alignment = .leading
+        lines.spacing = 12
+        for fraction in [1.0, 0.94, 1.0, 0.88, 0.62] as [CGFloat] {
+            let bar = UIView()
+            bar.backgroundColor = .tertiarySystemFill
+            bar.layer.cornerRadius = 6
+            bar.layer.cornerCurve = .continuous
+            bar.translatesAutoresizingMaskIntoConstraints = false
+            lines.addArrangedSubview(bar)
+            NSLayoutConstraint.activate([
+                bar.heightAnchor.constraint(equalToConstant: 12),
+                bar.widthAnchor.constraint(equalTo: lines.widthAnchor, multiplier: fraction),
+            ])
+        }
+        let pulse = CABasicAnimation(keyPath: "opacity")
+        pulse.fromValue = 1
+        pulse.toValue = 0.4
+        pulse.duration = 0.9
+        pulse.autoreverses = true
+        pulse.repeatCount = .infinity
+        pulse.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        lines.layer.add(pulse, forKey: "pulse")
+        return lines
     }
 
     /// Lets the page show once it is far enough along to have drawn its top.
