@@ -23,7 +23,7 @@ struct FaviconView: View {
         Group {
             switch phase {
             case .loading:
-                Self.shape.fill(.quaternary)
+                Color.clear
             case .loaded(let image):
                 Image(uiImage: image)
                     .resizable()
@@ -33,10 +33,8 @@ struct FaviconView: View {
             case .missing:
                 // Neither Hatena nor DuckDuckGo had an icon.
                 Image(systemName: "globe")
-                    .font(.system(size: 9, weight: .semibold))
+                    .font(.system(size: 12, weight: .regular))
                     .foregroundStyle(.secondary)
-                    .frame(width: Self.size, height: Self.size)
-                    .background(.quaternary, in: Self.shape)
             }
         }
         .frame(width: Self.size, height: Self.size)
