@@ -270,7 +270,10 @@ struct EntryRow: View {
                         .foregroundStyle(.red)
                         .bold()
                     if let host = item.link.host() {
-                        Text(host).lineLimit(1)
+                        HStack(spacing: 4) {
+                            FaviconView(pageURL: item.link)
+                            Text(host).lineLimit(1)
+                        }
                     }
                     if let date = item.date {
                         Text(date, style: .relative)

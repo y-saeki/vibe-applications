@@ -320,7 +320,10 @@ private struct MyBookmarkRow: View {
                     .foregroundStyle(.red)
                     .bold()
                 if let host = hit.url.host() {
-                    Text(host).lineLimit(1)
+                    HStack(spacing: 4) {
+                        FaviconView(pageURL: hit.url)
+                        Text(host).lineLimit(1)
+                    }
                 }
                 if let date = hit.bookmarkedAt {
                     Text(date, format: .dateTime.year().month().day())
