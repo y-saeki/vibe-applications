@@ -19,7 +19,7 @@ settings:
   base:
     # The version of Mail Crew. A release is made when this goes up on main
     # (DEVELOPMENT.md); CFBundleVersion follows it.
-    MARKETING_VERSION: 0.8.1
+    MARKETING_VERSION: 0.9.0
     SWIFT_VERSION: "5.0"
     # The Rust library is built for Apple silicon only (core/swift/build.sh).
     ARCHS: arm64
@@ -44,7 +44,9 @@ targets:
         CFBundleName: Mail Crew
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(MARKETING_VERSION)
-        # MailCrew/AppIcon.icns, drawn from icon.svg.
+        # MailCrew/AppIcon.icon (Icon Composer). actool compiles it into
+        # Assets.car for macOS 26 and an AppIcon.icns for older systems.
+        CFBundleIconName: AppIcon
         CFBundleIconFile: AppIcon
         LSMinimumSystemVersion: $(MACOSX_DEPLOYMENT_TARGET)
         LSApplicationCategoryType: public.app-category.productivity
@@ -56,6 +58,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.ysaeki.mailcrew
         PRODUCT_NAME: Mail Crew
         PRODUCT_MODULE_NAME: MailCrewMac
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         # Where build.sh leaves libmailcrew_core.a, which the package's
         # module map links.
         LIBRARY_SEARCH_PATHS: $(SRCROOT)/core/target/aarch64-apple-darwin/release
