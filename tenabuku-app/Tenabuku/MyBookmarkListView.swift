@@ -215,9 +215,8 @@ private struct MyBookmarkList: View {
                     }
                     prefetchImages(after: hit)
                 }
-                .swipeActions(edge: .leading) {
+                .contextMenu {
                     Button("編集", systemImage: "pencil") { editing = hit }
-                        .tint(.blue)
                 }
             }
             if !model.listing.hits.isEmpty && model.listing.hasMore {

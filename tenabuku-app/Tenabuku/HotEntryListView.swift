@@ -127,15 +127,11 @@ struct HotEntryListView: View {
                         EntryRow(item: item, isRead: readHistory.isRead(item.link))
                     }
                     .onAppear { prefetchImages(after: item) }
-                    .swipeActions(edge: .leading) {
+                    .contextMenu {
                         Button("ブクマする", systemImage: "bookmark") { bookmarking = item }
-                            .tint(.blue)
-                    }
-                    .swipeActions(edge: .trailing) {
                         Button("ミュート", systemImage: "eye.slash") {
                             muting = MuteSource(title: item.title, url: item.link)
                         }
-                        .tint(.gray)
                     }
                 }
                 // So that a list emptied by the user's own rules is not taken
