@@ -9,7 +9,17 @@ struct FaviconView: View {
     let pageURL: URL
 
     @Environment(FaviconSettingsStore.self) private var settings
-    @State private var phase: Phase = .loading
+    @State private var phase: Phase
+
+    init(pageURL: URL) {
+        self.pageURL = pageURL
+        // An icon the list fetched ahead of time shows on the first frame.
+        _phase = State(initialValue: Self.phase(cached: FaviconCache.shared.cached(pageURL)) ?? .loading)
+    }
+
+    private static func phase(cached: UIImage??) -> Phase? {
+        cached.map { $0.map(Phase.loaded) ?? .missing }
+    }
 
     private enum Phase {
         case loading
@@ -46,6 +56,10 @@ struct FaviconView: View {
         .frame(width: Self.size, height: Self.size)
         .accessibilityHidden(true)
         .task(id: TaskID(pageURL: pageURL, sources: settings.enabledSources)) {
+            if let cached = Self.phase(cached: FaviconCache.shared.cached(pageURL)) {
+                phase = cached
+                return
+            }
             phase = .loading
             let image = await FaviconCache.shared.image(for: pageURL, from: settings.enabledSources)
             phase = image.map(Phase.loaded) ?? .missing
@@ -55,7 +69,7 @@ struct FaviconView: View {
 
 /// Keeps the icons fetched this session, so that scrolling back up or
 /// reopening a list does not ask again, and asks only once for a URL that
-/// several rows are waiting on.
+/// several rows are waiting on, or that `ImagePrefetch` already asked for.
 @MainActor
 final class FaviconCache {
     static let shared = FaviconCache()
@@ -78,24 +92,43 @@ final class FaviconCache {
         generation += 1
     }
 
+    /// What is already known about `page` without waiting: `.some(nil)` for
+    /// a page with no icon, nil when it has not been fetched.
+    func cached(_ page: URL) -> UIImage?? {
+        done.object(forKey: page as NSURL).map(\.image)
+    }
+
     func image(for page: URL, from sources: [FaviconSource]) async -> UIImage? {
         if let entry = done.object(forKey: page as NSURL) {
             return entry.image
         }
-        if let task = pending[page] {
-            return await task.value
+        return await load(page, from: sources).value
+    }
+
+    /// Starts fetching the icons not already fetched or on their way.
+    func prefetch(_ pages: some Sequence<URL>, from sources: [FaviconSource]) {
+        for page in pages where done.object(forKey: page as NSURL) == nil {
+            _ = load(page, from: sources)
         }
-        let task = Task.detached(priority: .utility) {
-            await AppServices.favicons.icon(for: page, from: sources).flatMap(Self.decode)
+    }
+
+    private func load(_ page: URL, from sources: [FaviconSource]) -> Task<UIImage?, Never> {
+        if let task = pending[page] {
+            return task
         }
         let started = generation
-        pending[page] = task
-        let image = await task.value
-        if generation == started {
-            pending[page] = nil
-            done.setObject(Entry(image), forKey: page as NSURL)
+        let task = Task<UIImage?, Never> {
+            let image = await Task.detached(priority: .utility) {
+                await AppServices.favicons.icon(for: page, from: sources).flatMap(Self.decode)
+            }.value
+            if self.generation == started {
+                self.pending[page] = nil
+                self.done.setObject(Entry(image), forKey: page as NSURL)
+            }
+            return image
         }
-        return image
+        pending[page] = task
+        return task
     }
 
     /// Decodes PNG, JPEG or ICO. An ICO holds several sizes; the largest is
