@@ -1,9 +1,8 @@
 import HatenaUnofficial
 import SwiftUI
 
-/// Turns the icon services on and off and orders them. The toggles do not
-/// respond in edit mode, so the order is changed under the Edit button, or by
-/// holding a row and dragging it.
+/// Turns the icon services on and off and orders them. Always in edit mode,
+/// so the drag handles show that the order can be changed.
 struct FaviconSettingsView: View {
     @Environment(FaviconSettingsStore.self) private var settings
 
@@ -25,7 +24,7 @@ struct FaviconSettingsView: View {
                 }
                 .onMove { settings.move(fromOffsets: $0, toOffset: $1) }
             } footer: {
-                Text("上から順に問い合わせ、最初に見つかったアイコンを使います。どこにもないときは、地球の記号を出します。並べ替えは、右上の「編集」から行います。")
+                Text("上から順に問い合わせ、最初に見つかったアイコンを使います。どこにもないときは、地球の記号を出します。並べ替えは、右端をドラッグします。")
             }
 
             Section {
@@ -33,7 +32,7 @@ struct FaviconSettingsView: View {
                     .disabled(settings.preferences == .default)
             }
         }
-        .toolbar { EditButton() }
+        .environment(\.editMode, .constant(.active))
         .navigationTitle("サイトのアイコン")
         .navigationBarTitleDisplayMode(.inline)
     }
