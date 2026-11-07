@@ -45,7 +45,9 @@ xcodebuild build -project MailCrew.xcodeproj -scheme MailCrew -configuration Rel
 
 アプリの名前は「Mail Crew」で、`project.yml` の `PRODUCT_NAME` と `CFBundleDisplayName` がこれを決めます。ディレクトリ名、クレートの名前、バンドル識別子（`com.ysaeki.mailcrew`）、Release のタグ（`mailcrew-v<version>`）は `mailcrew` のままです。
 
-アイコンは `icon.svg` から作った `MailCrew/AppIcon.icns` です。Tauri 版と同じ絵です。
+アイコンは Icon Composer のデータ `MailCrew/AppIcon.icon` です。白い封筒の後ろに、シアンから紫へ色の移るカードが 3 枚、扇のように重なります。手前の封筒と 3 枚のカードを別々の層で持ち、光沢や透け感は描き込まずに macOS 26 の Liquid Glass に任せています。Xcode に入っている Icon Composer で開いて編集できます。層は 1024 × 1024 の SVG（`Assets/`）で、カードはどれも封筒と同じ大きさです。1 枚ごとに同じ距離だけ右上へずらし、同じ角度だけ傾けています。
+
+ビルドでは `actool` がこれを `Assets.car`（macOS 26 以降）と `AppIcon.icns`（それより前の macOS）に変換し、`Info.plist` の `CFBundleIconName` と `CFBundleIconFile` がそれぞれを指します。変換はビルドのたびに Xcode が行うので、変換の結果はコミットしません。
 
 ## 検証コマンド
 
