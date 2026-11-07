@@ -261,10 +261,6 @@ struct EntryRow: View {
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 6) {
-                Text(item.title)
-                    .font(.body)
-                    .foregroundStyle(isRead ? .secondary : .primary)
-                    .lineLimit(3)
                 HStack(spacing: 8) {
                     if let host = item.link.host() {
                         HStack(spacing: 4) {
@@ -280,6 +276,12 @@ struct EntryRow: View {
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                Text(item.title)
+                    .font(.body)
+                    .foregroundStyle(isRead ? .secondary : .primary)
+                    .lineLimit(3)
+                    // Drawn below the site line but read out first.
+                    .accessibilitySortPriority(1)
             }
             Spacer(minLength: 0)
             if let imageURL = item.imageURL {

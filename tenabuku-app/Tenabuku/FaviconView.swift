@@ -14,8 +14,8 @@ struct FaviconView: View {
                 Color.secondary.opacity(0.1)
             }
         }
-        .frame(width: 16, height: 16)
-        .clipShape(RoundedRectangle(cornerRadius: 3))
+        .frame(width: 13, height: 13)
+        .clipShape(RoundedRectangle(cornerRadius: 2.5))
         .accessibilityHidden(true)
     }
 }
