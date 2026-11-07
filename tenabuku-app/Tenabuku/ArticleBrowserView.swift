@@ -15,6 +15,8 @@ final class ArticleBrowserModel: NSObject {
     private(set) var isLoading = false
     private(set) var progress = 0.0
     private(set) var loadError: Error?
+    /// Where the page starts to show below what covers the web view's top.
+    private(set) var pageTop: CGFloat = 0
 
     @ObservationIgnored private(set) lazy var webView = makeWebView()
     @ObservationIgnored private var observations: [NSKeyValueObservation] = []
@@ -38,6 +40,7 @@ final class ArticleBrowserModel: NSObject {
 
     private func makeWebView() -> WKWebView {
         let webView = ArticleWebView()
+        webView.onPageTopChange = { [weak self] top in self?.pageTop = top }
         webView.navigationDelegate = self
         webView.uiDelegate = self
         webView.allowsBackForwardNavigationGestures = true
@@ -139,8 +142,12 @@ struct ArticleBrowserView: View {
             .ignoresSafeArea(edges: .vertical)
             .background(EdgeOnlyPopGesture())
             .overlay(alignment: .top) {
+                // At the top of the page as it shows, not of the safe area: on
+                // iPhone Duo the page also runs under the empty bar's slot.
                 if model.isLoading {
                     ProgressView(value: model.progress).progressViewStyle(.linear)
+                        .padding(.top, model.pageTop)
+                        .ignoresSafeArea(edges: .top)
                 }
             }
             .overlay {
@@ -235,12 +242,23 @@ private final class ArticleWebView: WKWebView {
         return insets
     }
 
+    /// Called with the top of the part of the page nothing covers, whenever it moves.
+    var onPageTopChange: ((CGFloat) -> Void)?
+    private var reportedPageTop: CGFloat?
+
     override func layoutSubviews() {
         super.layoutSubviews()
         // Here rather than when the safe area changes: the bar can change
         // height without changing it.
-        guard #available(iOS 26.0, *) else { return }
         let safeArea = safeAreaInsets
+        if reportedPageTop != safeArea.top {
+            reportedPageTop = safeArea.top
+            // Not during layout, which SwiftUI may be in the middle of.
+            DispatchQueue.main.async { [weak self, top = safeArea.top] in
+                self?.onPageTopChange?(top)
+            }
+        }
+        guard #available(iOS 26.0, *) else { return }
         let insets = UIEdgeInsets(top: safeArea.top, left: 0, bottom: safeArea.bottom, right: 0)
         guard obscuredContentInsets != insets else { return }
         let wasAtTop = scrollView.contentOffset.y <= -scrollView.contentInset.top
