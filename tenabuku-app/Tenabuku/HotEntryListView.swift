@@ -266,18 +266,17 @@ struct EntryRow: View {
                     .foregroundStyle(isRead ? .secondary : .primary)
                     .lineLimit(3)
                 HStack(spacing: 8) {
-                    Text("\(item.bookmarkCount) users")
-                        .foregroundStyle(.red)
-                        .bold()
                     if let host = item.link.host() {
                         HStack(spacing: 4) {
                             FaviconView(pageURL: item.link)
                             Text(host).lineLimit(1)
                         }
                     }
-                    if let date = item.date {
-                        Text(date, style: .relative)
-                    }
+                    Spacer(minLength: 0)
+                    Text("\(item.bookmarkCount) users")
+                        .foregroundStyle(.red)
+                        .bold()
+                        .fixedSize()
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)

@@ -312,6 +312,13 @@ private struct MyBookmarkRow: View {
                     .lineLimit(3)
             }
             HStack(spacing: 8) {
+                if let host = hit.url.host() {
+                    HStack(spacing: 4) {
+                        FaviconView(pageURL: hit.url)
+                        Text(host).lineLimit(1)
+                    }
+                }
+                Spacer(minLength: 0)
                 if hit.isPrivate {
                     Image(systemName: "lock.fill")
                         .accessibilityLabel("非公開")
@@ -319,15 +326,7 @@ private struct MyBookmarkRow: View {
                 Text("\(hit.bookmarkCount) users")
                     .foregroundStyle(.red)
                     .bold()
-                if let host = hit.url.host() {
-                    HStack(spacing: 4) {
-                        FaviconView(pageURL: hit.url)
-                        Text(host).lineLimit(1)
-                    }
-                }
-                if let date = hit.bookmarkedAt {
-                    Text(date, format: .dateTime.year().month().day())
-                }
+                    .fixedSize()
             }
             .font(.caption)
             .foregroundStyle(.secondary)
