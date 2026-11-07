@@ -6,6 +6,7 @@ struct TenabukuApp: App {
     @State private var accounts = AccountStore()
     @State private var mutes = MuteStore()
     @State private var webSession = WebSessionStore()
+    @State private var favicons = FaviconSettingsStore()
 
     var body: some Scene {
         WindowGroup {
@@ -14,6 +15,7 @@ struct TenabukuApp: App {
                 .environment(accounts)
                 .environment(mutes)
                 .environment(webSession)
+                .environment(favicons)
         }
     }
 }

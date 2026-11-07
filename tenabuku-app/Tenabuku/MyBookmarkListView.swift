@@ -302,16 +302,14 @@ private struct MyBookmarkRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(hit.title.isEmpty ? hit.url.absoluteString : hit.title)
-                .font(.body)
-                .foregroundStyle(isRead ? .secondary : .primary)
-                .lineLimit(3)
-            if !hit.comment.isEmpty {
-                Text(hit.comment)
-                    .font(.subheadline)
-                    .lineLimit(3)
-            }
             HStack(spacing: 8) {
+                if let host = hit.url.host() {
+                    HStack(spacing: 4) {
+                        FaviconView(pageURL: hit.url)
+                        Text(host).lineLimit(1)
+                    }
+                }
+                Spacer(minLength: 0)
                 if hit.isPrivate {
                     Image(systemName: "lock.fill")
                         .accessibilityLabel("非公開")
@@ -319,15 +317,21 @@ private struct MyBookmarkRow: View {
                 Text("\(hit.bookmarkCount) users")
                     .foregroundStyle(.red)
                     .bold()
-                if let host = hit.url.host() {
-                    Text(host).lineLimit(1)
-                }
-                if let date = hit.bookmarkedAt {
-                    Text(date, format: .dateTime.year().month().day())
-                }
+                    .fixedSize()
             }
             .font(.caption)
             .foregroundStyle(.secondary)
+            Text(hit.title.isEmpty ? hit.url.absoluteString : hit.title)
+                .font(.body)
+                .foregroundStyle(isRead ? .secondary : .primary)
+                .lineLimit(3)
+                // Drawn below the site line but read out first.
+                .accessibilitySortPriority(1)
+            if !hit.comment.isEmpty {
+                Text(hit.comment)
+                    .font(.subheadline)
+                    .lineLimit(3)
+            }
         }
         .padding(.vertical, 4)
         .accessibilityElement(children: .combine)

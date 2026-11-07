@@ -261,23 +261,27 @@ struct EntryRow: View {
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 8) {
+                    if let host = item.link.host() {
+                        HStack(spacing: 4) {
+                            FaviconView(pageURL: item.link)
+                            Text(host).lineLimit(1)
+                        }
+                    }
+                    Spacer(minLength: 0)
+                    Text("\(item.bookmarkCount) users")
+                        .foregroundStyle(.red)
+                        .bold()
+                        .fixedSize()
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
                 Text(item.title)
                     .font(.body)
                     .foregroundStyle(isRead ? .secondary : .primary)
                     .lineLimit(3)
-                HStack(spacing: 8) {
-                    Text("\(item.bookmarkCount) users")
-                        .foregroundStyle(.red)
-                        .bold()
-                    if let host = item.link.host() {
-                        Text(host).lineLimit(1)
-                    }
-                    if let date = item.date {
-                        Text(date, style: .relative)
-                    }
-                }
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                    // Drawn below the site line but read out first.
+                    .accessibilitySortPriority(1)
             }
             Spacer(minLength: 0)
             if let imageURL = item.imageURL {
