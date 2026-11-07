@@ -183,6 +183,7 @@ private struct MyBookmarkList: View {
     @State private var editing: MyBookmarkSearchHit?
     @Environment(AccountStore.self) private var accounts
     @Environment(ReadHistoryStore.self) private var readHistory
+    @Environment(FaviconSettingsStore.self) private var faviconSettings
 
     /// Signing in again gives a new token, which starts the list over.
     private struct LoadKey: Equatable {
@@ -212,6 +213,7 @@ private struct MyBookmarkList: View {
                     if hit.id == prefetchMark && model.error == nil {
                         Task { await model.loadMore(api: api, accounts: accounts) }
                     }
+                    prefetchImages(after: hit)
                 }
                 .swipeActions(edge: .leading) {
                     Button("編集", systemImage: "pencil") { editing = hit }
@@ -254,6 +256,12 @@ private struct MyBookmarkList: View {
         .task(id: LoadKey(query: query, account: accounts.account)) {
             await model.show(query, api: api, accounts: accounts)
         }
+    }
+
+    private func prefetchImages(after hit: MyBookmarkSearchHit) {
+        let hits = model.listing.hits
+        guard let index = hits.firstIndex(where: { $0.id == hit.id }) else { return }
+        ImagePrefetch.rows(hits, after: index, page: \.url, faviconSources: faviconSettings.enabledSources)
     }
 
     /// The row whose appearance starts reading the next page.

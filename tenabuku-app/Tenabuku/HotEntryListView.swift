@@ -97,6 +97,7 @@ struct HotEntryListView: View {
     @Environment(ReadHistoryStore.self) private var readHistory
     @Environment(MuteStore.self) private var mutes
     @Environment(WebSessionStore.self) private var webSession
+    @Environment(FaviconSettingsStore.self) private var faviconSettings
 
     var body: some View {
         VerticalBarReader { barsMayBeVertical in
@@ -125,6 +126,7 @@ struct HotEntryListView: View {
                     NavigationLink(value: item) {
                         EntryRow(item: item, isRead: readHistory.isRead(item.link))
                     }
+                    .onAppear { prefetchImages(after: item) }
                     .swipeActions(edge: .leading) {
                         Button("ブクマする", systemImage: "bookmark") { bookmarking = item }
                             .tint(.blue)
@@ -222,6 +224,16 @@ struct HotEntryListView: View {
         model.items.filter { !mutes.isMuted(title: $0.title, url: $0.link) }
     }
 
+    private func prefetchImages(after item: FeedItem) {
+        let items = visibleItems
+        guard let index = items.firstIndex(of: item) else { return }
+        ImagePrefetch.rows(
+            items, after: index,
+            page: \.link, thumbnail: \.imageURL,
+            faviconSources: faviconSettings.enabledSources
+        )
+    }
+
     private var settingsButton: some View {
         Button("設定", systemImage: "gearshape") { isShowingSettings = true }
     }
@@ -299,31 +311,50 @@ struct EntryRow: View {
 struct EntryThumbnail: View {
     let url: URL?
 
-    private static let size: CGFloat = 64
+    @State private var phase: Phase
+
+    private enum Phase {
+        case loading
+        case loaded(UIImage)
+        case failed
+    }
+
     private static let shape = RoundedRectangle(cornerRadius: 6)
+
+    init(url: URL?) {
+        self.url = url
+        // A thumbnail the list fetched ahead of time shows on the first frame.
+        _phase = State(initialValue: Self.phase(for: url) ?? .loading)
+    }
+
+    private static func phase(for url: URL?) -> Phase? {
+        guard let url else { return .failed }
+        return ThumbnailCache.shared.cached(url).map { $0.map(Phase.loaded) ?? .failed }
+    }
 
     var body: some View {
         Group {
-            if let url {
-                AsyncImage(url: url) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image.resizable().scaledToFill()
-                    case .failure:
-                        fallback
-                    case .empty:
-                        Self.background
-                    @unknown default:
-                        fallback
-                    }
-                }
-            } else {
+            switch phase {
+            case .loading:
+                Self.background
+            case .loaded(let image):
+                Image(uiImage: image).resizable().scaledToFill()
+            case .failed:
                 fallback
             }
         }
-        .frame(width: Self.size, height: Self.size)
+        .frame(width: ThumbnailCache.side, height: ThumbnailCache.side)
         .clipShape(Self.shape)
         .accessibilityHidden(true)
+        .task(id: url) {
+            if let known = Self.phase(for: url) {
+                phase = known
+                return
+            }
+            guard let url else { return }
+            phase = .loading
+            phase = await ThumbnailCache.shared.image(for: url).map(Phase.loaded) ?? .failed
+        }
     }
 
     private static var background: some View {
