@@ -13,6 +13,7 @@ enum AppServices {
     static let recentComments = RecentCommentsAPI(http: http)
     /// Reads star counts without the website login, which they do not need.
     static let stars = HatenaStarAPI(http: http)
+    static let favicons = FaviconClient(http: http)
     static let myBookmarks = MyBookmarkTimelineStore(
         url: FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("MyBookmarks.json")
