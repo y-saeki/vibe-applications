@@ -246,11 +246,17 @@ private final class ArticleWebView: WKWebView {
     /// Called with the top of the part of the page nothing covers, whenever it moves.
     var onPageTopChange: ((CGFloat) -> Void)?
     private var reportedPageTop: CGFloat?
+    private weak var observedBar: UINavigationBar?
+    private var barObservation: NSKeyValueObservation?
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        setNeedsLayout()
+    }
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        // Here rather than when the safe area changes: the bar can change
-        // height without changing it.
+        observeNavigationBar()
         let safeArea = safeAreaInsets
         if reportedPageTop != safeArea.top {
             reportedPageTop = safeArea.top
@@ -268,6 +274,21 @@ private final class ArticleWebView: WKWebView {
         scrollView.verticalScrollIndicatorInsets = insets
         if wasAtTop {
             scrollView.contentOffset.y = -insets.top
+        }
+    }
+
+    /// Lays the page out again when the navigation bar changes size. On iPhone
+    /// Duo the bar shrinks to zero height after the web view takes its safe
+    /// area, and the safe area itself stays the same, so nothing else would:
+    /// the page kept the bar's old height above it until it reloaded.
+    private func observeNavigationBar() {
+        let bar = navigationBar
+        guard bar !== observedBar else { return }
+        observedBar = bar
+        // The layer, because UIKit sizes views through it and the layer
+        // reports its changes to observers.
+        barObservation = bar?.layer.observe(\.bounds) { [weak self] _, _ in
+            MainActor.assumeIsolated { self?.setNeedsLayout() }
         }
     }
 
