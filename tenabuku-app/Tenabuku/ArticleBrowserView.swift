@@ -15,6 +15,8 @@ final class ArticleBrowserModel: NSObject {
     private(set) var isLoading = false
     private(set) var progress = 0.0
     private(set) var loadError: Error?
+    /// Where the page starts to show below what covers the web view's top.
+    private(set) var pageTop: CGFloat = 0
 
     @ObservationIgnored private(set) lazy var webView = makeWebView()
     @ObservationIgnored private var observations: [NSKeyValueObservation] = []
@@ -37,7 +39,8 @@ final class ArticleBrowserModel: NSObject {
     }
 
     private func makeWebView() -> WKWebView {
-        let webView = WKWebView()
+        let webView = ArticleWebView()
+        webView.onPageTopChange = { [weak self] top in self?.pageTop = top }
         webView.navigationDelegate = self
         webView.uiDelegate = self
         webView.allowsBackForwardNavigationGestures = true
@@ -139,8 +142,13 @@ struct ArticleBrowserView: View {
             .ignoresSafeArea(edges: .vertical)
             .background(EdgeOnlyPopGesture())
             .overlay(alignment: .top) {
+                // At the top of the page as it shows, not of the safe area: on
+                // iPhone Duo the page also runs under the empty bar's slot.
+                // Across the whole screen, past the page's side safe areas.
                 if model.isLoading {
                     ProgressView(value: model.progress).progressViewStyle(.linear)
+                        .padding(.top, model.pageTop)
+                        .ignoresSafeArea(edges: [.top, .horizontal])
                 }
             }
             .overlay {
@@ -201,6 +209,106 @@ private struct WebViewContainer: UIViewRepresentable {
 
     func makeUIView(context: Context) -> WKWebView { webView }
     func updateUIView(_ uiView: WKWebView, context: Context) {}
+}
+
+/// Keeps pages clear of the top only where something covers them.
+///
+/// On iPhone Duo the navigation bar moves to the side column but leaves an
+/// empty, zero-height bar at the top, and its slot still counts as safe area.
+/// WebKit kept pages without `viewport-fit=cover` below that safe area, so
+/// their fixed headers stood clear of the top while the article scrolled into
+/// the gap above them. Here the top inset is only what really covers the page:
+/// the screen's own safe area and a navigation bar that has a height.
+private final class ArticleWebView: WKWebView {
+    init() {
+        super.init(frame: .zero, configuration: WKWebViewConfiguration())
+        if #available(iOS 26.0, *) {
+            // WebKit places fixed headers by the obscured insets, which it
+            // takes from the scroll view's automatic insets unless they are set.
+            scrollView.contentInsetAdjustmentBehavior = .never
+            scrollView.automaticallyAdjustsScrollIndicatorInsets = false
+        }
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    // What pages with `viewport-fit=cover` read as the safe area, so that they
+    // do not leave the empty bar's slot either.
+    override var safeAreaInsets: UIEdgeInsets {
+        var insets = super.safeAreaInsets
+        if #available(iOS 26.0, *) {
+            insets.top = min(insets.top, coveredTop)
+        }
+        return insets
+    }
+
+    /// Called with the top of the part of the page nothing covers, whenever it moves.
+    var onPageTopChange: ((CGFloat) -> Void)?
+    private var reportedPageTop: CGFloat?
+    private weak var observedBar: UINavigationBar?
+    private var barObservation: NSKeyValueObservation?
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        setNeedsLayout()
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        observeNavigationBar()
+        let safeArea = safeAreaInsets
+        if reportedPageTop != safeArea.top {
+            reportedPageTop = safeArea.top
+            // Not during layout, which SwiftUI may be in the middle of.
+            DispatchQueue.main.async { [weak self, top = safeArea.top] in
+                self?.onPageTopChange?(top)
+            }
+        }
+        guard #available(iOS 26.0, *) else { return }
+        let insets = UIEdgeInsets(top: safeArea.top, left: 0, bottom: safeArea.bottom, right: 0)
+        guard obscuredContentInsets != insets else { return }
+        let wasAtTop = scrollView.contentOffset.y <= -scrollView.contentInset.top
+        obscuredContentInsets = insets
+        scrollView.contentInset = insets
+        scrollView.verticalScrollIndicatorInsets = insets
+        if wasAtTop {
+            scrollView.contentOffset.y = -insets.top
+        }
+    }
+
+    /// Lays the page out again when the navigation bar changes size. On iPhone
+    /// Duo the bar shrinks to zero height after the web view takes its safe
+    /// area, and the safe area itself stays the same, so nothing else would:
+    /// the page kept the bar's old height above it until it reloaded.
+    private func observeNavigationBar() {
+        let bar = navigationBar
+        guard bar !== observedBar else { return }
+        observedBar = bar
+        // The layer, because UIKit sizes views through it and the layer
+        // reports its changes to observers.
+        barObservation = bar?.layer.observe(\.bounds) { [weak self] _, _ in
+            MainActor.assumeIsolated { self?.setNeedsLayout() }
+        }
+    }
+
+    private var coveredTop: CGFloat {
+        guard let window else { return super.safeAreaInsets.top }
+        let screenTop = window.safeAreaInsets.top - convert(CGPoint.zero, to: window).y
+        var top = max(0, screenTop)
+        if let bar = navigationBar, !bar.isHidden, bar.bounds.height > 0 {
+            top = max(top, bar.convert(bar.bounds, to: self).maxY)
+        }
+        return top
+    }
+
+    private var navigationBar: UINavigationBar? {
+        sequence(first: next, next: { $0?.next })
+            .lazy
+            .compactMap { ($0 as? UIViewController)?.navigationController }
+            .first?
+            .navigationBar
+    }
 }
 
 /// Leaves going back to the list to a swipe from the screen's leading edge.
