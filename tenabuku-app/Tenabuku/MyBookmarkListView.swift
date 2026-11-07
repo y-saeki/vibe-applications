@@ -184,6 +184,7 @@ private struct MyBookmarkList: View {
     @Environment(AccountStore.self) private var accounts
     @Environment(ReadHistoryStore.self) private var readHistory
     @Environment(FaviconSettingsStore.self) private var faviconSettings
+    @Environment(\.openEntryFromPreview) private var openFromPreview
 
     /// Signing in again gives a new token, which starts the list over.
     private struct LoadKey: Equatable {
@@ -204,8 +205,17 @@ private struct MyBookmarkList: View {
             }
             ForEach(model.listing.hits) { hit in
                 // A value the hot entry list's stack already knows how to open.
-                NavigationLink(value: FeedItem(title: hit.title, link: hit.url, bookmarkCount: hit.bookmarkCount)) {
+                let entry = FeedItem(title: hit.title, link: hit.url, bookmarkCount: hit.bookmarkCount)
+                NavigationLink(value: entry) {
                     MyBookmarkRow(hit: hit, isRead: readHistory.isRead(hit.url))
+                        .pagePreviewMenu(
+                            url: hit.url,
+                            title: hit.title.isEmpty ? hit.url.absoluteString : hit.title,
+                            actions: [
+                                PagePreviewAction(title: "編集", systemImage: "pencil") { editing = hit },
+                            ],
+                            open: { openFromPreview(entry) }
+                        )
                 }
                 .onAppear {
                     // Starts on the next page well before the end comes
@@ -214,10 +224,6 @@ private struct MyBookmarkList: View {
                         Task { await model.loadMore(api: api, accounts: accounts) }
                     }
                     prefetchImages(after: hit)
-                }
-                .swipeActions(edge: .leading) {
-                    Button("編集", systemImage: "pencil") { editing = hit }
-                        .tint(.blue)
                 }
             }
             if !model.listing.hits.isEmpty && model.listing.hasMore {

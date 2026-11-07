@@ -39,7 +39,10 @@ final class ArticleBrowserModel: NSObject {
     }
 
     private func makeWebView() -> WKWebView {
-        let webView = ArticleWebView()
+        // A page the list started when the finger rested on its row, or that
+        // a long press previewed, carries on from where it got to.
+        let preloaded = PagePreloader.shared.take(entry.link)
+        let webView = preloaded ?? ArticleWebView()
         webView.onPageTopChange = { [weak self] top in self?.pageTop = top }
         webView.navigationDelegate = self
         webView.uiDelegate = self
@@ -51,7 +54,9 @@ final class ArticleBrowserModel: NSObject {
             observe(webView, \.isLoading) { model, webView in model.isLoading = webView.isLoading },
             observe(webView, \.estimatedProgress) { model, webView in model.progress = webView.estimatedProgress },
         ]
-        webView.load(URLRequest(url: entry.link))
+        if preloaded == nil {
+            webView.load(URLRequest(url: entry.link))
+        }
         return webView
     }
 
@@ -219,7 +224,7 @@ private struct WebViewContainer: UIViewRepresentable {
 /// their fixed headers stood clear of the top while the article scrolled into
 /// the gap above them. Here the top inset is only what really covers the page:
 /// the screen's own safe area and a navigation bar that has a height.
-private final class ArticleWebView: WKWebView {
+final class ArticleWebView: WKWebView {
     init() {
         super.init(frame: .zero, configuration: WKWebViewConfiguration())
         if #available(iOS 26.0, *) {

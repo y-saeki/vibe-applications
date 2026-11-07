@@ -94,6 +94,7 @@ struct HotEntryListView: View {
     @State private var isShowingSettings = false
     @State private var bookmarking: FeedItem?
     @State private var muting: MuteSource?
+    @State private var path = NavigationPath()
     @Environment(ReadHistoryStore.self) private var readHistory
     @Environment(MuteStore.self) private var mutes
     @Environment(WebSessionStore.self) private var webSession
@@ -106,7 +107,7 @@ struct HotEntryListView: View {
     }
 
     private func list(barsMayBeVertical: Bool) -> some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             List {
                 if model.needsWebSignIn {
                     WebSignInPrompt()
@@ -125,18 +126,19 @@ struct HotEntryListView: View {
                 ForEach(visibleItems) { item in
                     NavigationLink(value: item) {
                         EntryRow(item: item, isRead: readHistory.isRead(item.link))
+                            .pagePreviewMenu(
+                                url: item.link,
+                                title: item.title,
+                                actions: [
+                                    PagePreviewAction(title: "ブクマする", systemImage: "bookmark") { bookmarking = item },
+                                    PagePreviewAction(title: "ミュート", systemImage: "eye.slash") {
+                                        muting = MuteSource(title: item.title, url: item.link)
+                                    },
+                                ],
+                                open: { openFromPreview(item) }
+                            )
                     }
                     .onAppear { prefetchImages(after: item) }
-                    .swipeActions(edge: .leading) {
-                        Button("ブクマする", systemImage: "bookmark") { bookmarking = item }
-                            .tint(.blue)
-                    }
-                    .swipeActions(edge: .trailing) {
-                        Button("ミュート", systemImage: "eye.slash") {
-                            muting = MuteSource(title: item.title, url: item.link)
-                        }
-                        .tint(.gray)
-                    }
                 }
                 // So that a list emptied by the user's own rules is not taken
                 // for a feed that came back empty.
@@ -218,6 +220,15 @@ struct HotEntryListView: View {
                 }
             }
         }
+        // On the stack, so that the screens it pushes, such as My bookmarks, have it too.
+        .environment(\.openEntryFromPreview, OpenEntryFromPreviewAction(openFromPreview))
+    }
+
+    /// Opens the article beneath a preview that is already filling the screen.
+    private func openFromPreview(_ item: FeedItem) {
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) { path.append(item) }
     }
 
     private var visibleItems: [FeedItem] {
