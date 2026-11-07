@@ -1,3 +1,4 @@
+import HatenaUnofficial
 import SwiftUI
 
 struct SettingsView: View {
@@ -5,6 +6,7 @@ struct SettingsView: View {
     @Environment(AccountStore.self) private var accounts
     @Environment(MuteStore.self) private var mutes
     @Environment(WebSessionStore.self) private var webSession
+    @Environment(FaviconSettingsStore.self) private var favicons
     @Environment(\.dismiss) private var dismiss
     @State private var isConfirmingClear = false
     @State private var isConfirmingSignOut = false
@@ -66,6 +68,23 @@ struct SettingsView: View {
                 Text("ミュート")
             } footer: {
                 Text("条件に合う記事は、一覧に表示されません。")
+            }
+
+            Section {
+                NavigationLink {
+                    FaviconSettingsView()
+                } label: {
+                    LabeledContent(
+                        "取得先",
+                        value: favicons.enabledSources.isEmpty
+                            ? "なし"
+                            : favicons.enabledSources.map(\.displayName).joined(separator: " → ")
+                    )
+                }
+            } header: {
+                Text("サイトのアイコン")
+            } footer: {
+                Text("一覧でドメインの前に出すアイコンを、どこから読むかを選びます。")
             }
 
             Section {

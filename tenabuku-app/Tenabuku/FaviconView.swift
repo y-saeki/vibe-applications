@@ -8,12 +8,18 @@ import UIKit
 struct FaviconView: View {
     let pageURL: URL
 
+    @Environment(FaviconSettingsStore.self) private var settings
     @State private var phase: Phase = .loading
 
     private enum Phase {
         case loading
         case loaded(UIImage)
         case missing
+    }
+
+    private struct TaskID: Equatable {
+        let pageURL: URL
+        let sources: [FaviconSource]
     }
 
     private static let size: CGFloat = 13
@@ -39,9 +45,9 @@ struct FaviconView: View {
         }
         .frame(width: Self.size, height: Self.size)
         .accessibilityHidden(true)
-        .task(id: pageURL) {
+        .task(id: TaskID(pageURL: pageURL, sources: settings.enabledSources)) {
             phase = .loading
-            let image = await FaviconCache.shared.image(for: pageURL)
+            let image = await FaviconCache.shared.image(for: pageURL, from: settings.enabledSources)
             phase = image.map(Phase.loaded) ?? .missing
         }
     }
@@ -61,8 +67,18 @@ final class FaviconCache {
 
     private let done = NSCache<NSURL, Entry>()
     private var pending: [URL: Task<UIImage?, Never>] = [:]
+    /// Bumped by `removeAll`, so that a fetch started under the old sources
+    /// does not put its result back afterwards.
+    private var generation = 0
 
-    func image(for page: URL) async -> UIImage? {
+    /// Forgets every icon, for when the sources change.
+    func removeAll() {
+        done.removeAllObjects()
+        pending.removeAll()
+        generation += 1
+    }
+
+    func image(for page: URL, from sources: [FaviconSource]) async -> UIImage? {
         if let entry = done.object(forKey: page as NSURL) {
             return entry.image
         }
@@ -70,12 +86,15 @@ final class FaviconCache {
             return await task.value
         }
         let task = Task.detached(priority: .utility) {
-            await AppServices.favicons.icon(for: page).flatMap(Self.decode)
+            await AppServices.favicons.icon(for: page, from: sources).flatMap(Self.decode)
         }
+        let started = generation
         pending[page] = task
         let image = await task.value
-        pending[page] = nil
-        done.setObject(Entry(image), forKey: page as NSURL)
+        if generation == started {
+            pending[page] = nil
+            done.setObject(Entry(image), forKey: page as NSURL)
+        }
         return image
     }
 
