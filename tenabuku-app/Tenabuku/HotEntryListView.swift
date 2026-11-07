@@ -333,8 +333,8 @@ struct EntryThumbnail: View {
     private var fallback: some View {
         Self.background.overlay {
             Image(systemName: "globe")
-                .font(.system(size: 24, weight: .regular))
-                .foregroundStyle(.tertiary)
+                .font(.system(size: 24, weight: .light))
+                .foregroundStyle(.quaternary)
         }
     }
 }
