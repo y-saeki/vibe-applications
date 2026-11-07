@@ -37,7 +37,7 @@ final class ArticleBrowserModel: NSObject {
     }
 
     private func makeWebView() -> WKWebView {
-        let webView = WKWebView()
+        let webView = ArticleWebView()
         webView.navigationDelegate = self
         webView.uiDelegate = self
         webView.allowsBackForwardNavigationGestures = true
@@ -201,6 +201,74 @@ private struct WebViewContainer: UIViewRepresentable {
 
     func makeUIView(context: Context) -> WKWebView { webView }
     func updateUIView(_ uiView: WKWebView, context: Context) {}
+}
+
+/// Keeps pages clear of the top only where something covers them.
+///
+/// On iPhone Duo the navigation bar moves to the side column but leaves an
+/// empty, zero-height bar at the top, and its slot still counts as safe area.
+/// WebKit kept pages without `viewport-fit=cover` below that safe area, so
+/// their fixed headers stood clear of the top while the article scrolled into
+/// the gap above them. Here the top inset is only what really covers the page:
+/// the screen's own safe area and a navigation bar that has a height.
+private final class ArticleWebView: WKWebView {
+    init() {
+        super.init(frame: .zero, configuration: WKWebViewConfiguration())
+        if #available(iOS 26.0, *) {
+            // WebKit places fixed headers by the obscured insets, which it
+            // takes from the scroll view's automatic insets unless they are set.
+            scrollView.contentInsetAdjustmentBehavior = .never
+            scrollView.automaticallyAdjustsScrollIndicatorInsets = false
+        }
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    // What pages with `viewport-fit=cover` read as the safe area, so that they
+    // do not leave the empty bar's slot either.
+    override var safeAreaInsets: UIEdgeInsets {
+        var insets = super.safeAreaInsets
+        if #available(iOS 26.0, *) {
+            insets.top = min(insets.top, coveredTop)
+        }
+        return insets
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        // Here rather than when the safe area changes: the bar can change
+        // height without changing it.
+        guard #available(iOS 26.0, *) else { return }
+        let safeArea = safeAreaInsets
+        let insets = UIEdgeInsets(top: safeArea.top, left: 0, bottom: safeArea.bottom, right: 0)
+        guard obscuredContentInsets != insets else { return }
+        let wasAtTop = scrollView.contentOffset.y <= -scrollView.contentInset.top
+        obscuredContentInsets = insets
+        scrollView.contentInset = insets
+        scrollView.verticalScrollIndicatorInsets = insets
+        if wasAtTop {
+            scrollView.contentOffset.y = -insets.top
+        }
+    }
+
+    private var coveredTop: CGFloat {
+        guard let window else { return super.safeAreaInsets.top }
+        let screenTop = window.safeAreaInsets.top - convert(CGPoint.zero, to: window).y
+        var top = max(0, screenTop)
+        if let bar = navigationBar, !bar.isHidden, bar.bounds.height > 0 {
+            top = max(top, bar.convert(bar.bounds, to: self).maxY)
+        }
+        return top
+    }
+
+    private var navigationBar: UINavigationBar? {
+        sequence(first: next, next: { $0?.next })
+            .lazy
+            .compactMap { ($0 as? UIViewController)?.navigationController }
+            .first?
+            .navigationBar
+    }
 }
 
 /// Leaves going back to the list to a swipe from the screen's leading edge.
