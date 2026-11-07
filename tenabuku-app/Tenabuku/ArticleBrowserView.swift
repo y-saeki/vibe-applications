@@ -144,10 +144,11 @@ struct ArticleBrowserView: View {
             .overlay(alignment: .top) {
                 // At the top of the page as it shows, not of the safe area: on
                 // iPhone Duo the page also runs under the empty bar's slot.
+                // Across the whole screen, past the page's side safe areas.
                 if model.isLoading {
                     ProgressView(value: model.progress).progressViewStyle(.linear)
                         .padding(.top, model.pageTop)
-                        .ignoresSafeArea(edges: .top)
+                        .ignoresSafeArea(edges: [.top, .horizontal])
                 }
             }
             .overlay {
