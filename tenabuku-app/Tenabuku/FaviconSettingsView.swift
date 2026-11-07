@@ -21,6 +21,9 @@ struct FaviconSettingsView: View {
                                 .foregroundStyle(.secondary)
                         }
                     }
+                    // The gap Safari's Start Page leaves between a switch and
+                    // the drag handle; without it the two read as one control.
+                    .padding(.trailing, 12)
                 }
                 .onMove { settings.move(fromOffsets: $0, toOffset: $1) }
             } footer: {
