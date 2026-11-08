@@ -13,6 +13,33 @@ application itself. Applications do not share a build system, a dependency tree 
 lockfile: each directory is self-contained and can be built, run and thrown away on its
 own. Nothing but shared repository-level configuration belongs at the root.
 
+## Some applications have a worktree of their own
+
+On the owner's Mac, two applications are developed in long-lived git worktrees beside the
+main checkout, so that each can be built and tried on its own branch while the other is
+in progress:
+
+| Application | Worktree |
+| --- | --- |
+| `tenabuku-app` | `/Users/y-saeki/Documents/github/y-saeki/vibe-applications-tenabuku` |
+| `mailcrew` | `/Users/y-saeki/Documents/github/y-saeki/vibe-applications-mailcrew` |
+
+- Work on these applications happens in their worktree, whichever folder the session
+  started in. Each task starts a branch there from the latest main:
+  `git fetch origin && git switch -c <branch> origin/main`.
+- Do not create another worktree for them, and do not change the branch of the main
+  checkout for their work. The main checkout stays on `main`, so `main` cannot be checked
+  out in these worktrees either.
+- If the worktree has uncommitted changes from another task, stop and ask rather than
+  switching branches over them.
+- The worktrees are permanent. When their branch is merged, switch them to a new branch
+  from `origin/main` and delete only the old branch; never remove the worktree.
+- Files the build needs but git does not track (`Secrets.xcconfig`, generated Xcode
+  projects, build output) already live in each worktree and stay between tasks.
+  Regenerate the Xcode project with `xcodegen generate` after switching branches.
+
+Cloud sessions have no such folders and work in their own checkout as usual.
+
 ## Confirm the stack before starting a new application
 
 Which language, framework and package manager an application uses is a decision to make
