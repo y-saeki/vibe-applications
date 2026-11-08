@@ -505,16 +505,19 @@ final class ArticleWebView: WKWebView {
             }
         }
         guard #available(iOS 26.0, *) else { return }
-        let insets = UIEdgeInsets(top: safeArea.top, left: 0, bottom: safeArea.bottom, right: 0)
-        guard scrollView.contentInset != insets else { return }
+        // The bar's height only, not the home indicator's: the scroll view
+        // lets the end of the page go past where WebKit keeps a fixed footer,
+        // which then rose off the bottom edge with a strip of page below it.
+        let insets = UIEdgeInsets(top: safeArea.top, left: 0, bottom: coveredBottom, right: 0)
+        let indicatorInsets = UIEdgeInsets(top: safeArea.top, left: 0, bottom: safeArea.bottom, right: 0)
+        guard scrollView.contentInset != insets || scrollView.verticalScrollIndicatorInsets != indicatorInsets else { return }
         let wasAtTop = scrollView.contentOffset.y <= -scrollView.contentInset.top
         // The top only. Given a bottom inset, WebKit painted it over with the
         // colour of a page's fixed footer, such as an empty ad slot, so the
         // page stopped short of the bottom bar instead of running under it.
-        // The scroll view's inset still lets the end of the page scroll clear.
         obscuredContentInsets = UIEdgeInsets(top: insets.top, left: 0, bottom: 0, right: 0)
         scrollView.contentInset = insets
-        scrollView.verticalScrollIndicatorInsets = insets
+        scrollView.verticalScrollIndicatorInsets = indicatorInsets
         if wasAtTop {
             scrollView.contentOffset.y = -insets.top
         }
@@ -543,6 +546,16 @@ final class ArticleWebView: WKWebView {
             top = max(top, bar.convert(bar.bounds, to: self).maxY)
         }
         return top
+    }
+
+    /// How far the bottom bar reaches above the screen's own safe area, so
+    /// that the end of the page can scroll clear of the bar.
+    private var coveredBottom: CGFloat {
+        let bottom = safeAreaInsets.bottom
+        guard let window else { return bottom }
+        let screenBottom = convert(CGPoint(x: 0, y: bounds.maxY), to: window).y
+            - (window.bounds.height - window.safeAreaInsets.bottom)
+        return max(0, bottom - max(0, screenBottom))
     }
 
     private var navigationBar: UINavigationBar? {
