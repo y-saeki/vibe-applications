@@ -173,6 +173,11 @@ struct ArticleBrowserView: View {
     /// Whether the page has taken the whole screen, in place of the vertical
     /// bar, on iPhone Duo's inner display held sideways.
     @State private var isFullScreen = false
+    /// Whether the reader has put the bars away, so that a page that fills
+    /// its window, such as a web comic viewer enlarged in place, has the whole
+    /// screen. Unlike a page's own full screen, WebKit plays no part: many
+    /// viewers enlarge without asking for it.
+    @State private var hidesBars = false
     @Environment(ReadHistoryStore.self) private var readHistory
 
     init(entry: FeedItem) {
@@ -247,15 +252,21 @@ struct ArticleBrowserView: View {
             // The entry, not the page shown, so that following links inside the
             // article still marks the row it was opened from.
             .onAppear { readHistory.markRead(model.entry.link) }
+            .overlay(alignment: .topTrailing) {
+                if hidesBars {
+                    showBarsButton
+                }
+            }
             .backButtonMoved(layout != .side)
-            .verticalBarDisabled(layout == .fullScreen)
-            .toolbar(layout == .fullScreen ? .hidden : .automatic, for: .navigationBar)
+            .verticalBarDisabled(layout == .fullScreen || hidesBars)
+            .toolbar(layout == .fullScreen || hidesBars ? .hidden : .automatic, for: .navigationBar)
             .toolbar(
-                layout == .fullScreen && model.isScrollingDown ? .hidden : .automatic,
+                hidesBars || (layout == .fullScreen && model.isScrollingDown) ? .hidden : .automatic,
                 for: .bottomBar
             )
             .animation(.default, value: model.isScrollingDown)
-            .statusBarHidden(layout == .fullScreen)
+            .animation(.default, value: hidesBars)
+            .statusBarHidden(layout == .fullScreen || hidesBars)
             .toolbar {
                 switch layout {
                 case .bottom, .fullScreen:
@@ -319,12 +330,38 @@ struct ArticleBrowserView: View {
             .disabled(!model.canGoForward)
     }
 
+    /// Brings the bars back. In the strip the status bar leaves empty, beside
+    /// the camera, where it covers none of the page; a screen without one,
+    /// such as an iPhone held sideways, has it over the page's corner.
+    private var showBarsButton: some View {
+        let size: CGFloat = 36
+        return Button {
+            hidesBars = false
+        } label: {
+            Image(systemName: "arrow.down.right.and.arrow.up.left")
+                .font(.footnote.weight(.semibold))
+                .frame(width: size, height: size)
+                .background(.ultraThinMaterial, in: Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("全画面を終了")
+        .padding(.top, max(4, (model.pageTop - size) / 2))
+        .padding(.trailing, 16)
+        .ignoresSafeArea(edges: .top)
+        .transition(.opacity)
+    }
+
     @ViewBuilder
     private var entryButtons: some View {
         Button("ブコメを見る", systemImage: "text.bubble") { isShowingComments = true }
         Button("ブクマする", systemImage: "bookmark") { isShowingBookmarkEditor = true }
-        ShareLink(item: model.pageURL ?? model.entry.link) {
-            Label("共有", systemImage: "square.and.arrow.up")
+        // In a menu, because one more button along the bottom does not fit an
+        // iPhone's width, and the system would fold the bar's own buttons away.
+        Menu("その他", systemImage: "ellipsis") {
+            ShareLink(item: model.pageURL ?? model.entry.link) {
+                Label("共有", systemImage: "square.and.arrow.up")
+            }
+            Button("全画面", systemImage: "arrow.up.left.and.arrow.down.right") { hidesBars = true }
         }
     }
 }
@@ -346,7 +383,13 @@ private struct WebViewContainer: UIViewRepresentable {
 /// the screen's own safe area and a navigation bar that has a height.
 final class ArticleWebView: WKWebView {
     init() {
-        super.init(frame: .zero, configuration: WKWebViewConfiguration())
+        let configuration = WKWebViewConfiguration()
+        // Lets a page's own full-screen button, such as a web comic viewer's,
+        // take the whole screen. WebKit moves the web view into a window of its
+        // own, over the bars, and back again on leaving. Without it the page
+        // only fills the web view's frame, under the bars that cover it.
+        configuration.preferences.isElementFullscreenEnabled = true
+        super.init(frame: .zero, configuration: configuration)
         if #available(iOS 26.0, *) {
             // WebKit places fixed headers by the obscured insets, which it
             // takes from the scroll view's automatic insets unless they are set.
