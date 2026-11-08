@@ -133,7 +133,7 @@ struct StripView: View {
                     }
                 }
             }
-            .scrollTargetBehavior(.viewAligned)
+            .scrollTargetBehavior(StripScrollBehavior(page: width + Self.gap))
             .overlay(alignment: .leading) {
                 // Always there, so it narrows with the gap as the cards
                 // spring back instead of fading out over the first card.
