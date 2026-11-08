@@ -1,4 +1,5 @@
 import HatenaUnofficial
+import HomeShelves
 import SwiftUI
 
 struct SettingsView: View {
@@ -7,6 +8,7 @@ struct SettingsView: View {
     @Environment(MuteStore.self) private var mutes
     @Environment(WebSessionStore.self) private var webSession
     @Environment(FaviconSettingsStore.self) private var favicons
+    @Environment(ShelfSettingsStore.self) private var shelves
     @Environment(\.dismiss) private var dismiss
     @State private var isConfirmingClear = false
     @State private var isConfirmingSignOut = false
@@ -56,6 +58,18 @@ struct SettingsView: View {
                 Text("はてなの Web")
             } footer: {
                 Text("マイホットエントリーと、非表示ユーザーのコメントを隠すのに使います。はてなが公式に提供していない方法で読み込むので、予告なく読めなくなることがあります。")
+            }
+
+            Section {
+                NavigationLink {
+                    ShelfEditorView()
+                } label: {
+                    LabeledContent("表示する棚", value: "\(shelves.shownShelves.count) 件")
+                }
+            } header: {
+                Text("ホーム")
+            } footer: {
+                Text("ホームに出す棚と、その順番を選びます。")
             }
 
             Section {

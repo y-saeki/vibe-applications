@@ -7,7 +7,6 @@ import SwiftUI
 struct HomeView: View {
     @State private var feeds = ShelfFeedStore()
     @State private var isShowingSettings = false
-    @State private var isEditingShelves = false
     @State private var bookmarking: FeedItem?
     @State private var muting: MuteSource?
     @State private var path = NavigationPath()
@@ -43,7 +42,7 @@ struct HomeView: View {
                     ContentUnavailableView {
                         Label("表示する棚がありません", systemImage: "square.stack")
                     } actions: {
-                        Button("棚を編集") { isEditingShelves = true }
+                        Button("設定を開く") { isShowingSettings = true }
                     }
                 }
             }
@@ -62,15 +61,11 @@ struct HomeView: View {
                 if barsMayBeVertical {
                     ToolbarItemGroup(placement: .bottomBar) {
                         settingsButton
-                        editShelvesButton
                         Spacer()
                     }
                 } else {
                     ToolbarItem(placement: .topBarLeading) {
                         settingsButton
-                    }
-                    ToolbarItem(placement: .topBarTrailing) {
-                        editShelvesButton
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
@@ -95,11 +90,6 @@ struct HomeView: View {
                     SettingsView()
                 }
             }
-            .sheet(isPresented: $isEditingShelves) {
-                NavigationStack {
-                    ShelfEditorView()
-                }
-            }
             .refreshable { await feeds.reloadLoaded(webSession: webSession) }
             // Signing in from the prompt, or from Settings, brings My hot entries in.
             .onChange(of: webSession.isSignedIn) { _, isSignedIn in
@@ -121,10 +111,6 @@ struct HomeView: View {
 
     private var settingsButton: some View {
         Button("設定", systemImage: "gearshape") { isShowingSettings = true }
-    }
-
-    private var editShelvesButton: some View {
-        Button("棚を編集", systemImage: "slider.horizontal.3") { isEditingShelves = true }
     }
 }
 
@@ -156,20 +142,10 @@ private struct EntryShelf: View {
     }
 
     private var header: some View {
-        HStack(alignment: .firstTextBaseline) {
-            Text(shelf.displayName)
-                .font(.title3.bold())
-                .accessibilityAddTraits(.isHeader)
-            Spacer()
-            // So that a shelf emptied by the user's own rules is not taken
-            // for a feed that came back empty.
-            if case let hidden = feed.items.count - visibleItems.count, hidden > 0 {
-                Text("ミュート \(hidden) 件")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .padding(.horizontal, Self.margin)
+        Text(shelf.displayName)
+            .font(.title3.bold())
+            .accessibilityAddTraits(.isHeader)
+            .padding(.horizontal, Self.margin)
     }
 
     @ViewBuilder

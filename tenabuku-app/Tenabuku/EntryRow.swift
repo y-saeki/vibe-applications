@@ -37,6 +37,7 @@ struct EntryRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
+            EntryThumbnail(url: item.imageURL)
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 8) {
                     if let host = item.link.host() {
@@ -60,8 +61,7 @@ struct EntryRow: View {
                     // Drawn below the site line but read out first.
                     .accessibilitySortPriority(1)
             }
-            Spacer(minLength: 0)
-            EntryThumbnail(url: item.imageURL)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.vertical, 4)
         .accessibilityElement(children: .combine)
@@ -69,7 +69,7 @@ struct EntryRow: View {
     }
 }
 
-/// The square image at the end of an entry row. Every row keeps the slot, so
+/// The square image at the start of an entry row. Every row keeps the slot, so
 /// titles line up whether or not the page has an `og:image`: when there is
 /// none, or it fails to load, the slot shows a globe on a faint gray, the same
 /// glyph `FaviconView` falls back to.

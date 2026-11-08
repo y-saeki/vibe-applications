@@ -1,51 +1,50 @@
 import HomeShelves
 import SwiftUI
 
-/// Chooses which shelves the home screen shows, and in what order.
+/// Chooses which shelves the home screen shows, and in what order. Opened
+/// from Settings.
 struct ShelfEditorView: View {
     @Environment(ShelfSettingsStore.self) private var shelfSettings
-    @Environment(\.dismiss) private var dismiss
-
-    private var shownShelves: Binding<Set<HomeShelf>> {
-        Binding(
-            get: { Set(shelfSettings.shownShelves) },
-            set: { shown in
-                for entry in shelfSettings.preferences.entries where shown.contains(entry.shelf) != entry.isShown {
-                    shelfSettings.setShown(!entry.isShown, for: entry.shelf)
-                }
-            }
-        )
-    }
 
     var body: some View {
-        // The list's own selection marks the shelves shown: in edit mode a
-        // control inside a row takes no tap, and the marks sit beside the
-        // reorder handles without one.
-        List(selection: shownShelves) {
+        List {
             Section {
                 ForEach(shelfSettings.preferences.entries, id: \.shelf) { entry in
-                    Text(entry.shelf.displayName)
-                        // The mark says enough; a shown shelf is not to look pressed.
-                        .listRowBackground(Color(uiColor: .secondarySystemGroupedBackground))
+                    // A button of its own rather than the list's selection:
+                    // dragging one selected row drags every selected row with it.
+                    Button {
+                        shelfSettings.setShown(!entry.isShown, for: entry.shelf)
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: entry.isShown ? "checkmark.circle.fill" : "circle")
+                                .font(.title3)
+                                .foregroundStyle(entry.isShown ? Color.accentColor : Color.secondary)
+                            Text(entry.shelf.displayName)
+                                // A color, not `.primary`, which the button tints.
+                                .foregroundStyle(Color(uiColor: .label))
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                    }
+                    // Borderless, so that the button still takes taps while
+                    // the list stays in edit mode for the reorder handles.
+                    .buttonStyle(.borderless)
+                    .accessibilityAddTraits(entry.isShown ? .isSelected : [])
                 }
                 .onMove { shelfSettings.move(fromOffsets: $0, toOffset: $1) }
             } footer: {
                 Text("チェックを付けた棚がホームに出ます。右端をドラッグすると並べ替えられます。")
             }
-        }
-        // Always reorderable: the list exists to be rearranged.
-        .environment(\.editMode, .constant(.active))
-        .navigationTitle("棚を編集")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .confirmationAction) {
-                Button("完了") { dismiss() }
-            }
-            // In the bar rather than the list, where edit mode keeps a button from taking taps.
-            ToolbarItem(placement: .bottomBar) {
+
+            Section {
                 Button("最初の状態に戻す") { shelfSettings.reset() }
+                    .buttonStyle(.borderless)
                     .disabled(shelfSettings.preferences == .default)
             }
         }
+        // Always reorderable: the list exists to be rearranged.
+        .environment(\.editMode, .constant(.active))
+        .navigationTitle("表示する棚")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
