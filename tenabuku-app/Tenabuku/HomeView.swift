@@ -48,6 +48,9 @@ struct HomeView: View {
                 }
             }
             .navigationTitle("ホットエントリー")
+            // In the bar's own row, so that no empty row sits above the title
+            // and the settings stand level with it.
+            .toolbarTitleDisplayMode(.inlineLarge)
             .navigationDestination(for: FeedItem.self) { item in
                 ArticleBrowserView(entry: item)
             }

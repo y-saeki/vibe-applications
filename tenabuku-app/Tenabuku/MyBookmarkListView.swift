@@ -173,6 +173,9 @@ struct MyBookmarkListView: View {
                 }
             }
             .navigationTitle("マイブックマーク")
+            // In the bar's own row: with going back at the bottom, the row
+            // above the title would otherwise stand empty.
+            .toolbarTitleDisplayMode(.inlineLarge)
             .backButtonMoved(movesBack)
             .toolbar {
                 if movesBack {
