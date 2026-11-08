@@ -17,6 +17,15 @@ final class ArticleBrowserModel: NSObject {
     private(set) var loadError: Error?
     /// Where the page starts to show below what covers the web view's top.
     private(set) var pageTop: CGFloat = 0
+    /// Whether the reader last scrolled down the page, which hides the bar
+    /// where the page has the whole screen. Scrolling up, or reaching the top
+    /// of the page, brings it back.
+    private(set) var isScrollingDown = false
+    @ObservationIgnored private var lastOffset: CGFloat = 0
+    @ObservationIgnored private var travel: CGFloat = 0
+    /// How far a finger moves the page one way before the bar follows, so
+    /// that a page nudged back and forth while reading leaves it alone.
+    private static let scrollThreshold: CGFloat = 24
 
     @ObservationIgnored private(set) lazy var webView = makeWebView()
     @ObservationIgnored private var observations: [NSKeyValueObservation] = []
@@ -48,6 +57,9 @@ final class ArticleBrowserModel: NSObject {
         webView.uiDelegate = self
         webView.allowsBackForwardNavigationGestures = true
         observations = [
+            webView.scrollView.observe(\.contentOffset, options: [.new]) { [weak self] scrollView, _ in
+                MainActor.assumeIsolated { self?.didScroll(scrollView) }
+            },
             observe(webView, \.url) { model, webView in model.pageURL = webView.url ?? model.pageURL },
             observe(webView, \.canGoBack) { model, webView in model.canGoBack = webView.canGoBack },
             observe(webView, \.canGoForward) { model, webView in model.canGoForward = webView.canGoForward },
@@ -58,6 +70,29 @@ final class ArticleBrowserModel: NSObject {
             webView.load(URLRequest(url: entry.link))
         }
         return webView
+    }
+
+    private func didScroll(_ scrollView: UIScrollView) {
+        let offset = scrollView.contentOffset.y
+        defer { lastOffset = offset }
+        if offset <= -scrollView.adjustedContentInset.top {
+            travel = 0
+            isScrollingDown = false
+            return
+        }
+        // Only the reader's own scrolling: a page that moves itself, or the
+        // insets changing as the bar comes and goes, leaves the bar as it is.
+        guard scrollView.isDragging || scrollView.isDecelerating else { return }
+        let delta = offset - lastOffset
+        // At the foot of the page the bounce pulls it back up.
+        let bottom = scrollView.contentSize.height - scrollView.bounds.height + scrollView.adjustedContentInset.bottom
+        guard offset < bottom else { return }
+        travel = (travel >= 0) == (delta >= 0) ? travel + delta : delta
+        if travel > Self.scrollThreshold {
+            isScrollingDown = true
+        } else if travel < -Self.scrollThreshold {
+            isScrollingDown = false
+        }
     }
 
     // WKWebView documents these key paths as observable and reports them on the main thread.
@@ -95,6 +130,8 @@ extension ArticleBrowserModel: WKNavigationDelegate {
 
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         loadError = nil
+        // A new page starts with the bar in view.
+        isScrollingDown = false
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
@@ -133,9 +170,9 @@ struct ArticleBrowserView: View {
     /// Whether the page is wider than it is tall, which with a vertical bar
     /// tells iPhone Duo's inner display held sideways from its outer display.
     @State private var isWide = false
-    /// Whether the buttons have gone to a bar along the top, in place of the
-    /// vertical bar, on iPhone Duo's inner display held sideways.
-    @State private var usesTopBar = false
+    /// Whether the page has taken the whole screen, in place of the vertical
+    /// bar, on iPhone Duo's inner display held sideways.
+    @State private var isFullScreen = false
     @Environment(ReadHistoryStore.self) private var readHistory
 
     init(entry: FeedItem) {
@@ -149,22 +186,24 @@ struct ArticleBrowserView: View {
         /// In the vertical bar at the side: going back and the page arrows at
         /// its top, the rest at its foot.
         case side
-        /// Along the top, on iPhone Duo's inner display held sideways, so that
-        /// the page takes the whole width and its middle is the screen's.
-        case top
+        /// On iPhone Duo's inner display held sideways, the page takes the
+        /// whole screen, so that its middle is the screen's: no status bar,
+        /// no bar at the top, and the buttons along the bottom, out of the
+        /// way while the reader scrolls down.
+        case fullScreen
     }
 
     var body: some View {
         VerticalBarReader { barsMayBeVertical in
-            browser(layout: usesTopBar ? .top : barsMayBeVertical ? .side : .bottom)
+            browser(layout: isFullScreen ? .fullScreen : barsMayBeVertical ? .side : .bottom)
                 .onChange(of: [barsMayBeVertical, isWide], initial: true) {
                     // Turning the vertical bar off also tells this screen there
-                    // is none, so the top bar holds until the screen turns
+                    // is none, so the full screen holds until the screen turns
                     // upright or folds, rather than handing back to the side.
                     if !isWide {
-                        usesTopBar = false
+                        isFullScreen = false
                     } else if barsMayBeVertical {
-                        usesTopBar = true
+                        isFullScreen = true
                     }
                 }
         }
@@ -208,11 +247,18 @@ struct ArticleBrowserView: View {
             // The entry, not the page shown, so that following links inside the
             // article still marks the row it was opened from.
             .onAppear { readHistory.markRead(model.entry.link) }
-            .backButtonMoved(layout == .bottom)
-            .verticalBarDisabled(layout == .top)
+            .backButtonMoved(layout != .side)
+            .verticalBarDisabled(layout == .fullScreen)
+            .toolbar(layout == .fullScreen ? .hidden : .automatic, for: .navigationBar)
+            .toolbar(
+                layout == .fullScreen && model.isScrollingDown ? .hidden : .automatic,
+                for: .bottomBar
+            )
+            .animation(.default, value: model.isScrollingDown)
+            .statusBarHidden(layout == .fullScreen)
             .toolbar {
                 switch layout {
-                case .bottom:
+                case .bottom, .fullScreen:
                     ToolbarItemGroup(placement: .bottomBar) {
                         BackButton()
                         pageButtons
@@ -224,13 +270,6 @@ struct ArticleBrowserView: View {
                         pageButtons
                     }
                     ToolbarItemGroup(placement: .bottomBar) {
-                        entryButtons
-                    }
-                case .top:
-                    ToolbarItemGroup(placement: .topBarLeading) {
-                        pageButtons
-                    }
-                    ToolbarItemGroup(placement: .topBarTrailing) {
                         entryButtons
                     }
                 }
