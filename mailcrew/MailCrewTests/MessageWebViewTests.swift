@@ -104,6 +104,17 @@ final class MessageWebViewTests: XCTestCase {
         XCTAssertLessThan(height, 120)
     }
 
+    func testAShortCellBesideAFullWidthCellStaysOnOneLine() async throws {
+        // Uber Eats receipts lay their total out like this.
+        let receipt = """
+        <table width="100%" style="font-size: 40px; line-height: 1"><tr>
+        <td width="100%">合計</td><td>¥1,529</td>
+        </tr></table>
+        """
+        let (_, height) = try await show(receipt)
+        XCTAssertLessThan(height, 100)
+    }
+
     func testAWideMessageIsScaledToTheWidth() async throws {
         let wide = "<table width=\"1140\" style=\"height: 1000px\"><tr><td>x</td></tr></table>"
         let (_, height) = try await show(wide)

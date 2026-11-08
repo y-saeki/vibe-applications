@@ -19,15 +19,20 @@ import Foundation
 ///   navigation is turned away, and a clicked link that passes
 ///   `isOpenableLink` (http, https, mailto) is opened by the OS instead.
 enum MessageFrame {
-    /// Inline styles every message starts from: the Tauri app's
-    /// `BASE_STYLE` (`src/message-frame.ts`).
+    /// Inline styles every message starts from.
+    ///
+    /// Long words break with `break-word`, not `anywhere`: `anywhere` also
+    /// lets a table shrink a cell to one character, so a short amount beside a
+    /// `width="100%"` cell stood one letter per line. A cell that will not
+    /// shrink makes the message wider instead, and `MessageWebView` scales it
+    /// down to the card.
     static let baseStyle = """
     html { color-scheme: light; background: #fff; overflow: hidden; }
     body {
       margin: 16px;
       color: #1d1d1f;
       font: 14px/1.6 -apple-system, BlinkMacSystemFont, "Hiragino Sans", sans-serif;
-      overflow-wrap: anywhere;
+      overflow-wrap: break-word;
     }
     pre { white-space: pre-wrap; }
     a { color: #1f5fbf; }
