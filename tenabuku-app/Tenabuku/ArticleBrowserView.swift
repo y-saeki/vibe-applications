@@ -227,10 +227,11 @@ struct ArticleBrowserView: View {
         // because that is what lets iPhone Duo lay it out vertically and leave the
         // height to the page. There is no title for the same reason: on iPhone Duo
         // it would take a bar of its own, and the page shows its title anyway.
-        // Vertical only: left to WebKit, the sides depend on each page's viewport
-        // and CSS, and many pages run under a toolbar on iPhone Duo's side.
+        // Edge to edge, so that the scroll indicator runs along the screen's
+        // edge past the vertical bar, as Safari's does. The page itself keeps
+        // clear of the bar through the insets the web view gives WebKit.
         WebViewContainer(webView: model.webView)
-            .ignoresSafeArea(edges: .vertical)
+            .ignoresSafeArea()
             .onGeometryChange(for: Bool.self) { $0.size.width > $0.size.height } action: { isWide = $0 }
             .background(EdgeOnlyPopGesture())
             .overlay(alignment: .top) {
@@ -508,18 +509,23 @@ final class ArticleWebView: WKWebView {
         // The bar's height only, not the home indicator's: the scroll view
         // lets the end of the page go past where WebKit keeps a fixed footer,
         // which then rose off the bottom edge with a strip of page below it.
-        let insets = UIEdgeInsets(top: safeArea.top, left: 0, bottom: coveredBottom, right: 0)
+        let insets = UIEdgeInsets(top: safeArea.top, left: safeArea.left, bottom: coveredBottom, right: safeArea.right)
+        // At the screen's edge, as Safari puts it, past the vertical bar.
         let indicatorInsets = UIEdgeInsets(top: safeArea.top, left: 0, bottom: safeArea.bottom, right: 0)
         guard scrollView.contentInset != insets || scrollView.verticalScrollIndicatorInsets != indicatorInsets else { return }
         let wasAtTop = scrollView.contentOffset.y <= -scrollView.contentInset.top
-        // The top only. Given a bottom inset, WebKit painted it over with the
-        // colour of a page's fixed footer, such as an empty ad slot, so the
+        let wasAtLeading = scrollView.contentOffset.x <= -scrollView.contentInset.left
+        // Not the bottom. Given a bottom inset, WebKit painted it over with
+        // the colour of a page's fixed footer, such as an empty ad slot, so the
         // page stopped short of the bottom bar instead of running under it.
-        obscuredContentInsets = UIEdgeInsets(top: insets.top, left: 0, bottom: 0, right: 0)
+        obscuredContentInsets = UIEdgeInsets(top: insets.top, left: insets.left, bottom: 0, right: insets.right)
         scrollView.contentInset = insets
         scrollView.verticalScrollIndicatorInsets = indicatorInsets
         if wasAtTop {
             scrollView.contentOffset.y = -insets.top
+        }
+        if wasAtLeading {
+            scrollView.contentOffset.x = -insets.left
         }
     }
 
