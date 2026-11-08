@@ -47,6 +47,10 @@ final class ArticleBrowserModel: NSObject {
         }
     }
 
+    func extendsToBottomEdge(_ extends: Bool) {
+        (webView as? ArticleWebView)?.extendsToBottomEdge = extends
+    }
+
     private func makeWebView() -> WKWebView {
         // A page the list started when the finger rested on its row, or that
         // a long press previewed, carries on from where it got to.
@@ -177,7 +181,12 @@ struct ArticleBrowserView: View {
     /// its window, such as a web comic viewer enlarged in place, has the whole
     /// screen. Unlike a page's own full screen, WebKit plays no part: many
     /// viewers enlarge without asking for it.
+    ///
+    /// Only on iPhone Duo's inner display, where turning the screen or folding
+    /// it is a natural way back. Elsewhere going back to the list would be the
+    /// only one, and the wish to read a page without the bars is rare.
     @State private var hidesBars = false
+    @State private var screen = ScreenState()
     @Environment(ReadHistoryStore.self) private var readHistory
 
     init(entry: FeedItem) {
@@ -252,11 +261,15 @@ struct ArticleBrowserView: View {
             // The entry, not the page shown, so that following links inside the
             // article still marks the row it was opened from.
             .onAppear { readHistory.markRead(model.entry.link) }
-            .overlay(alignment: .topTrailing) {
-                if hidesBars {
-                    showBarsButton
+            .background(ScreenReader { state in
+                // Turning the screen or folding it brings the bars back, the way
+                // the bars come and go with the screen's layout anyway.
+                if !state.isUnfolded || (screen.windowSize != nil && state.windowSize != screen.windowSize) {
+                    hidesBars = false
                 }
-            }
+                screen = state
+            })
+            .onChange(of: hidesBars, initial: true) { model.extendsToBottomEdge(hidesBars) }
             .backButtonMoved(layout != .side)
             .verticalBarDisabled(layout == .fullScreen || hidesBars)
             .toolbar(layout == .fullScreen || hidesBars ? .hidden : .automatic, for: .navigationBar)
@@ -330,38 +343,80 @@ struct ArticleBrowserView: View {
             .disabled(!model.canGoForward)
     }
 
-    /// Brings the bars back. In the strip the status bar leaves empty, beside
-    /// the camera, where it covers none of the page; a screen without one,
-    /// such as an iPhone held sideways, has it over the page's corner.
-    private var showBarsButton: some View {
-        let size: CGFloat = 36
-        return Button {
-            hidesBars = false
-        } label: {
-            Image(systemName: "arrow.down.right.and.arrow.up.left")
-                .font(.footnote.weight(.semibold))
-                .frame(width: size, height: size)
-                .background(.ultraThinMaterial, in: Circle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("全画面を終了")
-        .padding(.top, max(4, (model.pageTop - size) / 2))
-        .padding(.trailing, 16)
-        .ignoresSafeArea(edges: .top)
-        .transition(.opacity)
-    }
-
     @ViewBuilder
     private var entryButtons: some View {
         Button("ブコメを見る", systemImage: "text.bubble") { isShowingComments = true }
         Button("ブクマする", systemImage: "bookmark") { isShowingBookmarkEditor = true }
-        // In a menu, because one more button along the bottom does not fit an
-        // iPhone's width, and the system would fold the bar's own buttons away.
-        Menu("その他", systemImage: "ellipsis") {
-            ShareLink(item: model.pageURL ?? model.entry.link) {
-                Label("共有", systemImage: "square.and.arrow.up")
-            }
+        ShareLink(item: model.pageURL ?? model.entry.link) {
+            Label("共有", systemImage: "square.and.arrow.up")
+        }
+        // The inner display is wide enough for one more button along the
+        // bottom, upright or sideways; an iPhone's width is not.
+        if screen.isUnfolded {
             Button("全画面", systemImage: "arrow.up.left.and.arrow.down.right") { hidesBars = true }
+        }
+    }
+}
+
+/// What the browser needs to know about the screen it is on.
+private struct ScreenState: Equatable {
+    var windowSize: CGSize?
+    /// Whether iPhone Duo is open, so that the page is on its inner display.
+    var isUnfolded = false
+}
+
+/// Reports the window's size and the state of iPhone Duo's hinge. The window,
+/// not the page, because putting the bars away changes the page's size too.
+/// The hinge, not the device's model, so that the inner display is told by
+/// the context the page is in, as Apple's iPhone Duo guidance asks; other
+/// iPhones have none, and count as folded.
+private struct ScreenReader: UIViewRepresentable {
+    let onChange: (ScreenState) -> Void
+
+    func makeUIView(context: Context) -> Probe { Probe(onChange: onChange) }
+    func updateUIView(_ uiView: Probe, context: Context) { uiView.onChange = onChange }
+
+    final class Probe: UIView {
+        var onChange: (ScreenState) -> Void
+        private var state = ScreenState()
+
+        init(onChange: @escaping (ScreenState) -> Void) {
+            self.onChange = onChange
+            super.init(frame: .zero)
+            isUserInteractionEnabled = false
+            if #available(iOS 27.1, *) {
+                addInteraction(UIHingeInteraction { [weak self] _, update in
+                    let status = update.hinge?.status
+                    self?.change { $0.isUnfolded = status == .partiallyOpen || status == .fullyOpen }
+                })
+            }
+        }
+
+        @available(*, unavailable)
+        required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            reportWindowSize()
+        }
+
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            reportWindowSize()
+        }
+
+        private func reportWindowSize() {
+            guard let window else { return }
+            change { $0.windowSize = window.bounds.size }
+        }
+
+        private func change(_ update: (inout ScreenState) -> Void) {
+            var next = state
+            update(&next)
+            guard next != state else { return }
+            state = next
+            // Not during layout, which SwiftUI may be in the middle of.
+            DispatchQueue.main.async { [onChange] in onChange(next) }
         }
     }
 }
@@ -407,8 +462,22 @@ final class ArticleWebView: WKWebView {
         var insets = super.safeAreaInsets
         if #available(iOS 26.0, *) {
             insets.top = min(insets.top, coveredTop)
+            if extendsToBottomEdge {
+                insets.bottom = 0
+            }
         }
         return insets
+    }
+
+    /// Lets the page run to the screen's bottom edge, under the home
+    /// indicator, while the bars are away. Kept clear of it, a page that
+    /// fills its window, such as a web comic viewer, ended short of the edge,
+    /// with a strip of the page's background below it.
+    var extendsToBottomEdge = false {
+        didSet {
+            guard extendsToBottomEdge != oldValue else { return }
+            setNeedsLayout()
+        }
     }
 
     /// Called with the top of the part of the page nothing covers, whenever it moves.
