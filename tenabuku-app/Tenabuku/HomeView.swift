@@ -72,11 +72,10 @@ struct HomeView: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     // A value, like the rows, so that the stack resolves every push the same way.
                     NavigationLink(value: MyBookmarkListRoute()) {
-                        Label {
-                            Text("マイブックマーク")
-                        } icon: {
-                            AccountIcon(url: accounts.account?.iconURL)
-                        }
+                        // Not a Label: the toolbar takes a label's icon out
+                        // as a bare image, dropping the circle it is cut to.
+                        AccountIcon(url: accounts.account?.iconURL)
+                            .accessibilityLabel("マイブックマーク")
                     }
                 }
             }
@@ -124,12 +123,21 @@ struct HomeView: View {
 private struct AccountIcon: View {
     let url: URL?
 
+    /// Nearly the whole of the bar's round button, as the App Store does with
+    /// the account's picture.
+    private static let diameter: CGFloat = 34
+
     var body: some View {
         if let url {
             AsyncImage(url: url) { phase in
                 if let image = phase.image {
-                    image.resizable().scaledToFill()
-                        .frame(width: 28, height: 28)
+                    // Drawn over a sized shape rather than sized itself, so
+                    // that the bar cannot treat it as a symbol and lay it out
+                    // at the image's own size.
+                    Circle()
+                        .fill(.clear)
+                        .frame(width: Self.diameter, height: Self.diameter)
+                        .overlay { image.resizable().scaledToFill() }
                         .clipShape(Circle())
                 } else {
                     placeholder
