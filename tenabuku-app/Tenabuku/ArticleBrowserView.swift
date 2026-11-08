@@ -17,6 +17,15 @@ final class ArticleBrowserModel: NSObject {
     private(set) var loadError: Error?
     /// Where the page starts to show below what covers the web view's top.
     private(set) var pageTop: CGFloat = 0
+    /// Whether the reader last scrolled down the page, which hides the bar
+    /// where the page has the whole screen. Scrolling up, or reaching the top
+    /// of the page, brings it back.
+    private(set) var isScrollingDown = false
+    @ObservationIgnored private var lastOffset: CGFloat = 0
+    @ObservationIgnored private var travel: CGFloat = 0
+    /// How far a finger moves the page one way before the bar follows, so
+    /// that a page nudged back and forth while reading leaves it alone.
+    private static let scrollThreshold: CGFloat = 24
 
     @ObservationIgnored private(set) lazy var webView = makeWebView()
     @ObservationIgnored private var observations: [NSKeyValueObservation] = []
@@ -48,6 +57,9 @@ final class ArticleBrowserModel: NSObject {
         webView.uiDelegate = self
         webView.allowsBackForwardNavigationGestures = true
         observations = [
+            webView.scrollView.observe(\.contentOffset, options: [.new]) { [weak self] scrollView, _ in
+                MainActor.assumeIsolated { self?.didScroll(scrollView) }
+            },
             observe(webView, \.url) { model, webView in model.pageURL = webView.url ?? model.pageURL },
             observe(webView, \.canGoBack) { model, webView in model.canGoBack = webView.canGoBack },
             observe(webView, \.canGoForward) { model, webView in model.canGoForward = webView.canGoForward },
@@ -58,6 +70,29 @@ final class ArticleBrowserModel: NSObject {
             webView.load(URLRequest(url: entry.link))
         }
         return webView
+    }
+
+    private func didScroll(_ scrollView: UIScrollView) {
+        let offset = scrollView.contentOffset.y
+        defer { lastOffset = offset }
+        if offset <= -scrollView.adjustedContentInset.top {
+            travel = 0
+            isScrollingDown = false
+            return
+        }
+        // Only the reader's own scrolling: a page that moves itself, or the
+        // insets changing as the bar comes and goes, leaves the bar as it is.
+        guard scrollView.isDragging || scrollView.isDecelerating else { return }
+        let delta = offset - lastOffset
+        // At the foot of the page the bounce pulls it back up.
+        let bottom = scrollView.contentSize.height - scrollView.bounds.height + scrollView.adjustedContentInset.bottom
+        guard offset < bottom else { return }
+        travel = (travel >= 0) == (delta >= 0) ? travel + delta : delta
+        if travel > Self.scrollThreshold {
+            isScrollingDown = true
+        } else if travel < -Self.scrollThreshold {
+            isScrollingDown = false
+        }
     }
 
     // WKWebView documents these key paths as observable and reports them on the main thread.
@@ -95,6 +130,8 @@ extension ArticleBrowserModel: WKNavigationDelegate {
 
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         loadError = nil
+        // A new page starts with the bar in view.
+        isScrollingDown = false
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
@@ -130,13 +167,49 @@ struct ArticleBrowserView: View {
     @State private var model: ArticleBrowserModel
     @State private var isShowingComments = false
     @State private var isShowingBookmarkEditor = false
+    /// Whether the page is wider than it is tall, which with a vertical bar
+    /// tells iPhone Duo's inner display held sideways from its outer display.
+    @State private var isWide = false
+    /// Whether the page has taken the whole screen, in place of the vertical
+    /// bar, on iPhone Duo's inner display held sideways.
+    @State private var isFullScreen = false
     @Environment(ReadHistoryStore.self) private var readHistory
 
     init(entry: FeedItem) {
         _model = State(initialValue: ArticleBrowserModel(entry: entry))
     }
 
+    /// Where the bar's buttons go.
+    private enum BarLayout {
+        /// Along the bottom, going back included, where a thumb reaches them.
+        case bottom
+        /// In the vertical bar at the side: going back and the page arrows at
+        /// its top, the rest at its foot.
+        case side
+        /// On iPhone Duo's inner display held sideways, the page takes the
+        /// whole screen, so that its middle is the screen's: no status bar,
+        /// no bar at the top, and the buttons along the bottom, out of the
+        /// way while the reader scrolls down.
+        case fullScreen
+    }
+
     var body: some View {
+        VerticalBarReader { barsMayBeVertical in
+            browser(layout: isFullScreen ? .fullScreen : barsMayBeVertical ? .side : .bottom)
+                .onChange(of: [barsMayBeVertical, isWide], initial: true) {
+                    // Turning the vertical bar off also tells this screen there
+                    // is none, so the full screen holds until the screen turns
+                    // upright or folds, rather than handing back to the side.
+                    if !isWide {
+                        isFullScreen = false
+                    } else if barsMayBeVertical {
+                        isFullScreen = true
+                    }
+                }
+        }
+    }
+
+    private func browser(layout: BarLayout) -> some View {
         // The toolbar goes through the navigation container, not a hand-made bar,
         // because that is what lets iPhone Duo lay it out vertically and leave the
         // height to the page. There is no title for the same reason: on iPhone Duo
@@ -145,6 +218,7 @@ struct ArticleBrowserView: View {
         // and CSS, and many pages run under a toolbar on iPhone Duo's side.
         WebViewContainer(webView: model.webView)
             .ignoresSafeArea(edges: .vertical)
+            .onGeometryChange(for: Bool.self) { $0.size.width > $0.size.height } action: { isWide = $0 }
             .background(EdgeOnlyPopGesture())
             .overlay(alignment: .top) {
                 // At the top of the page as it shows, not of the safe area: on
@@ -173,18 +247,46 @@ struct ArticleBrowserView: View {
             // The entry, not the page shown, so that following links inside the
             // article still marks the row it was opened from.
             .onAppear { readHistory.markRead(model.entry.link) }
+            .backButtonMoved(layout != .side)
+            .verticalBarDisabled(layout == .fullScreen)
+            .toolbar(layout == .fullScreen ? .hidden : .automatic, for: .navigationBar)
+            .toolbar(
+                layout == .fullScreen && model.isScrollingDown ? .hidden : .automatic,
+                for: .bottomBar
+            )
+            .animation(.default, value: model.isScrollingDown)
+            .statusBarHidden(layout == .fullScreen)
             .toolbar {
-                ToolbarItemGroup(placement: .bottomBar) {
-                    // Arrows, because the chevron is the system's button back to the list.
-                    Button("前のページ", systemImage: "arrow.backward") { model.goBack() }
-                        .disabled(!model.canGoBack)
-                    Button("次のページ", systemImage: "arrow.forward") { model.goForward() }
-                        .disabled(!model.canGoForward)
-                    Spacer()
-                    Button("ブコメを見る", systemImage: "text.bubble") { isShowingComments = true }
-                    Button("ブクマする", systemImage: "bookmark") { isShowingBookmarkEditor = true }
-                    ShareLink(item: model.pageURL ?? model.entry.link) {
-                        Label("共有", systemImage: "square.and.arrow.up")
+                switch layout {
+                case .bottom, .fullScreen:
+                    if #available(iOS 26.0, *) {
+                        // Going back to the list is a glass of its own, apart
+                        // from the page arrows, as the system's back button is.
+                        ToolbarItem(placement: .bottomBar) {
+                            BackButton()
+                        }
+                        ToolbarSpacer(.fixed, placement: .bottomBar)
+                        ToolbarItemGroup(placement: .bottomBar) {
+                            pageButtons
+                        }
+                        ToolbarSpacer(.flexible, placement: .bottomBar)
+                        ToolbarItemGroup(placement: .bottomBar) {
+                            entryButtons
+                        }
+                    } else {
+                        ToolbarItemGroup(placement: .bottomBar) {
+                            BackButton()
+                            pageButtons
+                            Spacer()
+                            entryButtons
+                        }
+                    }
+                case .side:
+                    ToolbarItemGroup(placement: .topBarLeading) {
+                        pageButtons
+                    }
+                    ToolbarItemGroup(placement: .bottomBar) {
+                        entryButtons
                     }
                 }
             }
@@ -206,6 +308,24 @@ struct ArticleBrowserView: View {
                     BookmarkEditorView(url: model.entry.link, title: model.entry.title)
                 }
             }
+    }
+
+    @ViewBuilder
+    private var pageButtons: some View {
+        // Arrows, because the chevron is the button back to the list.
+        Button("前のページ", systemImage: "arrow.backward") { model.goBack() }
+            .disabled(!model.canGoBack)
+        Button("次のページ", systemImage: "arrow.forward") { model.goForward() }
+            .disabled(!model.canGoForward)
+    }
+
+    @ViewBuilder
+    private var entryButtons: some View {
+        Button("ブコメを見る", systemImage: "text.bubble") { isShowingComments = true }
+        Button("ブクマする", systemImage: "bookmark") { isShowingBookmarkEditor = true }
+        ShareLink(item: model.pageURL ?? model.entry.link) {
+            Label("共有", systemImage: "square.and.arrow.up")
+        }
     }
 }
 
