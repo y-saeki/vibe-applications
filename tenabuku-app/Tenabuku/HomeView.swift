@@ -175,9 +175,9 @@ private struct AccountIcon: View {
 }
 
 /// One shelf: the category's name, then its entries in pages of
-/// `rowsPerPage`, side by side. Each page is a little narrower than the
-/// screen, so the edge of the next one shows and tells that the shelf goes
-/// on sideways.
+/// `rowsPerPage`, side by side. The pages on screen leave a little of the
+/// width over, so the edge of the next one shows and tells that the shelf
+/// goes on sideways.
 private struct EntryShelf: View {
     let shelf: HomeShelf
     let feed: ShelfFeed
@@ -189,10 +189,27 @@ private struct EntryShelf: View {
     @Environment(ReadHistoryStore.self) private var readHistory
     @Environment(MuteStore.self) private var mutes
     @Environment(FaviconSettingsStore.self) private var faviconSettings
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     static let rowsPerPage = 3
-    private static let pageWidth = 0.88
+    /// The share of the width the pages on screen take together, gaps
+    /// between them included; the rest shows the next page's edge.
+    private static let pagesShare = 0.88
+    private static let pageSpacing: CGFloat = 12
     private static let margin: CGFloat = 16
+
+    /// One page on a compact width, as App Store shows its lists on iPhone.
+    /// On a regular one, such as iPhone Duo's inner display, two, rather
+    /// than one stretched across: an even count, so that a fold down the
+    /// middle falls between them.
+    private var pagesOnScreen: Int {
+        horizontalSizeClass == .regular ? 2 : 1
+    }
+
+    private func pageWidth(in length: CGFloat) -> CGFloat {
+        let count = CGFloat(pagesOnScreen)
+        return (length * Self.pagesShare + Self.pageSpacing) / count - Self.pageSpacing
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -245,11 +262,11 @@ private struct EntryShelf: View {
         let items = visibleItems
         let pageStarts = Array(stride(from: 0, to: items.count, by: Self.rowsPerPage))
         return ScrollView(.horizontal) {
-            LazyHStack(alignment: .top, spacing: 12) {
+            LazyHStack(alignment: .top, spacing: Self.pageSpacing) {
                 ForEach(pageStarts, id: \.self) { start in
                     page(items[start..<min(start + Self.rowsPerPage, items.count)])
                         // The length already leaves out the content margins.
-                        .containerRelativeFrame(.horizontal) { length, _ in length * Self.pageWidth }
+                        .containerRelativeFrame(.horizontal) { length, _ in pageWidth(in: length) }
                         .onAppear { prefetchImages(after: min(start + Self.rowsPerPage, items.count) - 1) }
                 }
             }
