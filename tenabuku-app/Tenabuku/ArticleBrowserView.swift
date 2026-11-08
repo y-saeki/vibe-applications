@@ -130,13 +130,47 @@ struct ArticleBrowserView: View {
     @State private var model: ArticleBrowserModel
     @State private var isShowingComments = false
     @State private var isShowingBookmarkEditor = false
+    /// Whether the page is wider than it is tall, which with a vertical bar
+    /// tells iPhone Duo's inner display held sideways from its outer display.
+    @State private var isWide = false
+    /// Whether the buttons have gone to a bar along the top, in place of the
+    /// vertical bar, on iPhone Duo's inner display held sideways.
+    @State private var usesTopBar = false
     @Environment(ReadHistoryStore.self) private var readHistory
 
     init(entry: FeedItem) {
         _model = State(initialValue: ArticleBrowserModel(entry: entry))
     }
 
+    /// Where the bar's buttons go.
+    private enum BarLayout {
+        /// Along the bottom, going back included, where a thumb reaches them.
+        case bottom
+        /// In the vertical bar at the side: going back and the page arrows at
+        /// its top, the rest at its foot.
+        case side
+        /// Along the top, on iPhone Duo's inner display held sideways, so that
+        /// the page takes the whole width and its middle is the screen's.
+        case top
+    }
+
     var body: some View {
+        VerticalBarReader { barsMayBeVertical in
+            browser(layout: usesTopBar ? .top : barsMayBeVertical ? .side : .bottom)
+                .onChange(of: [barsMayBeVertical, isWide], initial: true) {
+                    // Turning the vertical bar off also tells this screen there
+                    // is none, so the top bar holds until the screen turns
+                    // upright or folds, rather than handing back to the side.
+                    if !isWide {
+                        usesTopBar = false
+                    } else if barsMayBeVertical {
+                        usesTopBar = true
+                    }
+                }
+        }
+    }
+
+    private func browser(layout: BarLayout) -> some View {
         // The toolbar goes through the navigation container, not a hand-made bar,
         // because that is what lets iPhone Duo lay it out vertically and leave the
         // height to the page. There is no title for the same reason: on iPhone Duo
@@ -145,6 +179,7 @@ struct ArticleBrowserView: View {
         // and CSS, and many pages run under a toolbar on iPhone Duo's side.
         WebViewContainer(webView: model.webView)
             .ignoresSafeArea(edges: .vertical)
+            .onGeometryChange(for: Bool.self) { $0.size.width > $0.size.height } action: { isWide = $0 }
             .background(EdgeOnlyPopGesture())
             .overlay(alignment: .top) {
                 // At the top of the page as it shows, not of the safe area: on
@@ -173,18 +208,30 @@ struct ArticleBrowserView: View {
             // The entry, not the page shown, so that following links inside the
             // article still marks the row it was opened from.
             .onAppear { readHistory.markRead(model.entry.link) }
+            .backButtonMoved(layout == .bottom)
+            .verticalBarDisabled(layout == .top)
             .toolbar {
-                ToolbarItemGroup(placement: .bottomBar) {
-                    // Arrows, because the chevron is the system's button back to the list.
-                    Button("前のページ", systemImage: "arrow.backward") { model.goBack() }
-                        .disabled(!model.canGoBack)
-                    Button("次のページ", systemImage: "arrow.forward") { model.goForward() }
-                        .disabled(!model.canGoForward)
-                    Spacer()
-                    Button("ブコメを見る", systemImage: "text.bubble") { isShowingComments = true }
-                    Button("ブクマする", systemImage: "bookmark") { isShowingBookmarkEditor = true }
-                    ShareLink(item: model.pageURL ?? model.entry.link) {
-                        Label("共有", systemImage: "square.and.arrow.up")
+                switch layout {
+                case .bottom:
+                    ToolbarItemGroup(placement: .bottomBar) {
+                        BackButton()
+                        pageButtons
+                        Spacer()
+                        entryButtons
+                    }
+                case .side:
+                    ToolbarItemGroup(placement: .topBarLeading) {
+                        pageButtons
+                    }
+                    ToolbarItemGroup(placement: .bottomBar) {
+                        entryButtons
+                    }
+                case .top:
+                    ToolbarItemGroup(placement: .topBarLeading) {
+                        pageButtons
+                    }
+                    ToolbarItemGroup(placement: .topBarTrailing) {
+                        entryButtons
                     }
                 }
             }
@@ -206,6 +253,24 @@ struct ArticleBrowserView: View {
                     BookmarkEditorView(url: model.entry.link, title: model.entry.title)
                 }
             }
+    }
+
+    @ViewBuilder
+    private var pageButtons: some View {
+        // Arrows, because the chevron is the button back to the list.
+        Button("前のページ", systemImage: "arrow.backward") { model.goBack() }
+            .disabled(!model.canGoBack)
+        Button("次のページ", systemImage: "arrow.forward") { model.goForward() }
+            .disabled(!model.canGoForward)
+    }
+
+    @ViewBuilder
+    private var entryButtons: some View {
+        Button("ブコメを見る", systemImage: "text.bubble") { isShowingComments = true }
+        Button("ブクマする", systemImage: "bookmark") { isShowingBookmarkEditor = true }
+        ShareLink(item: model.pageURL ?? model.entry.link) {
+            Label("共有", systemImage: "square.and.arrow.up")
+        }
     }
 }
 

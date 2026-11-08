@@ -161,14 +161,41 @@ struct MyBookmarkListView: View {
     @Environment(AccountStore.self) private var accounts
 
     var body: some View {
-        Group {
-            if let api = accounts.bookmarkAPI {
-                MyBookmarkList(api: api)
-            } else {
-                SignInPrompt()
+        VerticalBarReader { barsMayBeVertical in
+            let movesBack = Self.movesBackDown(barsMayBeVertical: barsMayBeVertical)
+            // The same views whichever way the bars stand, so that the list
+            // keeps what it has read when iPhone Duo opens or closes.
+            Group {
+                if let api = accounts.bookmarkAPI {
+                    MyBookmarkList(api: api)
+                } else {
+                    SignInPrompt()
+                }
+            }
+            .navigationTitle("マイブックマーク")
+            .backButtonMoved(movesBack)
+            .toolbar {
+                if movesBack {
+                    ToolbarItem(placement: .bottomBar) {
+                        BackButton()
+                    }
+                    if #available(iOS 26.0, *) {
+                        // Apart, so that going back is a glass of its own
+                        // beside the field rather than part of it.
+                        ToolbarSpacer(.fixed, placement: .bottomBar)
+                        DefaultToolbarItem(kind: .search, placement: .bottomBar)
+                    }
+                }
             }
         }
-        .navigationTitle("マイブックマーク")
+    }
+
+    /// With bars at the top and bottom, going back sits at the bottom next to
+    /// the search field. The search field only goes to the bottom from iOS 26,
+    /// so before that the back button stays at the top too.
+    private static func movesBackDown(barsMayBeVertical: Bool) -> Bool {
+        guard #available(iOS 26.0, *) else { return false }
+        return !barsMayBeVertical
     }
 }
 

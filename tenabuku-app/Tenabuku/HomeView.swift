@@ -55,21 +55,13 @@ struct HomeView: View {
                 MyBookmarkListView()
             }
             .toolbar {
-                // Apple asks for the top of a vertical bar to hold navigation and
-                // prominent actions, so where bars can stand vertically, as on
-                // iPhone Duo's outer display, the rarely used settings go to the
-                // foot of it. Elsewhere they take the usual top leading corner.
-                if barsMayBeVertical {
-                    ToolbarItemGroup(placement: .bottomBar) {
-                        settingsButton
-                        Spacer()
-                    }
-                } else {
-                    ToolbarItem(placement: .topBarLeading) {
-                        settingsButton
-                    }
+                // The settings stay at the top on the right, even where the
+                // other buttons move to a vertical bar at the side.
+                ToolbarItem(placement: .topBarTrailing) {
+                    settingsButton
                 }
-                myBookmarksItem
+                .horizontalBarOnly()
+                myBookmarksItem(barsMayBeVertical: barsMayBeVertical)
             }
             .sheet(item: $bookmarking) { item in
                 NavigationStack {
@@ -105,17 +97,30 @@ struct HomeView: View {
         withTransaction(transaction) { path.append(item) }
     }
 
+    /// At the top of a vertical bar, and otherwise in the middle of the
+    /// bottom bar, where a thumb reaches it.
     @ToolbarContentBuilder
-    private var myBookmarksItem: some ToolbarContent {
-        let iconURL = accounts.account?.iconURL
-        ToolbarItem(placement: .topBarTrailing) {
-            // A value, like the rows, so that the stack resolves every push the same way.
-            NavigationLink(value: MyBookmarkListRoute()) {
-                // Not a Label: the toolbar takes a label's icon out
-                // as a bare image, dropping the circle it is cut to.
-                AccountIcon(url: iconURL)
-                    .accessibilityLabel("マイブックマーク")
+    private func myBookmarksItem(barsMayBeVertical: Bool) -> some ToolbarContent {
+        if barsMayBeVertical {
+            ToolbarItem(placement: .topBarTrailing) {
+                myBookmarksLink
             }
+        } else {
+            ToolbarItemGroup(placement: .bottomBar) {
+                Spacer()
+                myBookmarksLink
+                Spacer()
+            }
+        }
+    }
+
+    private var myBookmarksLink: some View {
+        // A value, like the rows, so that the stack resolves every push the same way.
+        NavigationLink(value: MyBookmarkListRoute()) {
+            // Not a Label: the toolbar takes a label's icon out
+            // as a bare image, dropping the circle it is cut to.
+            AccountIcon(url: accounts.account?.iconURL)
+                .accessibilityLabel("マイブックマーク")
         }
     }
 
