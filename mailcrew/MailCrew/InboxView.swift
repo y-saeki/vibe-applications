@@ -78,16 +78,26 @@ struct StripView: View {
         .navigationSubtitle(model.cards.isEmpty ? "" : "\(model.cards.count) 件")
         .toolbar {
             ToolbarItem {
-                if model.loading {
-                    ProgressView().controlSize(.small)
-                } else {
-                    Button {
-                        Task { await model.load() }
-                    } label: {
-                        Label("再読み込み", systemImage: "arrow.clockwise")
+                // The button stays while loading, so the toolbar keeps its
+                // round background; only the icon gives way to the spinner,
+                // in the icon's own frame.
+                Button {
+                    Task { await model.load() }
+                } label: {
+                    Label {
+                        Text("再読み込み")
+                    } icon: {
+                        Image(systemName: "arrow.clockwise")
+                            .opacity(model.loading ? 0 : 1)
+                            .overlay {
+                                if model.loading {
+                                    ProgressView().controlSize(.small)
+                                }
+                            }
                     }
-                    .help("再読み込み")
                 }
+                .disabled(model.loading)
+                .help("再読み込み")
             }
         }
         .overlay(alignment: .bottom) {
