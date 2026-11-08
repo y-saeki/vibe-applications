@@ -12,6 +12,7 @@ struct HomeView: View {
     @State private var path = NavigationPath()
     @Environment(ShelfSettingsStore.self) private var shelfSettings
     @Environment(WebSessionStore.self) private var webSession
+    @Environment(AccountStore.self) private var accounts
 
     var body: some View {
         VerticalBarReader { barsMayBeVertical in
@@ -71,7 +72,11 @@ struct HomeView: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     // A value, like the rows, so that the stack resolves every push the same way.
                     NavigationLink(value: MyBookmarkListRoute()) {
-                        Label("マイブックマーク", systemImage: "books.vertical")
+                        Label {
+                            Text("マイブックマーク")
+                        } icon: {
+                            AccountIcon(url: accounts.account?.iconURL)
+                        }
                     }
                 }
             }
@@ -111,6 +116,34 @@ struct HomeView: View {
 
     private var settingsButton: some View {
         Button("設定", systemImage: "gearshape") { isShowingSettings = true }
+    }
+}
+
+/// The signed-in user's profile image, or a figure of a person when nobody
+/// is signed in or the image cannot be read.
+private struct AccountIcon: View {
+    let url: URL?
+
+    var body: some View {
+        if let url {
+            AsyncImage(url: url) { phase in
+                if let image = phase.image {
+                    image.resizable().scaledToFill()
+                        .frame(width: 28, height: 28)
+                        .clipShape(Circle())
+                } else {
+                    placeholder
+                }
+            }
+            // A new account loads its own image rather than showing the last one's.
+            .id(url)
+        } else {
+            placeholder
+        }
+    }
+
+    private var placeholder: some View {
+        Image(systemName: "person.crop.circle")
     }
 }
 
