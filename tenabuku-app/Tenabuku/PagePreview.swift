@@ -157,6 +157,10 @@ private struct PagePreviewMenu: UIViewRepresentable {
 
     final class Coordinator: NSObject, UIContextMenuInteractionDelegate, UIGestureRecognizerDelegate {
         var menu: PagePreviewMenu
+        /// The row as it looked when the press lifted it. Taken once, because
+        /// by the time the menu closes the page preview covers the row, and a
+        /// fresh picture would shrink back into the card showing the page.
+        private var rowPicture: UIImage?
 
         init(_ menu: PagePreviewMenu) {
             self.menu = menu
@@ -191,7 +195,8 @@ private struct PagePreviewMenu: UIViewRepresentable {
             configuration: UIContextMenuConfiguration,
             highlightPreviewForItemWithIdentifier identifier: any NSCopying
         ) -> UITargetedPreview? {
-            rowPreview(interaction)
+            rowPicture = nil
+            return rowPreview(interaction)
         }
 
         func contextMenuInteraction(
@@ -200,6 +205,14 @@ private struct PagePreviewMenu: UIViewRepresentable {
             dismissalPreviewForItemWithIdentifier identifier: any NSCopying
         ) -> UITargetedPreview? {
             rowPreview(interaction)
+        }
+
+        func contextMenuInteraction(
+            _ interaction: UIContextMenuInteraction,
+            willEndFor configuration: UIContextMenuConfiguration,
+            animator: (any UIContextMenuInteractionAnimating)?
+        ) {
+            animator?.addCompletion { [weak self] in self?.rowPicture = nil }
         }
 
         func contextMenuInteraction(
@@ -218,14 +231,37 @@ private struct PagePreviewMenu: UIViewRepresentable {
             }
         }
 
-        /// Lifts the whole list row rather than the bare view behind its
-        /// content, which is all this view could show of itself.
+        /// Lifts the whole row rather than this view, which lies clear over
+        /// the row's content and would show nothing of it.
         private func rowPreview(_ interaction: UIContextMenuInteraction) -> UITargetedPreview? {
-            guard let row = interaction.view.flatMap(Self.enclosingCell), row.window != nil else { return nil }
+            guard let view = interaction.view, let window = view.window else { return nil }
             let parameters = UIPreviewParameters()
-            parameters.visiblePath = UIBezierPath(roundedRect: row.bounds, cornerRadius: 16)
             parameters.backgroundColor = .systemBackground
-            return UITargetedPreview(view: row, parameters: parameters)
+            // In a list, the cell itself.
+            if let row = Self.enclosingCell(view) {
+                parameters.visiblePath = UIBezierPath(roundedRect: row.bounds, cornerRadius: 16)
+                return UITargetedPreview(view: row, parameters: parameters)
+            }
+            // On a home screen shelf there is no cell, and SwiftUI draws the
+            // row in views of its own: lift a picture of what is on screen
+            // under this view, which has the row's size.
+            guard let picture = rowPicture ?? Self.picture(of: view.convert(view.bounds, to: window), in: window) else {
+                return nil
+            }
+            rowPicture = picture
+            let snapshot = UIImageView(image: picture)
+            snapshot.frame = view.bounds
+            parameters.visiblePath = UIBezierPath(roundedRect: snapshot.bounds, cornerRadius: 16)
+            let target = UIPreviewTarget(container: view, center: CGPoint(x: view.bounds.midX, y: view.bounds.midY))
+            return UITargetedPreview(view: snapshot, parameters: parameters, target: target)
+        }
+
+        private static func picture(of rect: CGRect, in window: UIWindow) -> UIImage? {
+            guard rect.width > 0, rect.height > 0 else { return nil }
+            let format = UIGraphicsImageRendererFormat(for: window.traitCollection)
+            return UIGraphicsImageRenderer(bounds: rect, format: format).image { _ in
+                window.drawHierarchy(in: window.bounds, afterScreenUpdates: false)
+            }
         }
 
         private static func enclosingCell(_ view: UIView) -> UIView? {
