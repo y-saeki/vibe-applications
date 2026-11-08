@@ -13,6 +13,7 @@ import PackageDescription
 // ReadingHistory sits beside them: it keeps which entries the user has opened,
 // on the device, and never touches the network. EntryMute is the same kind of
 // module: the rules that hide entries from the lists, kept on the device.
+// HomeShelves is another: which shelves the home screen shows, in what order.
 // The package has no third-party dependencies and builds on Linux as well, so
 // `swift test` runs anywhere a Swift toolchain does.
 let package = Package(
@@ -25,6 +26,7 @@ let package = Package(
         .library(name: "HatenaUnofficial", targets: ["HatenaUnofficial"]),
         .library(name: "ReadingHistory", targets: ["ReadingHistory"]),
         .library(name: "EntryMute", targets: ["EntryMute"]),
+        .library(name: "HomeShelves", targets: ["HomeShelves"]),
     ],
     targets: [
         .target(name: "HatenaShared"),
@@ -33,6 +35,7 @@ let package = Package(
         .target(name: "HatenaUnofficial", dependencies: ["HatenaShared"]),
         .target(name: "ReadingHistory"),
         .target(name: "EntryMute"),
+        .target(name: "HomeShelves", dependencies: ["HatenaFeed"]),
         // Stub transport shared by the test targets; not part of any product.
         .target(name: "HatenaTestSupport", dependencies: ["HatenaShared"]),
         .testTarget(name: "HatenaSharedTests", dependencies: ["HatenaShared", "HatenaTestSupport"]),
@@ -41,5 +44,6 @@ let package = Package(
         .testTarget(name: "HatenaUnofficialTests", dependencies: ["HatenaUnofficial", "HatenaTestSupport"]),
         .testTarget(name: "ReadingHistoryTests", dependencies: ["ReadingHistory"]),
         .testTarget(name: "EntryMuteTests", dependencies: ["EntryMute"]),
+        .testTarget(name: "HomeShelvesTests", dependencies: ["HomeShelves"]),
     ]
 )
