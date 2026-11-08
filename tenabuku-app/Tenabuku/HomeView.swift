@@ -13,6 +13,7 @@ struct HomeView: View {
     @Environment(ShelfSettingsStore.self) private var shelfSettings
     @Environment(WebSessionStore.self) private var webSession
     @Environment(AccountStore.self) private var accounts
+    @AppStorage(AccountIconSetting.key) private var showsAccountIcon = AccountIconSetting.defaultValue
 
     var body: some View {
         VerticalBarReader { barsMayBeVertical in
@@ -122,7 +123,7 @@ struct HomeView: View {
         NavigationLink(value: MyBookmarkListRoute()) {
             // Not a Label: the toolbar takes a label's icon out
             // as a bare image, dropping the circle it is cut to.
-            AccountIcon(url: accounts.account?.iconURL)
+            AccountIcon(url: showsAccountIcon ? accounts.account?.iconURL : nil)
                 .accessibilityLabel("マイブックマーク")
         }
     }
@@ -132,8 +133,15 @@ struct HomeView: View {
     }
 }
 
+/// Whether the My bookmarks button shows the signed-in user's own picture,
+/// set in Settings for those who would rather not see it on every screen.
+enum AccountIconSetting {
+    static let key = "showsAccountIconOnMyBookmarks"
+    static let defaultValue = true
+}
+
 /// The signed-in user's profile image, or a figure of a person when nobody
-/// is signed in or the image cannot be read.
+/// is signed in, the image cannot be read or Settings hides it.
 private struct AccountIcon: View {
     let url: URL?
 
