@@ -69,15 +69,7 @@ struct HomeView: View {
                         settingsButton
                     }
                 }
-                ToolbarItem(placement: .topBarTrailing) {
-                    // A value, like the rows, so that the stack resolves every push the same way.
-                    NavigationLink(value: MyBookmarkListRoute()) {
-                        // Not a Label: the toolbar takes a label's icon out
-                        // as a bare image, dropping the circle it is cut to.
-                        AccountIcon(url: accounts.account?.iconURL)
-                            .accessibilityLabel("マイブックマーク")
-                    }
-                }
+                myBookmarksItem
             }
             .sheet(item: $bookmarking) { item in
                 NavigationStack {
@@ -113,6 +105,29 @@ struct HomeView: View {
         withTransaction(transaction) { path.append(item) }
     }
 
+    @ToolbarContentBuilder
+    private var myBookmarksItem: some ToolbarContent {
+        let iconURL = accounts.account?.iconURL
+        let item = ToolbarItem(placement: .topBarTrailing) {
+            // A value, like the rows, so that the stack resolves every push the same way.
+            NavigationLink(value: MyBookmarkListRoute()) {
+                // Not a Label: the toolbar takes a label's icon out
+                // as a bare image, dropping the circle it is cut to.
+                AccountIcon(url: iconURL)
+                    .accessibilityLabel("マイブックマーク")
+            }
+        }
+        if #available(iOS 26.0, *) {
+            // The glass around a custom view is a capsule wider than it is
+            // tall, so the picture stands on its own instead, as the App
+            // Store's does. The figure of a person keeps the glass, like the
+            // other buttons.
+            item.sharedBackgroundVisibility(iconURL == nil ? .visible : .hidden)
+        } else {
+            item
+        }
+    }
+
     private var settingsButton: some View {
         Button("設定", systemImage: "gearshape") { isShowingSettings = true }
     }
@@ -123,9 +138,9 @@ struct HomeView: View {
 private struct AccountIcon: View {
     let url: URL?
 
-    /// Nearly the whole of the bar's round button, as the App Store does with
-    /// the account's picture.
-    private static let diameter: CGFloat = 34
+    /// The size of the bar's other round buttons, which the picture stands
+    /// in for.
+    private static let diameter: CGFloat = 44
 
     var body: some View {
         if let url {
@@ -139,6 +154,8 @@ private struct AccountIcon: View {
                         .frame(width: Self.diameter, height: Self.diameter)
                         .overlay { image.resizable().scaledToFill() }
                         .clipShape(Circle())
+                        // Keeps a white or pale picture from melting into the bar.
+                        .overlay { Circle().strokeBorder(.separator, lineWidth: 0.5) }
                 } else {
                     placeholder
                 }
