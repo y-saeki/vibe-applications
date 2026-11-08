@@ -12,6 +12,7 @@ struct HomeView: View {
     @State private var path = NavigationPath()
     @Environment(ShelfSettingsStore.self) private var shelfSettings
     @Environment(WebSessionStore.self) private var webSession
+    @Environment(AccountStore.self) private var accounts
 
     var body: some View {
         VerticalBarReader { barsMayBeVertical in
@@ -68,12 +69,7 @@ struct HomeView: View {
                         settingsButton
                     }
                 }
-                ToolbarItem(placement: .topBarTrailing) {
-                    // A value, like the rows, so that the stack resolves every push the same way.
-                    NavigationLink(value: MyBookmarkListRoute()) {
-                        Label("マイブックマーク", systemImage: "books.vertical")
-                    }
-                }
+                myBookmarksItem
             }
             .sheet(item: $bookmarking) { item in
                 NavigationStack {
@@ -109,8 +105,64 @@ struct HomeView: View {
         withTransaction(transaction) { path.append(item) }
     }
 
+    @ToolbarContentBuilder
+    private var myBookmarksItem: some ToolbarContent {
+        let iconURL = accounts.account?.iconURL
+        ToolbarItem(placement: .topBarTrailing) {
+            // A value, like the rows, so that the stack resolves every push the same way.
+            NavigationLink(value: MyBookmarkListRoute()) {
+                // Not a Label: the toolbar takes a label's icon out
+                // as a bare image, dropping the circle it is cut to.
+                AccountIcon(url: iconURL)
+                    .accessibilityLabel("マイブックマーク")
+            }
+        }
+    }
+
     private var settingsButton: some View {
         Button("設定", systemImage: "gearshape") { isShowingSettings = true }
+    }
+}
+
+/// The signed-in user's profile image, or a figure of a person when nobody
+/// is signed in or the image cannot be read.
+private struct AccountIcon: View {
+    let url: URL?
+
+    /// The picture sits inside the bar's glass with a rim of it showing, as
+    /// the App Store's account button does.
+    private static let diameter: CGFloat = 36
+    /// The bar pads a custom view more at the sides than above and below,
+    /// which stretches its glass into a capsule around a picture this size.
+    /// Taking that much back off the sides keeps the glass round.
+    private static let sideInset: CGFloat = 6
+
+    var body: some View {
+        if let url {
+            AsyncImage(url: url) { phase in
+                if let image = phase.image {
+                    // Drawn over a sized shape rather than sized itself, so
+                    // that the bar cannot treat it as a symbol and lay it out
+                    // at the image's own size.
+                    Circle()
+                        .fill(.clear)
+                        .overlay { image.resizable().scaledToFill() }
+                        .clipShape(Circle())
+                } else {
+                    placeholder
+                }
+            }
+            .frame(width: Self.diameter, height: Self.diameter)
+            // A new account loads its own image rather than showing the last one's.
+            .id(url)
+            .padding(.horizontal, -Self.sideInset)
+        } else {
+            placeholder
+        }
+    }
+
+    private var placeholder: some View {
+        Image(systemName: "person.crop.circle")
     }
 }
 

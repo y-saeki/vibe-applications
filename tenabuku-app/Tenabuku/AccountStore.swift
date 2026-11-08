@@ -14,6 +14,12 @@ final class AccountStore {
         /// The Hatena ID.
         let urlName: String
         let displayName: String
+
+        /// The profile image Hatena serves for every user at a path built
+        /// from the Hatena ID, the same one its own pages and APIs point at.
+        var iconURL: URL? {
+            URL(string: "https://cdn.profile-image.st-hatena.com/users/\(urlName)/profile.png")
+        }
     }
 
     /// Where Hatena sends the browser once the user approves. Hatena only
