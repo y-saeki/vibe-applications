@@ -108,7 +108,7 @@ struct HomeView: View {
     @ToolbarContentBuilder
     private var myBookmarksItem: some ToolbarContent {
         let iconURL = accounts.account?.iconURL
-        let item = ToolbarItem(placement: .topBarTrailing) {
+        ToolbarItem(placement: .topBarTrailing) {
             // A value, like the rows, so that the stack resolves every push the same way.
             NavigationLink(value: MyBookmarkListRoute()) {
                 // Not a Label: the toolbar takes a label's icon out
@@ -116,15 +116,6 @@ struct HomeView: View {
                 AccountIcon(url: iconURL)
                     .accessibilityLabel("マイブックマーク")
             }
-        }
-        if #available(iOS 26.0, *) {
-            // The glass around a custom view is a capsule wider than it is
-            // tall, so the picture stands on its own instead, as the App
-            // Store's does. The figure of a person keeps the glass, like the
-            // other buttons.
-            item.sharedBackgroundVisibility(iconURL == nil ? .visible : .hidden)
-        } else {
-            item
         }
     }
 
@@ -138,9 +129,13 @@ struct HomeView: View {
 private struct AccountIcon: View {
     let url: URL?
 
-    /// The size of the bar's other round buttons, which the picture stands
-    /// in for.
-    private static let diameter: CGFloat = 44
+    /// The picture sits inside the bar's glass with a rim of it showing, as
+    /// the App Store's account button does.
+    private static let diameter: CGFloat = 36
+    /// The bar pads a custom view more at the sides than above and below,
+    /// which stretches its glass into a capsule around a picture this size.
+    /// Taking that much back off the sides keeps the glass round.
+    private static let sideInset: CGFloat = 6
 
     var body: some View {
         if let url {
@@ -151,17 +146,16 @@ private struct AccountIcon: View {
                     // at the image's own size.
                     Circle()
                         .fill(.clear)
-                        .frame(width: Self.diameter, height: Self.diameter)
                         .overlay { image.resizable().scaledToFill() }
                         .clipShape(Circle())
-                        // Keeps a white or pale picture from melting into the bar.
-                        .overlay { Circle().strokeBorder(.separator, lineWidth: 0.5) }
                 } else {
                     placeholder
                 }
             }
+            .frame(width: Self.diameter, height: Self.diameter)
             // A new account loads its own image rather than showing the last one's.
             .id(url)
+            .padding(.horizontal, -Self.sideInset)
         } else {
             placeholder
         }
