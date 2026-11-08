@@ -259,11 +259,27 @@ struct ArticleBrowserView: View {
             .toolbar {
                 switch layout {
                 case .bottom, .fullScreen:
-                    ToolbarItemGroup(placement: .bottomBar) {
-                        BackButton()
-                        pageButtons
-                        Spacer()
-                        entryButtons
+                    if #available(iOS 26.0, *) {
+                        // Going back to the list is a glass of its own, apart
+                        // from the page arrows, as the system's back button is.
+                        ToolbarItem(placement: .bottomBar) {
+                            BackButton()
+                        }
+                        ToolbarSpacer(.fixed, placement: .bottomBar)
+                        ToolbarItemGroup(placement: .bottomBar) {
+                            pageButtons
+                        }
+                        ToolbarSpacer(.flexible, placement: .bottomBar)
+                        ToolbarItemGroup(placement: .bottomBar) {
+                            entryButtons
+                        }
+                    } else {
+                        ToolbarItemGroup(placement: .bottomBar) {
+                            BackButton()
+                            pageButtons
+                            Spacer()
+                            entryButtons
+                        }
                     }
                 case .side:
                     ToolbarItemGroup(placement: .topBarLeading) {
