@@ -319,12 +319,8 @@ struct ArticleBrowserView: View {
             }
             .sheet(isPresented: $isShowingComments) {
                 NavigationStack {
+                    // Closes itself, with a button among its own at the bottom.
                     EntryDetailView(entry: model.entry)
-                        .toolbar {
-                            ToolbarItem(placement: .cancellationAction) {
-                                Button("閉じる", systemImage: "xmark") { isShowingComments = false }
-                            }
-                        }
                 }
             }
             .sheet(isPresented: $isShowingBookmarkEditor) {
