@@ -10,8 +10,11 @@ import UIKit
 final class ThumbnailCache {
     static let shared = ThumbnailCache()
 
-    /// The thumbnail's side in points, and the screen scale it is decoded for.
-    nonisolated static let side: CGFloat = 64
+    /// The side in points the thumbnail is decoded for, and the screen scale.
+    /// A row draws it as tall as its site line and three title lines, about
+    /// 90pt at the default text size. Larger text draws it a little soft
+    /// rather than making every cached image heavier.
+    nonisolated private static let side: CGFloat = 96
     nonisolated private static let scale: CGFloat = 3
 
     private final class Entry {

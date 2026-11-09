@@ -35,10 +35,22 @@ struct EntryRow: View {
     /// shelf line up whatever their titles' length.
     var reservesTitleSpace = false
 
+    private static let lineSpacing: CGFloat = 6
+
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            EntryThumbnail(url: item.imageURL)
-            VStack(alignment: .leading, spacing: 6) {
+            SquareAsTallAs {
+                EntryThumbnail(url: item.imageURL)
+                // The site line and three title lines, in the fonts below,
+                // so the image reaches the bottom of the third line at any
+                // Dynamic Type size.
+                VStack(alignment: .leading, spacing: Self.lineSpacing) {
+                    Text(verbatim: " ").font(.caption).bold()
+                    Text(verbatim: " \n \n ").font(.body)
+                }
+                .hidden()
+            }
+            VStack(alignment: .leading, spacing: Self.lineSpacing) {
                 HStack(spacing: 8) {
                     if let host = item.link.host() {
                         HStack(spacing: 4) {
@@ -69,10 +81,27 @@ struct EntryRow: View {
     }
 }
 
-/// The square image at the start of an entry row. Every row keeps the slot, so
-/// titles line up whether or not the page has an `og:image`: when there is
-/// none, or it fails to load, the slot shows a globe on a faint gray, the same
-/// glyph `FaviconView` falls back to.
+/// Draws its first subview as a square as tall as its second, which it
+/// measures but leaves to the caller to hide.
+private struct SquareAsTallAs: Layout {
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard subviews.count == 2 else { return .zero }
+        let side = subviews[1].sizeThatFits(.unspecified).height
+        return CGSize(width: side, height: side)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard subviews.count == 2 else { return }
+        let side = min(bounds.width, bounds.height)
+        subviews[0].place(at: bounds.origin, proposal: ProposedViewSize(width: side, height: side))
+        subviews[1].place(at: bounds.origin, proposal: .unspecified)
+    }
+}
+
+/// The square image at the start of an entry row, as large as the row offers.
+/// Every row keeps the slot, so titles line up whether or not the page has an
+/// `og:image`: when there is none, or it fails to load, the slot shows a globe
+/// on a faint gray, the same glyph `FaviconView` falls back to.
 struct EntryThumbnail: View {
     let url: URL?
 
@@ -98,28 +127,30 @@ struct EntryThumbnail: View {
     }
 
     var body: some View {
-        Group {
-            switch phase {
-            case .loading:
-                Self.background
-            case .loaded(let image):
-                Image(uiImage: image).resizable().scaledToFill()
-            case .failed:
-                fallback
+        // The color takes the square the row offers, and the image fills it
+        // without growing it.
+        Self.background
+            .overlay {
+                switch phase {
+                case .loading:
+                    EmptyView()
+                case .loaded(let image):
+                    Image(uiImage: image).resizable().scaledToFill()
+                case .failed:
+                    fallback
+                }
             }
-        }
-        .frame(width: ThumbnailCache.side, height: ThumbnailCache.side)
-        .clipShape(Self.shape)
-        .accessibilityHidden(true)
-        .task(id: url) {
-            if let known = Self.phase(for: url) {
-                phase = known
-                return
+            .clipShape(Self.shape)
+            .accessibilityHidden(true)
+            .task(id: url) {
+                if let known = Self.phase(for: url) {
+                    phase = known
+                    return
+                }
+                guard let url else { return }
+                phase = .loading
+                phase = await ThumbnailCache.shared.image(for: url).map(Phase.loaded) ?? .failed
             }
-            guard let url else { return }
-            phase = .loading
-            phase = await ThumbnailCache.shared.image(for: url).map(Phase.loaded) ?? .failed
-        }
     }
 
     private static var background: some View {
@@ -127,10 +158,8 @@ struct EntryThumbnail: View {
     }
 
     private var fallback: some View {
-        Self.background.overlay {
-            Image(systemName: "globe")
-                .font(.system(size: 24, weight: .light))
-                .foregroundStyle(.quaternary)
-        }
+        Image(systemName: "globe")
+            .font(.system(size: 24, weight: .light))
+            .foregroundStyle(.quaternary)
     }
 }
