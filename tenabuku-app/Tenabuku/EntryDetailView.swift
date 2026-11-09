@@ -299,6 +299,9 @@ struct EntryDetailView: View {
         }
     }
 
+    /// Two segments of 88 points, on the 8-point grid.
+    private static let tabsWidth: CGFloat = 176
+
     /// The bookmark count, and the tabs beside it.
     private var header: some View {
         HStack {
@@ -312,7 +315,10 @@ struct EntryDetailView: View {
                 }
             }
             .pickerStyle(.segmented)
-            .fixedSize()
+            // Wider than the labels need, at the control's own height, so
+            // that each segment is twice the 44-point minimum target Apple
+            // asks for and easy to hit.
+            .frame(width: Self.tabsWidth)
         }
         // On the 8-point grid, with the same inset as the comments, and
         // room enough under the sheet's grabber that the row does not crowd it.

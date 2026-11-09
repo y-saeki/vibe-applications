@@ -115,6 +115,24 @@ Keeping the README to its audience means, concretely:
 - Prefer repeating a short phrase over an in-page anchor link to another section: anchors
   built from Japanese headings break silently when the heading is reworded.
 
+## Design UI changes with a design skill
+
+Any change to what an application's user interface looks like or how it behaves — layout,
+spacing, controls, bars, sheets, motion — goes through a UI design skill before it is
+implemented, not only when a review asks for one. Load one that fits the change (in the
+owner's setup, `design-skills:design-critique`, `design-skills:interaction-design` and the
+like) and settle the design with it first. Where no such skill is available, as in cloud
+sessions, say so and follow the platform's own design guidelines instead.
+
+Whatever the skill suggests, keep to two things:
+
+- Keep lists easy to scan without packing them so tightly that they look cramped or cheap.
+  Lay spacing out on a consistent grid.
+- Prefer the platform's native components. When a custom one cannot be avoided, finish it
+  until it looks and feels as good as the native ones around it.
+
+Check the result on the device or simulator with screenshots before calling it done.
+
 ## Tests move with the feature
 
 An application's tests are part of the change that touches its behaviour, not a follow-up.
