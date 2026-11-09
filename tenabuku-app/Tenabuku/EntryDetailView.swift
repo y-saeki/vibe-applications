@@ -244,22 +244,17 @@ struct EntryDetailView: View {
             if let page, page != tab { tab = page }
         }
         .onGeometryChange(for: Bool.self) { $0.size.width > $0.size.height } action: { isWide = $0 }
-        .navigationTitle("\(entry.bookmarkCount) users")
-        // In the bar's own row, so that the tabs stand level with the count
-        // and no empty row sits above them.
-        .toolbarTitleDisplayMode(.inlineLarge)
+        // The count and the tabs sit in a row of their own at the top, in
+        // the text size of a bar title and the plain segmented control, rather
+        // than in the navigation bar, which draws its items larger and in
+        // glass. The navigation bar would only leave an empty row above them.
+        .safeAreaInset(edge: .top, spacing: 0) { header }
+        .toolbar(.hidden, for: .navigationBar)
         // The buttons stay at the bottom even on iPhone Duo's inner display
         // held sideways, where the system would put them in a vertical bar.
         // On its outer display they go to the vertical bar.
         .verticalBarDisabled(isWide)
         .toolbar {
-            // The tabs stay at the top beside the count, even where the
-            // other buttons move to a vertical bar at the side.
-            ToolbarItem(placement: .topBarTrailing) { tabPicker }
-                .horizontalBarOnly()
-                // The control is glass of its own; a second glass around it
-                // draws a double edge.
-                .sharedBackgroundHidden()
             ToolbarItem(placement: .bottomBar) {
                 Button("閉じる", systemImage: "xmark") { dismiss() }
             }
@@ -302,14 +297,24 @@ struct EntryDetailView: View {
         }
     }
 
-    private var tabPicker: some View {
-        Picker("並び順", selection: $tab) {
-            ForEach(EntryCommentsModel.Tab.allCases) { tab in
-                Text(tab.rawValue).tag(tab)
+    /// The bookmark count, and the tabs beside it.
+    private var header: some View {
+        HStack {
+            Text("\(entry.bookmarkCount) users")
+                .font(.headline)
+                .accessibilityAddTraits(.isHeader)
+            Spacer()
+            Picker("並び順", selection: $tab) {
+                ForEach(EntryCommentsModel.Tab.allCases) { tab in
+                    Text(tab.rawValue).tag(tab)
+                }
             }
+            .pickerStyle(.segmented)
+            .fixedSize()
         }
-        .pickerStyle(.segmented)
-        .fixedSize()
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(.bar)
     }
 
     private func addStar(to comment: CommentRowData, in model: EntryCommentsModel) async {
@@ -345,7 +350,7 @@ private struct CommentList: View {
 
     /// The same space above and below each comment, kept small so that more
     /// of them fit on the screen.
-    private static let rowInsets = EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16)
+    private static let rowInsets = EdgeInsets(top: 13, leading: 16, bottom: 13, trailing: 16)
 
     /// The row that starts loading the next page: some way before the end.
     private var prefetchMark: String? {
@@ -411,7 +416,7 @@ struct CommentRow: View {
             .frame(width: 32, height: 32)
             .clipShape(Circle())
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 6) {
                 // The user, the comment and the tags run on as one paragraph,
                 // so that a short comment takes a single line.
                 commentText.font(.subheadline)

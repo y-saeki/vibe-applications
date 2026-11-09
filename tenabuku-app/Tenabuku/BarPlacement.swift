@@ -25,19 +25,6 @@ extension ToolbarContent {
     }
 }
 
-extension ToolbarContent {
-    /// Leaves out the glass the bar draws around the item, for a control
-    /// that is glass of its own, such as a segmented picker.
-    @ToolbarContentBuilder
-    func sharedBackgroundHidden() -> some ToolbarContent {
-        if #available(iOS 26.0, *) {
-            sharedBackgroundVisibility(.hidden)
-        } else {
-            self
-        }
-    }
-}
-
 extension View {
     /// Lays the bars out along the top and bottom, even where the system
     /// would put them in a vertical bar at the side.
