@@ -170,6 +170,11 @@ A session that starts from a GitHub issue is renamed to `<issue title> #<issue n
 `[draftpad] 定期リファクタリング #117`, say — before any other work, so that the list of
 sessions reads as the list of issues being worked on.
 
+## Talk to the owner in Japanese
+
+Replies in the chat — answers, questions and progress reports alike — are written in
+Japanese, whatever language the request or the surrounding context happens to be in.
+
 ## Write issues and pull requests in Japanese
 
 GitHub issues and pull requests — titles and bodies alike — are written in Japanese.
