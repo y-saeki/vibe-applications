@@ -326,7 +326,6 @@ struct ArticleBrowserView: View {
                             }
                         }
                 }
-                .presentationDetents([.medium, .large])
             }
             .sheet(isPresented: $isShowingBookmarkEditor) {
                 NavigationStack {

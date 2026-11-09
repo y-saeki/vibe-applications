@@ -183,13 +183,8 @@ struct EntryDetailView: View {
     var body: some View {
         List {
             Section {
-                Picker("並び順", selection: $model.tab) {
-                    ForEach(EntryCommentsModel.Tab.allCases) { tab in
-                        Text(tab.rawValue).tag(tab)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .listRowSeparator(.hidden)
+                header
+                    .listRowSeparator(.hidden)
 
                 if let error = model.error {
                     ErrorBanner(error: error)
@@ -220,8 +215,11 @@ struct EntryDetailView: View {
             }
         }
         .listStyle(.plain)
-        .navigationTitle("\(entry.bookmarkCount) users")
+        // No title in the bar: the count sits in the list beside the tabs, so
+        // that no row of the bar is spent on it, and on iPhone Duo's outer
+        // display, where the buttons go to the side, the comments start at the top.
         .navigationBarTitleDisplayMode(.inline)
+        .simultaneousGesture(tabSwipe)
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
                 Button("ブクマする", systemImage: "bookmark") {
@@ -257,6 +255,39 @@ struct EntryDetailView: View {
         }
         .refreshable { await model.load(webSession: webSession, refreshIgnored: true) }
         .task(id: model.tab) { await model.load(webSession: webSession) }
+    }
+
+    /// The bookmark count, and the tabs beside it.
+    private var header: some View {
+        HStack {
+            Text("\(entry.bookmarkCount) users")
+                .font(.headline)
+                .accessibilityAddTraits(.isHeader)
+            Spacer()
+            Picker("並び順", selection: $model.tab) {
+                ForEach(EntryCommentsModel.Tab.allCases) { tab in
+                    Text(tab.rawValue).tag(tab)
+                }
+            }
+            .pickerStyle(.segmented)
+            .fixedSize()
+        }
+    }
+
+    /// Swiping sideways moves to the tab on that side, as the tabs are laid
+    /// out: to the left for the one on the right.
+    private var tabSwipe: some Gesture {
+        DragGesture(minimumDistance: 30)
+            .onEnded { value in
+                let dx = value.translation.width
+                // Clearly sideways, so that scrolling the list never switches.
+                guard abs(dx) > 60, abs(dx) > abs(value.translation.height) * 2 else { return }
+                let tabs = EntryCommentsModel.Tab.allCases
+                guard let index = tabs.firstIndex(of: model.tab) else { return }
+                let next = dx < 0 ? tabs.index(after: index) : index - 1
+                guard tabs.indices.contains(next) else { return }
+                withAnimation { model.tab = tabs[next] }
+            }
     }
 
     private func addStar(to comment: CommentRowData) async {
@@ -297,28 +328,33 @@ struct CommentRow: View {
             .frame(width: 32, height: 32)
             .clipShape(Circle())
 
-            VStack(alignment: .leading, spacing: 4) {
-                HStack {
-                    Text(comment.user).font(.caption.bold())
-                    Spacer()
+            VStack(alignment: .leading, spacing: 2) {
+                // The user, the comment and the tags run on as one paragraph,
+                // so that a short comment takes a single line.
+                commentText.font(.subheadline)
+                HStack(spacing: 12) {
                     if let date = comment.date {
                         Text(date, format: .dateTime.month().day().hour().minute())
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                     }
-                }
-                Text(comment.comment).font(.subheadline)
-                if !comment.tags.isEmpty {
-                    Text(comment.tags.map { "#\($0)" }.joined(separator: " "))
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-                if addStar != nil || (stars?.total ?? 0) > 0 {
-                    starRow
+                    if addStar != nil || (stars?.total ?? 0) > 0 {
+                        starRow
+                    }
                 }
             }
         }
         .padding(.vertical, 2)
+    }
+
+    private var commentText: Text {
+        let user = Text(comment.user).bold()
+        let body = Text(comment.comment)
+        guard !comment.tags.isEmpty else { return Text("\(user)  \(body)") }
+        let tags = Text(comment.tags.map { "#\($0)" }.joined(separator: " "))
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        return Text("\(user)  \(body)  \(tags)")
     }
 
     /// The coloured stars, then the yellow ones as the button that adds one,
