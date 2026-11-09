@@ -28,7 +28,7 @@ final class EntryCommentsModel {
     }
 
     let url: URL
-    var tab: Tab = .popular
+    let tab: Tab
     private(set) var comments: [CommentRowData] = []
     private(set) var error: Error?
     private(set) var isLoading = false
@@ -42,14 +42,22 @@ final class EntryCommentsModel {
     /// The users hidden on Hatena's website, whose comments are left out as
     /// the website does.
     private var ignoredUsers: Set<String> = []
-    /// Bumped by every `load`, so that a page arriving for an earlier tab or
-    /// an earlier pull is dropped.
+    /// Bumped by every `load`, so that a page arriving for an earlier pull is
+    /// dropped.
     private var generation = 0
 
     var hasMore: Bool { nextCursor != nil }
 
-    init(url: URL) {
+    init(url: URL, tab: Tab) {
         self.url = url
+        self.tab = tab
+    }
+
+    /// Loads the comments the first time the tab shows, and not again when
+    /// it comes back into view.
+    func loadIfNeeded(webSession: WebSessionStore) async {
+        guard generation == 0 else { return }
+        await load(webSession: webSession)
     }
 
     /// `refreshIgnored` asks Hatena for the hidden users again rather than
@@ -159,71 +167,109 @@ extension CommentRowData {
 
 struct EntryDetailView: View {
     let entry: FeedItem
-    @State private var model: EntryCommentsModel
+    @State private var tab: EntryCommentsModel.Tab = .popular
+    /// The page in view, which follows `tab` and sets it when swiped.
+    @State private var page: EntryCommentsModel.Tab? = .popular
+    /// One per tab, so that each keeps its comments and where it was
+    /// scrolled to while the other shows.
+    @State private var popular: EntryCommentsModel
+    @State private var recent: EntryCommentsModel
     @State private var isShowingBookmarkEditor = false
     /// The comment a star was meant for when Hatena asked for the website
     /// login; the star is sent once the login is done.
-    @State private var pendingStar: CommentRowData?
+    @State private var pendingStar: PendingStar?
     @State private var isShowingWebSignIn = false
     @State private var starError: Error?
+    /// Whether the sheet is wider than it is tall, which with a vertical bar
+    /// tells iPhone Duo's inner display held sideways from its outer display.
+    @State private var isWide = false
+    /// How far the bars reach over the comments, the vertical bar included.
+    @State private var barInsets = EdgeInsets()
     @Environment(\.openURL) private var openURL
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    /// How far below the tabs' centre the middle of the count's figures sits,
+    /// so that its baseline meets the foot of the labels' ideographs.
+    @ScaledMetric(relativeTo: .headline) private var countDrop: CGFloat = 1
     @Environment(WebSessionStore.self) private var webSession
+
+    private struct PendingStar {
+        let comment: CommentRowData
+        let model: EntryCommentsModel
+    }
 
     init(entry: FeedItem) {
         self.entry = entry
-        _model = State(initialValue: EntryCommentsModel(url: entry.link))
+        _popular = State(initialValue: EntryCommentsModel(url: entry.link, tab: .popular))
+        _recent = State(initialValue: EntryCommentsModel(url: entry.link, tab: .recent))
     }
 
-    /// The row that starts loading the next page: some way before the end.
-    private var prefetchMark: String? {
-        let comments = model.comments
-        return comments.isEmpty ? nil : comments[max(0, comments.count - 20)].id
+    private func model(for tab: EntryCommentsModel.Tab) -> EntryCommentsModel {
+        switch tab {
+        case .popular: popular
+        case .recent: recent
+        }
     }
 
     var body: some View {
-        List {
-            Section {
-                Picker("並び順", selection: $model.tab) {
-                    ForEach(EntryCommentsModel.Tab.allCases) { tab in
-                        Text(tab.rawValue).tag(tab)
+        // Pages side by side, so that a sideways swipe slides the other tab
+        // in under the finger and choosing a tab slides it in the same way.
+        ScrollView(.horizontal) {
+            HStack(spacing: 0) {
+                ForEach(EntryCommentsModel.Tab.allCases) { tab in
+                    let model = model(for: tab)
+                    CommentList(model: model, barInsets: barInsets) { comment in
+                        Task { await addStar(to: comment, in: model) }
                     }
-                }
-                .pickerStyle(.segmented)
-                .listRowSeparator(.hidden)
-
-                if let error = model.error {
-                    ErrorBanner(error: error)
-                } else if model.isLoading && model.comments.isEmpty {
-                    ProgressView().frame(maxWidth: .infinity)
-                } else if model.comments.isEmpty {
-                    Text("コメントはまだありません").foregroundStyle(.secondary)
-                }
-                ForEach(model.comments) { comment in
-                    CommentRow(
-                        comment: comment,
-                        stars: comment.starURI.flatMap { model.starCounts[$0] },
-                        isAddingStar: comment.starURI.map(model.addingStars.contains) ?? false,
-                        addStar: comment.starURI == nil ? nil : { Task { await addStar(to: comment) } }
-                    )
-                    .onAppear {
-                        // Starts on the next page before the end comes into view.
-                        if comment.id == prefetchMark {
-                            Task { await model.loadMore() }
-                        }
-                    }
-                }
-                if model.hasMore && model.error == nil {
-                    // Also catches a short list, whose mark is already on screen.
-                    ProgressView().frame(maxWidth: .infinity)
-                        .task(id: model.comments.count) { await model.loadMore() }
+                    .containerRelativeFrame(.horizontal)
+                    .id(tab)
                 }
             }
+            .scrollTargetLayout()
         }
-        .listStyle(.plain)
-        .navigationTitle("\(entry.bookmarkCount) users")
-        .navigationBarTitleDisplayMode(.inline)
+        .scrollTargetBehavior(.paging)
+        // The pages' own edge, which the header sits on, softened as well.
+        .softTopEdge()
+        .scrollPosition(id: $page)
+        .scrollIndicators(.hidden)
+        .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
+        // Under the bars, so that the comments run on behind their glass
+        // rather than stopping short of it, and each page is as wide as the
+        // sheet, so that none of the next one shows beside the vertical bar.
+        // The pages do not hand the bars' room on to the lists, so the lists
+        // are told it themselves.
+        .ignoresSafeArea(.container)
+        .background {
+            Color.clear.onGeometryChange(for: EdgeInsets.self, of: \.safeAreaInsets) { barInsets = $0 }
+        }
+        .onChange(of: tab) { _, tab in
+            guard page != tab else { return }
+            withAnimation { page = tab }
+        }
+        .onChange(of: page) { _, page in
+            if let page, page != tab { tab = page }
+        }
+        .onGeometryChange(for: Bool.self) { $0.size.width > $0.size.height } action: { isWide = $0 }
+        // The count and the tabs sit in a row of their own at the top, in
+        // the text size of a bar title and the plain segmented control, rather
+        // than in the navigation bar, which draws its items larger and in
+        // glass. The navigation bar would only leave an empty row above them.
+        .topBar { header }
+        .toolbar(.hidden, for: .navigationBar)
+        // The buttons stay at the bottom even on iPhone Duo's inner display
+        // held sideways, where the system would put them in a vertical bar.
+        // On its outer display they go to the vertical bar.
+        .verticalBarDisabled(isWide)
         .toolbar {
-            ToolbarItemGroup(placement: .primaryAction) {
+            ToolbarItem(placement: .bottomBar) {
+                Button("閉じる", systemImage: "xmark") { dismiss() }
+            }
+            if #available(iOS 26.0, *) {
+                ToolbarSpacer(.flexible, placement: .bottomBar)
+            } else {
+                ToolbarItem(placement: .bottomBar) { Spacer() }
+            }
+            ToolbarItemGroup(placement: .bottomBar) {
                 Button("ブクマする", systemImage: "bookmark") {
                     isShowingBookmarkEditor = true
                 }
@@ -238,8 +284,8 @@ struct EntryDetailView: View {
             }
         }
         .webSignInSheet(isPresented: $isShowingWebSignIn) {
-            if let comment = pendingStar {
-                Task { await addStar(to: comment) }
+            if let pendingStar {
+                Task { await addStar(to: pendingStar.comment, in: pendingStar.model) }
             }
         }
         .onChange(of: isShowingWebSignIn) { _, isShowing in
@@ -255,15 +301,57 @@ struct EntryDetailView: View {
         } message: { error in
             Text(Self.starErrorMessage(error))
         }
-        .refreshable { await model.load(webSession: webSession, refreshIgnored: true) }
-        .task(id: model.tab) { await model.load(webSession: webSession) }
     }
 
-    private func addStar(to comment: CommentRowData) async {
+    /// The cap height of the headline font at the given text size, which
+    /// the figures of the count reach.
+    private static func headlineCapHeight(for size: DynamicTypeSize) -> CGFloat {
+        let traits = UITraitCollection(preferredContentSizeCategory: UIContentSizeCategory(size))
+        return UIFont.preferredFont(forTextStyle: .headline, compatibleWith: traits).capHeight
+    }
+
+    /// Two segments of 88 points, on the 8-point grid.
+    private static let tabsWidth: CGFloat = 176
+
+    /// The bookmark count, and the tabs beside it.
+    private var header: some View {
+        HStack(alignment: .opticalCenter) {
+            Text("\(entry.bookmarkCount) users")
+                .font(.headline)
+                .accessibilityAddTraits(.isHeader)
+                // Placed by the glyphs it shows rather than by its line box,
+                // which keeps room below for descenders the count never has.
+                // Its baseline then sits on the foot of the tab labels'
+                // ideographs, which reach a little below a Latin baseline:
+                // centred on the box, the count's foot stood about a point
+                // above theirs and the count looked high.
+                .alignmentGuide(.opticalCenter) { d in
+                    d[.firstTextBaseline] - Self.headlineCapHeight(for: dynamicTypeSize) / 2 - countDrop
+                }
+            Spacer()
+            Picker("並び順", selection: $tab) {
+                ForEach(EntryCommentsModel.Tab.allCases) { tab in
+                    Text(tab.rawValue).tag(tab)
+                }
+            }
+            .pickerStyle(.segmented)
+            // Wider than the labels need, at the control's own height, so
+            // that each segment is twice the 44-point minimum target Apple
+            // asks for and easy to hit.
+            .frame(width: Self.tabsWidth)
+        }
+        // On the 8-point grid, with the same inset as the comments, and
+        // room enough under the sheet's grabber that the row does not crowd it.
+        .padding(.horizontal, 16)
+        .padding(.top, 20)
+        .padding(.bottom, 12)
+    }
+
+    private func addStar(to comment: CommentRowData, in model: EntryCommentsModel) async {
         do {
             try await model.addStar(to: comment, webSession: webSession)
         } catch HatenaError.unauthorized {
-            pendingStar = comment
+            pendingStar = PendingStar(comment: comment, model: model)
             isShowingWebSignIn = true
         } catch {
             FailureLog.record(error)
@@ -276,6 +364,78 @@ struct EntryDetailView: View {
             return "はてなが受け付けませんでした（\(reason)）"
         }
         return ErrorBanner.title(for: error) + "\n" + ErrorBanner.detail(for: error)
+    }
+}
+
+/// The comments of one tab.
+private struct CommentList: View {
+    let model: EntryCommentsModel
+    /// How far the bars reach over the list, which runs on under them.
+    let barInsets: EdgeInsets
+    let addStar: (CommentRowData) -> Void
+    @Environment(WebSessionStore.self) private var webSession
+
+    /// Room below the last comment, so that it ends clear of the bottom bar.
+    private static let endPadding: CGFloat = 16
+
+    /// The same space above and below each comment, kept small so that more
+    /// of them fit on the screen.
+    private static let rowInsets = EdgeInsets(top: 16, leading: 16, bottom: 16, trailing: 16)
+
+    /// The row that starts loading the next page: some way before the end.
+    private var prefetchMark: String? {
+        let comments = model.comments
+        return comments.isEmpty ? nil : comments[max(0, comments.count - 20)].id
+    }
+
+    var body: some View {
+        List {
+            Section {
+            if let error = model.error {
+                ErrorBanner(error: error)
+            } else if model.isLoading && model.comments.isEmpty {
+                ProgressView().frame(maxWidth: .infinity)
+            } else if model.comments.isEmpty {
+                Text("コメントはまだありません").foregroundStyle(.secondary)
+            }
+            ForEach(model.comments) { comment in
+                CommentRow(
+                    comment: comment,
+                    stars: comment.starURI.flatMap { model.starCounts[$0] },
+                    isAddingStar: comment.starURI.map(model.addingStars.contains) ?? false,
+                    addStar: comment.starURI == nil ? nil : { addStar(comment) }
+                )
+                .listRowInsets(Self.rowInsets)
+                .onAppear {
+                    // Starts on the next page before the end comes into view.
+                    if comment.id == prefetchMark {
+                        Task { await model.loadMore() }
+                    }
+                }
+            }
+            if model.hasMore && model.error == nil {
+                // Also catches a short list, whose mark is already on screen.
+                ProgressView().frame(maxWidth: .infinity)
+                    .task(id: model.comments.count) { await model.loadMore() }
+            }
+          }
+          // No rule above the first comment: the list starts under the header,
+          // which needs no line to set it apart.
+          .listSectionSeparator(.hidden, edges: .top)
+          .listRowBackground(Color.clear)
+        }
+        .listStyle(.plain)
+        // Clear, so that the sheet's glass shows through.
+        .scrollContentBackground(.hidden)
+        // A soft edge under the header, like the system's own bars, rather
+        // than a rule across the sheet.
+        .softTopEdge()
+        .contentMargins(.bottom, Self.endPadding, for: .scrollContent)
+        // As safe area rather than margins, so that the list also blurs what
+        // runs under the bars, as it would where the bars reach it themselves.
+        .safeAreaPadding(barInsets)
+        .refreshable { await model.load(webSession: webSession, refreshIgnored: true) }
+        .task { await model.loadIfNeeded(webSession: webSession) }
     }
 }
 
@@ -297,28 +457,32 @@ struct CommentRow: View {
             .frame(width: 32, height: 32)
             .clipShape(Circle())
 
-            VStack(alignment: .leading, spacing: 4) {
-                HStack {
-                    Text(comment.user).font(.caption.bold())
-                    Spacer()
+            VStack(alignment: .leading, spacing: 8) {
+                // The user, the comment and the tags run on as one paragraph,
+                // so that a short comment takes a single line.
+                commentText.font(.subheadline)
+                HStack(spacing: 12) {
                     if let date = comment.date {
                         Text(date, format: .dateTime.month().day().hour().minute())
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                     }
-                }
-                Text(comment.comment).font(.subheadline)
-                if !comment.tags.isEmpty {
-                    Text(comment.tags.map { "#\($0)" }.joined(separator: " "))
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-                if addStar != nil || (stars?.total ?? 0) > 0 {
-                    starRow
+                    if addStar != nil || (stars?.total ?? 0) > 0 {
+                        starRow
+                    }
                 }
             }
         }
-        .padding(.vertical, 2)
+    }
+
+    private var commentText: Text {
+        let user = Text(comment.user).bold()
+        let body = Text(comment.comment)
+        guard !comment.tags.isEmpty else { return Text("\(user)  \(body)") }
+        let tags = Text(comment.tags.map { "#\($0)" }.joined(separator: " "))
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        return Text("\(user)  \(body)  \(tags)")
     }
 
     /// The coloured stars, then the yellow ones as the button that adds one,
@@ -334,9 +498,12 @@ struct CommentRow: View {
                 Button(action: addStar) {
                     starCount(stars?.yellow, color: .yellow)
                         .opacity(isAddingStar ? 0.4 : 1)
-                        // A target large enough to hit without hitting the row.
-                        .frame(minWidth: 44, minHeight: 28, alignment: .leading)
+                        // A target large enough to hit without hitting the row,
+                        // reaching past the line so that it adds no height.
+                        .frame(minWidth: 44, alignment: .leading)
+                        .padding(.vertical, 8)
                         .contentShape(Rectangle())
+                        .padding(.vertical, -8)
                 }
                 // Only the star reacts to a tap, not the whole row.
                 .buttonStyle(.borderless)
@@ -346,7 +513,6 @@ struct CommentRow: View {
             }
         }
         .font(.caption)
-        .frame(minHeight: 28)
     }
 
     /// A star and how many there are; an empty star while nil or none.
@@ -383,4 +549,40 @@ struct CommentRow: View {
         default: name
         }
     }
+}
+
+private extension View {
+    /// Puts `content` in a bar along the top of the view. From iOS 26 it is a
+    /// safe area bar, so that what scrolls under it fades the way it does
+    /// under the system's own bars, with no fill of its own; before that, it
+    /// sits on the bar material.
+    @ViewBuilder
+    func topBar(@ViewBuilder _ content: () -> some View) -> some View {
+        if #available(iOS 26.0, *) {
+            safeAreaBar(edge: .top, spacing: 0, content: content)
+        } else {
+            safeAreaInset(edge: .top, spacing: 0) { content().background(.bar) }
+        }
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func softTopEdge() -> some View {
+        if #available(iOS 26.0, *) {
+            scrollEdgeEffectStyle(.soft, for: .top)
+        } else {
+            self
+        }
+    }
+}
+
+private extension VerticalAlignment {
+    /// The middle of what a view shows: its frame's centre unless the view
+    /// says otherwise.
+    private enum OpticalCenter: AlignmentID {
+        static func defaultValue(in d: ViewDimensions) -> CGFloat { d[VerticalAlignment.center] }
+    }
+
+    static let opticalCenter = VerticalAlignment(OpticalCenter.self)
 }

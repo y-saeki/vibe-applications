@@ -319,14 +319,14 @@ struct ArticleBrowserView: View {
             }
             .sheet(isPresented: $isShowingComments) {
                 NavigationStack {
+                    // Closes itself, with a button among its own at the bottom.
                     EntryDetailView(entry: model.entry)
-                        .toolbar {
-                            ToolbarItem(placement: .cancellationAction) {
-                                Button("閉じる", systemImage: "xmark") { isShowingComments = false }
-                            }
-                        }
                 }
-                .presentationDetents([.medium, .large])
+                // Just short of full height, where iOS 26 still draws the
+                // sheet in Liquid Glass with its grabber; at full height it
+                // turns opaque and anchors to the screen's edges.
+                .presentationDetents([.fraction(0.94)])
+                .presentationDragIndicator(.visible)
             }
             .sheet(isPresented: $isShowingBookmarkEditor) {
                 NavigationStack {
