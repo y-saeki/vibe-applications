@@ -187,6 +187,10 @@ struct EntryDetailView: View {
     @State private var barInsets = EdgeInsets()
     @Environment(\.openURL) private var openURL
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    /// How far below the tabs' centre the middle of the count's figures sits,
+    /// so that its baseline meets the foot of the labels' ideographs.
+    @ScaledMetric(relativeTo: .headline) private var countDrop: CGFloat = 1
     @Environment(WebSessionStore.self) private var webSession
 
     private struct PendingStar {
@@ -299,15 +303,31 @@ struct EntryDetailView: View {
         }
     }
 
+    /// The cap height of the headline font at the given text size, which
+    /// the figures of the count reach.
+    private static func headlineCapHeight(for size: DynamicTypeSize) -> CGFloat {
+        let traits = UITraitCollection(preferredContentSizeCategory: UIContentSizeCategory(size))
+        return UIFont.preferredFont(forTextStyle: .headline, compatibleWith: traits).capHeight
+    }
+
     /// Two segments of 88 points, on the 8-point grid.
     private static let tabsWidth: CGFloat = 176
 
     /// The bookmark count, and the tabs beside it.
     private var header: some View {
-        HStack {
+        HStack(alignment: .opticalCenter) {
             Text("\(entry.bookmarkCount) users")
                 .font(.headline)
                 .accessibilityAddTraits(.isHeader)
+                // Placed by the glyphs it shows rather than by its line box,
+                // which keeps room below for descenders the count never has.
+                // Its baseline then sits on the foot of the tab labels'
+                // ideographs, which reach a little below a Latin baseline:
+                // centred on the box, the count's foot stood about a point
+                // above theirs and the count looked high.
+                .alignmentGuide(.opticalCenter) { d in
+                    d[.firstTextBaseline] - Self.headlineCapHeight(for: dynamicTypeSize) / 2 - countDrop
+                }
             Spacer()
             Picker("並び順", selection: $tab) {
                 ForEach(EntryCommentsModel.Tab.allCases) { tab in
@@ -555,4 +575,14 @@ private extension View {
             self
         }
     }
+}
+
+private extension VerticalAlignment {
+    /// The middle of what a view shows: its frame's centre unless the view
+    /// says otherwise.
+    private enum OpticalCenter: AlignmentID {
+        static func defaultValue(in d: ViewDimensions) -> CGFloat { d[VerticalAlignment.center] }
+    }
+
+    static let opticalCenter = VerticalAlignment(OpticalCenter.self)
 }
