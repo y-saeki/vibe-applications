@@ -224,6 +224,8 @@ struct EntryDetailView: View {
             .scrollTargetLayout()
         }
         .scrollTargetBehavior(.paging)
+        // The pages' own edge, which the header sits on, softened as well.
+        .softTopEdge()
         .scrollPosition(id: $page)
         .scrollIndicators(.hidden)
         .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
@@ -248,7 +250,7 @@ struct EntryDetailView: View {
         // the text size of a bar title and the plain segmented control, rather
         // than in the navigation bar, which draws its items larger and in
         // glass. The navigation bar would only leave an empty row above them.
-        .safeAreaInset(edge: .top, spacing: 0) { header }
+        .topBar { header }
         .toolbar(.hidden, for: .navigationBar)
         // The buttons stay at the bottom even on iPhone Duo's inner display
         // held sideways, where the system would put them in a vertical bar.
@@ -312,9 +314,11 @@ struct EntryDetailView: View {
             .pickerStyle(.segmented)
             .fixedSize()
         }
+        // On the 8-point grid, with the same inset as the comments, and
+        // room enough under the sheet's grabber that the row does not crowd it.
         .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .background(.bar)
+        .padding(.top, 20)
+        .padding(.bottom, 12)
     }
 
     private func addStar(to comment: CommentRowData, in model: EntryCommentsModel) async {
@@ -346,11 +350,11 @@ private struct CommentList: View {
     @Environment(WebSessionStore.self) private var webSession
 
     /// Room below the last comment, so that it ends clear of the bottom bar.
-    private static let endPadding: CGFloat = 12
+    private static let endPadding: CGFloat = 16
 
     /// The same space above and below each comment, kept small so that more
     /// of them fit on the screen.
-    private static let rowInsets = EdgeInsets(top: 13, leading: 16, bottom: 13, trailing: 16)
+    private static let rowInsets = EdgeInsets(top: 16, leading: 16, bottom: 16, trailing: 16)
 
     /// The row that starts loading the next page: some way before the end.
     private var prefetchMark: String? {
@@ -360,6 +364,7 @@ private struct CommentList: View {
 
     var body: some View {
         List {
+            Section {
             if let error = model.error {
                 ErrorBanner(error: error)
             } else if model.isLoading && model.comments.isEmpty {
@@ -387,8 +392,18 @@ private struct CommentList: View {
                 ProgressView().frame(maxWidth: .infinity)
                     .task(id: model.comments.count) { await model.loadMore() }
             }
+          }
+          // No rule above the first comment: the list starts under the header,
+          // which needs no line to set it apart.
+          .listSectionSeparator(.hidden, edges: .top)
+          .listRowBackground(Color.clear)
         }
         .listStyle(.plain)
+        // Clear, so that the sheet's glass shows through.
+        .scrollContentBackground(.hidden)
+        // A soft edge under the header, like the system's own bars, rather
+        // than a rule across the sheet.
+        .softTopEdge()
         .contentMargins(.bottom, Self.endPadding, for: .scrollContent)
         // As safe area rather than margins, so that the list also blurs what
         // runs under the bars, as it would where the bars reach it themselves.
@@ -416,7 +431,7 @@ struct CommentRow: View {
             .frame(width: 32, height: 32)
             .clipShape(Circle())
 
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 8) {
                 // The user, the comment and the tags run on as one paragraph,
                 // so that a short comment takes a single line.
                 commentText.font(.subheadline)
@@ -506,6 +521,32 @@ struct CommentRow: View {
         case "blue": "ブルー"
         case "purple": "パープル"
         default: name
+        }
+    }
+}
+
+private extension View {
+    /// Puts `content` in a bar along the top of the view. From iOS 26 it is a
+    /// safe area bar, so that what scrolls under it fades the way it does
+    /// under the system's own bars, with no fill of its own; before that, it
+    /// sits on the bar material.
+    @ViewBuilder
+    func topBar(@ViewBuilder _ content: () -> some View) -> some View {
+        if #available(iOS 26.0, *) {
+            safeAreaBar(edge: .top, spacing: 0, content: content)
+        } else {
+            safeAreaInset(edge: .top, spacing: 0) { content().background(.bar) }
+        }
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func softTopEdge() -> some View {
+        if #available(iOS 26.0, *) {
+            scrollEdgeEffectStyle(.soft, for: .top)
+        } else {
+            self
         }
     }
 }
