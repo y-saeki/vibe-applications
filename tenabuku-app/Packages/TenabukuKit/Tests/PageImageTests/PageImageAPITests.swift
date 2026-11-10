@@ -115,6 +115,17 @@ final class PageImageAPITests: XCTestCase {
         XCTAssertEqual(transport.requests.first?.url, page)
     }
 
+    func testReadsNoFurtherThanTheHeadLimit() async throws {
+        // An image named past the limit, in a head that never ends.
+        let padding = String(repeating: " ", count: PageImageAPI.headLimit)
+        let html = "<head>" + padding + #"<meta property="og:image" content="https://example.com/late.png">"#
+        let api = PageImageAPI(http: .stub(StubTransport(body: html)))
+
+        let image = try await api.imageURL(for: page)
+
+        XCTAssertNil(image)
+    }
+
     func testAnErrorStatusIsAnError() async {
         let api = PageImageAPI(http: .stub(StubTransport(status: 503, body: "")))
 

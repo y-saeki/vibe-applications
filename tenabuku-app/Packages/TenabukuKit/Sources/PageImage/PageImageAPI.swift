@@ -5,13 +5,19 @@ import FoundationNetworking
 import HatenaShared
 
 /// The image a page names for itself in its `og:image` (or `twitter:image`),
-/// read from the page's own HTML.
+/// read from the head of the page's own HTML.
 ///
 /// For entries Hatena has no image for. Hatena leaves out pages whose
 /// `og:image` is a WebP or AVIF file, or whose URL holds characters outside
 /// ASCII, though the app can show all of them (seen in 2026-11).
 public struct PageImageAPI: Sendable {
     private let http: HatenaHTTPClient
+
+    /// The head is all that is read: the image is named there, and stopping
+    /// at its end leaves out the body, which is most of a page. A head that
+    /// runs longer than this is cut off; the pages seen named their image
+    /// in the first 5 KB and ended their head within 30 KB.
+    static let headLimit = 64 * 1024
 
     public init(http: HatenaHTTPClient) {
         self.http = http
@@ -23,7 +29,7 @@ public struct PageImageAPI: Sendable {
         guard Self.isWeb(page) else { return nil }
         var request = URLRequest(url: page)
         request.setValue("text/html,application/xhtml+xml", forHTTPHeaderField: "Accept")
-        let (data, response) = try await http.send(request)
+        let (data, response) = try await http.sendPrefix(request, endingAt: "</head>", limit: Self.headLimit)
         try HatenaHTTPClient.validate(response)
         if let type = response.value(forHTTPHeaderField: "Content-Type")?.lowercased(),
            !type.contains("html") {
