@@ -38,11 +38,23 @@ struct EntryRow: View {
     var looksUpImage = false
     /// Marks a bookmark the user keeps private.
     var isPrivate = false
+    /// Puts the thumbnail after the text rather than before it.
+    var thumbnailTrailing = false
 
     private static let lineSpacing: CGFloat = 6
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
+            if !thumbnailTrailing { thumbnail }
+            details
+            if thumbnailTrailing { thumbnail }
+        }
+        .padding(.vertical, 4)
+        .accessibilityElement(children: .combine)
+        .accessibilityValue(isRead ? Text("既読") : Text(""))
+    }
+
+    private var thumbnail: some View {
             SquareAsTallAs {
                 if looksUpImage {
                     LookedUpThumbnail(page: item.link)
@@ -58,6 +70,9 @@ struct EntryRow: View {
                 }
                 .hidden()
             }
+    }
+
+    private var details: some View {
             VStack(alignment: .leading, spacing: Self.lineSpacing) {
                 HStack(spacing: 8) {
                     if let host = item.link.host() {
@@ -82,14 +97,13 @@ struct EntryRow: View {
                     .font(.body)
                     .foregroundStyle(isRead ? .secondary : .primary)
                     .lineLimit(3, reservesSpace: reservesTitleSpace)
+                    // Takes the lines it needs, up to three, rather than the
+                    // fewer a row squeezed by what is below it would offer.
+                    .fixedSize(horizontal: false, vertical: true)
                     // Drawn below the site line but read out first.
                     .accessibilitySortPriority(1)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .padding(.vertical, 4)
-        .accessibilityElement(children: .combine)
-        .accessibilityValue(isRead ? Text("既読") : Text(""))
     }
 }
 

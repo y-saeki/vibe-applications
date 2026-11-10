@@ -263,6 +263,7 @@ private struct MyBookmarkList: View {
     @Environment(ReadHistoryStore.self) private var readHistory
     @Environment(FaviconSettingsStore.self) private var faviconSettings
     @Environment(\.openEntryFromPreview) private var openFromPreview
+    @AppStorage(AccountIconSetting.key) private var showsAccountIcon = AccountIconSetting.defaultValue
 
     /// Signing in again gives a new token, which starts the list over.
     private struct LoadKey: Equatable {
@@ -289,7 +290,7 @@ private struct MyBookmarkList: View {
                     MyBookmarkRow(
                         hit: hit,
                         user: account?.urlName ?? "",
-                        iconURL: account?.iconURL,
+                        iconURL: showsAccountIcon ? account?.iconURL : nil,
                         stars: account
                             .flatMap { MyBookmarkListModel.starURI(of: hit, user: $0.urlName) }
                             .flatMap { model.starCounts[$0] },
@@ -404,7 +405,8 @@ private struct MyBookmarkList: View {
 }
 
 /// A bookmark laid out as the hot entry list shows its entry, with the
-/// user's own comment below it as the comment sheet shows comments.
+/// thumbnail at the end, and the user's own comment below it as the comment
+/// sheet shows comments, without the ID that would be the same on every row.
 private struct MyBookmarkRow: View {
     let hit: MyBookmarkSearchHit
     let user: String
@@ -424,7 +426,8 @@ private struct MyBookmarkRow: View {
                 ),
                 isRead: isRead,
                 looksUpImage: true,
-                isPrivate: hit.isPrivate
+                isPrivate: hit.isPrivate,
+                thumbnailTrailing: true
             )
             if showsComment {
                 // Only counts the stars: adding one is left to the comment
@@ -438,7 +441,8 @@ private struct MyBookmarkRow: View {
                         date: hit.bookmarkedAt,
                         starURI: nil
                     ),
-                    stars: stars
+                    stars: stars,
+                    isOwn: true
                 )
                 .padding(.bottom, 4)
             }

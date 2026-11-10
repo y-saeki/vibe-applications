@@ -20,7 +20,7 @@ struct SettingsView: View {
             Section {
                 if let account = accounts.account {
                     LabeledContent("ログイン中", value: "id:\(account.urlName)")
-                    Toggle("マイブックマークのボタンに自分のアイコンを出す", isOn: $showsAccountIcon)
+                    Toggle("自分のアイコンを出す", isOn: $showsAccountIcon)
                     if accounts.needsSignInAgain {
                         Text("はてなが、保存してあるログイン情報を受け付けませんでした。")
                             .font(.footnote)
@@ -38,7 +38,7 @@ struct SettingsView: View {
                 Text("はてなアカウント")
             } footer: {
                 if accounts.canSignIn {
-                    Text("ブックマークの保存と、マイブックマークに使います。自分のアイコンを出さないときは、ボタンに人の形のアイコンが出ます。")
+                    Text("ブックマークの保存と、マイブックマークに使います。自分のアイコンを出さないときは、マイブックマークのボタンと一覧に人の形のアイコンが出ます。")
                 } else {
                     Text("このビルドには、はてなの consumer key が入っていません。")
                 }

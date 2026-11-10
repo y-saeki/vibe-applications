@@ -446,15 +446,21 @@ struct CommentRow: View {
     var isAddingStar = false
     /// Nil when the comment cannot take a star.
     var addStar: (() -> Void)?
+    /// Leaves the ID out and shrinks the icon to the comment's first line,
+    /// for a list of the user's own comments, where the ID says nothing.
+    var isOwn = false
+
+    /// As tall as the first line of the comment at any text size.
+    @ScaledMetric(relativeTo: .subheadline) private var ownIconSide: CGFloat = 20
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
+        HStack(alignment: .top, spacing: isOwn ? 8 : 10) {
             AsyncImage(url: comment.iconURL) { image in
                 image.resizable().scaledToFill()
             } placeholder: {
                 Image(systemName: "person.crop.circle.fill").resizable().foregroundStyle(.tertiary)
             }
-            .frame(width: 32, height: 32)
+            .frame(width: isOwn ? ownIconSide : 32, height: isOwn ? ownIconSide : 32)
             .clipShape(Circle())
 
             VStack(alignment: .leading, spacing: 8) {
@@ -476,13 +482,17 @@ struct CommentRow: View {
     }
 
     private var commentText: Text {
-        let user = Text(comment.user).bold()
-        let body = Text(comment.comment)
-        guard !comment.tags.isEmpty else { return Text("\(user)  \(body)") }
-        let tags = Text(comment.tags.map { "#\($0)" }.joined(separator: " "))
-            .font(.caption)
-            .foregroundStyle(.secondary)
-        return Text("\(user)  \(body)  \(tags)")
+        var parts: [Text] = []
+        if !isOwn { parts.append(Text(comment.user).bold()) }
+        if !comment.comment.isEmpty { parts.append(Text(comment.comment)) }
+        if !comment.tags.isEmpty {
+            parts.append(
+                Text(comment.tags.map { "#\($0)" }.joined(separator: " "))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            )
+        }
+        return parts.dropFirst().reduce(parts.first ?? Text(verbatim: "")) { Text("\($0)  \($1)") }
     }
 
     /// The coloured stars, then the yellow ones as the button that adds one,
