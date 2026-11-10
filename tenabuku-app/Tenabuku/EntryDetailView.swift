@@ -468,7 +468,9 @@ struct CommentRow: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 8) {
                 icon(side: ownIconSide)
-                HStack(spacing: 12) {
+                // On the text baseline, so that the stars sit on the line
+                // with the date instead of hanging below it.
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
                     if let date = comment.date {
                         Text(HatenaDate.timestamp(date))
                             .font(.caption2.monospaced())
@@ -505,7 +507,9 @@ struct CommentRow: View {
                 // The user, the comment and the tags run on as one paragraph,
                 // so that a short comment takes a single line.
                 commentText.font(.subheadline)
-                HStack(spacing: 12) {
+                // On the text baseline, so that the stars sit on the line
+                // with the date instead of hanging below it.
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
                     if let date = comment.date {
                         Text(HatenaDate.timestamp(date))
                             .font(.caption2.monospaced())
@@ -537,7 +541,7 @@ struct CommentRow: View {
     /// as Hatena shows them. Without the button, the yellow ones are only
     /// counted.
     private var starRow: some View {
-        HStack(spacing: 10) {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
             ForEach(stars?.colored ?? [], id: \.color) { colored in
                 starCount(colored.count, color: Self.color(named: colored.color))
                     .accessibilityElement(children: .ignore)
@@ -571,12 +575,12 @@ struct CommentRow: View {
 
     /// A star and how many there are; an empty star while nil or none.
     private func starCount(_ count: Int?, color: Color) -> some View {
-        HStack(spacing: 3) {
+        HStack(alignment: .firstTextBaseline, spacing: 3) {
             Image(systemName: (count ?? 0) > 0 ? "star.fill" : "star")
                 .foregroundStyle(color)
             if let count {
                 Text(count, format: .number)
-                    .monospacedDigit()
+                    .monospaced()
                     // Plain grey: `.secondary` would take the button's tint.
                     .foregroundStyle(Color.secondary)
             }
