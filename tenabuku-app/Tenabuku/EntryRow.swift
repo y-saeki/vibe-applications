@@ -27,7 +27,7 @@ struct VerticalBarReader<Content: View>: View {
     }
 }
 
-struct EntryRow: View {
+struct EntryRow<Footer: View>: View {
     let item: FeedItem
     /// Dims the title, the way the official app tells opened entries apart.
     let isRead: Bool
@@ -40,8 +40,11 @@ struct EntryRow: View {
     var isPrivate = false
     /// Puts the thumbnail after the text rather than before it.
     var thumbnailTrailing = false
+    /// Goes under the title, in the text column, so that it rises beside
+    /// the thumbnail whatever the title's length rather than waiting below it.
+    @ViewBuilder var footer: () -> Footer
 
-    private static let lineSpacing: CGFloat = 6
+    private static var lineSpacing: CGFloat { 6 }
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
@@ -102,8 +105,31 @@ struct EntryRow: View {
                     .fixedSize(horizontal: false, vertical: true)
                     // Drawn below the site line but read out first.
                     .accessibilitySortPriority(1)
+                footer()
+                    .padding(.top, 4)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+extension EntryRow where Footer == EmptyView {
+    init(
+        item: FeedItem,
+        isRead: Bool,
+        reservesTitleSpace: Bool = false,
+        looksUpImage: Bool = false,
+        isPrivate: Bool = false,
+        thumbnailTrailing: Bool = false
+    ) {
+        self.init(
+            item: item,
+            isRead: isRead,
+            reservesTitleSpace: reservesTitleSpace,
+            looksUpImage: looksUpImage,
+            isPrivate: isPrivate,
+            thumbnailTrailing: thumbnailTrailing,
+            footer: { EmptyView() }
+        )
     }
 }
 

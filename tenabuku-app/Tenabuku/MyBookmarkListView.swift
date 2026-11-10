@@ -260,7 +260,6 @@ private struct MyBookmarkList: View {
     @State private var query = ""
     @State private var editing: MyBookmarkSearchHit?
     @Environment(AccountStore.self) private var accounts
-    @Environment(ReadHistoryStore.self) private var readHistory
     @Environment(FaviconSettingsStore.self) private var faviconSettings
     @Environment(\.openEntryFromPreview) private var openFromPreview
     @AppStorage(AccountIconSetting.key) private var showsAccountIcon = AccountIconSetting.defaultValue
@@ -293,8 +292,7 @@ private struct MyBookmarkList: View {
                         iconURL: showsAccountIcon ? account?.iconURL : nil,
                         stars: account
                             .flatMap { MyBookmarkListModel.starURI(of: hit, user: $0.urlName) }
-                            .flatMap { model.starCounts[$0] },
-                        isRead: readHistory.isRead(hit.url)
+                            .flatMap { model.starCounts[$0] }
                     )
                         .pagePreviewMenu(
                             url: hit.url,
@@ -413,22 +411,21 @@ private struct MyBookmarkRow: View {
     let iconURL: URL?
     /// Nil until the count is read, or when the bookmark can take no stars.
     let stars: StarCount?
-    /// Dims the title, as in the hot entry list.
-    let isRead: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            EntryRow(
-                item: FeedItem(
-                    title: hit.title.isEmpty ? hit.url.absoluteString : hit.title,
-                    link: hit.url,
-                    bookmarkCount: hit.bookmarkCount
-                ),
-                isRead: isRead,
-                looksUpImage: true,
-                isPrivate: hit.isPrivate,
-                thumbnailTrailing: true
-            )
+        EntryRow(
+            item: FeedItem(
+                title: hit.title.isEmpty ? hit.url.absoluteString : hit.title,
+                link: hit.url,
+                bookmarkCount: hit.bookmarkCount
+            ),
+            // The user bookmarked every one of them, so all would read as
+            // opened and dimming would tell nothing apart.
+            isRead: false,
+            looksUpImage: true,
+            isPrivate: hit.isPrivate,
+            thumbnailTrailing: true
+        ) {
             if showsComment {
                 // Only counts the stars: adding one is left to the comment
                 // sheet, where everyone's comments are.
@@ -444,7 +441,6 @@ private struct MyBookmarkRow: View {
                     stars: stars,
                     isOwn: true
                 )
-                .padding(.bottom, 4)
             }
         }
         .accessibilityElement(children: .combine)
