@@ -22,7 +22,7 @@ configFiles:
 
 settings:
   base:
-    MARKETING_VERSION: 0.9.11
+    MARKETING_VERSION: 0.9.12
     CURRENT_PROJECT_VERSION: 1
     SWIFT_VERSION: "5.0"
 
@@ -61,4 +61,5 @@ targets:
           - ReadingHistory
           - EntryMute
           - HomeShelves
+          - PageImage
     scheme: {}
