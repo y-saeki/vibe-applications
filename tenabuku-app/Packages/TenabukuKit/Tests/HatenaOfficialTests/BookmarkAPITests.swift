@@ -72,6 +72,7 @@ final class BookmarkAPITests: XCTestCase {
         XCTAssertEqual(result.total, 1)
         XCTAssertEqual(result.hits.first?.bookmarkCount, 12)
         XCTAssertEqual(result.hits.first?.isPrivate, true)
+        XCTAssertEqual(result.hits.first?.eid, "9")
         XCTAssertEqual(
             transport.requests.first?.url?.absoluteString,
             "https://b.hatena.ne.jp/my/search/json?q=q&of=0&limit=100"
@@ -287,16 +288,50 @@ final class MyBookmarkPagesTests: XCTestCase {
         XCTAssertEqual(pages.nextRequests, [])
     }
 
-    func testUpdatingAHitTakesTheSavedCommentAndPrivacy() {
+    func testUpdatingAHitTakesTheSavedCommentTagsAndPrivacy() {
         var pages = MyBookmarkPages(query: "")
         pages.append(page(total: 1, "a"))
-        let saved = MyBookmark(user: "sample", comment: "よい", tags: [], isPrivate: true, createdAt: nil, permalink: nil)
+        let saved = MyBookmark(user: "sample", comment: "よい", tags: ["swift", "ios"], isPrivate: true, createdAt: nil, permalink: nil)
 
         pages.update(URL(string: "https://example.com/a")!, with: saved)
 
-        XCTAssertEqual(pages.hits.first?.comment, "よい")
+        // The search writes tags into the comment, which the REST API keeps apart.
+        XCTAssertEqual(pages.hits.first?.comment, "[swift][ios]よい")
         XCTAssertEqual(pages.hits.first?.isPrivate, true)
         XCTAssertEqual(pages.hits.first?.title, "a")
+    }
+}
+
+final class MyBookmarkSearchHitCommentTests: XCTestCase {
+    private func hit(_ comment: String) -> MyBookmarkSearchHit {
+        MyBookmarkSearchHit(
+            title: "", url: URL(string: "https://example.com/")!, bookmarkCount: 1,
+            snippet: "", comment: comment, isPrivate: false, bookmarkedAt: nil
+        )
+    }
+
+    func testSplitsTheLeadingTagsFromTheComment() {
+        let hit = hit("[!!][あとで読む]なるほど[笑]")
+
+        XCTAssertEqual(hit.tags, ["!!", "あとで読む"])
+        XCTAssertEqual(hit.commentBody, "なるほど[笑]")
+    }
+
+    func testACommentWithoutTagsIsLeftAsItIs() {
+        XCTAssertEqual(hit("なるほど").tags, [])
+        XCTAssertEqual(hit("なるほど").commentBody, "なるほど")
+    }
+
+    func testAnUnclosedOrEmptyBracketIsPartOfTheComment() {
+        XCTAssertEqual(hit("[a][b").tags, ["a"])
+        XCTAssertEqual(hit("[a][b").commentBody, "[b")
+        XCTAssertEqual(hit("[]です").tags, [])
+        XCTAssertEqual(hit("[]です").commentBody, "[]です")
+    }
+
+    func testTagsAloneLeaveAnEmptyComment() {
+        XCTAssertEqual(hit("[a]").tags, ["a"])
+        XCTAssertEqual(hit("[a]").commentBody, "")
     }
 }
 
@@ -482,6 +517,19 @@ final class MyBookmarkTimelineStoreTests: XCTestCase {
 
         XCTAssertNil(loaded)
         try await store.clear()
+    }
+
+    func testATimelineSavedInAnEarlierFormatIsReadAgain() async throws {
+        let store = MyBookmarkTimelineStore(url: url)
+        try await store.save(.init(user: "sample", savedAt: .now, timeline: timeline()))
+        // As written before the format was kept: no `format` at all.
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        object["format"] = nil
+        try JSONSerialization.data(withJSONObject: object).write(to: url)
+
+        let loaded = await store.load(user: "sample")
+
+        XCTAssertNil(loaded)
     }
 
     func testAnUnreadableFileIsNoTimeline() async throws {

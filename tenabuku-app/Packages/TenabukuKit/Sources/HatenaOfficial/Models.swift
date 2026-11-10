@@ -150,6 +150,55 @@ public struct MyBookmarkSearchHit: Equatable, Sendable, Identifiable, Codable {
     public let comment: String
     public let isPrivate: Bool
     public let bookmarkedAt: Date?
+    /// The entry's ID, which names the bookmark to Hatena Star. Nil in
+    /// timelines saved before it was kept.
+    public let eid: String?
+
+    public init(
+        title: String,
+        url: URL,
+        bookmarkCount: Int,
+        snippet: String,
+        comment: String,
+        isPrivate: Bool,
+        bookmarkedAt: Date?,
+        eid: String? = nil
+    ) {
+        self.title = title
+        self.url = url
+        self.bookmarkCount = bookmarkCount
+        self.snippet = snippet
+        self.comment = comment
+        self.isPrivate = isPrivate
+        self.bookmarkedAt = bookmarkedAt
+        self.eid = eid
+    }
+
+    /// The tags the search writes at the start of `comment`, as `[tag]`.
+    public var tags: [String] { Self.split(comment).tags }
+
+    /// `comment` without its leading tags.
+    public var commentBody: String { Self.split(comment).body }
+
+    /// Splits off the `[tag]`s a comment starts with. A bracket that is not
+    /// closed, or an empty pair, ends the tags and stays in the body.
+    static func split(_ comment: String) -> (tags: [String], body: String) {
+        var tags: [String] = []
+        var rest = Substring(comment)
+        while rest.first == "[", let close = rest.firstIndex(of: "]") {
+            let tag = rest[rest.index(after: rest.startIndex)..<close]
+            guard !tag.isEmpty, !tag.contains("[") else { break }
+            tags.append(String(tag))
+            rest = rest[rest.index(after: close)...]
+        }
+        return (tags, String(rest))
+    }
+
+    /// The comment as the search writes it, from the tags and body the REST
+    /// API keeps apart.
+    static func comment(tags: [String], body: String) -> String {
+        tags.map { "[\($0)]" }.joined() + body
+    }
 }
 
 extension MyBookmarkSearchPage: Decodable {
@@ -163,6 +212,7 @@ extension MyBookmarkSearchPage: Decodable {
             let url: String
             let count: LooseInt?
             let snippet: String?
+            let eid: LooseString?
         }
 
         let entry: Entry
@@ -187,7 +237,8 @@ extension MyBookmarkSearchPage: Decodable {
                 snippet: hit.entry.snippet ?? "",
                 comment: hit.comment ?? "",
                 isPrivate: hit.is_private?.value ?? false,
-                bookmarkedAt: hit.timestamp.map { Date(timeIntervalSince1970: TimeInterval($0.value)) }
+                bookmarkedAt: hit.timestamp.map { Date(timeIntervalSince1970: TimeInterval($0.value)) },
+                eid: hit.entry.eid.map(\.value).flatMap { $0.isEmpty ? nil : $0 }
             )
         }
     }

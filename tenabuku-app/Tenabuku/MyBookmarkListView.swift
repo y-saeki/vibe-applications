@@ -1,5 +1,6 @@
 import HatenaFeed
 import HatenaOfficial
+import HatenaUnofficial
 import SwiftUI
 
 @MainActor
@@ -16,9 +17,18 @@ final class MyBookmarkListModel {
     private(set) var readAt: Date?
     private(set) var error: Error?
     private(set) var isLoading = false
+    /// The stars each bookmark has, by its star URI. A bookmark missing here
+    /// has not been read yet.
+    private(set) var starCounts: [URL: StarCount] = [:]
+    /// Star URIs read or on their way, so that each is asked for once.
+    @ObservationIgnored private var askedStars: Set<URL> = []
     /// Bumped by `show` and `refresh`, so that a page still on its way for
     /// the previous list is dropped when it arrives.
     @ObservationIgnored private var generation = 0
+
+    /// Bookmarks whose stars are read in one go: a stretch of the list rather
+    /// than each row on its own, which would send a request per row.
+    static let starBatch = 40
 
     static let pageSize = 50
 
@@ -61,6 +71,10 @@ final class MyBookmarkListModel {
             hasLoaded = true
             error = nil
             save(accounts)
+            // The rows on screen do not appear again, so the stars they show
+            // are read here; the rest as they come into view.
+            askedStars = []
+            loadStars(around: 0, user: accounts.account?.urlName)
         } catch {
             guard generation == self.generation else { return }
             accounts.record(error)
@@ -94,6 +108,40 @@ final class MyBookmarkListModel {
             accounts.record(error)
             self.error = error
         }
+    }
+
+    /// Reads the stars of the stretch of the list that holds `index`, and of
+    /// the next one once the row is close to it.
+    func loadStars(around index: Int, user: String?) {
+        guard let user else { return }
+        let hits = listing.hits
+        let batches = Set([index / Self.starBatch, (index + Self.starBatch / 2) / Self.starBatch])
+        for batch in batches.sorted() {
+            let start = batch * Self.starBatch
+            guard start < hits.count else { continue }
+            let uris = hits[start..<min(start + Self.starBatch, hits.count)]
+                .compactMap { Self.starURI(of: $0, user: user) }
+                .filter { !askedStars.contains($0) }
+            guard !uris.isEmpty else { continue }
+            askedStars.formUnion(uris)
+            Task {
+                do {
+                    let counts = try await AppServices.stars.counts(for: uris)
+                    starCounts.merge(counts) { _, new in new }
+                } catch {
+                    // Asked again when the rows next come into view.
+                    askedStars.subtract(uris)
+                    FailureLog.record(error)
+                }
+            }
+        }
+    }
+
+    /// What Hatena Star names the bookmark of `user` by. A private bookmark
+    /// can take no stars.
+    static func starURI(of hit: MyBookmarkSearchHit, user: String) -> URL? {
+        guard !hit.isPrivate, let eid = hit.eid, let date = hit.bookmarkedAt else { return nil }
+        return HatenaStarAPI.uri(user: user, eid: eid, date: date)
     }
 
     func didChange(_ url: URL, to bookmark: MyBookmark?, accounts: AccountStore) {
@@ -236,8 +284,17 @@ private struct MyBookmarkList: View {
             ForEach(model.listing.hits) { hit in
                 // A value the hot entry list's stack already knows how to open.
                 let entry = FeedItem(title: hit.title, link: hit.url, bookmarkCount: hit.bookmarkCount)
+                let account = accounts.account
                 NavigationLink(value: entry) {
-                    MyBookmarkRow(hit: hit, isRead: readHistory.isRead(hit.url))
+                    MyBookmarkRow(
+                        hit: hit,
+                        user: account?.urlName ?? "",
+                        iconURL: account?.iconURL,
+                        stars: account
+                            .flatMap { MyBookmarkListModel.starURI(of: hit, user: $0.urlName) }
+                            .flatMap { model.starCounts[$0] },
+                        isRead: readHistory.isRead(hit.url)
+                    )
                         .pagePreviewMenu(
                             url: hit.url,
                             title: hit.title.isEmpty ? hit.url.absoluteString : hit.title,
@@ -247,6 +304,9 @@ private struct MyBookmarkList: View {
                             open: { openFromPreview(entry) }
                         )
                 }
+                // As on the home screen: the row is an entry, plainly a link,
+                // and a chevron would float between the entry and the comment.
+                .navigationLinkIndicatorVisibility(.hidden)
                 .onAppear {
                     // Starts on the next page well before the end comes
                     // into view, since one takes seconds to arrive.
@@ -294,10 +354,14 @@ private struct MyBookmarkList: View {
         }
     }
 
+    /// Fetches the favicons, thumbnails and stars of the rows coming up.
     private func prefetchImages(after hit: MyBookmarkSearchHit) {
         let hits = model.listing.hits
         guard let index = hits.firstIndex(where: { $0.id == hit.id }) else { return }
         ImagePrefetch.rows(hits, after: index, page: \.url, faviconSources: faviconSettings.enabledSources)
+        let ahead = hits[index..<min(index + 1 + ImagePrefetch.lookahead, hits.count)]
+        EntryImageLookup.shared.prefetch(ahead.map(\.url))
+        model.loadStars(around: index, user: accounts.account?.urlName)
     }
 
     /// The row whose appearance starts reading the next page.
@@ -339,46 +403,51 @@ private struct MyBookmarkList: View {
     }
 }
 
+/// A bookmark laid out as the hot entry list shows its entry, with the
+/// user's own comment below it as the comment sheet shows comments.
 private struct MyBookmarkRow: View {
     let hit: MyBookmarkSearchHit
+    let user: String
+    let iconURL: URL?
+    /// Nil until the count is read, or when the bookmark can take no stars.
+    let stars: StarCount?
     /// Dims the title, as in the hot entry list.
     let isRead: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
-                if let host = hit.url.host() {
-                    HStack(spacing: 4) {
-                        FaviconView(pageURL: hit.url)
-                        Text(host).lineLimit(1)
-                    }
-                }
-                Spacer(minLength: 0)
-                if hit.isPrivate {
-                    Image(systemName: "lock.fill")
-                        .accessibilityLabel("非公開")
-                }
-                Text("\(hit.bookmarkCount) users")
-                    .foregroundStyle(.red)
-                    .bold()
-                    .fixedSize()
-            }
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            Text(hit.title.isEmpty ? hit.url.absoluteString : hit.title)
-                .font(.body)
-                .foregroundStyle(isRead ? .secondary : .primary)
-                .lineLimit(3)
-                // Drawn below the site line but read out first.
-                .accessibilitySortPriority(1)
-            if !hit.comment.isEmpty {
-                Text(hit.comment)
-                    .font(.subheadline)
-                    .lineLimit(3)
+        VStack(alignment: .leading, spacing: 10) {
+            EntryRow(
+                item: FeedItem(
+                    title: hit.title.isEmpty ? hit.url.absoluteString : hit.title,
+                    link: hit.url,
+                    bookmarkCount: hit.bookmarkCount
+                ),
+                isRead: isRead,
+                looksUpImage: true,
+                isPrivate: hit.isPrivate
+            )
+            if showsComment {
+                // Only counts the stars: adding one is left to the comment
+                // sheet, where everyone's comments are.
+                CommentRow(
+                    comment: CommentRowData(
+                        user: user,
+                        iconURL: iconURL,
+                        comment: hit.commentBody,
+                        tags: hit.tags,
+                        date: hit.bookmarkedAt,
+                        starURI: nil
+                    ),
+                    stars: stars
+                )
+                .padding(.bottom, 4)
             }
         }
-        .padding(.vertical, 4)
         .accessibilityElement(children: .combine)
-        .accessibilityValue(isRead ? Text("既読") : Text(""))
+    }
+
+    /// A bookmark with nothing but the date to say keeps to the entry.
+    private var showsComment: Bool {
+        !hit.commentBody.isEmpty || !hit.tags.isEmpty || (stars?.total ?? 0) > 0
     }
 }

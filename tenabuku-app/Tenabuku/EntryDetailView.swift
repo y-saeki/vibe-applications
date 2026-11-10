@@ -486,7 +486,8 @@ struct CommentRow: View {
     }
 
     /// The coloured stars, then the yellow ones as the button that adds one,
-    /// as Hatena shows them.
+    /// as Hatena shows them. Without the button, the yellow ones are only
+    /// counted.
     private var starRow: some View {
         HStack(spacing: 10) {
             ForEach(stars?.colored ?? [], id: \.color) { colored in
@@ -510,6 +511,11 @@ struct CommentRow: View {
                 .disabled(isAddingStar)
                 .accessibilityLabel("スターを付ける")
                 .accessibilityValue(stars.map { "\($0.yellow) 個" } ?? "")
+            } else if let yellow = stars?.yellow, yellow > 0 {
+                // Only the count where the row cannot add a star.
+                starCount(yellow, color: .yellow)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("スター \(yellow) 個")
             }
         }
         .font(.caption)

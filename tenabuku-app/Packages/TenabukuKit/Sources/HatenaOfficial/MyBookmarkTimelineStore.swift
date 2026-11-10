@@ -13,12 +13,20 @@ public actor MyBookmarkTimelineStore {
         public let user: String
         public let savedAt: Date
         public let timeline: MyBookmarkTimeline
+        /// What the file was written as. A timeline saved by an earlier
+        /// version lacks what the list now shows, so it is read again
+        /// rather than shown.
+        let format: Int?
 
         public init(user: String, savedAt: Date, timeline: MyBookmarkTimeline) {
             self.user = user
             self.savedAt = savedAt
             self.timeline = timeline
+            format = Self.currentFormat
         }
+
+        /// 2 keeps each bookmark's entry ID, which its stars are read by.
+        static let currentFormat = 2
     }
 
     private let url: URL
@@ -28,11 +36,12 @@ public actor MyBookmarkTimelineStore {
     }
 
     /// The saved timeline of `user`, or nil when there is none, it belongs to
-    /// someone else, or it cannot be read.
+    /// someone else, it was saved in an earlier format, or it cannot be read.
     public func load(user: String) -> Saved? {
         guard let data = try? Data(contentsOf: url),
               let saved = try? JSONDecoder().decode(Saved.self, from: data),
-              saved.user == user
+              saved.user == user,
+              saved.format == Saved.currentFormat
         else { return nil }
         return saved
     }

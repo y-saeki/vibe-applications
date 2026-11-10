@@ -34,13 +34,21 @@ struct EntryRow: View {
     /// Keeps room for the longest title, so that rows side by side on a
     /// shelf line up whatever their titles' length.
     var reservesTitleSpace = false
+    /// Asks Hatena for the thumbnail, for entries that came without one.
+    var looksUpImage = false
+    /// Marks a bookmark the user keeps private.
+    var isPrivate = false
 
     private static let lineSpacing: CGFloat = 6
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             SquareAsTallAs {
-                EntryThumbnail(url: item.imageURL)
+                if looksUpImage {
+                    LookedUpThumbnail(page: item.link)
+                } else {
+                    EntryThumbnail(url: item.imageURL)
+                }
                 // The site line and three title lines, in the fonts below,
                 // so the image reaches the bottom of the third line at any
                 // Dynamic Type size.
@@ -59,6 +67,10 @@ struct EntryRow: View {
                         }
                     }
                     Spacer(minLength: 0)
+                    if isPrivate {
+                        Image(systemName: "lock.fill")
+                            .accessibilityLabel("非公開")
+                    }
                     Text("\(item.bookmarkCount) users")
                         .foregroundStyle(.red)
                         .bold()
@@ -153,6 +165,13 @@ struct EntryThumbnail: View {
             }
     }
 
+    /// The empty slot, as a thumbnail shows it while its image loads.
+    static var placeholder: some View {
+        background
+            .clipShape(shape)
+            .accessibilityHidden(true)
+    }
+
     private static var background: some View {
         Color.secondary.opacity(0.1)
     }
@@ -161,5 +180,38 @@ struct EntryThumbnail: View {
         Image(systemName: "globe")
             .font(.system(size: 24, weight: .light))
             .foregroundStyle(.quaternary)
+    }
+}
+
+/// The thumbnail of a page whose image has to be looked up first. The slot
+/// stays empty while it is, as it does while an image loads.
+private struct LookedUpThumbnail: View {
+    let page: URL
+
+    /// Nil while looking up; `.some(nil)` when the page has no image.
+    @State private var image: URL??
+
+    init(page: URL) {
+        self.page = page
+        // A page the list looked up ahead of time shows on the first frame.
+        _image = State(initialValue: EntryImageLookup.shared.cached(page))
+    }
+
+    var body: some View {
+        Group {
+            if let image {
+                EntryThumbnail(url: image)
+            } else {
+                EntryThumbnail.placeholder
+            }
+        }
+        .task(id: page) {
+            if let known = EntryImageLookup.shared.cached(page) {
+                image = known
+                return
+            }
+            image = nil
+            image = .some(await EntryImageLookup.shared.imageURL(for: page))
+        }
     }
 }

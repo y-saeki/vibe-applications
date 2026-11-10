@@ -86,16 +86,18 @@ public struct MyBookmarkPages: MyBookmarkListing, Equatable {
 }
 
 extension MyBookmarkSearchHit {
-    /// The hit with the comment and privacy of `bookmark`, as saved just now.
+    /// The hit with the comment, tags and privacy of `bookmark`, as saved
+    /// just now.
     public func updated(with bookmark: MyBookmark) -> MyBookmarkSearchHit {
         MyBookmarkSearchHit(
             title: title,
             url: url,
             bookmarkCount: bookmarkCount,
             snippet: snippet,
-            comment: bookmark.comment,
+            comment: Self.comment(tags: bookmark.tags, body: bookmark.comment),
             isPrivate: bookmark.isPrivate,
-            bookmarkedAt: bookmarkedAt
+            bookmarkedAt: bookmarkedAt,
+            eid: eid
         )
     }
 }
