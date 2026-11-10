@@ -446,22 +446,60 @@ struct CommentRow: View {
     var isAddingStar = false
     /// Nil when the comment cannot take a star.
     var addStar: (() -> Void)?
-    /// Leaves the ID out and shrinks the icon to the comment's first line,
-    /// for a list of the user's own comments, where the ID says nothing.
+    /// Leaves the ID out and puts a small icon, the date and the stars on a
+    /// line above the comment, for a list of the user's own comments, where
+    /// the ID says nothing and the comment can take the row's full width.
     var isOwn = false
 
-    /// As tall as the first line of the comment at any text size.
+    /// As tall as a line of the comment at any text size.
     @ScaledMetric(relativeTo: .subheadline) private var ownIconSide: CGFloat = 20
 
     var body: some View {
-        HStack(alignment: .top, spacing: isOwn ? 8 : 10) {
-            AsyncImage(url: comment.iconURL) { image in
-                image.resizable().scaledToFill()
-            } placeholder: {
-                Image(systemName: "person.crop.circle.fill").resizable().foregroundStyle(.tertiary)
+        if isOwn {
+            ownBody
+        } else {
+            sheetBody
+        }
+    }
+
+    /// The icon, the date and the stars on one line, and the comment under
+    /// them at the date's indent, running the full width of the row.
+    private var ownBody: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 8) {
+                icon(side: ownIconSide)
+                HStack(spacing: 12) {
+                    if let date = comment.date {
+                        Text(date, format: .dateTime.month().day().hour().minute())
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    if (stars?.total ?? 0) > 0 {
+                        starRow
+                    }
+                }
             }
-            .frame(width: isOwn ? ownIconSide : 32, height: isOwn ? ownIconSide : 32)
-            .clipShape(Circle())
+            if !comment.comment.isEmpty || !comment.tags.isEmpty {
+                commentText
+                    .font(.subheadline)
+                    .padding(.leading, ownIconSide + 8)
+            }
+        }
+    }
+
+    private func icon(side: CGFloat) -> some View {
+        AsyncImage(url: comment.iconURL) { image in
+            image.resizable().scaledToFill()
+        } placeholder: {
+            Image(systemName: "person.crop.circle.fill").resizable().foregroundStyle(.tertiary)
+        }
+        .frame(width: side, height: side)
+        .clipShape(Circle())
+    }
+
+    private var sheetBody: some View {
+        HStack(alignment: .top, spacing: 10) {
+            icon(side: 32)
 
             VStack(alignment: .leading, spacing: 8) {
                 // The user, the comment and the tags run on as one paragraph,

@@ -413,41 +413,38 @@ private struct MyBookmarkRow: View {
     let stars: StarCount?
 
     var body: some View {
-        EntryRow(
-            item: FeedItem(
-                title: hit.title.isEmpty ? hit.url.absoluteString : hit.title,
-                link: hit.url,
-                bookmarkCount: hit.bookmarkCount
-            ),
-            // The user bookmarked every one of them, so all would read as
-            // opened and dimming would tell nothing apart.
-            isRead: false,
-            looksUpImage: true,
-            isPrivate: hit.isPrivate,
-            thumbnailTrailing: true
-        ) {
-            if showsComment {
-                // Only counts the stars: adding one is left to the comment
-                // sheet, where everyone's comments are.
-                CommentRow(
-                    comment: CommentRowData(
-                        user: user,
-                        iconURL: iconURL,
-                        comment: hit.commentBody,
-                        tags: hit.tags,
-                        date: hit.bookmarkedAt,
-                        starURI: nil
-                    ),
-                    stars: stars,
-                    isOwn: true
-                )
-            }
+        // The comment sits under the entry rather than beside the thumbnail,
+        // so that a long one takes the full width of the row.
+        VStack(alignment: .leading, spacing: 4) {
+            EntryRow(
+                item: FeedItem(
+                    title: hit.title.isEmpty ? hit.url.absoluteString : hit.title,
+                    link: hit.url,
+                    bookmarkCount: hit.bookmarkCount
+                ),
+                // The user bookmarked every one of them, so all would read as
+                // opened and dimming would tell nothing apart.
+                isRead: false,
+                looksUpImage: true,
+                isPrivate: hit.isPrivate,
+                thumbnailTrailing: true
+            )
+            // Only counts the stars: adding one is left to the comment
+            // sheet, where everyone's comments are.
+            CommentRow(
+                comment: CommentRowData(
+                    user: user,
+                    iconURL: iconURL,
+                    comment: hit.commentBody,
+                    tags: hit.tags,
+                    date: hit.bookmarkedAt,
+                    starURI: nil
+                ),
+                stars: stars,
+                isOwn: true
+            )
+            .padding(.bottom, 4)
         }
         .accessibilityElement(children: .combine)
-    }
-
-    /// A bookmark with nothing but the date to say keeps to the entry.
-    private var showsComment: Bool {
-        !hit.commentBody.isEmpty || !hit.tags.isEmpty || (stars?.total ?? 0) > 0
     }
 }
