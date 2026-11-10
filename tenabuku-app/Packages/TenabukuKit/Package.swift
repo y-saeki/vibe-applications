@@ -14,6 +14,8 @@ import PackageDescription
 // on the device, and never touches the network. EntryMute is the same kind of
 // module: the rules that hide entries from the lists, kept on the device.
 // HomeShelves is another: which shelves the home screen shows, in what order.
+// PageImage reads the image a web page names for itself (`og:image`), for
+// entries Hatena has no image for; it talks to the page's own site, not Hatena.
 // The package has no third-party dependencies and builds on Linux as well, so
 // `swift test` runs anywhere a Swift toolchain does.
 let package = Package(
@@ -27,6 +29,7 @@ let package = Package(
         .library(name: "ReadingHistory", targets: ["ReadingHistory"]),
         .library(name: "EntryMute", targets: ["EntryMute"]),
         .library(name: "HomeShelves", targets: ["HomeShelves"]),
+        .library(name: "PageImage", targets: ["PageImage"]),
     ],
     targets: [
         .target(name: "HatenaShared"),
@@ -36,6 +39,7 @@ let package = Package(
         .target(name: "ReadingHistory"),
         .target(name: "EntryMute"),
         .target(name: "HomeShelves", dependencies: ["HatenaFeed"]),
+        .target(name: "PageImage", dependencies: ["HatenaShared"]),
         // Stub transport shared by the test targets; not part of any product.
         .target(name: "HatenaTestSupport", dependencies: ["HatenaShared"]),
         .testTarget(name: "HatenaSharedTests", dependencies: ["HatenaShared", "HatenaTestSupport"]),
@@ -45,5 +49,6 @@ let package = Package(
         .testTarget(name: "ReadingHistoryTests", dependencies: ["ReadingHistory"]),
         .testTarget(name: "EntryMuteTests", dependencies: ["EntryMute"]),
         .testTarget(name: "HomeShelvesTests", dependencies: ["HomeShelves"]),
+        .testTarget(name: "PageImageTests", dependencies: ["PageImage", "HatenaTestSupport"]),
     ]
 )

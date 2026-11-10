@@ -322,10 +322,16 @@ private struct EntryShelf: View {
     /// Reads ahead the icons and images of the pages after the one that
     /// came into view.
     private func prefetchImages(after index: Int) {
+        let items = visibleItems
         ImagePrefetch.rows(
-            visibleItems, after: index,
+            items, after: index,
             page: \.link, thumbnail: \.imageURL,
             faviconSources: faviconSettings.enabledSources
         )
+        // Entries the feed had no image for read it from the page.
+        let start = index + 1
+        guard start < items.count else { return }
+        let ahead = items[start..<min(start + ImagePrefetch.lookahead, items.count)]
+        EntryImageLookup.shared.prefetch(ahead.filter { $0.imageURL == nil }.map(\.link), asksHatena: false)
     }
 }

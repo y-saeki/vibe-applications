@@ -35,6 +35,7 @@ struct EntryRow: View {
     /// shelf line up whatever their titles' length.
     var reservesTitleSpace = false
     /// Asks Hatena for the thumbnail, for entries that came without one.
+    /// Entries whose feed had no image read it from the page either way.
     var looksUpImage = false
     /// Marks a bookmark the user keeps private.
     var isPrivate = false
@@ -58,6 +59,9 @@ struct EntryRow: View {
             SquareAsTallAs {
                 if looksUpImage {
                     LookedUpThumbnail(page: item.link)
+                } else if item.imageURL == nil {
+                    // Hatena's feed had no image: the page may name one.
+                    LookedUpThumbnail(page: item.link, asksHatena: false)
                 } else {
                     EntryThumbnail(url: item.imageURL)
                 }
@@ -201,12 +205,14 @@ struct EntryThumbnail: View {
 /// stays empty while it is, as it does while an image loads.
 private struct LookedUpThumbnail: View {
     let page: URL
+    var asksHatena = true
 
     /// Nil while looking up; `.some(nil)` when the page has no image.
     @State private var image: URL??
 
-    init(page: URL) {
+    init(page: URL, asksHatena: Bool = true) {
         self.page = page
+        self.asksHatena = asksHatena
         // A page the list looked up ahead of time shows on the first frame.
         _image = State(initialValue: EntryImageLookup.shared.cached(page))
     }
@@ -225,7 +231,7 @@ private struct LookedUpThumbnail: View {
                 return
             }
             image = nil
-            image = .some(await EntryImageLookup.shared.imageURL(for: page))
+            image = .some(await EntryImageLookup.shared.imageURL(for: page, asksHatena: asksHatena))
         }
     }
 }
