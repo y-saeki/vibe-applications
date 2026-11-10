@@ -133,8 +133,9 @@ struct HomeView: View {
     }
 }
 
-/// Whether the My bookmarks button shows the signed-in user's own picture,
-/// set in Settings for those who would rather not see it on every screen.
+/// Whether the My bookmarks button, and the user's own comments in My
+/// bookmarks, show the signed-in user's own picture, set in Settings for
+/// those who would rather not see it on every screen.
 enum AccountIconSetting {
     static let key = "showsAccountIconOnMyBookmarks"
     static let defaultValue = true

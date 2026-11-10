@@ -446,16 +446,60 @@ struct CommentRow: View {
     var isAddingStar = false
     /// Nil when the comment cannot take a star.
     var addStar: (() -> Void)?
+    /// Leaves the ID out and puts a small icon, the date and the stars on a
+    /// line above the comment, for a list of the user's own comments, where
+    /// the ID says nothing and the comment can take the row's full width.
+    var isOwn = false
+
+    /// As tall as a line of the comment at any text size.
+    @ScaledMetric(relativeTo: .subheadline) private var ownIconSide: CGFloat = 20
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            AsyncImage(url: comment.iconURL) { image in
-                image.resizable().scaledToFill()
-            } placeholder: {
-                Image(systemName: "person.crop.circle.fill").resizable().foregroundStyle(.tertiary)
+        if isOwn {
+            ownBody
+        } else {
+            sheetBody
+        }
+    }
+
+    /// The icon, the date and the stars on one line, and the comment under
+    /// them at the date's indent, running the full width of the row.
+    private var ownBody: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 8) {
+                icon(side: ownIconSide)
+                HStack(spacing: 12) {
+                    if let date = comment.date {
+                        Text(date, format: .dateTime.month().day().hour().minute())
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    if (stars?.total ?? 0) > 0 {
+                        starRow
+                    }
+                }
             }
-            .frame(width: 32, height: 32)
-            .clipShape(Circle())
+            if !comment.comment.isEmpty || !comment.tags.isEmpty {
+                commentText
+                    .font(.subheadline)
+                    .padding(.leading, ownIconSide + 8)
+            }
+        }
+    }
+
+    private func icon(side: CGFloat) -> some View {
+        AsyncImage(url: comment.iconURL) { image in
+            image.resizable().scaledToFill()
+        } placeholder: {
+            Image(systemName: "person.crop.circle.fill").resizable().foregroundStyle(.tertiary)
+        }
+        .frame(width: side, height: side)
+        .clipShape(Circle())
+    }
+
+    private var sheetBody: some View {
+        HStack(alignment: .top, spacing: 10) {
+            icon(side: 32)
 
             VStack(alignment: .leading, spacing: 8) {
                 // The user, the comment and the tags run on as one paragraph,
@@ -476,17 +520,22 @@ struct CommentRow: View {
     }
 
     private var commentText: Text {
-        let user = Text(comment.user).bold()
-        let body = Text(comment.comment)
-        guard !comment.tags.isEmpty else { return Text("\(user)  \(body)") }
-        let tags = Text(comment.tags.map { "#\($0)" }.joined(separator: " "))
-            .font(.caption)
-            .foregroundStyle(.secondary)
-        return Text("\(user)  \(body)  \(tags)")
+        var parts: [Text] = []
+        if !isOwn { parts.append(Text(comment.user).bold()) }
+        if !comment.comment.isEmpty { parts.append(Text(comment.comment)) }
+        if !comment.tags.isEmpty {
+            parts.append(
+                Text(comment.tags.map { "#\($0)" }.joined(separator: " "))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            )
+        }
+        return parts.dropFirst().reduce(parts.first ?? Text(verbatim: "")) { Text("\($0)  \($1)") }
     }
 
     /// The coloured stars, then the yellow ones as the button that adds one,
-    /// as Hatena shows them.
+    /// as Hatena shows them. Without the button, the yellow ones are only
+    /// counted.
     private var starRow: some View {
         HStack(spacing: 10) {
             ForEach(stars?.colored ?? [], id: \.color) { colored in
@@ -510,6 +559,11 @@ struct CommentRow: View {
                 .disabled(isAddingStar)
                 .accessibilityLabel("スターを付ける")
                 .accessibilityValue(stars.map { "\($0.yellow) 個" } ?? "")
+            } else if let yellow = stars?.yellow, yellow > 0 {
+                // Only the count where the row cannot add a star.
+                starCount(yellow, color: .yellow)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("スター \(yellow) 個")
             }
         }
         .font(.caption)

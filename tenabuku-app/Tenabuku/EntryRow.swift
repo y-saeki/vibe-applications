@@ -34,13 +34,33 @@ struct EntryRow: View {
     /// Keeps room for the longest title, so that rows side by side on a
     /// shelf line up whatever their titles' length.
     var reservesTitleSpace = false
+    /// Asks Hatena for the thumbnail, for entries that came without one.
+    var looksUpImage = false
+    /// Marks a bookmark the user keeps private.
+    var isPrivate = false
+    /// Puts the thumbnail after the text rather than before it.
+    var thumbnailTrailing = false
 
     private static let lineSpacing: CGFloat = 6
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
+            if !thumbnailTrailing { thumbnail }
+            details
+            if thumbnailTrailing { thumbnail }
+        }
+        .padding(.vertical, 4)
+        .accessibilityElement(children: .combine)
+        .accessibilityValue(isRead ? Text("既読") : Text(""))
+    }
+
+    private var thumbnail: some View {
             SquareAsTallAs {
-                EntryThumbnail(url: item.imageURL)
+                if looksUpImage {
+                    LookedUpThumbnail(page: item.link)
+                } else {
+                    EntryThumbnail(url: item.imageURL)
+                }
                 // The site line and three title lines, in the fonts below,
                 // so the image reaches the bottom of the third line at any
                 // Dynamic Type size.
@@ -50,6 +70,9 @@ struct EntryRow: View {
                 }
                 .hidden()
             }
+    }
+
+    private var details: some View {
             VStack(alignment: .leading, spacing: Self.lineSpacing) {
                 HStack(spacing: 8) {
                     if let host = item.link.host() {
@@ -59,6 +82,10 @@ struct EntryRow: View {
                         }
                     }
                     Spacer(minLength: 0)
+                    if isPrivate {
+                        Image(systemName: "lock.fill")
+                            .accessibilityLabel("非公開")
+                    }
                     Text("\(item.bookmarkCount) users")
                         .foregroundStyle(.red)
                         .bold()
@@ -70,14 +97,13 @@ struct EntryRow: View {
                     .font(.body)
                     .foregroundStyle(isRead ? .secondary : .primary)
                     .lineLimit(3, reservesSpace: reservesTitleSpace)
+                    // Takes the lines it needs, up to three, rather than the
+                    // fewer a row squeezed by what is below it would offer.
+                    .fixedSize(horizontal: false, vertical: true)
                     // Drawn below the site line but read out first.
                     .accessibilitySortPriority(1)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .padding(.vertical, 4)
-        .accessibilityElement(children: .combine)
-        .accessibilityValue(isRead ? Text("既読") : Text(""))
     }
 }
 
@@ -153,6 +179,13 @@ struct EntryThumbnail: View {
             }
     }
 
+    /// The empty slot, as a thumbnail shows it while its image loads.
+    static var placeholder: some View {
+        background
+            .clipShape(shape)
+            .accessibilityHidden(true)
+    }
+
     private static var background: some View {
         Color.secondary.opacity(0.1)
     }
@@ -161,5 +194,38 @@ struct EntryThumbnail: View {
         Image(systemName: "globe")
             .font(.system(size: 24, weight: .light))
             .foregroundStyle(.quaternary)
+    }
+}
+
+/// The thumbnail of a page whose image has to be looked up first. The slot
+/// stays empty while it is, as it does while an image loads.
+private struct LookedUpThumbnail: View {
+    let page: URL
+
+    /// Nil while looking up; `.some(nil)` when the page has no image.
+    @State private var image: URL??
+
+    init(page: URL) {
+        self.page = page
+        // A page the list looked up ahead of time shows on the first frame.
+        _image = State(initialValue: EntryImageLookup.shared.cached(page))
+    }
+
+    var body: some View {
+        Group {
+            if let image {
+                EntryThumbnail(url: image)
+            } else {
+                EntryThumbnail.placeholder
+            }
+        }
+        .task(id: page) {
+            if let known = EntryImageLookup.shared.cached(page) {
+                image = known
+                return
+            }
+            image = nil
+            image = .some(await EntryImageLookup.shared.imageURL(for: page))
+        }
     }
 }
