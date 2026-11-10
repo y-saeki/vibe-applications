@@ -124,6 +124,16 @@ owner's setup, `design-skills:design-critique`, `design-skills:interaction-desig
 like) and settle the design with it first. Where no such skill is available, as in cloud
 sessions, say so and follow the platform's own design guidelines instead.
 
+This holds for every change, however small. A follow-up tweak later in the same session,
+a spacing nudge, or "just move this" from the owner is a design decision of its own and
+goes through the skill again: having loaded one for an earlier change does not cover the
+next. A quick fix made without it tends to move a problem somewhere else rather than
+solve it.
+
+When the owner hands over a mockup, take its structure from it, but settle margins and
+type sizes from the values the implementation already uses and from the platform's
+guidelines rather than by measuring the mockup.
+
 Whatever the skill suggests, keep to two things:
 
 - Keep lists easy to scan without packing them so tightly that they look cramped or cheap.
