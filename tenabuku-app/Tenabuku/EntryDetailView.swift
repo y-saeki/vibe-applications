@@ -525,7 +525,7 @@ struct CommentRow: View {
         if !comment.comment.isEmpty { parts.append(Text(comment.comment)) }
         if !comment.tags.isEmpty {
             parts.append(
-                Text(comment.tags.map { "#\($0)" }.joined(separator: " "))
+                Text(comment.tags.joined(separator: " "))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             )
