@@ -26,10 +26,18 @@ public enum HatenaDate {
         formatter("yyyyMMdd").string(from: date)
     }
 
-    private static func formatter(_ format: String) -> DateFormatter {
+    /// `2026-01-02 01:02` on a 24-hour clock, as the app shows every
+    /// timestamp: the same width whatever the date, the locale or the
+    /// system's 12-hour setting, so that rows line up.
+    public static func timestamp(_ date: Date, in timeZone: TimeZone = .current) -> String {
+        formatter("yyyy-MM-dd HH:mm", in: timeZone).string(from: date)
+    }
+
+    private static func formatter(_ format: String, in timeZone: TimeZone = tokyo) -> DateFormatter {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = tokyo
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.timeZone = timeZone
         formatter.dateFormat = format
         return formatter
     }

@@ -20,6 +20,17 @@ final class PercentEncodingTests: XCTestCase {
 }
 
 final class HatenaDateTests: XCTestCase {
+    func testTimestampIsZeroPaddedOn24HourClock() {
+        let utc = TimeZone(identifier: "UTC")!
+        XCTAssertEqual(HatenaDate.timestamp(HatenaDate.parseISO8601("2026-01-02T01:02:00Z")!, in: utc), "2026-01-02 01:02")
+        XCTAssertEqual(HatenaDate.timestamp(HatenaDate.parseISO8601("2026-10-30T22:18:39Z")!, in: utc), "2026-10-30 22:18")
+    }
+
+    func testTimestampUsesTheGivenTimeZone() {
+        // 22:18 UTC is 07:18 the next day in Tokyo.
+        XCTAssertEqual(HatenaDate.timestamp(HatenaDate.parseISO8601("2026-10-30T22:18:39Z")!, in: HatenaDate.tokyo), "2026-10-31 07:18")
+    }
+
     func testParsesISO8601() {
         XCTAssertEqual(HatenaDate.parseISO8601("2026-10-30T22:18:39Z")?.timeIntervalSince1970, 1_793_398_719)
         XCTAssertEqual(HatenaDate.parseISO8601("2026-10-31T07:18:39+09:00")?.timeIntervalSince1970, 1_793_398_719)

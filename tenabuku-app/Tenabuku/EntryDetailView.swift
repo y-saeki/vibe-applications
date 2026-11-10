@@ -470,8 +470,8 @@ struct CommentRow: View {
                 icon(side: ownIconSide)
                 HStack(spacing: 12) {
                     if let date = comment.date {
-                        Text(date, format: .dateTime.month().day().hour().minute())
-                            .font(.caption2)
+                        Text(HatenaDate.timestamp(date))
+                            .font(.caption2.monospaced())
                             .foregroundStyle(.secondary)
                     }
                     if (stars?.total ?? 0) > 0 {
@@ -507,8 +507,8 @@ struct CommentRow: View {
                 commentText.font(.subheadline)
                 HStack(spacing: 12) {
                     if let date = comment.date {
-                        Text(date, format: .dateTime.month().day().hour().minute())
-                            .font(.caption2)
+                        Text(HatenaDate.timestamp(date))
+                            .font(.caption2.monospaced())
                             .foregroundStyle(.secondary)
                     }
                     if addStar != nil || (stars?.total ?? 0) > 0 {
