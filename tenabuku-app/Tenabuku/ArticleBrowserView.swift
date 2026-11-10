@@ -348,7 +348,11 @@ struct ArticleBrowserView: View {
 
     @ViewBuilder
     private var entryButtons: some View {
+        // The entry's bookmark count on the button, as Hatena's own app shows
+        // it, so that the reader can tell how lively the comments are before
+        // opening them. A count of zero shows no badge.
         Button("ブコメを見る", systemImage: "text.bubble") { isShowingComments = true }
+            .badge(model.entry.bookmarkCount)
         Button("ブクマする", systemImage: "bookmark") { isShowingBookmarkEditor = true }
         ShareLink(item: model.pageURL ?? model.entry.link) {
             Label("共有", systemImage: "square.and.arrow.up")
