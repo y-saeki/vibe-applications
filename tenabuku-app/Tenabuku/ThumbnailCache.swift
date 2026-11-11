@@ -33,8 +33,10 @@ final class ThumbnailCache {
 
     private let done: NSCache<NSURL, Entry> = {
         let cache = NSCache<NSURL, Entry>()
-        // About 200 thumbnails at 192 by 192 pixels.
-        cache.totalCostLimit = 32 * 1024 * 1024
+        // About 300 thumbnails at 288 by 288 pixels: every shelf on Home
+        // fetches up to `ImagePrefetch.lookahead` ahead, and scrolling back up
+        // should still find the first shelves' images here.
+        cache.totalCostLimit = 96 * 1024 * 1024
         return cache
     }()
     private var pending: [URL: Task<UIImage?, Never>] = [:]
@@ -91,7 +93,9 @@ final class ThumbnailCache {
 
     /// Decodes only as many pixels as the slot needs: the short side fills
     /// it, as `scaledToFill` draws it, so a large `og:image` costs neither
-    /// the memory nor the main thread time of its full size.
+    /// the memory nor the main thread time of its full size. Only the centered
+    /// square the row shows is kept, so a wide image weighs no more than a
+    /// square one.
     nonisolated private static func downsample(_ data: Data) -> UIImage? {
         let options = [kCGImageSourceShouldCache: false] as CFDictionary
         guard let source = CGImageSourceCreateWithData(data as CFData, options),
@@ -111,7 +115,31 @@ final class ThumbnailCache {
             kCGImageSourceThumbnailMaxPixelSize: ceil(target * aspect),
         ] as CFDictionary
         guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, thumbnailOptions) else { return nil }
-        return UIImage(cgImage: image)
+        return UIImage(cgImage: centerSquare(of: image) ?? image)
+    }
+
+    /// The centered square `scaledToFill` leaves visible in a square slot,
+    /// copied so that the pixels outside it are not kept alive. Nil when the
+    /// image is already square or cannot be redrawn.
+    nonisolated private static func centerSquare(of image: CGImage) -> CGImage? {
+        let side = min(image.width, image.height)
+        guard image.width != image.height,
+              let colorSpace = image.colorSpace?.model == .rgb ? image.colorSpace : CGColorSpace(name: CGColorSpace.sRGB),
+              let context = CGContext(
+                  data: nil,
+                  width: side,
+                  height: side,
+                  bitsPerComponent: 8,
+                  bytesPerRow: 0,
+                  space: colorSpace,
+                  bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
+              )
+        else { return nil }
+        // Whole pixels, so that the copy is not resampled.
+        let origin = CGPoint(x: -((image.width - side) / 2), y: -((image.height - side) / 2))
+        context.interpolationQuality = .none
+        context.draw(image, in: CGRect(origin: origin, size: CGSize(width: image.width, height: image.height)))
+        return context.makeImage()
     }
 }
 
