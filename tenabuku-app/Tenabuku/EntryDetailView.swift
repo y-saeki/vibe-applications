@@ -595,20 +595,24 @@ struct CommentRow: View {
     /// that reads as not yet given.
     private static let noStarColor = Color(uiColor: .systemGray)
 
-    /// The yellow star. On a light background the system yellow is too pale
-    /// for the count beside it to read, so it deepens to amber there.
-    private static let yellowStarColor = Color(uiColor: UIColor { traits in
-        traits.userInterfaceStyle == .dark
-            ? .systemYellow
-            : UIColor(red: 0.85, green: 0.6, blue: 0, alpha: 1)
-    })
+    // The colours of Hatena's own star artwork (the Hatena Star logo on
+    // https://www.hatena.ne.jp/shop/star), so the stars look as they do there.
+    private static let yellowStarColor = hatenaColor(0xFFB000)
+
+    private static func hatenaColor(_ rgb: UInt32) -> Color {
+        Color(
+            red: Double((rgb >> 16) & 0xFF) / 255,
+            green: Double((rgb >> 8) & 0xFF) / 255,
+            blue: Double(rgb & 0xFF) / 255
+        )
+    }
 
     private static func color(named name: String) -> Color {
         switch name {
-        case "green": .green
-        case "red": .red
-        case "blue": .blue
-        case "purple": .purple
+        case "green": hatenaColor(0x00D700)
+        case "red": hatenaColor(0xFF0033)
+        case "blue": hatenaColor(0x00A2E3)
+        case "purple": hatenaColor(0xC500C6)
         // A colour Hatena adds later still shows, in a neutral tone.
         default: .gray
         }
