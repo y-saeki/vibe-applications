@@ -454,6 +454,10 @@ struct CommentRow: View {
     /// As tall as a line of the comment at any text size.
     @ScaledMetric(relativeTo: .subheadline) private var ownIconSide: CGFloat = 20
 
+    /// The date and the stars, a point under the smallest text style, so that
+    /// the line stays quiet under the comment; it still follows the text size.
+    @ScaledMetric(relativeTo: .caption2) private var metaSize: CGFloat = 10
+
     var body: some View {
         if isOwn {
             ownBody
@@ -470,10 +474,10 @@ struct CommentRow: View {
                 icon(side: ownIconSide)
                 // On the text baseline, so that the stars sit on the line
                 // with the date instead of hanging below it.
-                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
                     if let date = comment.date {
                         Text(HatenaDate.timestamp(date))
-                            .font(.caption2.monospaced())
+                            .font(.system(size: metaSize, design: .monospaced))
                             .foregroundStyle(.secondary)
                     }
                     if (stars?.total ?? 0) > 0 {
@@ -509,10 +513,10 @@ struct CommentRow: View {
                 commentText.font(.subheadline)
                 // On the text baseline, so that the stars sit on the line
                 // with the date instead of hanging below it.
-                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
                     if let date = comment.date {
                         Text(HatenaDate.timestamp(date))
-                            .font(.caption2.monospaced())
+                            .font(.system(size: metaSize, design: .monospaced))
                             .foregroundStyle(.secondary)
                     }
                     if addStar != nil || (stars?.total ?? 0) > 0 {
@@ -541,7 +545,7 @@ struct CommentRow: View {
     /// as Hatena shows them. Without the button, the yellow ones are only
     /// counted.
     private var starRow: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
             ForEach(stars?.colored ?? [], id: \.color) { colored in
                 starCount(colored.count, color: Self.color(named: colored.color))
                     .accessibilityElement(children: .ignore)
@@ -549,7 +553,7 @@ struct CommentRow: View {
             }
             if let addStar {
                 Button(action: addStar) {
-                    starCount(stars?.yellow, color: .yellow)
+                    starCount(stars?.yellow, color: Self.yellowStarColor)
                         .opacity(isAddingStar ? 0.4 : 1)
                         // A target large enough to hit without hitting the row,
                         // reaching past the line so that it adds no height.
@@ -565,34 +569,92 @@ struct CommentRow: View {
                 .accessibilityValue(stars.map { "\($0.yellow) 個" } ?? "")
             } else if let yellow = stars?.yellow, yellow > 0 {
                 // Only the count where the row cannot add a star.
-                starCount(yellow, color: .yellow)
+                starCount(yellow, color: Self.yellowStarColor)
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel("スター \(yellow) 個")
             }
         }
-        .font(.caption)
+        // The date's size, so that the line reads as one.
+        .font(.system(size: metaSize))
     }
 
-    /// A star and how many there are; an empty star while nil or none.
+    /// A star and how many there are, on a capsule washed with the star's
+    /// colour; grey while nil or none, so that the first star added turns
+    /// them to its colour. The capsule gives the count a steady ground on the
+    /// translucent sheet, whatever page shows through it, and the count takes
+    /// a deeper shade of the colour so that it reads there.
     private func starCount(_ count: Int?, color: Color) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 3) {
-            Image(systemName: (count ?? 0) > 0 ? "star.fill" : "star")
-                .foregroundStyle(color)
+        let isEmpty = (count ?? 0) == 0
+        let tint = isEmpty ? Self.noStarColor : color
+        // With none yet, the star and the count step back to the quietest
+        // label colour, under the date, since they say the least on the line.
+        let glyph = isEmpty ? Color(uiColor: .tertiaryLabel) : tint
+        let ink = isEmpty ? Color(uiColor: .tertiaryLabel) : Self.readable(tint)
+        return HStack(alignment: .firstTextBaseline, spacing: 2) {
+            Image(systemName: "star.fill")
+                .imageScale(.small)
+                // Explicit, so that the button's tint does not take over.
+                .foregroundStyle(glyph)
+                // A faint rim in the count's shade, so that the bright star
+                // keeps its edge on a wash of its own colour.
+                .overlay {
+                    Image(systemName: "star")
+                        .imageScale(.small)
+                        .fontWeight(.light)
+                        .foregroundStyle(ink.opacity(0.2))
+                }
             if let count {
                 Text(count, format: .number)
                     .monospaced()
-                    // Plain grey: `.secondary` would take the button's tint.
-                    .foregroundStyle(Color.secondary)
+                    .bold()
+                    .foregroundStyle(ink)
+                    .contentTransition(.numericText(value: Double(count)))
             }
         }
+        .padding(.horizontal, 5)
+        .padding(.vertical, 1)
+        .background(tint.opacity(0.16), in: Capsule())
+        .animation(.snappy, value: count)
+    }
+
+    /// `color` deepened on a light appearance and lightened on a dark one,
+    /// so that text in it stands out from a wash of the same colour.
+    private static func readable(_ color: Color) -> Color {
+        Color(uiColor: UIColor { traits in
+            var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
+            UIColor(color).resolvedColor(with: traits)
+                .getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+            if traits.userInterfaceStyle == .dark {
+                let mix = { (value: CGFloat) in value + (1 - value) * 0.3 }
+                return UIColor(red: mix(red), green: mix(green), blue: mix(blue), alpha: alpha)
+            }
+            let mix = { (value: CGFloat) in value * 0.55 }
+            return UIColor(red: mix(red), green: mix(green), blue: mix(blue), alpha: alpha)
+        })
+    }
+
+    /// The star of a comment with none yet: filled like the others, in a grey
+    /// that reads as not yet given.
+    private static let noStarColor = Color(uiColor: .systemGray)
+
+    // The colours of Hatena's own star artwork (the Hatena Star logo on
+    // https://www.hatena.ne.jp/shop/star), so the stars look as they do there.
+    private static let yellowStarColor = hatenaColor(0xFFB000)
+
+    private static func hatenaColor(_ rgb: UInt32) -> Color {
+        Color(
+            red: Double((rgb >> 16) & 0xFF) / 255,
+            green: Double((rgb >> 8) & 0xFF) / 255,
+            blue: Double(rgb & 0xFF) / 255
+        )
     }
 
     private static func color(named name: String) -> Color {
         switch name {
-        case "green": .green
-        case "red": .red
-        case "blue": .blue
-        case "purple": .purple
+        case "green": hatenaColor(0x00D700)
+        case "red": hatenaColor(0xFF0033)
+        case "blue": hatenaColor(0x00A2E3)
+        case "purple": hatenaColor(0xC500C6)
         // A colour Hatena adds later still shows, in a neutral tone.
         default: .gray
         }
