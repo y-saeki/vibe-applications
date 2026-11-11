@@ -584,25 +584,30 @@ struct CommentRow: View {
     /// translucent sheet, whatever page shows through it, and the count takes
     /// a deeper shade of the colour so that it reads there.
     private func starCount(_ count: Int?, color: Color) -> some View {
-        let tint = (count ?? 0) > 0 ? color : Self.noStarColor
+        let isEmpty = (count ?? 0) == 0
+        let tint = isEmpty ? Self.noStarColor : color
+        // With none yet, the star and the count step back to the quietest
+        // label colour, under the date, since they say the least on the line.
+        let glyph = isEmpty ? Color(uiColor: .tertiaryLabel) : tint
+        let ink = isEmpty ? Color(uiColor: .tertiaryLabel) : Self.readable(tint)
         return HStack(alignment: .firstTextBaseline, spacing: 2) {
             Image(systemName: "star.fill")
                 .imageScale(.small)
                 // Explicit, so that the button's tint does not take over.
-                .foregroundStyle(tint)
+                .foregroundStyle(glyph)
                 // A faint rim in the count's shade, so that the bright star
                 // keeps its edge on a wash of its own colour.
                 .overlay {
                     Image(systemName: "star")
                         .imageScale(.small)
                         .fontWeight(.light)
-                        .foregroundStyle(Self.readable(tint).opacity(0.2))
+                        .foregroundStyle(ink.opacity(0.2))
                 }
             if let count {
                 Text(count, format: .number)
                     .monospaced()
                     .bold()
-                    .foregroundStyle(Self.readable(tint))
+                    .foregroundStyle(ink)
                     .contentTransition(.numericText(value: Double(count)))
             }
         }
