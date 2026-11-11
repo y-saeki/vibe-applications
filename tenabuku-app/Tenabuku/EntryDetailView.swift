@@ -454,6 +454,10 @@ struct CommentRow: View {
     /// As tall as a line of the comment at any text size.
     @ScaledMetric(relativeTo: .subheadline) private var ownIconSide: CGFloat = 20
 
+    /// The date and the stars, a point under the smallest text style, so that
+    /// the line stays quiet under the comment; it still follows the text size.
+    @ScaledMetric(relativeTo: .caption2) private var metaSize: CGFloat = 10
+
     var body: some View {
         if isOwn {
             ownBody
@@ -470,10 +474,10 @@ struct CommentRow: View {
                 icon(side: ownIconSide)
                 // On the text baseline, so that the stars sit on the line
                 // with the date instead of hanging below it.
-                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
                     if let date = comment.date {
                         Text(HatenaDate.timestamp(date))
-                            .font(.caption2.monospaced())
+                            .font(.system(size: metaSize, design: .monospaced))
                             .foregroundStyle(.secondary)
                     }
                     if (stars?.total ?? 0) > 0 {
@@ -509,10 +513,10 @@ struct CommentRow: View {
                 commentText.font(.subheadline)
                 // On the text baseline, so that the stars sit on the line
                 // with the date instead of hanging below it.
-                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
                     if let date = comment.date {
                         Text(HatenaDate.timestamp(date))
-                            .font(.caption2.monospaced())
+                            .font(.system(size: metaSize, design: .monospaced))
                             .foregroundStyle(.secondary)
                     }
                     if addStar != nil || (stars?.total ?? 0) > 0 {
@@ -541,7 +545,7 @@ struct CommentRow: View {
     /// as Hatena shows them. Without the button, the yellow ones are only
     /// counted.
     private var starRow: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
             ForEach(stars?.colored ?? [], id: \.color) { colored in
                 starCount(colored.count, color: Self.color(named: colored.color))
                     .accessibilityElement(children: .ignore)
@@ -570,25 +574,50 @@ struct CommentRow: View {
                     .accessibilityLabel("スター \(yellow) 個")
             }
         }
-        .font(.caption)
+        // The date's size, so that the line reads as one.
+        .font(.system(size: metaSize))
     }
 
-    /// A star and how many there are, both in the star's colour; grey while
-    /// nil or none, so that the first star added turns them to its colour.
+    /// A star and how many there are, on a capsule washed with the star's
+    /// colour; grey while nil or none, so that the first star added turns
+    /// them to its colour. The capsule gives the count a steady ground on the
+    /// translucent sheet, whatever page shows through it, and the count takes
+    /// a deeper shade of the colour so that it reads there.
     private func starCount(_ count: Int?, color: Color) -> some View {
         let tint = (count ?? 0) > 0 ? color : Self.noStarColor
-        return HStack(alignment: .firstTextBaseline, spacing: 3) {
+        return HStack(alignment: .firstTextBaseline, spacing: 2) {
             Image(systemName: "star.fill")
+                .imageScale(.small)
+                // Explicit, so that the button's tint does not take over.
+                .foregroundStyle(tint)
             if let count {
                 Text(count, format: .number)
                     .monospaced()
                     .bold()
+                    .foregroundStyle(Self.readable(tint))
                     .contentTransition(.numericText(value: Double(count)))
             }
         }
-        // Explicit, so that the button's tint does not take over.
-        .foregroundStyle(tint)
+        .padding(.horizontal, 5)
+        .padding(.vertical, 1)
+        .background(tint.opacity(0.16), in: Capsule())
         .animation(.snappy, value: count)
+    }
+
+    /// `color` deepened on a light appearance and lightened on a dark one,
+    /// so that text in it stands out from a wash of the same colour.
+    private static func readable(_ color: Color) -> Color {
+        Color(uiColor: UIColor { traits in
+            var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
+            UIColor(color).resolvedColor(with: traits)
+                .getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+            if traits.userInterfaceStyle == .dark {
+                let mix = { (value: CGFloat) in value + (1 - value) * 0.3 }
+                return UIColor(red: mix(red), green: mix(green), blue: mix(blue), alpha: alpha)
+            }
+            let mix = { (value: CGFloat) in value * 0.55 }
+            return UIColor(red: mix(red), green: mix(green), blue: mix(blue), alpha: alpha)
+        })
     }
 
     /// The star of a comment with none yet: filled like the others, in a grey
