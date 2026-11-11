@@ -549,7 +549,7 @@ struct CommentRow: View {
             }
             if let addStar {
                 Button(action: addStar) {
-                    starCount(stars?.yellow, color: .yellow)
+                    starCount(stars?.yellow, color: Self.yellowStarColor)
                         .opacity(isAddingStar ? 0.4 : 1)
                         // A target large enough to hit without hitting the row,
                         // reaching past the line so that it adds no height.
@@ -565,7 +565,7 @@ struct CommentRow: View {
                 .accessibilityValue(stars.map { "\($0.yellow) 個" } ?? "")
             } else if let yellow = stars?.yellow, yellow > 0 {
                 // Only the count where the row cannot add a star.
-                starCount(yellow, color: .yellow)
+                starCount(yellow, color: Self.yellowStarColor)
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel("スター \(yellow) 個")
             }
@@ -573,19 +573,35 @@ struct CommentRow: View {
         .font(.caption)
     }
 
-    /// A star and how many there are; an empty star while nil or none.
+    /// A star and how many there are, both in the star's colour; grey while
+    /// nil or none, so that the first star added turns them to its colour.
     private func starCount(_ count: Int?, color: Color) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 3) {
-            Image(systemName: (count ?? 0) > 0 ? "star.fill" : "star")
-                .foregroundStyle(color)
+        let tint = (count ?? 0) > 0 ? color : Self.noStarColor
+        return HStack(alignment: .firstTextBaseline, spacing: 3) {
+            Image(systemName: "star.fill")
             if let count {
                 Text(count, format: .number)
                     .monospaced()
-                    // Plain grey: `.secondary` would take the button's tint.
-                    .foregroundStyle(Color.secondary)
+                    .bold()
+                    .contentTransition(.numericText(value: Double(count)))
             }
         }
+        // Explicit, so that the button's tint does not take over.
+        .foregroundStyle(tint)
+        .animation(.snappy, value: count)
     }
+
+    /// The star of a comment with none yet: filled like the others, in a grey
+    /// that reads as not yet given.
+    private static let noStarColor = Color(uiColor: .systemGray)
+
+    /// The yellow star. On a light background the system yellow is too pale
+    /// for the count beside it to read, so it deepens to amber there.
+    private static let yellowStarColor = Color(uiColor: UIColor { traits in
+        traits.userInterfaceStyle == .dark
+            ? .systemYellow
+            : UIColor(red: 0.85, green: 0.6, blue: 0, alpha: 1)
+    })
 
     private static func color(named name: String) -> Color {
         switch name {
