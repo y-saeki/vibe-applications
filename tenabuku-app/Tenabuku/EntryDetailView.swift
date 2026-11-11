@@ -590,6 +590,14 @@ struct CommentRow: View {
                 .imageScale(.small)
                 // Explicit, so that the button's tint does not take over.
                 .foregroundStyle(tint)
+                // A faint rim in the count's shade, so that the bright star
+                // keeps its edge on a wash of its own colour.
+                .overlay {
+                    Image(systemName: "star")
+                        .imageScale(.small)
+                        .fontWeight(.light)
+                        .foregroundStyle(Self.readable(tint).opacity(0.3))
+                }
             if let count {
                 Text(count, format: .number)
                     .monospaced()
