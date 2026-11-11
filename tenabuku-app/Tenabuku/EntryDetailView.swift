@@ -73,20 +73,27 @@ final class EntryCommentsModel {
         // Read alongside the comments, so that hiding costs no extra wait.
         async let ignored = webSession.ignoredUsers(refresh: refreshIgnored)
         do {
-            let loaded: [CommentRowData]
+            var loaded: [CommentRowData]
+            var cursor: String?
             switch tab {
             case .popular:
                 loaded = try await popular()
             case .recent:
-                let page = try await AppServices.recentComments.comments(for: url)
-                guard generation == self.generation else { return }
-                nextCursor = page.nextCursor
-                loaded = page.comments.map(CommentRowData.init)
+                (loaded, cursor) = try await recentPage()
             }
             let ignoredUsers = await ignored
             guard generation == self.generation else { return }
+            loaded.removeAll { ignoredUsers.contains($0.user) }
+            // An entry with no popular comments, or none left once the hidden
+            // users are out, shows its recent ones there instead of nothing.
+            if tab == .popular, loaded.isEmpty {
+                (loaded, cursor) = try await recentPage()
+                guard generation == self.generation else { return }
+                loaded.removeAll { ignoredUsers.contains($0.user) }
+            }
             self.ignoredUsers = ignoredUsers
-            comments = loaded.filter { !ignoredUsers.contains($0.user) }
+            nextCursor = cursor
+            comments = loaded
             error = nil
             starCounts = [:]
             loadStars(for: comments, generation: generation)
@@ -99,9 +106,9 @@ final class EntryCommentsModel {
         }
     }
 
-    /// Appends the next page of recent comments.
+    /// Appends the next page of recent comments, in either tab that shows them.
     func loadMore() async {
-        guard tab == .recent, let cursor = nextCursor, !isLoading, error == nil else { return }
+        guard let cursor = nextCursor, !isLoading, error == nil else { return }
         let generation = generation
         isLoading = true
         defer {
@@ -153,6 +160,11 @@ final class EntryCommentsModel {
     // The ranking only exists in the website's entry page.
     private func popular() async throws -> [CommentRowData] {
         try await AppServices.popularComments.comments(for: url).map(CommentRowData.init)
+    }
+
+    private func recentPage() async throws -> (comments: [CommentRowData], nextCursor: String?) {
+        let page = try await AppServices.recentComments.comments(for: url)
+        return (page.comments.map(CommentRowData.init), page.nextCursor)
     }
 }
 
