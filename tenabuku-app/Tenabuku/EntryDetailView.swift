@@ -596,7 +596,7 @@ struct CommentRow: View {
                     Image(systemName: "star")
                         .imageScale(.small)
                         .fontWeight(.light)
-                        .foregroundStyle(Self.readable(tint).opacity(0.3))
+                        .foregroundStyle(Self.readable(tint).opacity(0.2))
                 }
             if let count {
                 Text(count, format: .number)
