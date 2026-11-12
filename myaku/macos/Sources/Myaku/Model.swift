@@ -1,6 +1,7 @@
 import Foundation
 
-/// What the list shows, kept up to date while the menu is open.
+/// What the list shows, kept up to date while the menu or the window that
+/// keeps it on screen is open.
 @MainActor
 final class Model: ObservableObject {
     /// How many processes the list shows.
@@ -13,10 +14,18 @@ final class Model: ObservableObject {
     @Published private(set) var network: Bool
     @Published private(set) var memoryScale: Scale
 
-    /// Whether the menu is open. The list is only fetched while it is.
-    var visible = false {
-        didSet { if visible { refresh() } }
+    /// Whether the menu is open.
+    var menuOpen = false {
+        didSet { if menuOpen { refresh() } }
     }
+
+    /// Whether the window that keeps the list on screen is open.
+    var windowOpen = false {
+        didSet { if windowOpen { refresh() } }
+    }
+
+    /// The list is only fetched while someone can see it.
+    private var visible: Bool { menuOpen || windowOpen }
 
     private var vitals: Vitals?
 

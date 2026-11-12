@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 /// The menu bar item and its menu: the list on top, then the settings and
-/// Quit.
+/// Quit. The list can also be kept on screen in a window of its own.
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let model = Model()
@@ -10,6 +10,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var autostartItem: NSMenuItem?
     private var networkItem: NSMenuItem?
     private var logMemoryItem: NSMenuItem?
+    private var pinItem: NSMenuItem?
+    private lazy var pinned: PinnedWindow = {
+        let window = PinnedWindow(model: model)
+        window.onClose = { [weak self] in self?.setPinned(false) }
+        return window
+    }()
+    private static let pinnedKey = "keepListOnScreen"
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -20,6 +27,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         item.menu = makeMenu()
         statusItem = item
+        if UserDefaults.standard.bool(forKey: Self.pinnedKey) {
+            pinned.open()
+        }
     }
 
     private func makeMenu() -> NSMenu {
@@ -31,6 +41,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         host.frame = NSRect(x: 0, y: 0, width: ContentView.width, height: ContentView.height)
         list.view = host
         menu.addItem(list)
+        menu.addItem(.separator())
+
+        let pin = NSMenuItem(title: "画面に表示し続ける", action: #selector(togglePinned), keyEquivalent: "")
+        pin.target = self
+        menu.addItem(pin)
+        pinItem = pin
         menu.addItem(.separator())
 
         let autostart = NSMenuItem(title: "ログイン時に開く", action: #selector(toggleAutostart), keyEquivalent: "")
@@ -58,11 +74,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         autostartItem?.state = Autostart.isEnabled ? .on : .off
         networkItem?.state = model.network ? .on : .off
         logMemoryItem?.state = model.memoryScale == .log ? .on : .off
-        model.visible = true
+        pinItem?.state = UserDefaults.standard.bool(forKey: Self.pinnedKey) ? .on : .off
+        model.menuOpen = true
     }
 
     func menuDidClose(_ menu: NSMenu) {
-        model.visible = false
+        model.menuOpen = false
+    }
+
+    @objc private func togglePinned() {
+        let on = !UserDefaults.standard.bool(forKey: Self.pinnedKey)
+        setPinned(on)
+        if on {
+            pinned.open()
+        } else {
+            pinned.close()
+        }
+    }
+
+    private func setPinned(_ on: Bool) {
+        UserDefaults.standard.set(on, forKey: Self.pinnedKey)
     }
 
     @objc private func toggleAutostart() {
