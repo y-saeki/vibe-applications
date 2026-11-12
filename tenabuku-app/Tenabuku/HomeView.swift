@@ -285,7 +285,7 @@ private struct EntryShelf: View {
             .scrollTargetBehavior(.viewAligned)
             .contentMargins(.horizontal, Self.margin, for: .scrollContent)
             .scrollIndicators(.hidden)
-            .modifier(ReturnOnPullPastEnd(isEnabled: pageStarts.count > pagesOnScreen, margin: Self.margin) {
+            .modifier(ReturnOnPullPastEnd(lastPage: pageStarts.last, isEnabled: pageStarts.count > pagesOnScreen, margin: Self.margin) {
                 withAnimation { proxy.scrollTo(pageStarts[0], anchor: .leading) }
             })
         }
@@ -347,44 +347,69 @@ private struct EntryShelf: View {
 /// fills in with a tap of haptics, as pull to refresh does. Nothing takes
 /// room beside the last page, so it stays where paging leaves it.
 ///
-/// The scroll geometry and phase this reads arrive in iOS 18; before that the
-/// shelf only bounces.
+/// The pull is measured from where the shelf came to rest on its last page,
+/// not from the end of the scrollable width: where a bar stands beside the
+/// shelf, as on iPhone Duo's outer display, the scroll view's insets reach
+/// past the last page, and the shelf stops short of that end.
+///
+/// The scroll geometry, phase and visibility this reads arrive in iOS 18;
+/// before that the shelf only bounces.
 private struct ReturnOnPullPastEnd: ViewModifier {
+    /// The id of the last page in the shelf's scroll target layout.
+    let lastPage: Int?
     let isEnabled: Bool
     let margin: CGFloat
     let action: () -> Void
 
-    /// How far past the end the shelf has to be pulled before letting go
-    /// takes it back.
+    /// How far past its resting place on the last page the shelf has to be
+    /// pulled before letting go takes it back.
     private static let threshold: CGFloat = 64
 
-    @State private var pull: CGFloat = 0
+    @State private var offset: CGFloat = 0
+    @State private var contentWidth: CGFloat = 0
+    /// Where the shelf came to rest with its last page on screen, or nil
+    /// while it rests anywhere else.
+    @State private var endOffset: CGFloat?
+    @State private var isLastPageVisible = false
     @State private var isInteracting = false
     @State private var isArmed = false
+
+    private struct HorizontalExtent: Equatable {
+        var offset: CGFloat
+        var contentWidth: CGFloat
+    }
+
+    private var pull: CGFloat {
+        guard let endOffset else { return 0 }
+        return max(0, offset - endOffset)
+    }
 
     func body(content: Content) -> some View {
         if #available(iOS 18.0, *), isEnabled {
             content
-                .onScrollGeometryChange(for: CGFloat.self) { geometry in
-                    // How far the content's trailing end, margin included,
-                    // has been pulled in from the container's.
-                    geometry.contentOffset.x + geometry.containerSize.width
-                        - geometry.contentSize.width - geometry.contentInsets.trailing
-                } action: { _, overscroll in
-                    pull = max(0, overscroll)
+                .onScrollGeometryChange(for: HorizontalExtent.self) { geometry in
+                    HorizontalExtent(offset: geometry.contentOffset.x, contentWidth: geometry.contentSize.width)
+                } action: { _, extent in
+                    offset = extent.offset
+                    contentWidth = extent.contentWidth
                     if isInteracting {
                         isArmed = pull >= Self.threshold
                     }
                 }
+                .onScrollTargetVisibilityChange(idType: Int.self) { visible in
+                    isLastPageVisible = lastPage.map(visible.contains) ?? false
+                }
                 .onScrollPhaseChange { _, phase in
                     isInteracting = phase == .interacting
-                    guard !isInteracting else { return }
-                    if isArmed {
-                        isArmed = false
-                        action()
+                    if phase == .idle {
+                        endOffset = isLastPageVisible ? offset : nil
                     }
+                    guard !isInteracting, isArmed else { return }
+                    isArmed = false
+                    endOffset = nil
+                    action()
                 }
-                .overlay(alignment: .trailing) { indicator }
+                .overlay(alignment: .leading) { indicator }
                 .sensoryFeedback(.impact(weight: .light), trigger: isArmed) { _, armed in armed }
         } else {
             content
@@ -399,10 +424,11 @@ private struct ReturnOnPullPastEnd: ViewModifier {
             .background(isArmed ? AnyShapeStyle(.tint) : AnyShapeStyle(.fill.tertiary), in: Circle())
             .scaleEffect(isArmed ? 1 : 0.85)
             .animation(.snappy(duration: 0.2), value: isArmed)
-            // Centred in the gap between the last page and the edge.
-            .frame(width: max(0, pull + margin))
             .opacity(min(1, pull / Self.threshold))
-            .clipped()
+            // Centred in the gap the pull opens beside the last page, whose
+            // trailing edge sits at the content's end; a bar beside the
+            // shelf would hide anything placed at the scroll view's own edge.
+            .offset(x: contentWidth - offset + (pull + margin) / 2 - 22)
             .allowsHitTesting(false)
             .accessibilityHidden(true)
     }
