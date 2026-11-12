@@ -1,6 +1,6 @@
 [package]
 name = "myaku"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024"
 publish = false
 description = "A tiny per-process resource monitor for the macOS menu bar and the Windows notification area"

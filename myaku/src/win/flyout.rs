@@ -58,6 +58,7 @@ use windows::core::{HSTRING, PCWSTR, w};
 use windows_numerics::{Matrix3x2, Vector2};
 
 use super::app::{TRAY_ID, main_window};
+use super::settings;
 use super::theme::{self, Colour, Palette};
 use super::{APP_NAME, runner};
 use myaku::format::LAYERS;
@@ -392,7 +393,7 @@ pub fn show() {
     with_flyout(|f| {
         f.dpi = dpi;
         f.hover = None;
-        f.rows = runner().top(f.resource, ROWS);
+        f.rows = runner().top(f.resource, ROWS, settings::memory_scale());
     });
     // Twice: moving onto a monitor of another scale makes Windows send
     // WM_DPICHANGED, after which the size is set again for that scale.
@@ -428,7 +429,7 @@ pub fn refresh() {
     if !is_visible() {
         return;
     }
-    with_flyout(|f| f.rows = runner().top(f.resource, ROWS));
+    with_flyout(|f| f.rows = runner().top(f.resource, ROWS, settings::memory_scale()));
     invalidate();
 }
 
@@ -452,7 +453,7 @@ fn invalidate() {
 fn cycle(arrow: Arrow) {
     with_flyout(|f| {
         f.resource = f.resource.cycle(arrow.step(), false);
-        f.rows = runner().top(f.resource, ROWS);
+        f.rows = runner().top(f.resource, ROWS, settings::memory_scale());
     });
     invalidate();
 }
@@ -634,7 +635,7 @@ unsafe fn draw(f: &Flyout, target: &ID2D1HwndRenderTarget, brush: &ID2D1SolidCol
     set(p.text);
     text(
         target,
-        f.resource.title(),
+        f.resource.heading(settings::memory_scale()),
         &f.texts.title,
         rect(PAD, 0.0, Arrow::Previous.rect().left - 8.0, HEADER),
         brush,

@@ -4,6 +4,7 @@
 use std::sync::Arc;
 
 use crate::art;
+use crate::format::Scale;
 use crate::monitor::Row;
 use crate::resource::Resource;
 use crate::runner::Runner;
@@ -34,9 +35,9 @@ impl Vitals {
     }
 
     /// The `max` processes that used the most of `resource` in the last
-    /// minute.
-    pub fn top(&self, resource: Resource, max: u32) -> Vec<Row> {
-        self.runner.top(resource, max as usize)
+    /// minute, with memory graphs drawn by `scale`.
+    pub fn top(&self, resource: Resource, max: u32, scale: Scale) -> Vec<Row> {
+        self.runner.top(resource, max as usize, scale)
     }
 }
 
@@ -53,8 +54,8 @@ fn read(_network: bool) -> Option<crate::sample::Samples> {
 }
 
 #[uniffi::export]
-pub fn resource_title(resource: Resource) -> String {
-    resource.title().to_string()
+pub fn resource_title(resource: Resource, scale: Scale) -> String {
+    resource.heading(scale).to_string()
 }
 
 /// The resource the arrows move to: `step` is -1 for the left one and 1 for

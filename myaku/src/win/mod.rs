@@ -1,12 +1,14 @@
 //! Everything that talks to Win32: the notification-area icon and its menu
 //! (`app.rs`), the list that opens from it (`flyout.rs`), and reading the
-//! processes (`sampler.rs`).
+//! processes (`sampler.rs`), and the choices kept between runs
+//! (`settings.rs`).
 
 mod app;
 mod autostart;
 mod flyout;
 mod icon;
 mod sampler;
+mod settings;
 mod theme;
 
 use std::sync::OnceLock;

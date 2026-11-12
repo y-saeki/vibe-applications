@@ -8,6 +8,21 @@ use crate::resource::Resource;
 /// times. For CPU, one layer is one core.
 pub const LAYERS: f32 = 4.0;
 
+/// How the memory graph turns bytes into height. The other resources are
+/// always linear.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Enum))]
+pub enum Scale {
+    /// One layer per 512 MB.
+    #[default]
+    Linear,
+    /// A single layer, never stacked, spanning 16 MB to 16 GB on a log
+    /// scale: each doubling adds a tenth of the height, so 512 MB is half
+    /// way. Stacked layers would leave every process above the first one
+    /// a full bar told apart only by shade.
+    Log,
+}
+
 const KIB: f64 = 1024.0;
 const MIB: f64 = KIB * 1024.0;
 const GIB: f64 = MIB * 1024.0;
@@ -44,17 +59,20 @@ fn bytes(v: f64) -> String {
 /// and `LAYERS`. A missing value draws nothing.
 ///
 /// - CPU: one layer per core.
-/// - Memory: one layer per quarter of the memory all processes use together,
-///   so a process using a quarter of it fills the graph.
+/// - Memory: by `scale`, the same for every process, so the rows can be
+///   compared with each other.
 /// - Network: one layer per megabyte a second.
-pub fn height(resource: Resource, value: Option<f64>, total_memory: f64) -> f32 {
+pub fn height(resource: Resource, value: Option<f64>, scale: Scale) -> f32 {
     let Some(v) = value else {
         return 0.0;
     };
     let layers = match resource {
         Resource::Cpu => v,
-        Resource::Memory if total_memory > 0.0 => v / (total_memory / 4.0),
-        Resource::Memory => 0.0,
+        Resource::Memory => match scale {
+            Scale::Linear => v / (512.0 * MIB),
+            Scale::Log if v > 0.0 => ((v / (16.0 * MIB)).log2() / 10.0).clamp(0.0, 1.0),
+            Scale::Log => 0.0,
+        },
         Resource::NetworkIn | Resource::NetworkOut => v / 1e6,
     };
     (layers as f32).clamp(0.0, LAYERS)
@@ -84,12 +102,38 @@ mod tests {
 
     #[test]
     fn heights_are_in_layers_and_capped() {
-        assert_eq!(height(Cpu, Some(0.5), 0.0), 0.5);
-        assert_eq!(height(Cpu, Some(9.0), 0.0), LAYERS);
-        assert_eq!(height(Cpu, Some(-0.1), 0.0), 0.0);
-        assert_eq!(height(Cpu, None, 0.0), 0.0);
-        assert_eq!(height(Memory, Some(25.0), 100.0), 1.0);
-        assert_eq!(height(Memory, Some(25.0), 0.0), 0.0);
-        assert_eq!(height(NetworkIn, Some(2e6), 0.0), 2.0);
+        let lin = Scale::Linear;
+        assert_eq!(height(Cpu, Some(0.5), lin), 0.5);
+        assert_eq!(height(Cpu, Some(9.0), lin), LAYERS);
+        assert_eq!(height(Cpu, Some(-0.1), lin), 0.0);
+        assert_eq!(height(Cpu, None, lin), 0.0);
+        assert_eq!(height(Memory, Some(256.0 * MIB), lin), 0.5);
+        assert_eq!(height(Memory, Some(1.5 * GIB), lin), 3.0);
+        assert_eq!(height(Memory, Some(8.0 * GIB), lin), LAYERS);
+        assert_eq!(height(NetworkIn, Some(2e6), lin), 2.0);
+    }
+
+    #[test]
+    fn log_memory_fills_one_layer_from_16_mb_to_16_gb() {
+        let log = Scale::Log;
+        let near = |v: f64, want: f32| {
+            let got = height(Memory, Some(v), log);
+            assert!((got - want).abs() < 1e-6, "{v}: {got} != {want}");
+        };
+        near(16.0 * MIB, 0.0);
+        near(32.0 * MIB, 0.1);
+        near(128.0 * MIB, 0.3);
+        near(512.0 * MIB, 0.5);
+        near(4.0 * GIB, 0.8);
+        near(16.0 * GIB, 1.0);
+        near(64.0 * GIB, 1.0);
+        near(1.0, 0.0);
+        near(0.0, 0.0);
+    }
+
+    #[test]
+    fn only_memory_follows_the_scale() {
+        assert_eq!(height(Cpu, Some(2.0), Scale::Log), 2.0);
+        assert_eq!(height(NetworkOut, Some(1e6), Scale::Log), 1.0);
     }
 }

@@ -9,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem?
     private var autostartItem: NSMenuItem?
     private var networkItem: NSMenuItem?
+    private var logMemoryItem: NSMenuItem?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -42,6 +43,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(network)
         networkItem = network
 
+        let logMemory = NSMenuItem(title: "メモリを対数で表示", action: #selector(toggleLogMemory), keyEquivalent: "")
+        logMemory.target = self
+        menu.addItem(logMemory)
+        logMemoryItem = logMemory
+
         menu.addItem(.separator())
         let quit = NSMenuItem(title: "myaku を終了", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         menu.addItem(quit)
@@ -51,6 +57,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func menuWillOpen(_ menu: NSMenu) {
         autostartItem?.state = Autostart.isEnabled ? .on : .off
         networkItem?.state = model.network ? .on : .off
+        logMemoryItem?.state = model.memoryScale == .log ? .on : .off
         model.visible = true
     }
 
@@ -65,6 +72,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             NSApp.activate(ignoringOtherApps: true)
             alert.runModal()
         }
+    }
+
+    @objc private func toggleLogMemory() {
+        model.setMemoryScale(model.memoryScale == .log ? .linear : .log)
+        logMemoryItem?.state = model.memoryScale == .log ? .on : .off
     }
 
     @objc private func toggleNetwork() {

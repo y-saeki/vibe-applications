@@ -105,15 +105,12 @@ impl Process {
 #[derive(Debug, Default)]
 pub struct Monitor {
     processes: HashMap<u32, Process>,
-    /// The memory every live process used together at the last reading.
-    total_memory: f64,
 }
 
 impl Monitor {
     /// Takes a reading of every running process, `elapsed` seconds after
     /// the previous one.
     pub fn add(&mut self, mut samples: Samples, elapsed: f64) {
-        self.total_memory = samples.values().map(|s| s.memory as f64).sum();
         self.processes.retain(|pid, process| {
             let sample = samples.remove_entry(pid);
             match sample {
@@ -140,8 +137,8 @@ impl Monitor {
     }
 
     /// The `max` processes that used the most of `resource` over the last
-    /// minute, most first.
-    pub fn top(&self, resource: Resource, max: usize) -> Vec<Row> {
+    /// minute, most first, with memory graphs drawn by `scale`.
+    pub fn top(&self, resource: Resource, max: usize, scale: format::Scale) -> Vec<Row> {
         let mut ranked: Vec<(&u32, &Process)> = self.processes.iter().collect();
         ranked.sort_by(|(pa, a), (pb, b)| {
             let (sa, sb) = (a.window(resource).sum(), b.window(resource).sum());
@@ -158,7 +155,7 @@ impl Monitor {
                     alive: p.alive,
                     chart: w
                         .values()
-                        .map(|v| format::height(resource, v, self.total_memory))
+                        .map(|v| format::height(resource, v, scale))
                         .collect(),
                     value: format::value(resource, w.latest()),
                 }
@@ -178,6 +175,7 @@ impl Monitor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::format::Scale;
     use crate::stats::WINDOW;
 
     fn reading(list: &[(u32, &str, f64, u64)]) -> Samples {
@@ -191,9 +189,9 @@ mod tests {
         let mut m = Monitor::default();
         m.add(reading(&[(1, "a", 10.0, 0)]), 1.0);
         // A single reading measures nothing yet.
-        assert_eq!(m.top(Resource::Cpu, 5)[0].value, "-");
+        assert_eq!(m.top(Resource::Cpu, 5, Scale::Linear)[0].value, "-");
         m.add(reading(&[(1, "a", 11.0, 0)]), 2.0);
-        let row = &m.top(Resource::Cpu, 5)[0];
+        let row = &m.top(Resource::Cpu, 5, Scale::Linear)[0];
         assert_eq!(row.value, "50%");
         assert_eq!(row.chart.len(), WINDOW);
         assert_eq!(row.chart[WINDOW - 1], 0.5);
@@ -216,7 +214,7 @@ mod tests {
             1.0,
         );
         let names: Vec<_> = m
-            .top(Resource::Cpu, 5)
+            .top(Resource::Cpu, 5, Scale::Linear)
             .into_iter()
             .map(|r| r.name)
             .collect();
@@ -229,21 +227,38 @@ mod tests {
         let list: Vec<_> = (1..=30).map(|i| (i, "p", 0.0, i as u64 * 100)).collect();
         m.add(reading(&list), 1.0);
         m.add(reading(&list), 1.0);
-        let top = m.top(Resource::Memory, 20);
+        let top = m.top(Resource::Memory, 20, Scale::Linear);
         assert_eq!(top.len(), 20);
         assert_eq!(top[0].pid, 30);
         assert_eq!(top[19].pid, 11);
     }
 
     #[test]
-    fn memory_fills_the_graph_at_a_quarter_of_the_total() {
+    fn memory_graph_does_not_shrink_as_processes_are_added() {
+        const MIB: u64 = 1024 * 1024;
         let mut m = Monitor::default();
-        let list = [(1, "a", 0.0, 250), (2, "b", 0.0, 750)];
+        let mut list = vec![(1, "a", 0.0, 512 * MIB)];
+        list.extend((2..=300).map(|pid| (pid, "other", 0.0, 100 * MIB)));
         m.add(reading(&list), 1.0);
         m.add(reading(&list), 1.0);
-        let top = m.top(Resource::Memory, 5);
-        assert_eq!(top[0].chart[WINDOW - 1], 3.0);
-        assert_eq!(top[1].chart[WINDOW - 1], 1.0);
+        let top = m.top(Resource::Memory, 5, Scale::Linear);
+        assert_eq!(top[0].chart[WINDOW - 1], 1.0);
+        assert!((top[1].chart[WINDOW - 1] - 100.0 / 512.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn memory_graph_follows_the_scale() {
+        const MIB: u64 = 1024 * 1024;
+        let mut m = Monitor::default();
+        let list = [(1, "a", 0.0, 2048 * MIB)];
+        m.add(reading(&list), 1.0);
+        m.add(reading(&list), 1.0);
+        assert_eq!(
+            m.top(Resource::Memory, 1, Scale::Linear)[0].chart[WINDOW - 1],
+            4.0
+        );
+        let log = m.top(Resource::Memory, 1, Scale::Log)[0].chart[WINDOW - 1];
+        assert!((log - 0.7).abs() < 1e-6);
     }
 
     #[test]
@@ -252,7 +267,7 @@ mod tests {
         m.add(reading(&[(1, "a", 0.0, 10)]), 1.0);
         m.add(reading(&[(1, "a", 1.0, 10)]), 1.0);
         m.add(reading(&[]), 1.0);
-        let row = &m.top(Resource::Cpu, 5)[0];
+        let row = &m.top(Resource::Cpu, 5, Scale::Linear)[0];
         assert!(!row.alive);
         assert_eq!(row.value, "-");
         for _ in 0..WINDOW - 2 {
@@ -269,7 +284,7 @@ mod tests {
         m.add(reading(&[(1, "a", 0.0, 10)]), 1.0);
         m.add(reading(&[]), 1.0);
         m.add(reading(&[(1, "a", 0.0, 10)]), 1.0);
-        assert!(m.top(Resource::Cpu, 5)[0].alive);
+        assert!(m.top(Resource::Cpu, 5, Scale::Linear)[0].alive);
     }
 
     #[test]
@@ -278,7 +293,7 @@ mod tests {
         m.add(reading(&[(1, "old", 0.0, 10)]), 1.0);
         m.add(reading(&[(1, "old", 50.0, 10)]), 1.0);
         m.add(reading(&[(1, "new", 0.2, 10)]), 1.0);
-        let row = &m.top(Resource::Cpu, 5)[0];
+        let row = &m.top(Resource::Cpu, 5, Scale::Linear)[0];
         assert_eq!(row.name, "new");
         assert_eq!(row.value, "-");
         assert!(row.chart.iter().all(|&v| v == 0.0));
@@ -295,10 +310,16 @@ mod tests {
         };
         m.add(with_net(1000, 1000), 1.0);
         m.add(with_net(1000 + 2048, 900), 1.0);
-        assert_eq!(m.top(Resource::NetworkIn, 1)[0].value, "2 KB");
-        assert_eq!(m.top(Resource::NetworkOut, 1)[0].value, "0 KB");
+        assert_eq!(
+            m.top(Resource::NetworkIn, 1, Scale::Linear)[0].value,
+            "2 KB"
+        );
+        assert_eq!(
+            m.top(Resource::NetworkOut, 1, Scale::Linear)[0].value,
+            "0 KB"
+        );
         // Without network statistics the network has nothing to show.
         m.add(reading(&[(1, "a", 0.0, 0)]), 1.0);
-        assert_eq!(m.top(Resource::NetworkIn, 1)[0].value, "-");
+        assert_eq!(m.top(Resource::NetworkIn, 1, Scale::Linear)[0].value, "-");
     }
 }
