@@ -279,39 +279,16 @@ private struct EntryShelf: View {
                             .containerRelativeFrame(.horizontal) { length, _ in pageWidth(in: length) }
                             .onAppear { prefetchImages(after: min(start + Self.rowsPerPage, items.count) - 1) }
                     }
-                    if pageStarts.count > pagesOnScreen {
-                        backToStart {
-                            withAnimation { proxy.scrollTo(pageStarts[0], anchor: .leading) }
-                        }
-                    }
                 }
                 .scrollTargetLayout()
             }
             .scrollTargetBehavior(.viewAligned)
             .contentMargins(.horizontal, Self.margin, for: .scrollContent)
             .scrollIndicators(.hidden)
+            .modifier(ReturnOnPullPastEnd(isEnabled: pageStarts.count > pagesOnScreen, margin: Self.margin) {
+                withAnimation { proxy.scrollTo(pageStarts[0], anchor: .leading) }
+            })
         }
-    }
-
-    /// Closes the shelf after its last page: a button that takes it back to
-    /// the first one, rather than leaving the way back to a swipe per page.
-    private func backToStart(_ action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            VStack(spacing: 6) {
-                Image(systemName: "arrow.left.to.line")
-                    .font(.body.weight(.semibold))
-                    .frame(width: 44, height: 44)
-                    .background(.fill.tertiary, in: Circle())
-                Text("先頭へ")
-                    .font(.caption)
-                    .foregroundStyle(Color.secondary)
-            }
-            .frame(maxHeight: .infinity)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(.tint)
-        .accessibilityLabel("棚の先頭に戻る")
     }
 
     private func page(_ items: ArraySlice<FeedItem>) -> some View {
@@ -361,5 +338,72 @@ private struct EntryShelf: View {
         guard start < items.count else { return }
         let ahead = items[start..<min(start + ImagePrefetch.lookahead, items.count)]
         EntryImageLookup.shared.prefetch(ahead.filter { $0.imageURL == nil }.map(\.link), asksHatena: false)
+    }
+}
+
+/// Takes a shelf back to its first page when it is pulled on past its last
+/// one and let go, so that the way back is not a swipe per page. An arrow
+/// shows in the gap the pull opens, and once the pull has gone far enough it
+/// fills in with a tap of haptics, as pull to refresh does. Nothing takes
+/// room beside the last page, so it stays where paging leaves it.
+///
+/// The scroll geometry and phase this reads arrive in iOS 18; before that the
+/// shelf only bounces.
+private struct ReturnOnPullPastEnd: ViewModifier {
+    let isEnabled: Bool
+    let margin: CGFloat
+    let action: () -> Void
+
+    /// How far past the end the shelf has to be pulled before letting go
+    /// takes it back.
+    private static let threshold: CGFloat = 64
+
+    @State private var pull: CGFloat = 0
+    @State private var isInteracting = false
+    @State private var isArmed = false
+
+    func body(content: Content) -> some View {
+        if #available(iOS 18.0, *), isEnabled {
+            content
+                .onScrollGeometryChange(for: CGFloat.self) { geometry in
+                    // How far the content's trailing end, margin included,
+                    // has been pulled in from the container's.
+                    geometry.contentOffset.x + geometry.containerSize.width
+                        - geometry.contentSize.width - geometry.contentInsets.trailing
+                } action: { _, overscroll in
+                    pull = max(0, overscroll)
+                    if isInteracting {
+                        isArmed = pull >= Self.threshold
+                    }
+                }
+                .onScrollPhaseChange { _, phase in
+                    isInteracting = phase == .interacting
+                    guard !isInteracting else { return }
+                    if isArmed {
+                        isArmed = false
+                        action()
+                    }
+                }
+                .overlay(alignment: .trailing) { indicator }
+                .sensoryFeedback(.impact(weight: .light), trigger: isArmed) { _, armed in armed }
+        } else {
+            content
+        }
+    }
+
+    private var indicator: some View {
+        Image(systemName: "arrow.left.to.line")
+            .font(.body.weight(.semibold))
+            .foregroundStyle(isArmed ? Color.white : Color.secondary)
+            .frame(width: 44, height: 44)
+            .background(isArmed ? AnyShapeStyle(.tint) : AnyShapeStyle(.fill.tertiary), in: Circle())
+            .scaleEffect(isArmed ? 1 : 0.85)
+            .animation(.snappy(duration: 0.2), value: isArmed)
+            // Centred in the gap between the last page and the edge.
+            .frame(width: max(0, pull + margin))
+            .opacity(min(1, pull / Self.threshold))
+            .clipped()
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 }
