@@ -6,10 +6,12 @@ final class Model: ObservableObject {
     /// How many processes the list shows.
     static let rowCount = 20
     private static let networkKey = "networkStatsEnabled"
+    private static let logMemoryKey = "logMemoryScale"
 
     @Published private(set) var rows: [Row] = []
     @Published private(set) var resource: Resource = .cpu
     @Published private(set) var network: Bool
+    @Published private(set) var memoryScale: Scale
 
     /// Whether the menu is open. The list is only fetched while it is.
     var visible = false {
@@ -20,19 +22,26 @@ final class Model: ObservableObject {
 
     init() {
         network = UserDefaults.standard.bool(forKey: Self.networkKey)
+        memoryScale = UserDefaults.standard.bool(forKey: Self.logMemoryKey) ? .log : .linear
         vitals = Vitals(network: network, listener: Updates(model: self))
     }
 
     func refresh() {
         guard visible, let vitals else { return }
-        rows = vitals.top(resource: resource, max: UInt32(Self.rowCount))
+        rows = vitals.top(resource: resource, max: UInt32(Self.rowCount), scale: memoryScale)
     }
 
-    var title: String { resourceTitle(resource: resource) }
+    var title: String { resourceTitle(resource: resource, scale: memoryScale) }
 
     /// The arrows: -1 for the left one, 1 for the right.
     func cycle(_ step: Int32) {
         resource = cycleResource(resource: resource, step: step, network: network)
+        refresh()
+    }
+
+    func setMemoryScale(_ scale: Scale) {
+        memoryScale = scale
+        UserDefaults.standard.set(scale == .log, forKey: Self.logMemoryKey)
         refresh()
     }
 

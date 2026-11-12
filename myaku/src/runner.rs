@@ -6,6 +6,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use crate::format::Scale;
 use crate::monitor::{Monitor, Row};
 use crate::resource::Resource;
 use crate::sample::Samples;
@@ -47,8 +48,8 @@ impl Runner {
         self.shared.network.store(on, Ordering::Relaxed);
     }
 
-    pub fn top(&self, resource: Resource, max: usize) -> Vec<Row> {
-        lock(&self.shared.monitor).top(resource, max)
+    pub fn top(&self, resource: Resource, max: usize, scale: Scale) -> Vec<Row> {
+        lock(&self.shared.monitor).top(resource, max, scale)
     }
 }
 

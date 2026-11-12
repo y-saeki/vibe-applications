@@ -25,8 +25,9 @@ use windows::core::{HSTRING, PCSTR, PCWSTR, w};
 
 use super::{
     APP_NAME, RUNNER, WM_APP_SHOW, WM_APP_TRAY, WM_APP_UPDATED, autostart, copy_to_field,
-    error_box, flyout, icon, loword, sampler, theme,
+    error_box, flyout, icon, loword, sampler, settings, theme,
 };
+use myaku::format::Scale;
 use myaku::runner::Runner;
 
 /// The installer finds a running myaku by this name to close it
@@ -35,6 +36,7 @@ const CLASS_NAME: PCWSTR = w!("myaku.main");
 pub const TRAY_ID: u32 = 1;
 const MENU_AUTOSTART: usize = 1;
 const MENU_QUIT: usize = 2;
+const MENU_LOG_MEMORY: usize = 3;
 /// Enter or Space on the focused icon; the headers define it as this.
 const NIN_KEYSELECT: u32 = NIN_SELECT | NINF_KEY;
 
@@ -233,12 +235,23 @@ fn show_menu(hwnd: HWND) {
     } else {
         MF_UNCHECKED
     };
+    let log_memory = if settings::memory_scale() == Scale::Log {
+        MF_CHECKED
+    } else {
+        MF_UNCHECKED
+    };
     unsafe {
         let _ = AppendMenuW(
             menu,
             MF_STRING | autostart,
             MENU_AUTOSTART,
             w!("サインイン時に起動"),
+        );
+        let _ = AppendMenuW(
+            menu,
+            MF_STRING | log_memory,
+            MENU_LOG_MEMORY,
+            w!("メモリを対数で表示"),
         );
         let _ = AppendMenuW(menu, MF_SEPARATOR, 0, None);
         let _ = AppendMenuW(menu, MF_STRING, MENU_QUIT, w!("myaku を終了"));
@@ -265,6 +278,13 @@ fn show_menu(hwnd: HWND) {
             if let Err(e) = autostart::set_enabled(!autostart::is_enabled()) {
                 error_box(None, &e);
             }
+        }
+        MENU_LOG_MEMORY => {
+            settings::set_memory_scale(match settings::memory_scale() {
+                Scale::Linear => Scale::Log,
+                Scale::Log => Scale::Linear,
+            });
+            flyout::refresh();
         }
         MENU_QUIT => {
             let _ = unsafe { DestroyWindow(hwnd) };

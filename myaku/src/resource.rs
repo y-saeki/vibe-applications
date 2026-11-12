@@ -1,5 +1,7 @@
 //! What the list ranks the processes by.
 
+use crate::format::Scale;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Enum))]
 pub enum Resource {
@@ -24,6 +26,15 @@ impl Resource {
             Resource::Memory => "メモリ",
             Resource::NetworkIn => "ネットワーク(受信)",
             Resource::NetworkOut => "ネットワーク(送信)",
+        }
+    }
+
+    /// The list's heading when memory graphs are drawn by `scale`: the
+    /// title, marked when the graph is logarithmic.
+    pub fn heading(self, scale: Scale) -> &'static str {
+        match (self, scale) {
+            (Resource::Memory, Scale::Log) => "メモリ(対数)",
+            _ => self.title(),
         }
     }
 
@@ -87,5 +98,12 @@ mod tests {
         assert_eq!(NetworkOut.or_available(true), NetworkOut);
         assert_eq!(Memory.or_available(false), Memory);
         assert_eq!(NetworkOut.cycle(1, false), Memory);
+    }
+
+    #[test]
+    fn the_heading_marks_a_logarithmic_memory_graph() {
+        assert_eq!(Memory.heading(Scale::Linear), "メモリ");
+        assert_eq!(Memory.heading(Scale::Log), "メモリ(対数)");
+        assert_eq!(Cpu.heading(Scale::Log), "CPU");
     }
 }
