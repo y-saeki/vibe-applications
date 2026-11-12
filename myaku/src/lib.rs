@@ -7,6 +7,7 @@ pub mod art;
 pub mod format;
 pub mod mac_sample;
 pub mod monitor;
+pub mod place;
 pub mod resource;
 pub mod runner;
 pub mod sample;

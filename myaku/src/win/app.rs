@@ -37,6 +37,7 @@ pub const TRAY_ID: u32 = 1;
 const MENU_AUTOSTART: usize = 1;
 const MENU_QUIT: usize = 2;
 const MENU_LOG_MEMORY: usize = 3;
+const MENU_KEEP_ON_SCREEN: usize = 4;
 /// Enter or Space on the focused icon; the headers define it as this.
 const NIN_KEYSELECT: u32 = NIN_SELECT | NINF_KEY;
 
@@ -108,6 +109,7 @@ pub fn run() {
         })
     });
     add_tray_icon();
+    flyout::restore_pinned();
 
     let mut msg = MSG::default();
     while unsafe { GetMessageW(&mut msg, None, 0, 0) }.as_bool() {
@@ -240,7 +242,19 @@ fn show_menu(hwnd: HWND) {
     } else {
         MF_UNCHECKED
     };
+    let keep_on_screen = if settings::keep_on_screen() {
+        MF_CHECKED
+    } else {
+        MF_UNCHECKED
+    };
     unsafe {
+        let _ = AppendMenuW(
+            menu,
+            MF_STRING | keep_on_screen,
+            MENU_KEEP_ON_SCREEN,
+            w!("画面に表示し続ける"),
+        );
+        let _ = AppendMenuW(menu, MF_SEPARATOR, 0, None);
         let _ = AppendMenuW(
             menu,
             MF_STRING | autostart,
@@ -279,6 +293,7 @@ fn show_menu(hwnd: HWND) {
                 error_box(None, &e);
             }
         }
+        MENU_KEEP_ON_SCREEN => flyout::set_pinned(!settings::keep_on_screen()),
         MENU_LOG_MEMORY => {
             settings::set_memory_scale(match settings::memory_scale() {
                 Scale::Linear => Scale::Log,

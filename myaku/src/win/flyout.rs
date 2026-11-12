@@ -3,6 +3,10 @@
 //! app colours and accent colour Windows is set to, drawn with Direct2D and
 //! DirectWrite. Before Windows 11 22H2, which has no such backdrop, the
 //! window is opaque.
+//!
+//! When the list is kept on screen it is the same window, but it stays open
+//! when the focus moves elsewhere, moves by its heading, and closes with a
+//! button of its own.
 
 use std::cell::RefCell;
 use std::mem::ManuallyDrop;
@@ -36,8 +40,8 @@ use windows::Win32::Graphics::Dwm::{
 };
 use windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_B8G8R8A8_UNORM;
 use windows::Win32::Graphics::Gdi::{
-    BeginPaint, EndPaint, GetMonitorInfoW, InvalidateRect, MONITOR_DEFAULTTONEAREST, MONITORINFO,
-    MonitorFromRect, PAINTSTRUCT,
+    BeginPaint, EndPaint, GetMonitorInfoW, HMONITOR, InvalidateRect, MONITOR_DEFAULTTONEAREST,
+    MONITORINFO, MonitorFromPoint, MonitorFromRect, PAINTSTRUCT, ScreenToClient,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Controls::{MARGINS, WM_MOUSELEAVE};
@@ -47,12 +51,12 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 };
 use windows::Win32::UI::Shell::{NOTIFYICONIDENTIFIER, Shell_NotifyIconGetRect};
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, GetClientRect, GetCursorPos, HTCLIENT, HWND_TOPMOST,
-    IDC_ARROW, IsWindowVisible, LoadCursorW, RegisterClassExW, SW_HIDE, SWP_NOACTIVATE,
-    SWP_SHOWWINDOW, SetForegroundWindow, SetWindowPos, ShowWindow, WA_INACTIVE, WM_ACTIVATE,
-    WM_DPICHANGED, WM_ERASEBKGND, WM_KEYDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_NCCALCSIZE,
-    WM_NCHITTEST, WM_PAINT, WM_SIZE, WNDCLASSEXW, WS_BORDER, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
-    WS_POPUP, WS_THICKFRAME,
+    CreateWindowExW, DefWindowProcW, GetClientRect, GetCursorPos, GetWindowRect, HTCAPTION,
+    HTCLIENT, HWND_TOPMOST, IDC_ARROW, IsWindowVisible, LoadCursorW, RegisterClassExW, SW_HIDE,
+    SWP_NOACTIVATE, SWP_NOZORDER, SWP_SHOWWINDOW, SetForegroundWindow, SetWindowPos, ShowWindow,
+    WA_INACTIVE, WM_ACTIVATE, WM_DPICHANGED, WM_ERASEBKGND, WM_EXITSIZEMOVE, WM_KEYDOWN,
+    WM_LBUTTONUP, WM_MOUSEMOVE, WM_NCCALCSIZE, WM_NCHITTEST, WM_PAINT, WM_SIZE, WNDCLASSEXW,
+    WS_BORDER, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP, WS_THICKFRAME,
 };
 use windows::core::{HSTRING, PCWSTR, w};
 use windows_numerics::{Matrix3x2, Vector2};
@@ -63,6 +67,7 @@ use super::theme::{self, Colour, Palette};
 use super::{APP_NAME, runner};
 use myaku::format::LAYERS;
 use myaku::monitor::Row;
+use myaku::place::{self, Area};
 use myaku::resource::Resource;
 
 const CLASS_NAME: PCWSTR = w!("myaku.flyout");
@@ -83,6 +88,8 @@ const CHART_INSET: f32 = 4.0;
 /// own flyouts keep.
 const MARGIN: f32 = 12.0;
 const BUTTON: (f32, f32) = (32.0, 28.0);
+/// Between the arrows and the close button of the list kept on screen.
+const CLOSE_GAP: f32 = 8.0;
 
 /// How the graph's layers are filled, from the first: the first a little
 /// translucent, the middle two lighter over it, and the fourth solid, so
@@ -94,25 +101,44 @@ const LAYER_OPACITY: [f32; 4] = [0.7, 0.5, 0.5, 1.0];
 /// closed rather than open it again.
 const REOPEN_GRACE: Duration = Duration::from_millis(500);
 
+/// The heading's buttons: the arrows, and the close button that only the
+/// list kept on screen has.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Arrow {
+enum Button {
     Previous,
     Next,
+    Close,
 }
 
-impl Arrow {
-    fn step(self) -> i32 {
-        match self {
-            Arrow::Previous => -1,
-            Arrow::Next => 1,
+impl Button {
+    fn shown(pinned: bool) -> &'static [Button] {
+        if pinned {
+            &[Button::Previous, Button::Next, Button::Close]
+        } else {
+            &[Button::Previous, Button::Next]
         }
     }
 
-    fn rect(self) -> D2D_RECT_F {
+    /// -1 for the left arrow, 1 for the right; 0 for the close button.
+    fn step(self) -> i32 {
+        match self {
+            Button::Previous => -1,
+            Button::Next => 1,
+            Button::Close => 0,
+        }
+    }
+
+    fn rect(self, pinned: bool) -> D2D_RECT_F {
         let right = WIDTH - PAD + 6.0;
+        let arrows_right = if pinned {
+            right - BUTTON.0 - CLOSE_GAP
+        } else {
+            right
+        };
         let left = match self {
-            Arrow::Next => right - BUTTON.0,
-            Arrow::Previous => right - 2.0 * BUTTON.0 - 2.0,
+            Button::Close => right - BUTTON.0,
+            Button::Next => arrows_right - BUTTON.0,
+            Button::Previous => arrows_right - 2.0 * BUTTON.0 - 2.0,
         };
         let top = (HEADER - BUTTON.1) / 2.0;
         D2D_RECT_F {
@@ -123,9 +149,9 @@ impl Arrow {
         }
     }
 
-    fn hit(x: f32, y: f32) -> Option<Arrow> {
-        [Arrow::Previous, Arrow::Next].into_iter().find(|a| {
-            let r = a.rect();
+    fn hit(x: f32, y: f32, pinned: bool) -> Option<Button> {
+        Button::shown(pinned).iter().copied().find(|b| {
+            let r = b.rect(pinned);
             (r.left..r.right).contains(&x) && (r.top..r.bottom).contains(&y)
         })
     }
@@ -150,8 +176,10 @@ struct Flyout {
     backdrop: bool,
     resource: Resource,
     rows: Vec<Row>,
-    hover: Option<Arrow>,
+    hover: Option<Button>,
     hidden_at: Option<Instant>,
+    /// Kept on screen: stays open when the focus moves elsewhere.
+    pinned: bool,
     dpi: u32,
 }
 
@@ -231,6 +259,7 @@ pub fn create() -> windows::core::Result<()> {
             rows: Vec::new(),
             hover: None,
             hidden_at: None,
+            pinned: false,
             dpi: 96,
         })
     });
@@ -368,9 +397,17 @@ fn is_visible() -> bool {
     with_flyout(|f| unsafe { IsWindowVisible(f.hwnd) }.as_bool()).unwrap_or(false)
 }
 
+fn is_pinned() -> bool {
+    with_flyout(|f| f.pinned).unwrap_or(false)
+}
+
 /// The icon was clicked: open the list, or leave it closed when that click
-/// is what just closed it.
+/// is what just closed it. The list kept on screen only comes to the front.
 pub fn toggle() {
+    if is_pinned() {
+        show();
+        return;
+    }
     if is_visible() {
         hide();
         return;
@@ -386,10 +423,19 @@ pub fn toggle() {
 }
 
 pub fn show() {
-    let Some(hwnd) = with_flyout(|f| f.hwnd) else {
+    show_with(true);
+}
+
+/// Opens the list, kept on screen where it was last left when it is, and
+/// takes the focus when `activate`.
+fn show_with(activate: bool) {
+    let Some((hwnd, pinned)) = with_flyout(|f| (f.hwnd, f.pinned)) else {
         return;
     };
-    let (rect, dpi) = placement();
+    let (rect, dpi) = match settings::pinned_origin().filter(|_| pinned) {
+        Some(origin) => pinned_placement(origin),
+        None => placement(),
+    };
     with_flyout(|f| {
         f.dpi = dpi;
         f.hover = None;
@@ -410,11 +456,45 @@ pub fn show() {
             )
         };
     }
-    let _ = unsafe { SetForegroundWindow(hwnd) };
+    if activate {
+        let _ = unsafe { SetForegroundWindow(hwnd) };
+    }
     invalidate();
 }
 
+/// Keeps the list on screen, or lets it close again as a flyout does. The
+/// choice is kept for the next run.
+pub fn set_pinned(on: bool) {
+    settings::set_keep_on_screen(on);
+    with_flyout(|f| {
+        f.pinned = on;
+        f.hover = None;
+    });
+    if on {
+        show_with(false);
+    } else {
+        close();
+    }
+}
+
+/// At start-up: opens the list kept on screen, without taking the focus
+/// from whatever is in front.
+pub fn restore_pinned() {
+    if settings::keep_on_screen() {
+        with_flyout(|f| f.pinned = true);
+        show_with(false);
+    }
+}
+
+/// Closes the list as a flyout closes: the focus moved, Esc, the icon. The
+/// list kept on screen stays.
 pub fn hide() {
+    if !is_pinned() {
+        close();
+    }
+}
+
+fn close() {
     let Some(hwnd) = with_flyout(|f| f.hwnd) else {
         return;
     };
@@ -450,9 +530,13 @@ fn invalidate() {
     }
 }
 
-fn cycle(arrow: Arrow) {
+fn press(button: Button) {
+    if button == Button::Close {
+        set_pinned(false);
+        return;
+    }
     with_flyout(|f| {
-        f.resource = f.resource.cycle(arrow.step(), false);
+        f.resource = f.resource.cycle(button.step(), false);
         f.rows = runner().top(f.resource, ROWS, settings::memory_scale());
     });
     invalidate();
@@ -485,15 +569,8 @@ fn placement() -> (RECT, u32) {
             }
         });
     let monitor = unsafe { MonitorFromRect(&anchor, MONITOR_DEFAULTTONEAREST) };
-    let mut info = MONITORINFO {
-        cbSize: size_of::<MONITORINFO>() as u32,
-        ..Default::default()
-    };
-    let _ = unsafe { GetMonitorInfoW(monitor, &mut info) };
-    let (mut dpi, mut dpi_y) = (96, 96);
-    let _ = unsafe { GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &mut dpi, &mut dpi_y) };
-    let px = |dip: f32| (dip * dpi as f32 / 96.0).round() as i32;
-    let (w, h, m) = (px(WIDTH), px(HEIGHT), px(MARGIN));
+    let (info, dpi) = monitor_info(monitor);
+    let (w, h, m) = sizes(dpi);
     let (work, screen) = (info.rcWork, info.rcMonitor);
     let centre_x = (anchor.left + anchor.right) / 2;
     let centre_y = (anchor.top + anchor.bottom) / 2;
@@ -528,6 +605,53 @@ fn placement() -> (RECT, u32) {
         },
         dpi,
     )
+}
+
+/// The list kept on screen: where it was last left, on the screen nearest
+/// to there, moved back inside should that screen have changed.
+fn pinned_placement(origin: (i32, i32)) -> (RECT, u32) {
+    let point = POINT {
+        x: origin.0,
+        y: origin.1,
+    };
+    let monitor = unsafe { MonitorFromPoint(point, MONITOR_DEFAULTTONEAREST) };
+    let (info, dpi) = monitor_info(monitor);
+    let (w, h, m) = sizes(dpi);
+    let work = info.rcWork;
+    let area = Area {
+        left: work.left,
+        top: work.top,
+        right: work.right,
+        bottom: work.bottom,
+    };
+    let (x, y) = place::keep_inside(origin, (w, h), area, m);
+    (
+        RECT {
+            left: x,
+            top: y,
+            right: x + w,
+            bottom: y + h,
+        },
+        dpi,
+    )
+}
+
+fn monitor_info(monitor: HMONITOR) -> (MONITORINFO, u32) {
+    let mut info = MONITORINFO {
+        cbSize: size_of::<MONITORINFO>() as u32,
+        ..Default::default()
+    };
+    let _ = unsafe { GetMonitorInfoW(monitor, &mut info) };
+    let (mut dpi, mut dpi_y) = (96, 96);
+    let _ = unsafe { GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &mut dpi, &mut dpi_y) };
+    (info, dpi)
+}
+
+/// The window's width, height and margin from the screen's edge, in
+/// physical pixels at `dpi`.
+fn sizes(dpi: u32) -> (i32, i32, i32) {
+    let px = |dip: f32| (dip * dpi as f32 / 96.0).round() as i32;
+    (px(WIDTH), px(HEIGHT), px(MARGIN))
 }
 
 fn colour(c: Colour) -> D2D1_COLOR_F {
@@ -637,12 +761,12 @@ unsafe fn draw(f: &Flyout, target: &ID2D1HwndRenderTarget, brush: &ID2D1SolidCol
         target,
         f.resource.heading(settings::memory_scale()),
         &f.texts.title,
-        rect(PAD, 0.0, Arrow::Previous.rect().left - 8.0, HEADER),
+        rect(PAD, 0.0, Button::Previous.rect(f.pinned).left - 8.0, HEADER),
         brush,
     );
-    for arrow in [Arrow::Previous, Arrow::Next] {
-        let r = arrow.rect();
-        if f.hover == Some(arrow) {
+    for &button in Button::shown(f.pinned) {
+        let r = button.rect(f.pinned);
+        if f.hover == Some(button) {
             set(p.hover);
             unsafe {
                 target.FillRoundedRectangle(
@@ -657,7 +781,17 @@ unsafe fn draw(f: &Flyout, target: &ID2D1HwndRenderTarget, brush: &ID2D1SolidCol
         }
         set(p.secondary);
         let (cx, cy) = ((r.left + r.right) / 2.0, (r.top + r.bottom) / 2.0);
-        let dx = 2.5 * -arrow.step() as f32;
+        if button == Button::Close {
+            // A cross as wide as an arrow is tall.
+            let d = 4.5;
+            for (a, b) in [((-d, -d), (d, d)), ((-d, d), (d, -d))] {
+                let from = Vector2::new(cx + a.0, cy + a.1);
+                let to = Vector2::new(cx + b.0, cy + b.1);
+                unsafe { target.DrawLine(from, to, brush, 1.5, &f.round) };
+            }
+            continue;
+        }
+        let dx = 2.5 * -button.step() as f32;
         let tip = Vector2::new(cx - dx, cy);
         for end in [
             Vector2::new(cx + dx, cy - 5.0),
@@ -788,7 +922,30 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
         // With the sizing frame, which brings the backdrop and the shadow,
         // the whole window is client area and none of it resizes.
         WM_NCCALCSIZE if wparam.0 != 0 => LRESULT(0),
-        WM_NCHITTEST => LRESULT(HTCLIENT as isize),
+        // The list kept on screen moves by its heading, away from the
+        // buttons.
+        WM_NCHITTEST => {
+            let mut point = POINT {
+                x: (lparam.0 & 0xFFFF) as i16 as i32,
+                y: ((lparam.0 >> 16) & 0xFFFF) as i16 as i32,
+            };
+            let _ = unsafe { ScreenToClient(hwnd, &mut point) };
+            let (x, y) = to_dips(point.x, point.y);
+            let pinned = is_pinned();
+            let on_heading = (0.0..HEADER).contains(&y) && Button::hit(x, y, pinned).is_none();
+            LRESULT(if pinned && on_heading {
+                HTCAPTION
+            } else {
+                HTCLIENT
+            } as isize)
+        }
+        WM_EXITSIZEMOVE => {
+            let mut r = RECT::default();
+            if unsafe { GetWindowRect(hwnd, &mut r) }.is_ok() {
+                settings::set_pinned_origin(r.left, r.top);
+            }
+            LRESULT(0)
+        }
         WM_SIZE => {
             let (w, h) = (
                 (lparam.0 & 0xFFFF) as u32,
@@ -807,8 +964,22 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
             LRESULT(0)
         }
         WM_DPICHANGED => {
-            // show() sets the size for the new scale itself.
+            // Dragged onto a screen of another scale: take the size Windows
+            // suggests for it. show() sets the size again itself after.
             with_flyout(|f| f.dpi = super::loword(wparam.0));
+            // SAFETY: lParam of WM_DPICHANGED points to the suggested RECT.
+            let r = unsafe { *(lparam.0 as *const RECT) };
+            let _ = unsafe {
+                SetWindowPos(
+                    hwnd,
+                    None,
+                    r.left,
+                    r.top,
+                    r.right - r.left,
+                    r.bottom - r.top,
+                    SWP_NOZORDER | SWP_NOACTIVATE,
+                )
+            };
             LRESULT(0)
         }
         WM_ACTIVATE => {
@@ -819,8 +990,8 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
         }
         WM_KEYDOWN => {
             match wparam.0 as u16 {
-                k if k == VK_LEFT.0 => cycle(Arrow::Previous),
-                k if k == VK_RIGHT.0 => cycle(Arrow::Next),
+                k if k == VK_LEFT.0 => press(Button::Previous),
+                k if k == VK_RIGHT.0 => press(Button::Next),
                 k if k == VK_ESCAPE.0 => hide(),
                 _ => {}
             }
@@ -829,7 +1000,7 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
         WM_MOUSEMOVE => {
             let (x, y) = dips(lparam);
             let changed = with_flyout(|f| {
-                let hover = Arrow::hit(x, y);
+                let hover = Button::hit(x, y, f.pinned);
                 std::mem::replace(&mut f.hover, hover) != hover
             });
             let mut track = TRACKMOUSEEVENT {
@@ -852,8 +1023,8 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
         }
         WM_LBUTTONUP => {
             let (x, y) = dips(lparam);
-            if let Some(arrow) = Arrow::hit(x, y) {
-                cycle(arrow);
+            if let Some(button) = Button::hit(x, y, is_pinned()) {
+                press(button);
             }
             LRESULT(0)
         }
@@ -863,8 +1034,15 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
 
 /// The pointer position in a mouse message, in device-independent pixels.
 fn dips(lparam: LPARAM) -> (f32, f32) {
-    let x = (lparam.0 & 0xFFFF) as i16 as f32;
-    let y = ((lparam.0 >> 16) & 0xFFFF) as i16 as f32;
+    to_dips(
+        (lparam.0 & 0xFFFF) as i16 as i32,
+        ((lparam.0 >> 16) & 0xFFFF) as i16 as i32,
+    )
+}
+
+/// A point in the client area's physical pixels, in device-independent
+/// ones.
+fn to_dips(x: i32, y: i32) -> (f32, f32) {
     let dpi = with_flyout(|f| f.dpi).unwrap_or(96) as f32;
-    (x * 96.0 / dpi, y * 96.0 / dpi)
+    (x as f32 * 96.0 / dpi, y as f32 * 96.0 / dpi)
 }
