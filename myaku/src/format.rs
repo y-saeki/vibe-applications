@@ -16,8 +16,10 @@ pub enum Scale {
     /// One layer per 512 MB.
     #[default]
     Linear,
-    /// One layer each time the value grows fourfold: 128 MB fills one
-    /// layer, 512 MB two, 2 GB three and 8 GB all four.
+    /// A single layer, never stacked, spanning 16 MB to 16 GB on a log
+    /// scale: each doubling adds a tenth of the height, so 512 MB is half
+    /// way. Stacked layers would leave every process above the first one
+    /// a full bar told apart only by shade.
     Log,
 }
 
@@ -68,8 +70,7 @@ pub fn height(resource: Resource, value: Option<f64>, scale: Scale) -> f32 {
         Resource::Cpu => v,
         Resource::Memory => match scale {
             Scale::Linear => v / (512.0 * MIB),
-            // log4(v / 32 MB); 32 MB and below draw nothing.
-            Scale::Log if v > 0.0 => (v / (32.0 * MIB)).log2() / 2.0,
+            Scale::Log if v > 0.0 => ((v / (16.0 * MIB)).log2() / 10.0).clamp(0.0, 1.0),
             Scale::Log => 0.0,
         },
         Resource::NetworkIn | Resource::NetworkOut => v / 1e6,
@@ -113,17 +114,21 @@ mod tests {
     }
 
     #[test]
-    fn log_memory_gains_a_layer_each_fourfold() {
+    fn log_memory_fills_one_layer_from_16_mb_to_16_gb() {
         let log = Scale::Log;
-        assert_eq!(height(Memory, Some(32.0 * MIB), log), 0.0);
-        assert_eq!(height(Memory, Some(64.0 * MIB), log), 0.5);
-        assert_eq!(height(Memory, Some(128.0 * MIB), log), 1.0);
-        assert_eq!(height(Memory, Some(512.0 * MIB), log), 2.0);
-        assert_eq!(height(Memory, Some(2.0 * GIB), log), 3.0);
-        assert_eq!(height(Memory, Some(8.0 * GIB), log), LAYERS);
-        assert_eq!(height(Memory, Some(64.0 * GIB), log), LAYERS);
-        assert_eq!(height(Memory, Some(1.0), log), 0.0);
-        assert_eq!(height(Memory, Some(0.0), log), 0.0);
+        let near = |v: f64, want: f32| {
+            let got = height(Memory, Some(v), log);
+            assert!((got - want).abs() < 1e-6, "{v}: {got} != {want}");
+        };
+        near(16.0 * MIB, 0.0);
+        near(32.0 * MIB, 0.1);
+        near(128.0 * MIB, 0.3);
+        near(512.0 * MIB, 0.5);
+        near(4.0 * GIB, 0.8);
+        near(16.0 * GIB, 1.0);
+        near(64.0 * GIB, 1.0);
+        near(1.0, 0.0);
+        near(0.0, 0.0);
     }
 
     #[test]

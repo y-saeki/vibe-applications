@@ -257,10 +257,8 @@ mod tests {
             m.top(Resource::Memory, 1, Scale::Linear)[0].chart[WINDOW - 1],
             4.0
         );
-        assert_eq!(
-            m.top(Resource::Memory, 1, Scale::Log)[0].chart[WINDOW - 1],
-            3.0
-        );
+        let log = m.top(Resource::Memory, 1, Scale::Log)[0].chart[WINDOW - 1];
+        assert!((log - 0.7).abs() < 1e-6);
     }
 
     #[test]
