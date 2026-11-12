@@ -199,6 +199,7 @@ private struct EntryShelf: View {
     @Environment(MuteStore.self) private var mutes
     @Environment(FaviconSettingsStore.self) private var faviconSettings
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     static let rowsPerPage = 3
     /// The share of the width the pages on screen take together, gaps
@@ -286,9 +287,15 @@ private struct EntryShelf: View {
             .contentMargins(.horizontal, Self.margin, for: .scrollContent)
             .scrollIndicators(.hidden)
             .modifier(ReturnOnPullPastEnd(lastPage: pageStarts.last, isEnabled: pageStarts.count > pagesOnScreen, margin: Self.margin) {
-                withAnimation { proxy.scrollTo(pageStarts[0], anchor: .leading) }
+                withAnimation(returnAnimation) { proxy.scrollTo(pageStarts[0], anchor: .leading) }
             })
         }
+    }
+
+    /// The shelf lands on its first page with a light bounce, as a pulled
+    /// scroll view settles against its edge, unless motion is to be reduced.
+    private var returnAnimation: Animation {
+        reduceMotion ? .smooth : .spring(duration: 0.6, bounce: 0.4)
     }
 
     private func page(_ items: ArraySlice<FeedItem>) -> some View {
