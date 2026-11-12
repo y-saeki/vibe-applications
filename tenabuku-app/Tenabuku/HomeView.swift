@@ -270,25 +270,25 @@ private struct EntryShelf: View {
     private var pages: some View {
         let items = visibleItems
         let pageStarts = Array(stride(from: 0, to: items.count, by: Self.rowsPerPage))
-        return ScrollViewReader { proxy in
-            ScrollView(.horizontal) {
-                LazyHStack(alignment: .top, spacing: Self.pageSpacing) {
-                    ForEach(pageStarts, id: \.self) { start in
-                        page(items[start..<min(start + Self.rowsPerPage, items.count)])
-                            // The length already leaves out the content margins.
-                            .containerRelativeFrame(.horizontal) { length, _ in pageWidth(in: length) }
-                            .onAppear { prefetchImages(after: min(start + Self.rowsPerPage, items.count) - 1) }
-                    }
+        return ScrollView(.horizontal) {
+            LazyHStack(alignment: .top, spacing: Self.pageSpacing) {
+                ForEach(pageStarts, id: \.self) { start in
+                    page(items[start..<min(start + Self.rowsPerPage, items.count)])
+                        // The length already leaves out the content margins.
+                        .containerRelativeFrame(.horizontal) { length, _ in pageWidth(in: length) }
+                        .onAppear { prefetchImages(after: min(start + Self.rowsPerPage, items.count) - 1) }
                 }
-                .scrollTargetLayout()
             }
-            .scrollTargetBehavior(.viewAligned)
-            .contentMargins(.horizontal, Self.margin, for: .scrollContent)
-            .scrollIndicators(.hidden)
-            .modifier(ReturnOnPullPastEnd(lastPage: pageStarts.last, isEnabled: pageStarts.count > pagesOnScreen, margin: Self.margin) {
-                proxy.scrollTo(pageStarts[0], anchor: .leading)
-            })
+            .scrollTargetLayout()
         }
+        .scrollTargetBehavior(.viewAligned)
+        .contentMargins(.horizontal, Self.margin, for: .scrollContent)
+        .scrollIndicators(.hidden)
+        .returnsToStartWhenPulledPastEnd(
+            lastPage: pageStarts.last,
+            isEnabled: pageStarts.count > pagesOnScreen,
+            margin: Self.margin
+        )
     }
 
     private func page(_ items: ArraySlice<FeedItem>) -> some View {
@@ -352,26 +352,19 @@ private struct EntryShelf: View {
 /// shelf, as on iPhone Duo's outer display, the scroll view's insets reach
 /// past the last page, and the shelf stops short of that end.
 ///
-/// The scroll geometry, phase and visibility this reads arrive in iOS 18;
-/// before that the shelf only bounces.
+/// The scroll geometry, phase, visibility and position this uses arrive in
+/// iOS 18; before that the shelf only bounces.
+@available(iOS 18.0, *)
 private struct ReturnOnPullPastEnd: ViewModifier {
     /// The id of the last page in the shelf's scroll target layout.
     let lastPage: Int?
-    let isEnabled: Bool
     let margin: CGFloat
-    let action: () -> Void
 
     /// How far past its resting place on the last page the shelf has to be
     /// pulled before letting go takes it back.
     private static let threshold: CGFloat = 64
-    /// How far the shelf runs past its first page before settling on it.
-    /// A spring's overshoot grows with the distance it covers, so the
-    /// damping is worked out from the distance to keep this the same on a
-    /// short shelf and a long one.
-    private static let overshoot: CGFloat = 10
 
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
+    @State private var position = ScrollPosition()
     @State private var offset: CGFloat = 0
     @State private var contentWidth: CGFloat = 0
     /// Where the shelf came to rest with its last page on screen, or nil
@@ -392,48 +385,41 @@ private struct ReturnOnPullPastEnd: ViewModifier {
     }
 
     func body(content: Content) -> some View {
-        if #available(iOS 18.0, *), isEnabled {
-            content
-                .onScrollGeometryChange(for: HorizontalExtent.self) { geometry in
-                    HorizontalExtent(offset: geometry.contentOffset.x, contentWidth: geometry.contentSize.width)
-                } action: { _, extent in
-                    offset = extent.offset
-                    contentWidth = extent.contentWidth
-                    if isInteracting {
-                        isArmed = pull >= Self.threshold
-                    }
+        content
+            .scrollPosition($position)
+            .onScrollGeometryChange(for: HorizontalExtent.self) { geometry in
+                HorizontalExtent(offset: geometry.contentOffset.x, contentWidth: geometry.contentSize.width)
+            } action: { _, extent in
+                offset = extent.offset
+                contentWidth = extent.contentWidth
+                if isInteracting {
+                    isArmed = pull >= Self.threshold
                 }
-                .onScrollTargetVisibilityChange(idType: Int.self) { visible in
-                    isLastPageVisible = lastPage.map(visible.contains) ?? false
+            }
+            .onScrollTargetVisibilityChange(idType: Int.self) { visible in
+                isLastPageVisible = lastPage.map(visible.contains) ?? false
+            }
+            .onScrollPhaseChange { _, phase in
+                isInteracting = phase == .interacting
+                if phase == .idle {
+                    endOffset = isLastPageVisible ? offset : nil
                 }
-                .onScrollPhaseChange { _, phase in
-                    isInteracting = phase == .interacting
-                    if phase == .idle {
-                        endOffset = isLastPageVisible ? offset : nil
-                    }
-                    guard !isInteracting, isArmed else { return }
-                    isArmed = false
-                    endOffset = nil
-                    // The first page sits at minus the leading margin.
-                    withAnimation(returnAnimation(distance: offset + margin)) { action() }
-                }
-                .overlay(alignment: .leading) { indicator }
-                .sensoryFeedback(.impact(weight: .light), trigger: isArmed) { _, armed in armed }
-        } else {
-            content
-        }
+                guard !isInteracting, isArmed else { return }
+                isArmed = false
+                endOffset = nil
+                // To the content's leading edge rather than to the first
+                // page by its id: the pages are laid out lazily, and the
+                // first one's place is only an estimate from the end.
+                withAnimation(Self.returnAnimation) { position.scrollTo(edge: .leading) }
+            }
+            .overlay(alignment: .leading) { indicator }
+            .sensoryFeedback(.impact(weight: .light), trigger: isArmed) { _, armed in armed }
     }
 
-    /// One small overshoot and then rest, as a spring settles, rather than
-    /// a bounce back and forth. Without motion, it only eases in.
-    private func returnAnimation(distance: CGFloat) -> Animation {
-        guard !reduceMotion, distance > Self.overshoot else { return .smooth }
-        // A spring let go from rest overshoots by exp(-πζ/√(1-ζ²)) of the
-        // distance; solved for the damping ratio ζ.
-        let logRatio = log(Double(Self.overshoot / distance))
-        let damping = -logRatio / (Double.pi * Double.pi + logRatio * logRatio).squareRoot()
-        return .spring(response: 0.5, dampingFraction: damping)
-    }
+    /// The shelf sets off at once and brakes over the second half of the
+    /// way, coming to rest on its first page without running past it, as a
+    /// flicked scroll view slows to a stop.
+    private static let returnAnimation = Animation.timingCurve(0.22, 1, 0.36, 1, duration: 0.7)
 
     private var indicator: some View {
         Image(systemName: "arrow.left.to.line")
@@ -450,5 +436,18 @@ private struct ReturnOnPullPastEnd: ViewModifier {
             .offset(x: contentWidth - offset + (pull + margin) / 2 - 22)
             .allowsHitTesting(false)
             .accessibilityHidden(true)
+    }
+}
+
+private extension View {
+    /// Lets a shelf be pulled past its last page to go back to its first,
+    /// where the system can read the scroll that way (iOS 18 and later).
+    @ViewBuilder
+    func returnsToStartWhenPulledPastEnd(lastPage: Int?, isEnabled: Bool, margin: CGFloat) -> some View {
+        if #available(iOS 18.0, *), isEnabled {
+            modifier(ReturnOnPullPastEnd(lastPage: lastPage, margin: margin))
+        } else {
+            self
+        }
     }
 }
