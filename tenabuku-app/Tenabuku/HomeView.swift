@@ -270,20 +270,48 @@ private struct EntryShelf: View {
     private var pages: some View {
         let items = visibleItems
         let pageStarts = Array(stride(from: 0, to: items.count, by: Self.rowsPerPage))
-        return ScrollView(.horizontal) {
-            LazyHStack(alignment: .top, spacing: Self.pageSpacing) {
-                ForEach(pageStarts, id: \.self) { start in
-                    page(items[start..<min(start + Self.rowsPerPage, items.count)])
-                        // The length already leaves out the content margins.
-                        .containerRelativeFrame(.horizontal) { length, _ in pageWidth(in: length) }
-                        .onAppear { prefetchImages(after: min(start + Self.rowsPerPage, items.count) - 1) }
+        return ScrollViewReader { proxy in
+            ScrollView(.horizontal) {
+                LazyHStack(alignment: .top, spacing: Self.pageSpacing) {
+                    ForEach(pageStarts, id: \.self) { start in
+                        page(items[start..<min(start + Self.rowsPerPage, items.count)])
+                            // The length already leaves out the content margins.
+                            .containerRelativeFrame(.horizontal) { length, _ in pageWidth(in: length) }
+                            .onAppear { prefetchImages(after: min(start + Self.rowsPerPage, items.count) - 1) }
+                    }
+                    if pageStarts.count > pagesOnScreen {
+                        backToStart {
+                            withAnimation { proxy.scrollTo(pageStarts[0], anchor: .leading) }
+                        }
+                    }
                 }
+                .scrollTargetLayout()
             }
-            .scrollTargetLayout()
+            .scrollTargetBehavior(.viewAligned)
+            .contentMargins(.horizontal, Self.margin, for: .scrollContent)
+            .scrollIndicators(.hidden)
         }
-        .scrollTargetBehavior(.viewAligned)
-        .contentMargins(.horizontal, Self.margin, for: .scrollContent)
-        .scrollIndicators(.hidden)
+    }
+
+    /// Closes the shelf after its last page: a button that takes it back to
+    /// the first one, rather than leaving the way back to a swipe per page.
+    private func backToStart(_ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 6) {
+                Image(systemName: "arrow.left.to.line")
+                    .font(.body.weight(.semibold))
+                    .frame(width: 44, height: 44)
+                    .background(.fill.tertiary, in: Circle())
+                Text("先頭へ")
+                    .font(.caption)
+                    .foregroundStyle(Color.secondary)
+            }
+            .frame(maxHeight: .infinity)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.tint)
+        .accessibilityLabel("棚の先頭に戻る")
     }
 
     private func page(_ items: ArraySlice<FeedItem>) -> some View {
