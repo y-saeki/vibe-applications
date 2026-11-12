@@ -196,7 +196,7 @@ struct EntryDetailView: View {
     @State private var pendingStar: PendingStar?
     @State private var isShowingWebSignIn = false
     @State private var starError: Error?
-    /// Whether the sheet is wider than it is tall, which with a vertical bar
+    /// Whether the window is wider than it is tall, which with a vertical bar
     /// tells iPhone Duo's inner display held sideways from its outer display.
     @State private var isWide = false
     /// How far the bars reach over the comments, the vertical bar included.
@@ -265,7 +265,12 @@ struct EntryDetailView: View {
         .onChange(of: page) { _, page in
             if let page, page != tab { tab = page }
         }
-        .onGeometryChange(for: Bool.self) { $0.size.width > $0.size.height } action: { isWide = $0 }
+        // The window's shape, not the sheet's: turning the vertical bar off
+        // widens the sheet and gives its foot to the bottom bar, so that the
+        // sheet on the outer display, once taken for wide, stayed wide. That
+        // happened whenever the app went to the background, where iOS lays
+        // the window out sideways for the app switcher's snapshot.
+        .onWindowSizeChange { isWide = $0.width > $0.height }
         // The count and the tabs sit in a row of their own at the top, in
         // the text size of a bar title and the plain segmented control, rather
         // than in the navigation bar, which draws its items larger and in
