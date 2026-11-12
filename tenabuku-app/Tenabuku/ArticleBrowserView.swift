@@ -15,8 +15,6 @@ final class ArticleBrowserModel: NSObject {
     private(set) var isLoading = false
     private(set) var progress = 0.0
     private(set) var loadError: Error?
-    /// Where the page starts to show below what covers the web view's top.
-    private(set) var pageTop: CGFloat = 0
     /// Whether the reader last scrolled down the page, which hides the bar
     /// along the bottom. Scrolling up, or reaching the top of the page,
     /// brings it back.
@@ -56,7 +54,6 @@ final class ArticleBrowserModel: NSObject {
         // a long press previewed, carries on from where it got to.
         let preloaded = PagePreloader.shared.take(entry.link)
         let webView = preloaded ?? ArticleWebView()
-        webView.onPageTopChange = { [weak self] top in self?.pageTop = top }
         webView.navigationDelegate = self
         webView.uiDelegate = self
         webView.allowsBackForwardNavigationGestures = true
@@ -222,26 +219,42 @@ struct ArticleBrowserView: View {
         }
     }
 
+    /// The screen edges the page runs out to, past the safe area. The web
+    /// view's frame is where the page shows, so that WebKit lays the page out
+    /// in the space it really has rather than being told what covers it.
+    ///
+    /// - The bottom edge always: the page runs on under the bottom bar and the
+    ///   home indicator, and the bar hides as the reader scrolls down.
+    /// - The top edge where nothing is up there: on iPhone Duo's outer display
+    ///   the status bar sits in the vertical bar, and on the inner display held
+    ///   sideways, or with the bars put away, it is hidden. On an iPhone and the
+    ///   inner display held upright the page starts below the status bar.
+    /// - The sides except beside the vertical bar on the outer display, where
+    ///   the page keeps out from under it. Run under it, with the layout
+    ///   viewport narrowed through `obscuredContentInsets`, pages came out wider
+    ///   than the space left to them, or slid under the bar.
+    private func pageEdges(layout: BarLayout) -> Edge.Set {
+        if hidesBars || layout == .fullScreen {
+            return .all
+        }
+        return layout == .side ? [.top, .bottom] : [.bottom, .horizontal]
+    }
+
     private func browser(layout: BarLayout) -> some View {
         // The toolbar goes through the navigation container, not a hand-made bar,
         // because that is what lets iPhone Duo lay it out vertically and leave the
         // height to the page. There is no title for the same reason: on iPhone Duo
         // it would take a bar of its own, and the page shows its title anyway.
-        // Edge to edge, so that the scroll indicator runs along the screen's
-        // edge past the vertical bar, as Safari's does. The page itself keeps
-        // clear of the bar through the insets the web view gives WebKit.
         WebViewContainer(webView: model.webView)
-            .ignoresSafeArea()
+            .ignoresSafeArea(edges: pageEdges(layout: layout))
             .onGeometryChange(for: Bool.self) { $0.size.width > $0.size.height } action: { isWide = $0 }
             .background(EdgeOnlyPopGesture())
             .overlay(alignment: .top) {
-                // At the top of the page as it shows, not of the safe area: on
-                // iPhone Duo the page also runs under the empty bar's slot.
-                // Across the whole screen, past the page's side safe areas.
+                // At the top of the page, which on iPhone Duo's outer display
+                // is the screen's top, above the empty navigation bar's slot.
                 if model.isLoading {
                     ProgressView(value: model.progress).progressViewStyle(.linear)
-                        .padding(.top, model.pageTop)
-                        .ignoresSafeArea(edges: [.top, .horizontal])
+                        .ignoresSafeArea(edges: .top)
                 }
             }
             .overlay {
@@ -272,7 +285,10 @@ struct ArticleBrowserView: View {
             .onChange(of: hidesBars, initial: true) { model.extendsToBottomEdge(hidesBars) }
             .backButtonMoved(layout != .side)
             .verticalBarDisabled(layout == .fullScreen || hidesBars)
-            .toolbar(layout == .fullScreen || hidesBars ? .hidden : .automatic, for: .navigationBar)
+            // Only the vertical bar uses the navigation bar. Elsewhere every
+            // button is in the bottom bar, and an empty bar at the top would
+            // only push the page down, or on iPhone Duo leave a slot of its own.
+            .toolbar(layout != .side || hidesBars ? .hidden : .automatic, for: .navigationBar)
             // A bar along the bottom gets out of the way while the reader
             // scrolls down, uncovering the foot of the page and anything the
             // page keeps there. The vertical bar takes no height from the page.
@@ -440,14 +456,8 @@ private struct WebViewContainer: UIViewRepresentable {
     func updateUIView(_ uiView: WKWebView, context: Context) {}
 }
 
-/// Keeps pages clear of the top only where something covers them.
-///
-/// On iPhone Duo the navigation bar moves to the side column but leaves an
-/// empty, zero-height bar at the top, and its slot still counts as safe area.
-/// WebKit kept pages without `viewport-fit=cover` below that safe area, so
-/// their fixed headers stood clear of the top while the article scrolled into
-/// the gap above them. Here the top inset is only what really covers the page:
-/// the screen's own safe area and a navigation bar that has a height.
+/// The browser's web view. Its frame is where the page shows, so that apart
+/// from the bottom bar, which the page runs on under, nothing covers it.
 final class ArticleWebView: WKWebView {
     init() {
         let configuration = WKWebViewConfiguration()
@@ -458,22 +468,30 @@ final class ArticleWebView: WKWebView {
         configuration.preferences.isElementFullscreenEnabled = true
         super.init(frame: .zero, configuration: configuration)
         if #available(iOS 26.0, *) {
-            // WebKit places fixed headers by the obscured insets, which it
-            // takes from the scroll view's automatic insets unless they are set.
+            // The scroll view's insets are set by hand below. Left to the
+            // system they would also take in the safe area this web view
+            // keeps from pages, and WebKit would take them as obscured.
             scrollView.contentInsetAdjustmentBehavior = .never
             scrollView.automaticallyAdjustsScrollIndicatorInsets = false
+            // Set, even to nothing, so that WebKit does not read the obscured
+            // insets from the scroll view. Given the bottom bar's height, it
+            // painted the strip in the colour of a page's fixed footer, such
+            // as an empty ad slot, and the page stopped short of the bar.
+            obscuredContentInsets = .zero
         }
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-    // What pages with `viewport-fit=cover` read as the safe area, so that they
-    // do not leave the empty bar's slot either.
+    // What pages with `viewport-fit=cover` read as the safe area.
     override var safeAreaInsets: UIEdgeInsets {
         var insets = super.safeAreaInsets
         if #available(iOS 26.0, *) {
-            insets.top = min(insets.top, coveredTop)
+            // The frame already starts where the page should. What is left
+            // above it is an empty navigation bar's slot, which iPhone Duo
+            // keeps at the top after moving the bar to the side.
+            insets.top = 0
             if extendsToBottomEdge {
                 insets.bottom = 0
             }
@@ -492,75 +510,32 @@ final class ArticleWebView: WKWebView {
         }
     }
 
-    /// Called with the top of the part of the page nothing covers, whenever it moves.
-    var onPageTopChange: ((CGFloat) -> Void)?
-    private var reportedPageTop: CGFloat?
-    private weak var observedBar: UINavigationBar?
-    private var barObservation: NSKeyValueObservation?
-
     override func didMoveToWindow() {
         super.didMoveToWindow()
         setNeedsLayout()
     }
 
+    override func safeAreaInsetsDidChange() {
+        super.safeAreaInsetsDidChange()
+        // The bottom bar coming and going changes only the safe area.
+        setNeedsLayout()
+    }
+
     override func layoutSubviews() {
         super.layoutSubviews()
-        observeNavigationBar()
-        let safeArea = safeAreaInsets
-        if reportedPageTop != safeArea.top {
-            reportedPageTop = safeArea.top
-            // Not during layout, which SwiftUI may be in the middle of.
-            DispatchQueue.main.async { [weak self, top = safeArea.top] in
-                self?.onPageTopChange?(top)
-            }
-        }
         guard #available(iOS 26.0, *) else { return }
         // The bar's height only, not the home indicator's: the scroll view
         // lets the end of the page go past where WebKit keeps a fixed footer,
         // which then rose off the bottom edge with a strip of page below it.
-        let insets = UIEdgeInsets(top: safeArea.top, left: safeArea.left, bottom: coveredBottom, right: safeArea.right)
-        // At the screen's edge, as Safari puts it, past the vertical bar.
-        let indicatorInsets = UIEdgeInsets(top: safeArea.top, left: 0, bottom: safeArea.bottom, right: 0)
-        guard scrollView.contentInset != insets || scrollView.verticalScrollIndicatorInsets != indicatorInsets else { return }
-        let wasAtTop = scrollView.contentOffset.y <= -scrollView.contentInset.top
-        let wasAtLeading = scrollView.contentOffset.x <= -scrollView.contentInset.left
-        // Not the bottom. Given a bottom inset, WebKit painted it over with
-        // the colour of a page's fixed footer, such as an empty ad slot, so the
-        // page stopped short of the bottom bar instead of running under it.
-        obscuredContentInsets = UIEdgeInsets(top: insets.top, left: insets.left, bottom: 0, right: insets.right)
-        scrollView.contentInset = insets
-        scrollView.verticalScrollIndicatorInsets = indicatorInsets
-        if wasAtTop {
-            scrollView.contentOffset.y = -insets.top
+        let insets = UIEdgeInsets(top: 0, left: 0, bottom: coveredBottom, right: 0)
+        // Clear of the screen's rounded corners.
+        let indicatorInsets = UIEdgeInsets(top: super.safeAreaInsets.top, left: 0, bottom: safeAreaInsets.bottom, right: 0)
+        if scrollView.contentInset != insets {
+            scrollView.contentInset = insets
         }
-        if wasAtLeading {
-            scrollView.contentOffset.x = -insets.left
+        if scrollView.verticalScrollIndicatorInsets != indicatorInsets {
+            scrollView.verticalScrollIndicatorInsets = indicatorInsets
         }
-    }
-
-    /// Lays the page out again when the navigation bar changes size. On iPhone
-    /// Duo the bar shrinks to zero height after the web view takes its safe
-    /// area, and the safe area itself stays the same, so nothing else would:
-    /// the page kept the bar's old height above it until it reloaded.
-    private func observeNavigationBar() {
-        let bar = navigationBar
-        guard bar !== observedBar else { return }
-        observedBar = bar
-        // The layer, because UIKit sizes views through it and the layer
-        // reports its changes to observers.
-        barObservation = bar?.layer.observe(\.bounds) { [weak self] _, _ in
-            MainActor.assumeIsolated { self?.setNeedsLayout() }
-        }
-    }
-
-    private var coveredTop: CGFloat {
-        guard let window else { return super.safeAreaInsets.top }
-        let screenTop = window.safeAreaInsets.top - convert(CGPoint.zero, to: window).y
-        var top = max(0, screenTop)
-        if let bar = navigationBar, !bar.isHidden, bar.bounds.height > 0 {
-            top = max(top, bar.convert(bar.bounds, to: self).maxY)
-        }
-        return top
     }
 
     /// How far the bottom bar reaches above the screen's own safe area, so
@@ -571,14 +546,6 @@ final class ArticleWebView: WKWebView {
         let screenBottom = convert(CGPoint(x: 0, y: bounds.maxY), to: window).y
             - (window.bounds.height - window.safeAreaInsets.bottom)
         return max(0, bottom - max(0, screenBottom))
-    }
-
-    private var navigationBar: UINavigationBar? {
-        sequence(first: next, next: { $0?.next })
-            .lazy
-            .compactMap { ($0 as? UIViewController)?.navigationController }
-            .first?
-            .navigationBar
     }
 }
 
