@@ -37,11 +37,16 @@ extension View {
         }
     }
 
-    /// Calls `action` with the size of the window the view is in, now and
-    /// whenever it changes. Unlike the view's own size, it does not move when
-    /// the view changes where its bars go, so a choice made from it holds.
-    func onWindowSizeChange(_ action: @escaping (CGSize) -> Void) -> some View {
-        background(WindowSizeReader(onChange: action))
+    /// Presents a sheet in the middle of the screen rather than wherever the
+    /// system would choose, which on iPhone Duo's inner display keeps the
+    /// sheet's bars horizontal.
+    @ViewBuilder
+    func centeredPresentation() -> some View {
+        if #available(iOS 27.0, *) {
+            presentationPlacement(.center)
+        } else {
+            self
+        }
     }
 
     /// Hides the system's back button, for a screen that puts its own
@@ -50,47 +55,6 @@ extension View {
     func backButtonMoved(_ isMoved: Bool) -> some View {
         navigationBarBackButtonHidden(isMoved)
             .background(BackSwipeKeeper())
-    }
-}
-
-private struct WindowSizeReader: UIViewRepresentable {
-    let onChange: (CGSize) -> Void
-
-    func makeUIView(context: Context) -> Probe { Probe(onChange: onChange) }
-    func updateUIView(_ uiView: Probe, context: Context) { uiView.onChange = onChange }
-
-    final class Probe: UIView {
-        var onChange: (CGSize) -> Void
-        private var size: CGSize?
-
-        init(onChange: @escaping (CGSize) -> Void) {
-            self.onChange = onChange
-            super.init(frame: .zero)
-            isUserInteractionEnabled = false
-        }
-
-        @available(*, unavailable)
-        required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-
-        override func didMoveToWindow() {
-            super.didMoveToWindow()
-            report()
-        }
-
-        // The view is laid out again whenever the window turns or folds,
-        // since the view it backs changes size with it.
-        override func layoutSubviews() {
-            super.layoutSubviews()
-            report()
-        }
-
-        private func report() {
-            guard let window, window.bounds.size != size else { return }
-            let size = window.bounds.size
-            self.size = size
-            // Not during layout, which SwiftUI may be in the middle of.
-            DispatchQueue.main.async { [onChange] in onChange(size) }
-        }
     }
 }
 
