@@ -199,7 +199,6 @@ private struct EntryShelf: View {
     @Environment(MuteStore.self) private var mutes
     @Environment(FaviconSettingsStore.self) private var faviconSettings
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     static let rowsPerPage = 3
     /// The share of the width the pages on screen take together, gaps
@@ -287,15 +286,9 @@ private struct EntryShelf: View {
             .contentMargins(.horizontal, Self.margin, for: .scrollContent)
             .scrollIndicators(.hidden)
             .modifier(ReturnOnPullPastEnd(lastPage: pageStarts.last, isEnabled: pageStarts.count > pagesOnScreen, margin: Self.margin) {
-                withAnimation(returnAnimation) { proxy.scrollTo(pageStarts[0], anchor: .leading) }
+                proxy.scrollTo(pageStarts[0], anchor: .leading)
             })
         }
-    }
-
-    /// The shelf lands on its first page with a light bounce, as a pulled
-    /// scroll view settles against its edge, unless motion is to be reduced.
-    private var returnAnimation: Animation {
-        reduceMotion ? .smooth : .spring(duration: 0.6, bounce: 0.4)
     }
 
     private func page(_ items: ArraySlice<FeedItem>) -> some View {
@@ -371,6 +364,13 @@ private struct ReturnOnPullPastEnd: ViewModifier {
     /// How far past its resting place on the last page the shelf has to be
     /// pulled before letting go takes it back.
     private static let threshold: CGFloat = 64
+    /// How far the shelf runs past its first page before settling on it.
+    /// A spring's overshoot grows with the distance it covers, so the
+    /// damping is worked out from the distance to keep this the same on a
+    /// short shelf and a long one.
+    private static let overshoot: CGFloat = 10
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var offset: CGFloat = 0
     @State private var contentWidth: CGFloat = 0
@@ -414,13 +414,25 @@ private struct ReturnOnPullPastEnd: ViewModifier {
                     guard !isInteracting, isArmed else { return }
                     isArmed = false
                     endOffset = nil
-                    action()
+                    // The first page sits at minus the leading margin.
+                    withAnimation(returnAnimation(distance: offset + margin)) { action() }
                 }
                 .overlay(alignment: .leading) { indicator }
                 .sensoryFeedback(.impact(weight: .light), trigger: isArmed) { _, armed in armed }
         } else {
             content
         }
+    }
+
+    /// One small overshoot and then rest, as a spring settles, rather than
+    /// a bounce back and forth. Without motion, it only eases in.
+    private func returnAnimation(distance: CGFloat) -> Animation {
+        guard !reduceMotion, distance > Self.overshoot else { return .smooth }
+        // A spring let go from rest overshoots by exp(-πζ/√(1-ζ²)) of the
+        // distance; solved for the damping ratio ζ.
+        let logRatio = log(Double(Self.overshoot / distance))
+        let damping = -logRatio / (Double.pi * Double.pi + logRatio * logRatio).squareRoot()
+        return .spring(response: 0.5, dampingFraction: damping)
     }
 
     private var indicator: some View {
