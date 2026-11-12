@@ -44,17 +44,16 @@ fn bytes(v: f64) -> String {
 /// and `LAYERS`. A missing value draws nothing.
 ///
 /// - CPU: one layer per core.
-/// - Memory: one layer per quarter of the memory all processes use together,
-///   so a process using a quarter of it fills the graph.
+/// - Memory: one layer per 512 MB, the same for every process, so the rows
+///   can be compared with each other.
 /// - Network: one layer per megabyte a second.
-pub fn height(resource: Resource, value: Option<f64>, total_memory: f64) -> f32 {
+pub fn height(resource: Resource, value: Option<f64>) -> f32 {
     let Some(v) = value else {
         return 0.0;
     };
     let layers = match resource {
         Resource::Cpu => v,
-        Resource::Memory if total_memory > 0.0 => v / (total_memory / 4.0),
-        Resource::Memory => 0.0,
+        Resource::Memory => v / (512.0 * MIB),
         Resource::NetworkIn | Resource::NetworkOut => v / 1e6,
     };
     (layers as f32).clamp(0.0, LAYERS)
@@ -84,12 +83,13 @@ mod tests {
 
     #[test]
     fn heights_are_in_layers_and_capped() {
-        assert_eq!(height(Cpu, Some(0.5), 0.0), 0.5);
-        assert_eq!(height(Cpu, Some(9.0), 0.0), LAYERS);
-        assert_eq!(height(Cpu, Some(-0.1), 0.0), 0.0);
-        assert_eq!(height(Cpu, None, 0.0), 0.0);
-        assert_eq!(height(Memory, Some(25.0), 100.0), 1.0);
-        assert_eq!(height(Memory, Some(25.0), 0.0), 0.0);
-        assert_eq!(height(NetworkIn, Some(2e6), 0.0), 2.0);
+        assert_eq!(height(Cpu, Some(0.5)), 0.5);
+        assert_eq!(height(Cpu, Some(9.0)), LAYERS);
+        assert_eq!(height(Cpu, Some(-0.1)), 0.0);
+        assert_eq!(height(Cpu, None), 0.0);
+        assert_eq!(height(Memory, Some(256.0 * MIB)), 0.5);
+        assert_eq!(height(Memory, Some(1.5 * GIB)), 3.0);
+        assert_eq!(height(Memory, Some(8.0 * GIB)), LAYERS);
+        assert_eq!(height(NetworkIn, Some(2e6)), 2.0);
     }
 }

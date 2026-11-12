@@ -105,15 +105,12 @@ impl Process {
 #[derive(Debug, Default)]
 pub struct Monitor {
     processes: HashMap<u32, Process>,
-    /// The memory every live process used together at the last reading.
-    total_memory: f64,
 }
 
 impl Monitor {
     /// Takes a reading of every running process, `elapsed` seconds after
     /// the previous one.
     pub fn add(&mut self, mut samples: Samples, elapsed: f64) {
-        self.total_memory = samples.values().map(|s| s.memory as f64).sum();
         self.processes.retain(|pid, process| {
             let sample = samples.remove_entry(pid);
             match sample {
@@ -156,10 +153,7 @@ impl Monitor {
                     pid,
                     name: p.name.clone(),
                     alive: p.alive,
-                    chart: w
-                        .values()
-                        .map(|v| format::height(resource, v, self.total_memory))
-                        .collect(),
+                    chart: w.values().map(|v| format::height(resource, v)).collect(),
                     value: format::value(resource, w.latest()),
                 }
             })
@@ -236,14 +230,16 @@ mod tests {
     }
 
     #[test]
-    fn memory_fills_the_graph_at_a_quarter_of_the_total() {
+    fn memory_graph_does_not_shrink_as_processes_are_added() {
+        const MIB: u64 = 1024 * 1024;
         let mut m = Monitor::default();
-        let list = [(1, "a", 0.0, 250), (2, "b", 0.0, 750)];
+        let mut list = vec![(1, "a", 0.0, 512 * MIB)];
+        list.extend((2..=300).map(|pid| (pid, "other", 0.0, 100 * MIB)));
         m.add(reading(&list), 1.0);
         m.add(reading(&list), 1.0);
         let top = m.top(Resource::Memory, 5);
-        assert_eq!(top[0].chart[WINDOW - 1], 3.0);
-        assert_eq!(top[1].chart[WINDOW - 1], 1.0);
+        assert_eq!(top[0].chart[WINDOW - 1], 1.0);
+        assert!((top[1].chart[WINDOW - 1] - 100.0 / 512.0).abs() < 1e-6);
     }
 
     #[test]
