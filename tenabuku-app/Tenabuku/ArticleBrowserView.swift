@@ -327,6 +327,11 @@ struct ArticleBrowserView: View {
                 // turns opaque and anchors to the screen's edges.
                 .presentationDetents([.fraction(0.94)])
                 .presentationDragIndicator(.visible)
+                // Centred, so that on iPhone Duo's inner display the system
+                // lays the sheet's bar along the bottom, as on an iPhone; a
+                // sheet at the trailing edge would take a vertical bar. The
+                // outer display keeps its vertical bar either way.
+                .centeredPresentation()
             }
             .sheet(isPresented: $isShowingBookmarkEditor) {
                 NavigationStack {

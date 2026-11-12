@@ -37,6 +37,18 @@ extension View {
         }
     }
 
+    /// Presents a sheet in the middle of the screen rather than wherever the
+    /// system would choose, which on iPhone Duo's inner display keeps the
+    /// sheet's bars horizontal.
+    @ViewBuilder
+    func centeredPresentation() -> some View {
+        if #available(iOS 27.0, *) {
+            presentationPlacement(.center)
+        } else {
+            self
+        }
+    }
+
     /// Hides the system's back button, for a screen that puts its own
     /// `BackButton` in the bottom bar, and keeps the swipe from the screen's
     /// leading edge going back, which hiding the button turns off.

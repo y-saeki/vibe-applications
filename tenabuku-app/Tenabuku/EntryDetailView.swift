@@ -196,9 +196,6 @@ struct EntryDetailView: View {
     @State private var pendingStar: PendingStar?
     @State private var isShowingWebSignIn = false
     @State private var starError: Error?
-    /// Whether the sheet is wider than it is tall, which with a vertical bar
-    /// tells iPhone Duo's inner display held sideways from its outer display.
-    @State private var isWide = false
     /// How far the bars reach over the comments, the vertical bar included.
     @State private var barInsets = EdgeInsets()
     @Environment(\.openURL) private var openURL
@@ -265,17 +262,18 @@ struct EntryDetailView: View {
         .onChange(of: page) { _, page in
             if let page, page != tab { tab = page }
         }
-        .onGeometryChange(for: Bool.self) { $0.size.width > $0.size.height } action: { isWide = $0 }
         // The count and the tabs sit in a row of their own at the top, in
         // the text size of a bar title and the plain segmented control, rather
         // than in the navigation bar, which draws its items larger and in
         // glass. The navigation bar would only leave an empty row above them.
         .topBar { header }
         .toolbar(.hidden, for: .navigationBar)
-        // The buttons stay at the bottom even on iPhone Duo's inner display
-        // held sideways, where the system would put them in a vertical bar.
-        // On its outer display they go to the vertical bar.
-        .verticalBarDisabled(isWide)
+        // Where the bar goes is the system's choice: the vertical bar on
+        // iPhone Duo's outer display, and along the bottom on its inner
+        // display, where the sheet is presented centred. Deciding it here from
+        // the sheet's shape fed back on itself, since giving up the vertical
+        // bar reshapes the sheet; it stuck after the app went to the
+        // background, where iOS lays the window out sideways for a snapshot.
         .toolbar {
             ToolbarItem(placement: .bottomBar) {
                 Button("閉じる", systemImage: "xmark") { dismiss() }
