@@ -1,0 +1,97 @@
+name: lessons merge
+
+# Merges the pull requests lessons.yml opens, without the owner's review, once
+# they have shown they are what lessons.yml is allowed to make:
+# - the branch is claude/lessons-<number>, from this repository, opened by the
+#   owner's token, and labelled `lessons`;
+# - every changed file is an existing CLAUDE.md or DEVELOPMENT.md, at the root or
+#   one level down, so a workflow, a setting or code can never ride along;
+# - the change is small: at most MAX_ADDED lines added and MAX_DELETED removed;
+# - every other workflow run on the head commit passed.
+# Anything else leaves the pull request open and this job red, for the owner to
+# look at. The exception is written into the root CLAUDE.md under "Lessons from
+# merged pull requests reach the documentation".
+#
+# The waiting step is the one in dependabot-merge.yml; see there for why
+# GitHub's own auto-merge cannot do this.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+
+concurrency:
+  group: lessons-merge-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  merge:
+    name: merge when green
+    if: >-
+      startsWith(github.event.pull_request.head.ref, 'claude/lessons-') &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.user.login == github.repository_owner &&
+      contains(github.event.pull_request.labels.*.name, 'lessons')
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      actions: read
+      contents: write
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      SELF: ${{ github.workflow_ref }}
+      MAX_ADDED: 80
+      MAX_DELETED: 30
+    steps:
+      - name: Check what the pull request changes
+        run: |
+          files="$(gh api --paginate "repos/${GH_REPO}/pulls/${PR_NUMBER}/files" \
+            --jq '.[] | [.filename, .status, .additions, .deletions] | @tsv')"
+          printf '%s\n' "${files}"
+          bad="$(printf '%s\n' "${files}" | awk -F '\t' '
+            $1 !~ /^(CLAUDE\.md|[^\/]+\/CLAUDE\.md|[^\/]+\/DEVELOPMENT\.md)$/ || $2 != "modified" {print $1 " (" $2 ")"}')"
+          if [ -n "${bad}" ]; then
+            echo "::error::not merging, because these are not existing CLAUDE.md or DEVELOPMENT.md files:"
+            printf '%s\n' "${bad}"
+            exit 1
+          fi
+          added="$(printf '%s\n' "${files}" | awk -F '\t' '{s+=$3} END {print s+0}')"
+          deleted="$(printf '%s\n' "${files}" | awk -F '\t' '{s+=$4} END {print s+0}')"
+          if [ "${added}" -gt "${MAX_ADDED}" ] || [ "${deleted}" -gt "${MAX_DELETED}" ]; then
+            echo "::error::not merging, because +${added}/-${deleted} is over +${MAX_ADDED}/-${MAX_DELETED}."
+            exit 1
+          fi
+      - name: Wait for the other workflow runs on the head commit
+        run: |
+          self_path="${SELF#*/*/}"
+          self_path="${self_path%@*}"
+          sleep 60
+          while :; do
+            runs="$(gh api --paginate "repos/${GH_REPO}/actions/runs?head_sha=${HEAD_SHA}&event=pull_request&per_page=100" \
+              --jq '.workflow_runs[] | [.id, .path, .status, (.conclusion // "")] | @tsv' \
+              | sort -t $'\t' -k2,2 -k1,1nr \
+              | awk -F '\t' -v self="${self_path}" '$2 != self && !seen[$2]++')"
+            if [ -z "${runs}" ]; then
+              echo "::error::no other workflow ran on ${HEAD_SHA}, so there is nothing to vouch for this pull request."
+              exit 1
+            fi
+            printf '%s\n' "${runs}"
+            if printf '%s\n' "${runs}" | awk -F '\t' '$3 != "completed" {found=1} END {exit !found}'; then
+              sleep 30
+              continue
+            fi
+            failed="$(printf '%s\n' "${runs}" | awk -F '\t' '$4 != "success" && $4 != "skipped" && $4 != "neutral" {print $2 " (" $4 ")"}')"
+            if [ -n "${failed}" ]; then
+              echo "::error::not merging, because these did not pass:"
+              printf '%s\n' "${failed}"
+              exit 1
+            fi
+            break
+          done
+      - name: Merge
+        run: gh pr merge "${PR_NUMBER}" --merge --match-head-commit "${HEAD_SHA}"
