@@ -48,6 +48,10 @@ final class EntryCommentsModel {
 
     var hasMore: Bool { nextCursor != nil }
 
+    /// True once a load has been asked for, so that a tab not read yet is
+    /// not taken for one with no comments.
+    var hasLoaded: Bool { generation > 0 }
+
     init(url: URL, tab: Tab) {
         self.url = url
         self.tab = tab
@@ -407,8 +411,6 @@ private struct CommentList: View {
                 ErrorBanner(error: error)
             } else if model.isLoading && model.comments.isEmpty {
                 ProgressView().frame(maxWidth: .infinity)
-            } else if model.comments.isEmpty {
-                Text("コメントはまだありません").foregroundStyle(.secondary)
             }
             ForEach(model.comments) { comment in
                 CommentRow(
@@ -439,6 +441,14 @@ private struct CommentList: View {
         .listStyle(.plain)
         // Clear, so that the sheet's glass shows through.
         .scrollContentBackground(.hidden)
+        // Centred in the room the bars leave, as the system's own empty
+        // lists are, rather than as a row with a rule under it.
+        .overlay {
+            if model.comments.isEmpty && model.hasLoaded && !model.isLoading
+                && model.error == nil && !model.hasMore {
+                ContentUnavailableView("コメントはまだありません", systemImage: "bubble")
+            }
+        }
         // A soft edge under the header, like the system's own bars, rather
         // than a rule across the sheet.
         .softTopEdge()
