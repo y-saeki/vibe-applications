@@ -39,12 +39,12 @@ export async function setFullscreen(on: boolean): Promise<void> {
 }
 
 /**
- * macOS's older fullscreen: the window covers the screen in place, with no
- * title bar at all. The native one (`setFullscreen`) slides the title bar down
- * over the top of the slide. On other platforms this is `setFullscreen`.
+ * Lets the slide fill the whole screen: on macOS with no title bar, menu bar or
+ * Dock (see `set_slide_fullscreen` in src-tauri/src/lib.rs), elsewhere the
+ * ordinary fullscreen.
  */
-export async function setSimpleFullscreen(on: boolean): Promise<void> {
-  await getCurrentWindow().setSimpleFullscreen(on)
+export async function setSlideFullscreen(on: boolean): Promise<void> {
+  await invoke('set_slide_fullscreen', { on })
 }
 
 export async function setTitle(title: string): Promise<void> {

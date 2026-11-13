@@ -6,7 +6,8 @@ use std::sync::Arc;
 use google::DeckError;
 use tauri::webview::PageLoadEvent;
 use tauri::{
-    AppHandle, Emitter, Manager, Url, Webview, WebviewUrl, WebviewWindowBuilder, WindowEvent,
+    AppHandle, Emitter, Manager, Url, Webview, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
+    WindowEvent,
 };
 
 const SIGN_IN_LABEL: &str = "google-sign-in";
@@ -18,7 +19,8 @@ pub fn run() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             load_google_slides,
-            open_google_sign_in
+            open_google_sign_in,
+            set_slide_fullscreen
         ])
         .run(tauri::generate_context!())
         .expect("error while running pecha-player");
@@ -118,4 +120,40 @@ async fn open_google_sign_in(app: AppHandle, url: String) -> Result<(), DeckErro
         }
     });
     Ok(())
+}
+
+/// Lets the slide fill the whole screen, or brings the window back.
+///
+/// On macOS this is the simple fullscreen, which has no title bar, and the menu
+/// bar and the Dock are hidden outright rather than sliding in when the
+/// pointer touches the edge. Leaving it restores what was there before. On
+/// other platforms it is the ordinary fullscreen.
+#[tauri::command]
+async fn set_slide_fullscreen(window: WebviewWindow, on: bool) -> Result<(), String> {
+    window
+        .set_simple_fullscreen(on)
+        .map_err(|e| e.to_string())?;
+    #[cfg(target_os = "macos")]
+    if on {
+        // Queued behind the switch above, which sets its own (auto-hiding)
+        // presentation options; these replace them until fullscreen ends.
+        window
+            .run_on_main_thread(hide_menu_bar_and_dock)
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn hide_menu_bar_and_dock() {
+    use objc2::MainThreadMarker;
+    use objc2_app_kit::{NSApplication, NSApplicationPresentationOptions};
+
+    let Some(mtm) = MainThreadMarker::new() else {
+        return;
+    };
+    let app = NSApplication::sharedApplication(mtm);
+    app.setPresentationOptions(
+        NSApplicationPresentationOptions::HideDock | NSApplicationPresentationOptions::HideMenuBar,
+    );
 }

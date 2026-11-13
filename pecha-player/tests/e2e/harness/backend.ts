@@ -59,8 +59,9 @@ function handle(cmd: string, args: unknown): unknown {
     case 'plugin:window|set_fullscreen':
       fullscreen = (args as { value: boolean }).value
       return null
-    case 'plugin:window|set_simple_fullscreen':
-      // The real window does not report this through is_fullscreen either.
+    case 'set_slide_fullscreen':
+      // On macOS the real window does not report this through is_fullscreen
+      // either, so the page must not rely on it.
       return null
     case 'plugin:window|set_title':
       return null

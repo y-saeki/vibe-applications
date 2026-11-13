@@ -32,6 +32,7 @@
 
   --stage: #0b0b0c;
   --bar: #1c1c1f;
+  --bar-floating: rgb(28 28 31 / 0.9);
   --bar-border: rgb(255 255 255 / 0.08);
   --panel: #232327;
   --panel-border: rgb(255 255 255 / 0.1);
@@ -60,6 +61,7 @@
   --ease-standard: cubic-bezier(0.2, 0, 0, 1);
   --ease-shutter: cubic-bezier(0.65, 0, 0.35, 1);
   --duration-fast: 150ms;
+  --duration-bar-hide: 300ms;
   --duration-shutter: 700ms;
   --duration-shutter-stop: 350ms;
 }
@@ -480,8 +482,34 @@ button.primary:active:not(:disabled) {
 
 /* ---------- Fullscreen ---------- */
 
-/* The bar stays put in fullscreen: the clock and the counter live there. Only
-   the pointer goes away when it has not moved for a while. */
+/* The slide takes the whole screen and the bar floats over its bottom edge,
+   fading out when idle (see main.ts). The slide never resizes as it comes and
+   goes. */
+#app[data-fullscreen] {
+  grid-template-rows: 1fr;
+}
+
+#app[data-fullscreen] #bar {
+  position: fixed;
+  inset: auto 0 0;
+  background: var(--bar-floating);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  transition: opacity var(--duration-fast) var(--ease-standard);
+}
+
+#app[data-fullscreen][data-bar-hidden] #bar {
+  opacity: 0;
+  pointer-events: none;
+  transition-duration: var(--duration-bar-hide);
+}
+
 #app[data-fullscreen][data-idle] {
   cursor: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #app[data-fullscreen] #bar {
+    transition: none;
+  }
 }

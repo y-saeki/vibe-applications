@@ -154,32 +154,64 @@ test('the clock and counter sit in the control bar, clear of the slide', async (
   await expect(app.page.locator('#stage #clock, #stage #counter, #stage #progress')).toHaveCount(0)
 })
 
-// On macOS the window goes to simple fullscreen, which has no title bar to
-// slide down over the slide; elsewhere it is the ordinary fullscreen.
-const fullscreenCommand = (userAgent: string) =>
-  userAgent.includes('Mac') ? 'plugin:window|set_simple_fullscreen' : 'plugin:window|set_fullscreen'
-
-test('the fullscreen button asks the window to go fullscreen, and back', async ({ launch }) => {
+test('the fullscreen button asks for the slide to fill the screen, and back', async ({ launch }) => {
   const app = await launch()
-  const cmd = fullscreenCommand(await app.page.evaluate(() => navigator.userAgent))
   await app.page.locator('#fullscreen').click()
   await expect(app.root).toHaveAttribute('data-fullscreen', '')
   await app.page.locator('#fullscreen').click()
   await expect(app.root).not.toHaveAttribute('data-fullscreen', '')
   expect((await app.calls()).filter((c) => c.cmd.includes('fullscreen') && !c.cmd.includes('is_'))).toEqual([
-    { cmd, args: { label: 'main', value: true } },
-    { cmd, args: { label: 'main', value: false } },
+    { cmd: 'set_slide_fullscreen', args: { on: true } },
+    { cmd: 'set_slide_fullscreen', args: { on: false } },
   ])
 })
 
-test('the control bar stays in fullscreen; only the pointer hides', async ({ launch }) => {
-  const app = await launch()
+async function fullscreenRun(app: App): Promise<void> {
   await ready(app)
   await app.page.locator('#fullscreen').click()
   await expect(app.root).toHaveAttribute('data-fullscreen', '')
-  await app.primary.click()
+  await app.page.keyboard.press('Space')
+  await app.expectPhase('running')
+  // Away from the bar, so that it is free to hide.
+  await app.page.mouse.move(400, 100)
+}
+
+test('in fullscreen the bar and the pointer hide when idle', async ({ launch }) => {
+  const app = await launch()
+  await fullscreenRun(app)
+  await expect(app.root).not.toHaveAttribute('data-bar-hidden', '')
   await app.page.clock.runFor(3_000)
+  await expect(app.root).toHaveAttribute('data-bar-hidden', '')
   await expect(app.root).toHaveAttribute('data-idle', '')
-  await expect(app.page.locator('#bar')).toBeVisible()
-  await expect(app.clock).toBeVisible()
+  // The slide is not resized as the bar goes.
+  const stage = await app.page.locator('#stage').boundingBox()
+  expect(stage?.height).toBe(app.page.viewportSize()?.height)
+})
+
+test('in fullscreen, moving the pointer brings back only the pointer, unless it nears the bar', async ({ launch }) => {
+  const app = await launch()
+  await fullscreenRun(app)
+  await app.page.clock.runFor(3_000)
+  await expect(app.root).toHaveAttribute('data-bar-hidden', '')
+
+  await app.page.mouse.move(400, 200)
+  await expect(app.root).not.toHaveAttribute('data-idle', '')
+  await expect(app.root).toHaveAttribute('data-bar-hidden', '')
+
+  const height = app.page.viewportSize()!.height
+  await app.page.mouse.move(400, height - 70)
+  await expect(app.root).not.toHaveAttribute('data-bar-hidden', '')
+})
+
+test('in fullscreen the bar stays while the pointer is on it', async ({ launch }) => {
+  const app = await launch()
+  await fullscreenRun(app)
+  await app.page.locator('#toggle-clock').hover()
+  await app.page.clock.runFor(10_000)
+  await expect(app.root).not.toHaveAttribute('data-bar-hidden', '')
+  await expect(app.root).not.toHaveAttribute('data-idle', '')
+
+  await app.page.mouse.move(400, 100)
+  await app.page.clock.runFor(3_000)
+  await expect(app.root).toHaveAttribute('data-bar-hidden', '')
 })

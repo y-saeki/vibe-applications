@@ -178,11 +178,14 @@ updates:
       prefix: pecha-player
     groups:
       # See the tauri group of /draftpad/src-tauri, including why
-      # minor-and-patch excludes it.
+      # minor-and-patch excludes it. objc2 and objc2-app-kit stay on the
+      # versions Tauri itself uses, so they move with it.
       tauri:
         patterns:
           - tauri
           - tauri-*
+          - objc2
+          - objc2-*
       minor-and-patch:
         update-types:
           - minor
@@ -190,6 +193,8 @@ updates:
         exclude-patterns:
           - tauri
           - tauri-*
+          - objc2
+          - objc2-*
 
   - package-ecosystem: npm
     directory: /pecha-player

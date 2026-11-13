@@ -20,7 +20,7 @@ import {
   onResized,
   openGoogleSignIn,
   setFullscreen,
-  setSimpleFullscreen,
+  setSlideFullscreen,
   setTitle,
   type RemoteError,
 } from './backend'
@@ -301,7 +301,7 @@ async function useDeck(bytes: Uint8Array, label: string, generation: number): Pr
 
 /** The deck's name goes in the title bar, as a document's would. */
 function showTitle(label: string): void {
-  const title = `${label} — pecha-player`
+  const title = `pecha-player - ${label}`
   document.title = title
   setTitle(title).catch(() => {
     // Outside Tauri there is no window to name.
@@ -445,34 +445,75 @@ for (const name of ['clock', 'progress', 'counter'] as const) {
 }
 
 // ---------- Fullscreen ----------
+//
+// In fullscreen the slide takes the whole screen and the bar floats over its
+// bottom edge. After a while without input the bar fades out and the pointer
+// hides. Moving the pointer brings the pointer back; only bringing it near the
+// bottom of the screen brings the bar back. The bar stays while the pointer
+// is over it, or while the loader is open.
 
+const bar = $('bar')
+/** How close to the bottom edge, in CSS pixels, the pointer brings the bar back. */
+const REVEAL_ZONE = 80
+const IDLE_MS = 2500
 let idleTimer: number | undefined
+let overBar = false
 
-function markActive(): void {
-  delete app.dataset.idle
-  window.clearTimeout(idleTimer)
-  if (app.dataset.fullscreen !== undefined) {
-    idleTimer = window.setTimeout(() => {
-      if (app.dataset.loader === undefined) app.dataset.idle = ''
-    }, 2500)
-  }
+function showBar(): void {
+  delete app.dataset.barHidden
 }
 
+function scheduleIdle(): void {
+  window.clearTimeout(idleTimer)
+  if (app.dataset.fullscreen === undefined) return
+  idleTimer = window.setTimeout(() => {
+    if (overBar || app.dataset.loader !== undefined) return
+    app.dataset.idle = ''
+    app.dataset.barHidden = ''
+  }, IDLE_MS)
+}
+
+function onPointerMove(event: MouseEvent): void {
+  delete app.dataset.idle
+  if (app.dataset.fullscreen !== undefined && window.innerHeight - event.clientY <= REVEAL_ZONE) showBar()
+  scheduleIdle()
+}
+
+bar.addEventListener('mouseenter', () => {
+  overBar = true
+  showBar()
+  window.clearTimeout(idleTimer)
+})
+bar.addEventListener('mouseleave', () => {
+  overBar = false
+  scheduleIdle()
+})
+// Tabbing into a hidden bar shows it, so focus is never on something unseen.
+bar.addEventListener('focusin', () => {
+  showBar()
+  scheduleIdle()
+})
+
 /**
- * Whether we put the window in simple fullscreen (macOS only). The window
- * cannot be asked about it, unlike native fullscreen, which the green title
- * bar button can still enter.
+ * Whether we put the window in fullscreen ourselves. On macOS that mode is the
+ * simple one, which the window does not report through `isFullscreen`; the
+ * native one, which the green title bar button can still enter, it does.
  */
-let simpleFullscreen = false
+let slideFullscreen = false
 
 async function syncFullscreen(): Promise<void> {
   try {
-    const on = simpleFullscreen || (await isFullscreen())
+    const on = slideFullscreen || (await isFullscreen())
+    const was = app.dataset.fullscreen !== undefined
     if (on) app.dataset.fullscreen = ''
     else delete app.dataset.fullscreen
     fullscreenButton.title = on ? 'フルスクリーンを終了' : 'フルスクリーン'
     fullscreenButton.setAttribute('aria-label', fullscreenButton.title)
-    markActive()
+    if (on !== was) {
+      delete app.dataset.idle
+      showBar()
+      scheduleIdle()
+    }
   } catch {
     // Outside Tauri there is no window to ask.
   }
@@ -480,19 +521,19 @@ async function syncFullscreen(): Promise<void> {
 
 async function toggleFullscreen(): Promise<void> {
   const on = app.dataset.fullscreen === undefined
-  if (isMac && (on || simpleFullscreen)) {
-    // Simple fullscreen has no title bar to slide down over the slide.
-    await setSimpleFullscreen(on)
-    simpleFullscreen = on
+  if (on || slideFullscreen) {
+    await setSlideFullscreen(on)
+    slideFullscreen = on
   } else {
-    await setFullscreen(on)
+    // Native fullscreen entered from the title bar's green button.
+    await setFullscreen(false)
   }
   await syncFullscreen()
 }
 
 fullscreenButton.addEventListener('click', () => void toggleFullscreen())
 onResized(() => void syncFullscreen())
-window.addEventListener('mousemove', markActive)
+window.addEventListener('mousemove', onPointerMove)
 void syncFullscreen()
 
 // ---------- Keyboard ----------

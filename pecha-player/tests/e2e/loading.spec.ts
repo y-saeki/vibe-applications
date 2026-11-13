@@ -25,9 +25,9 @@ test('the file name goes in the title bar, not the control bar', async ({ launch
   const app = await launch()
   await app.loadPdf(21)
   await app.expectPhase('ready')
-  await expect(app.page).toHaveTitle('talk.pdf — pecha-player')
+  await expect(app.page).toHaveTitle('pecha-player - talk.pdf')
   expect((await app.calls()).filter((c) => c.cmd === 'plugin:window|set_title')).toEqual([
-    { cmd: 'plugin:window|set_title', args: { label: 'main', value: 'talk.pdf — pecha-player' } },
+    { cmd: 'plugin:window|set_title', args: { label: 'main', value: 'pecha-player - talk.pdf' } },
   ])
   await expect(app.page.locator('#bar')).not.toContainText('talk.pdf')
 })
@@ -71,7 +71,7 @@ test('a Google Slides link loads the deck', async ({ launch }) => {
   await app.loadUrl(DECK)
   await app.expectPhase('ready')
   await app.expectPage(1)
-  await expect(app.page).toHaveTitle('Google スライド — pecha-player')
+  await expect(app.page).toHaveTitle('pecha-player - Google スライド')
   expect((await app.calls()).filter((c) => c.cmd === 'load_google_slides')).toEqual([
     { cmd: 'load_google_slides', args: { url: DECK } },
   ])
@@ -93,7 +93,7 @@ test('a private deck asks for a Google sign-in, then loads by itself', async ({ 
 
   await app.emit('google-sign-in', 'done')
   await app.expectPhase('ready')
-  await expect(app.page).toHaveTitle('Google スライド — pecha-player')
+  await expect(app.page).toHaveTitle('pecha-player - Google スライド')
 })
 
 test('closing the sign-in window early lets the user try again', async ({ launch }) => {
@@ -122,6 +122,6 @@ test('loading another deck keeps the current one until the new one is in', async
   await app.page.locator('#close-loader').click()
   await expect(app.loader).toBeHidden()
   await app.expectPhase('ready')
-  await expect(app.page).toHaveTitle('talk.pdf — pecha-player')
+  await expect(app.page).toHaveTitle('pecha-player - talk.pdf')
   await expect(app.counter).toHaveText('0 / 20')
 })
