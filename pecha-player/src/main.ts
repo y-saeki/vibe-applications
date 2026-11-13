@@ -473,7 +473,15 @@ function scheduleIdle(): void {
   }, IDLE_MS)
 }
 
+/** Where the pointer last was, to tell a real move from a synthetic one. */
+let lastPointer = { x: Number.NaN, y: Number.NaN }
+
 function onPointerMove(event: MouseEvent): void {
+  // WebKit sends a mousemove without the pointer moving whenever the page
+  // under it changes, which the clock does every second during a run. Those
+  // must not count as activity, or the bar would never hide.
+  if (event.clientX === lastPointer.x && event.clientY === lastPointer.y) return
+  lastPointer = { x: event.clientX, y: event.clientY }
   delete app.dataset.idle
   if (app.dataset.fullscreen !== undefined && window.innerHeight - event.clientY <= REVEAL_ZONE) showBar()
   scheduleIdle()

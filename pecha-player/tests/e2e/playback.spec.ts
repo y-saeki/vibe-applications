@@ -215,3 +215,17 @@ test('in fullscreen the bar stays while the pointer is on it', async ({ launch }
   await app.page.clock.runFor(3_000)
   await expect(app.root).toHaveAttribute('data-bar-hidden', '')
 })
+
+test('in fullscreen a mousemove where the pointer did not move does not keep the bar up', async ({ launch }) => {
+  const app = await launch()
+  await fullscreenRun(app)
+  // WebKit fires these whenever the page under the pointer changes, such as
+  // the clock ticking.
+  for (let i = 0; i < 3; i++) {
+    await app.page.clock.runFor(1_000)
+    await app.page.evaluate(() =>
+      window.dispatchEvent(new MouseEvent('mousemove', { clientX: 400, clientY: 100, bubbles: true })),
+    )
+  }
+  await expect(app.root).toHaveAttribute('data-bar-hidden', '')
+})
