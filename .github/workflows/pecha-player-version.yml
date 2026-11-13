@@ -84,6 +84,10 @@ jobs:
         if: steps.scope.outputs.touched == 'true'
         run: |
           git fetch --depth=1 origin "${BASE_REF}"
+          if ! git cat-file -e FETCH_HEAD:pecha-player/src-tauri/tauri.conf.json 2>/dev/null; then
+            echo "::notice::pecha-player is new on ${BASE_REF}; ${VERSION} will be its first release."
+            exit 0
+          fi
           base="$(git show FETCH_HEAD:pecha-player/src-tauri/tauri.conf.json | jq -re .version)"
           if [ "${VERSION}" = "${base}" ]; then
             if [ "${NO_RELEASE}" = "true" ]; then

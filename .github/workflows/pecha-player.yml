@@ -191,8 +191,10 @@ jobs:
         run: |
           version="$(jq -re .version pecha-player/src-tauri/tauri.conf.json)"
           git fetch --depth=1 origin "${BASE_REF}"
-          base="$(git show FETCH_HEAD:pecha-player/src-tauri/tauri.conf.json | jq -re .version)"
-          if [ "${version}" = "${base}" ]; then
+          base="$(git show FETCH_HEAD:pecha-player/src-tauri/tauri.conf.json 2>/dev/null | jq -re .version || true)"
+          if [ -z "${base}" ]; then
+            note="✅ 初回のリリースです(\`${version}\`)。"
+          elif [ "${version}" = "${base}" ]; then
             note="⚠️ バージョンは \`${version}\` のままです。**このままマージしても Release は作られません。**"
           else
             note="✅ バージョンは \`${base}\` から \`${version}\` に上がります。"
