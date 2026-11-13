@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>pecha-player</title>
+    <link rel="stylesheet" href="style.css" />
+    <script type="module" src="main.js"></script>
+  </head>
+  <body>
+    <main id="app" data-phase="empty">
+      <section id="stage" aria-label="スライド">
+        <div id="slide">
+          <canvas id="canvas-a" aria-hidden="true"></canvas>
+          <canvas id="canvas-b" aria-hidden="true"></canvas>
+        </div>
+
+        <div id="hud" aria-live="off">
+          <div id="clock" class="pill" aria-label="経過時間">0:00</div>
+          <div id="counter" class="pill" aria-label="スライド枚数">0 / 20</div>
+        </div>
+        <div id="progress" aria-hidden="true"><div id="progress-fill"></div></div>
+
+        <div id="shutter" aria-hidden="true">
+          <div class="shutter-message">
+            <p id="end-title" class="end-title"></p>
+            <p id="end-detail" class="end-detail"></p>
+          </div>
+        </div>
+
+        <div id="loader" role="dialog" aria-labelledby="loader-title">
+          <div class="panel" id="drop-zone">
+            <h1 id="loader-title">スライドを読み込む</h1>
+
+            <div class="source">
+              <p class="source-label">PDF ファイル</p>
+              <p class="hint">ここにドロップするか、ファイルを選びます。</p>
+              <button id="choose-file" type="button">PDF を選ぶ…</button>
+            </div>
+
+            <form id="url-form" class="source" novalidate>
+              <label class="source-label" for="url">Google スライドの URL</label>
+              <div class="row">
+                <input
+                  id="url"
+                  type="url"
+                  autocomplete="off"
+                  spellcheck="false"
+                  placeholder="https://docs.google.com/presentation/d/…"
+                />
+                <button id="open-url" type="submit">開く</button>
+              </div>
+            </form>
+
+            <div id="status" class="status" role="status" hidden>
+              <span class="spinner" aria-hidden="true"></span>
+              <span id="status-text"></span>
+            </div>
+            <p id="error" class="error" role="alert" hidden></p>
+            <div id="sign-in" class="sign-in" hidden>
+              <p id="sign-in-text">このスライドを開くには Google へのログインが必要です。</p>
+              <button id="sign-in-button" type="button">Google にログイン…</button>
+            </div>
+
+            <div class="panel-footer">
+              <button id="close-loader" type="button">キャンセル</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <footer id="bar">
+        <div class="bar-start">
+          <button id="load-button" type="button" title="スライドを読み込む (⌘O)">読み込み</button>
+          <span id="deck-info" class="deck-info"></span>
+        </div>
+        <div class="bar-center">
+          <button id="primary" type="button" class="primary" disabled>スタート</button>
+        </div>
+        <div class="bar-end">
+          <div class="toggles" role="group" aria-label="表示">
+            <button id="toggle-clock" type="button" class="toggle" aria-pressed="true" title="経過時間を表示">時計</button>
+            <button id="toggle-progress" type="button" class="toggle" aria-pressed="true" title="次のスライドまでの残りを表示">進行バー</button>
+            <button id="toggle-counter" type="button" class="toggle" aria-pressed="true" title="何枚目かを表示">枚数</button>
+          </div>
+          <button id="fullscreen" type="button" class="icon" title="フルスクリーン" aria-label="フルスクリーン">
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4" />
+            </svg>
+          </button>
+        </div>
+      </footer>
+
+      <input id="file-input" type="file" accept="application/pdf,.pdf" hidden />
+    </main>
+  </body>
+</html>
