@@ -35,7 +35,6 @@ export class App {
   readonly loader: Locator
   readonly primary: Locator
   readonly loadButton: Locator
-  readonly deckInfo: Locator
   readonly clock: Locator
   readonly counter: Locator
   readonly progress: Locator
@@ -55,7 +54,6 @@ export class App {
     this.loader = page.locator('#loader')
     this.primary = page.locator('#primary')
     this.loadButton = page.locator('#load-button')
-    this.deckInfo = page.locator('#deck-info')
     this.clock = page.locator('#clock')
     this.counter = page.locator('#counter')
     this.progress = page.locator('#progress')

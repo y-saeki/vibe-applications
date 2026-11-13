@@ -144,11 +144,42 @@ test('the clock, counter and progress bar can each be hidden, and stay so', asyn
   await expect(app.page.locator('#toggle-progress')).toHaveAttribute('aria-pressed', 'false')
 })
 
-test('the fullscreen button asks the window to go fullscreen', async ({ launch }) => {
+test('the clock and counter sit in the control bar, clear of the slide', async ({ launch }) => {
   const app = await launch()
+  await ready(app)
+  const bar = app.page.locator('#bar')
+  await expect(bar.locator('#clock')).toBeVisible()
+  await expect(bar.locator('#counter')).toBeVisible()
+  await expect(bar.locator('#progress')).toHaveCount(1)
+  await expect(app.page.locator('#stage #clock, #stage #counter, #stage #progress')).toHaveCount(0)
+})
+
+// On macOS the window goes to simple fullscreen, which has no title bar to
+// slide down over the slide; elsewhere it is the ordinary fullscreen.
+const fullscreenCommand = (userAgent: string) =>
+  userAgent.includes('Mac') ? 'plugin:window|set_simple_fullscreen' : 'plugin:window|set_fullscreen'
+
+test('the fullscreen button asks the window to go fullscreen, and back', async ({ launch }) => {
+  const app = await launch()
+  const cmd = fullscreenCommand(await app.page.evaluate(() => navigator.userAgent))
   await app.page.locator('#fullscreen').click()
   await expect(app.root).toHaveAttribute('data-fullscreen', '')
-  expect((await app.calls()).filter((c) => c.cmd === 'plugin:window|set_fullscreen')).toEqual([
-    { cmd: 'plugin:window|set_fullscreen', args: { label: 'main', value: true } },
+  await app.page.locator('#fullscreen').click()
+  await expect(app.root).not.toHaveAttribute('data-fullscreen', '')
+  expect((await app.calls()).filter((c) => c.cmd.includes('fullscreen') && !c.cmd.includes('is_'))).toEqual([
+    { cmd, args: { label: 'main', value: true } },
+    { cmd, args: { label: 'main', value: false } },
   ])
+})
+
+test('the control bar stays in fullscreen; only the pointer hides', async ({ launch }) => {
+  const app = await launch()
+  await ready(app)
+  await app.page.locator('#fullscreen').click()
+  await expect(app.root).toHaveAttribute('data-fullscreen', '')
+  await app.primary.click()
+  await app.page.clock.runFor(3_000)
+  await expect(app.root).toHaveAttribute('data-idle', '')
+  await expect(app.page.locator('#bar')).toBeVisible()
+  await expect(app.clock).toBeVisible()
 })

@@ -59,6 +59,11 @@ function handle(cmd: string, args: unknown): unknown {
     case 'plugin:window|set_fullscreen':
       fullscreen = (args as { value: boolean }).value
       return null
+    case 'plugin:window|set_simple_fullscreen':
+      // The real window does not report this through is_fullscreen either.
+      return null
+    case 'plugin:window|set_title':
+      return null
     case 'plugin:window|is_fullscreen':
       return fullscreen
     default:

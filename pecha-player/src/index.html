@@ -15,12 +15,6 @@
           <canvas id="canvas-b" aria-hidden="true"></canvas>
         </div>
 
-        <div id="hud" aria-live="off">
-          <div id="clock" class="pill" aria-label="経過時間">0:00</div>
-          <div id="counter" class="pill" aria-label="スライド枚数">0 / 20</div>
-        </div>
-        <div id="progress" aria-hidden="true"><div id="progress-fill"></div></div>
-
         <div id="shutter" aria-hidden="true">
           <div class="shutter-message">
             <p id="end-title" class="end-title"></p>
@@ -70,12 +64,14 @@
       </section>
 
       <footer id="bar">
+        <div id="progress" aria-hidden="true"><div id="progress-fill"></div></div>
         <div class="bar-start">
           <button id="load-button" type="button" title="スライドを読み込む (⌘O)">読み込み</button>
-          <span id="deck-info" class="deck-info"></span>
         </div>
         <div class="bar-center">
+          <span id="clock" class="readout" aria-label="経過時間">0:00</span>
           <button id="primary" type="button" class="primary" disabled>スタート</button>
+          <span id="counter" class="readout" aria-label="スライド枚数">0 / 20</span>
         </div>
         <div class="bar-end">
           <div class="toggles" role="group" aria-label="表示">

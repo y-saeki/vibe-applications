@@ -20,6 +20,8 @@ import {
   onResized,
   openGoogleSignIn,
   setFullscreen,
+  setSimpleFullscreen,
+  setTitle,
   type RemoteError,
 } from './backend'
 import { Deck, DeckOpenError, type OpenError } from './deck'
@@ -51,7 +53,6 @@ const errorText = $('error')
 const signIn = $('sign-in')
 const signInText = $('sign-in-text')
 const signInButton = $<HTMLButtonElement>('sign-in-button')
-const deckInfo = $('deck-info')
 const primary = $<HTMLButtonElement>('primary')
 const loadButton = $<HTMLButtonElement>('load-button')
 const fullscreenButton = $<HTMLButtonElement>('fullscreen')
@@ -287,15 +288,24 @@ async function useDeck(bytes: Uint8Array, label: string, generation: number): Pr
   held[1] = { page: 0, key: '' }
   void previous?.destroy()
 
-  deckInfo.textContent =
-    slides < TALK_SLIDES ? `${label} · 表紙 + ${slides} 枚（20 枚に足りません）` : `${label} · 表紙 + ${slides} 枚`
-  deckInfo.classList.toggle('warning', slides < TALK_SLIDES)
-  deckInfo.title = label
+  const short = slides < TALK_SLIDES
+  counter.classList.toggle('warning', short)
+  counter.title = short ? `スライドが ${slides} 枚で、20 枚に足りません` : ''
+  showTitle(label)
   pendingUrl = null
   clearMessages()
   rewind()
   delete app.dataset.loader
   primary.focus()
+}
+
+/** The deck's name goes in the title bar, as a document's would. */
+function showTitle(label: string): void {
+  const title = `${label} — pecha-player`
+  document.title = title
+  setTitle(title).catch(() => {
+    // Outside Tauri there is no window to name.
+  })
 }
 
 async function loadFile(file: File): Promise<void> {
@@ -448,9 +458,16 @@ function markActive(): void {
   }
 }
 
+/**
+ * Whether we put the window in simple fullscreen (macOS only). The window
+ * cannot be asked about it, unlike native fullscreen, which the green title
+ * bar button can still enter.
+ */
+let simpleFullscreen = false
+
 async function syncFullscreen(): Promise<void> {
   try {
-    const on = await isFullscreen()
+    const on = simpleFullscreen || (await isFullscreen())
     if (on) app.dataset.fullscreen = ''
     else delete app.dataset.fullscreen
     fullscreenButton.title = on ? 'フルスクリーンを終了' : 'フルスクリーン'
@@ -462,7 +479,14 @@ async function syncFullscreen(): Promise<void> {
 }
 
 async function toggleFullscreen(): Promise<void> {
-  await setFullscreen(app.dataset.fullscreen === undefined)
+  const on = app.dataset.fullscreen === undefined
+  if (isMac && (on || simpleFullscreen)) {
+    // Simple fullscreen has no title bar to slide down over the slide.
+    await setSimpleFullscreen(on)
+    simpleFullscreen = on
+  } else {
+    await setFullscreen(on)
+  }
   await syncFullscreen()
 }
 

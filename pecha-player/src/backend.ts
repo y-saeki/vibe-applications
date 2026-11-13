@@ -38,6 +38,19 @@ export async function setFullscreen(on: boolean): Promise<void> {
   await getCurrentWindow().setFullscreen(on)
 }
 
+/**
+ * macOS's older fullscreen: the window covers the screen in place, with no
+ * title bar at all. The native one (`setFullscreen`) slides the title bar down
+ * over the top of the slide. On other platforms this is `setFullscreen`.
+ */
+export async function setSimpleFullscreen(on: boolean): Promise<void> {
+  await getCurrentWindow().setSimpleFullscreen(on)
+}
+
+export async function setTitle(title: string): Promise<void> {
+  await getCurrentWindow().setTitle(title)
+}
+
 export async function isFullscreen(): Promise<boolean> {
   return getCurrentWindow().isFullscreen()
 }

@@ -9,7 +9,7 @@
   --font-size: 13px;
   --font-size-small: 12px;
   --font-size-title: 17px;
-  --font-size-hud: 15px;
+  --font-size-readout: 15px;
   --font-size-end: 28px;
 
   --space-1: 4px;
@@ -27,7 +27,8 @@
   --primary-width: 112px;
   --bar-height: 52px;
   --panel-width: 440px;
-  --progress-height: 4px;
+  --progress-height: 3px;
+  --readout-width: 64px;
 
   --stage: #0b0b0c;
   --bar: #1c1c1f;
@@ -50,7 +51,7 @@
   --warning: #ffd60a;
   --error: #ff6961;
   --focus: rgb(255 159 10 / 0.7);
-  --hud: rgb(0 0 0 / 0.55);
+  --end-message: rgb(0 0 0 / 0.55);
   --progress-track: rgb(255 255 255 / 0.12);
   --scrim: rgb(0 0 0 / 0.6);
   --shutter: #19191b;
@@ -122,57 +123,6 @@ input {
   visibility: hidden;
 }
 
-/* ---------- HUD: clock, counter, progress ---------- */
-
-#hud {
-  position: absolute;
-  inset: var(--space-4) var(--space-4) auto;
-  display: flex;
-  justify-content: space-between;
-  pointer-events: none;
-}
-
-.pill {
-  padding: var(--space-1) var(--space-3);
-  border-radius: var(--radius-pill);
-  background: var(--hud);
-  font-size: var(--font-size-hud);
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.02em;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-}
-
-#counter {
-  margin-left: auto;
-}
-
-#app:not([data-clock]) #clock,
-#app:not([data-counter]) #counter,
-#app[data-phase='empty'] #hud {
-  visibility: hidden;
-}
-
-#progress {
-  position: absolute;
-  inset: auto 0 0;
-  height: var(--progress-height);
-  background: var(--progress-track);
-}
-
-#progress-fill {
-  height: 100%;
-  background: var(--accent);
-  transform-origin: left center;
-  transform: scaleX(0);
-}
-
-#app:not([data-progress]) #progress,
-#app:not([data-phase='running']) #progress {
-  visibility: hidden;
-}
-
 /* ---------- Shutter ---------- */
 
 #shutter {
@@ -201,7 +151,7 @@ input {
   text-align: center;
   padding: var(--space-5) var(--space-6);
   border-radius: var(--radius-panel);
-  background: var(--hud);
+  background: var(--end-message);
 }
 
 .end-title {
@@ -214,7 +164,7 @@ input {
 .end-detail {
   margin: var(--space-2) 0 0;
   color: var(--text-secondary);
-  font-size: var(--font-size-hud);
+  font-size: var(--font-size-readout);
   font-variant-numeric: tabular-nums;
 }
 
@@ -369,6 +319,7 @@ input[type='url']::placeholder {
 /* ---------- Control bar ---------- */
 
 #bar {
+  position: relative;
   height: var(--bar-height);
   display: grid;
   grid-template-columns: 1fr auto 1fr;
@@ -377,10 +328,10 @@ input[type='url']::placeholder {
   padding: 0 var(--space-3);
   background: var(--bar);
   border-top: 1px solid var(--bar-border);
-  transition: opacity var(--duration-fast) var(--ease-standard);
 }
 
 .bar-start,
+.bar-center,
 .bar-end {
   display: flex;
   align-items: center;
@@ -392,16 +343,51 @@ input[type='url']::placeholder {
   justify-content: flex-end;
 }
 
-.deck-info {
-  color: var(--text-secondary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+/* The clock and the counter flank Start, at a fixed width so that the button
+   never shifts as the digits change. */
+.readout {
+  width: var(--readout-width);
+  font-size: var(--font-size-readout);
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
 }
 
-.deck-info.warning {
+#clock {
+  text-align: right;
+}
+
+/* A deck short of 20 slides is worth knowing before Start, not during the run. */
+#app:not([data-phase='running']) #counter.warning {
   color: var(--warning);
+}
+
+#app:not([data-clock]) #clock,
+#app:not([data-counter]) #counter,
+#app[data-phase='empty'] .readout {
+  visibility: hidden;
+}
+
+/* The progress line runs along the top edge of the bar, over its border, so
+   nothing is ever drawn over the slide. */
+#progress {
+  position: absolute;
+  inset: -1px 0 auto;
+  height: var(--progress-height);
+  background: var(--progress-track);
+}
+
+#progress-fill {
+  height: 100%;
+  background: var(--accent);
+  transform-origin: left center;
+  transform: scaleX(0);
+}
+
+#app:not([data-progress]) #progress,
+#app:not([data-phase='running']) #progress {
+  visibility: hidden;
 }
 
 .toggles {
@@ -494,24 +480,8 @@ button.primary:active:not(:disabled) {
 
 /* ---------- Fullscreen ---------- */
 
-#app[data-fullscreen] {
-  grid-template-rows: 1fr;
-}
-
-#app[data-fullscreen] #bar {
-  position: fixed;
-  inset: auto 0 0;
-}
-
-#app[data-fullscreen][data-idle] #bar {
-  opacity: 0;
-  pointer-events: none;
-}
-
+/* The bar stays put in fullscreen: the clock and the counter live there. Only
+   the pointer goes away when it has not moved for a while. */
 #app[data-fullscreen][data-idle] {
   cursor: none;
-}
-
-#app[data-fullscreen]:not([data-idle]) #progress {
-  bottom: var(--bar-height);
 }
