@@ -49,6 +49,12 @@ function google(url: string): ArrayBuffer {
   return makePdf(answer.pages).buffer as ArrayBuffer
 }
 
+/** Resolves with `value` a few turns of the microtask queue from now. */
+async function later<T>(value: T): Promise<T> {
+  for (let i = 0; i < 10; i++) await Promise.resolve()
+  return value
+}
+
 function handle(cmd: string, args: unknown): unknown {
   harness.calls.push({ cmd, args })
   switch (cmd) {
@@ -61,12 +67,16 @@ function handle(cmd: string, args: unknown): unknown {
       return null
     case 'set_slide_fullscreen':
       // On macOS the real window does not report this through is_fullscreen
-      // either, so the page must not rely on it.
+      // either, so the page must not rely on it. Like the real one, the window
+      // resizes before the command has answered.
+      void emit('tauri://resize', { width: 1710, height: 1112 })
       return null
     case 'plugin:window|set_title':
       return null
     case 'plugin:window|is_fullscreen':
-      return fullscreen
+      // Answered late, as a round trip to the window is: after a command the
+      // page sent at the same time.
+      return later(fullscreen)
     default:
       throw new Error(`pecha-player test: unexpected command ${cmd}`)
   }

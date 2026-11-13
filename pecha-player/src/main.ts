@@ -511,7 +511,11 @@ let slideFullscreen = false
 
 async function syncFullscreen(): Promise<void> {
   try {
-    const on = slideFullscreen || (await isFullscreen())
+    const native = await isFullscreen()
+    // Read only after the round trip: the window resizes, and so calls this,
+    // while toggleFullscreen is still waiting for its answer, and a value read
+    // before the await would undo what toggleFullscreen settles meanwhile.
+    const on = slideFullscreen || native
     const was = app.dataset.fullscreen !== undefined
     if (on) app.dataset.fullscreen = ''
     else delete app.dataset.fullscreen
