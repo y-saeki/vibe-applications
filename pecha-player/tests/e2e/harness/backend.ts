@@ -32,6 +32,8 @@ export interface Harness {
   calls: Call[]
   /** Sends a backend event to the page, as `Emitter::emit_to` would. */
   emit: (event: string, payload: unknown) => Promise<void>
+  /** Puts the window in or out of fullscreen without the page asking, as the green button does. */
+  fullscreenFromOutside: (on: boolean) => Promise<void>
 }
 
 const harness = window.__pecha
@@ -64,14 +66,26 @@ function handle(cmd: string, args: unknown): unknown {
       return null
     case 'plugin:window|set_fullscreen':
       fullscreen = (args as { value: boolean }).value
-      return null
-    case 'set_slide_fullscreen':
-      // On macOS the real window does not report this through is_fullscreen
-      // either, so the page must not rely on it. Like the real one, the window
-      // resizes before the command has answered.
+      // Like the real window, it resizes before the command has answered.
       void emit('tauri://resize', { width: 1710, height: 1112 })
       return null
+    case 'set_slide_fullscreen':
+      // On macOS the real window does not report this through is_fullscreen,
+      // so the page must not rely on it. The window resizes before the
+      // command has answered.
+      void emit('tauri://resize', { width: 1710, height: 1112 })
+      return null
+    case 'plugin:window|is_fullscreen':
+      // Answered late, as a round trip to the window is: after a command the
+      // page sent at the same time.
+      return later(fullscreen)
     case 'plugin:window|set_title':
+      return null
+    case 'set_slide_fullscreen':
+      // On macOS the real window does not report this through is_fullscreen,
+      // so the page must not rely on it. The window resizes before the
+      // command has answered.
+      void emit('tauri://resize', { width: 1710, height: 1112 })
       return null
     case 'plugin:window|is_fullscreen':
       // Answered late, as a round trip to the window is: after a command the
@@ -83,5 +97,9 @@ function handle(cmd: string, args: unknown): unknown {
 }
 
 harness.emit = (event, payload) => emit(event, payload)
+harness.fullscreenFromOutside = (on) => {
+  fullscreen = on
+  return emit('tauri://resize', { width: 1710, height: 1112 })
+}
 mockWindows('main')
 mockIPC(handle, { shouldMockEvents: true })

@@ -447,105 +447,103 @@ for (const name of ['clock', 'progress', 'counter'] as const) {
 // ---------- Fullscreen ----------
 //
 // In fullscreen the slide takes the whole screen and the bar floats over its
-// bottom edge. After a while without input the bar fades out and the pointer
-// hides. Moving the pointer brings the pointer back; only bringing it near the
-// bottom of the screen brings the bar back. The bar stays while the pointer
-// is over it, or while the loader is open.
+// bottom edge. After a while without the pointer moving, the bar fades out and
+// the pointer hides, unless the pointer is on the bar or the loader is open.
+// Moving the pointer brings the pointer back; bringing it near the bottom edge
+// brings the bar back too.
 
 const bar = $('bar')
 /** How close to the bottom edge, in CSS pixels, the pointer brings the bar back. */
 const REVEAL_ZONE = 80
 const IDLE_MS = 2500
 let idleTimer: number | undefined
-let overBar = false
+/** Where the pointer last was, in the page. */
+let pointer: { x: number; y: number } | null = null
+
+function inFullscreen(): boolean {
+  return app.dataset.fullscreen !== undefined
+}
+
+function pointerOnBar(): boolean {
+  if (!pointer) return false
+  const box = bar.getBoundingClientRect()
+  return pointer.x >= box.left && pointer.x <= box.right && pointer.y >= box.top && pointer.y <= box.bottom
+}
 
 function showBar(): void {
   delete app.dataset.barHidden
 }
 
-function scheduleIdle(): void {
+function wake(): void {
+  delete app.dataset.idle
   window.clearTimeout(idleTimer)
-  if (app.dataset.fullscreen === undefined) return
+  if (!inFullscreen()) return
   idleTimer = window.setTimeout(() => {
-    if (overBar || app.dataset.loader !== undefined) return
+    // The pointer has not moved since; if it rests on the bar, the bar stays
+    // until it moves off and comes to rest elsewhere.
+    if (pointerOnBar() || app.dataset.loader !== undefined) return
     app.dataset.idle = ''
     app.dataset.barHidden = ''
   }, IDLE_MS)
 }
 
-/** Where the pointer last was, to tell a real move from a synthetic one. */
-let lastPointer = { x: Number.NaN, y: Number.NaN }
-
-function onPointerMove(event: MouseEvent): void {
-  // WebKit sends a mousemove without the pointer moving whenever the page
-  // under it changes, which the clock does every second during a run. Those
-  // must not count as activity, or the bar would never hide.
-  if (event.clientX === lastPointer.x && event.clientY === lastPointer.y) return
-  lastPointer = { x: event.clientX, y: event.clientY }
-  delete app.dataset.idle
-  if (app.dataset.fullscreen !== undefined && window.innerHeight - event.clientY <= REVEAL_ZONE) showBar()
-  scheduleIdle()
-}
-
-bar.addEventListener('mouseenter', () => {
-  overBar = true
-  showBar()
-  window.clearTimeout(idleTimer)
-})
-bar.addEventListener('mouseleave', () => {
-  overBar = false
-  scheduleIdle()
+window.addEventListener('pointermove', (event) => {
+  // WebKit also sends a move without the pointer moving whenever the page
+  // under it changes, as the clock does every second. Only real moves count.
+  if (pointer && pointer.x === event.clientX && pointer.y === event.clientY) return
+  pointer = { x: event.clientX, y: event.clientY }
+  if (inFullscreen() && window.innerHeight - event.clientY <= REVEAL_ZONE) showBar()
+  wake()
 })
 // Tabbing into a hidden bar shows it, so focus is never on something unseen.
 bar.addEventListener('focusin', () => {
   showBar()
-  scheduleIdle()
+  wake()
 })
 
 /**
- * Whether we put the window in fullscreen ourselves. On macOS that mode is the
- * simple one, which the window does not report through `isFullscreen`; the
- * native one, which the green title bar button can still enter, it does.
+ * Whether we put the window in fullscreen ourselves. On macOS that is the
+ * simple fullscreen, which the window does not report through `isFullscreen`;
+ * the native one, which the green title bar button can still enter, it does.
  */
 let slideFullscreen = false
 
 async function syncFullscreen(): Promise<void> {
+  let native: boolean
   try {
-    const native = await isFullscreen()
-    // Read only after the round trip: the window resizes, and so calls this,
-    // while toggleFullscreen is still waiting for its answer, and a value read
-    // before the await would undo what toggleFullscreen settles meanwhile.
-    const on = slideFullscreen || native
-    const was = app.dataset.fullscreen !== undefined
-    if (on) app.dataset.fullscreen = ''
-    else delete app.dataset.fullscreen
-    fullscreenButton.title = on ? 'フルスクリーンを終了' : 'フルスクリーン'
-    fullscreenButton.setAttribute('aria-label', fullscreenButton.title)
-    if (on !== was) {
-      delete app.dataset.idle
-      showBar()
-      scheduleIdle()
-    }
+    native = await isFullscreen()
   } catch {
-    // Outside Tauri there is no window to ask.
+    return // Outside Tauri there is no window to ask.
   }
+  // Read only after the round trip: the window resizes, and so calls this,
+  // while toggleFullscreen is still waiting for its answer, and a value read
+  // before the await would undo what toggleFullscreen settles meanwhile.
+  const on = slideFullscreen || native
+  if (on === inFullscreen()) return
+  if (on) app.dataset.fullscreen = ''
+  else delete app.dataset.fullscreen
+  fullscreenButton.title = on ? 'フルスクリーンを終了' : 'フルスクリーン'
+  fullscreenButton.setAttribute('aria-label', fullscreenButton.title)
+  showBar()
+  wake()
 }
 
 async function toggleFullscreen(): Promise<void> {
-  const on = app.dataset.fullscreen === undefined
+  const on = !inFullscreen()
   if (on || slideFullscreen) {
     await setSlideFullscreen(on)
     slideFullscreen = on
   } else {
-    // Native fullscreen entered from the title bar's green button.
+    // The native fullscreen, entered from the title bar's green button.
     await setFullscreen(false)
   }
   await syncFullscreen()
 }
 
 fullscreenButton.addEventListener('click', () => void toggleFullscreen())
+// Fullscreen can also be entered from the green title bar button or the View
+// menu; either way the window resizes.
 onResized(() => void syncFullscreen())
-window.addEventListener('mousemove', onPointerMove)
 void syncFullscreen()
 
 // ---------- Keyboard ----------

@@ -216,7 +216,7 @@ test('in fullscreen the bar stays while the pointer is on it', async ({ launch }
   await expect(app.root).toHaveAttribute('data-bar-hidden', '')
 })
 
-test('in fullscreen a mousemove where the pointer did not move does not keep the bar up', async ({ launch }) => {
+test('in fullscreen a pointermove where the pointer did not move does not keep the bar up', async ({ launch }) => {
   const app = await launch()
   await fullscreenRun(app)
   // WebKit fires these whenever the page under the pointer changes, such as
@@ -224,8 +224,36 @@ test('in fullscreen a mousemove where the pointer did not move does not keep the
   for (let i = 0; i < 3; i++) {
     await app.page.clock.runFor(1_000)
     await app.page.evaluate(() =>
-      window.dispatchEvent(new MouseEvent('mousemove', { clientX: 400, clientY: 100, bubbles: true })),
+      window.dispatchEvent(new PointerEvent('pointermove', { clientX: 400, clientY: 100, bubbles: true })),
     )
   }
   await expect(app.root).toHaveAttribute('data-bar-hidden', '')
+})
+
+test('fullscreen from the bar: the bar hides once the pointer rests off it', async ({ launch }) => {
+  const app = await launch()
+  await ready(app)
+  await app.primary.click()
+  // The pointer is on the bar after clicking the button there.
+  await app.page.locator('#fullscreen').click()
+  await expect(app.root).toHaveAttribute('data-fullscreen', '')
+  await app.page.clock.runFor(5_000)
+  await expect(app.root).not.toHaveAttribute('data-bar-hidden', '')
+
+  await app.page.mouse.move(400, 100)
+  await app.page.clock.runFor(3_000)
+  await expect(app.root).toHaveAttribute('data-bar-hidden', '')
+  await expect(app.root).toHaveAttribute('data-idle', '')
+})
+
+test('fullscreen entered from outside the app, such as the green button, is followed', async ({ launch }) => {
+  const app = await launch()
+  await app.fullscreenFromOutside(true)
+  await expect(app.root).toHaveAttribute('data-fullscreen', '')
+  // Leaving it from the app's button leaves the native fullscreen.
+  await app.page.locator('#fullscreen').click()
+  await expect(app.root).not.toHaveAttribute('data-fullscreen', '')
+  expect((await app.calls()).filter((c) => c.cmd.includes('set_') && c.cmd.includes('fullscreen'))).toEqual([
+    { cmd: 'plugin:window|set_fullscreen', args: { label: 'main', value: false } },
+  ])
 })

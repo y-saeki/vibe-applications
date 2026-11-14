@@ -34,14 +34,14 @@ export function onGoogleSignIn(handler: (result: 'done' | 'closed') => void): vo
   void listen<'done' | 'closed'>('google-sign-in', (event) => handler(event.payload))
 }
 
+/** The ordinary fullscreen; on macOS, the one the green title bar button enters. */
 export async function setFullscreen(on: boolean): Promise<void> {
   await getCurrentWindow().setFullscreen(on)
 }
 
 /**
  * Lets the slide fill the whole screen: on macOS with no title bar, menu bar or
- * Dock (see `set_slide_fullscreen` in src-tauri/src/lib.rs), elsewhere the
- * ordinary fullscreen.
+ * Dock (src-tauri/src/fullscreen.rs), elsewhere the ordinary fullscreen.
  */
 export async function setSlideFullscreen(on: boolean): Promise<void> {
   await invoke('set_slide_fullscreen', { on })

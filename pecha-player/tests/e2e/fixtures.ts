@@ -107,6 +107,11 @@ export class App {
     return this.page.evaluate(() => window.__pecha.calls)
   }
 
+  /** Fullscreen entered or left from outside the page: the green button, the View menu. */
+  async fullscreenFromOutside(on: boolean): Promise<void> {
+    await this.page.evaluate((value) => window.__pecha.fullscreenFromOutside(value), on)
+  }
+
   async emit(event: string, payload: unknown): Promise<void> {
     await this.page.evaluate(([e, p]) => window.__pecha.emit(e as string, p), [event, payload] as const)
   }
@@ -132,7 +137,7 @@ export const test = base.extend<{ launch: (options?: LaunchOptions) => Promise<A
       })
       await page.clock.install()
       await page.addInitScript((value: BackendConfig) => {
-        window.__pecha = { config: value, calls: [], emit: async () => {} }
+        window.__pecha = { config: value, calls: [], emit: async () => {}, fullscreenFromOutside: async () => {} }
       }, config)
       await page.addInitScript({ path: HARNESS_BUNDLE })
       await page.goto('/')

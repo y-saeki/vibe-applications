@@ -20,11 +20,13 @@ serde = { version = "1", features = ["derive"] }
 # followed by hand so that every hop is checked against the allowed hosts.
 ureq = "3"
 
-# Hiding the menu bar and the Dock while the slide fills the screen
-# (`set_slide_fullscreen`). Tauri already depends on these.
+# The simple fullscreen with the menu bar and the Dock hidden, and the web
+# view kept as first responder (`src/fullscreen.rs`). Tauri already depends on
+# these.
 [target.'cfg(target_os = "macos")'.dependencies]
+dispatch2 = "0.3"
 objc2 = "0.6"
-objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSResponder"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSResponder", "NSView", "NSWindow"] }
 
 [profile.release]
 codegen-units = 1

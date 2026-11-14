@@ -1,3 +1,5 @@
+#[cfg(target_os = "macos")]
+mod fullscreen;
 mod google;
 
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -22,6 +24,15 @@ pub fn run() {
             open_google_sign_in,
             set_slide_fullscreen
         ])
+        .setup(|app| {
+            #[cfg(target_os = "macos")]
+            if let Some(main) = app.get_webview_window("main") {
+                fullscreen::remember_web_view(&main);
+            }
+            #[cfg(not(target_os = "macos"))]
+            let _ = app;
+            Ok(())
+        })
         .run(tauri::generate_context!())
         .expect("error while running pecha-player");
 }
@@ -122,38 +133,14 @@ async fn open_google_sign_in(app: AppHandle, url: String) -> Result<(), DeckErro
     Ok(())
 }
 
-/// Lets the slide fill the whole screen, or brings the window back.
-///
-/// On macOS this is the simple fullscreen, which has no title bar, and the menu
-/// bar and the Dock are hidden outright rather than sliding in when the
-/// pointer touches the edge. Leaving it restores what was there before. On
-/// other platforms it is the ordinary fullscreen.
+/// Lets the slide fill the whole screen, or brings the window back: on macOS
+/// with no title bar, menu bar or Dock (`src/fullscreen.rs`), elsewhere the
+/// ordinary fullscreen.
 #[tauri::command]
 async fn set_slide_fullscreen(window: WebviewWindow, on: bool) -> Result<(), String> {
-    window
-        .set_simple_fullscreen(on)
-        .map_err(|e| e.to_string())?;
     #[cfg(target_os = "macos")]
-    if on {
-        // Queued behind the switch above, which sets its own (auto-hiding)
-        // presentation options; these replace them until fullscreen ends.
-        window
-            .run_on_main_thread(hide_menu_bar_and_dock)
-            .map_err(|e| e.to_string())?;
-    }
-    Ok(())
-}
-
-#[cfg(target_os = "macos")]
-fn hide_menu_bar_and_dock() {
-    use objc2::MainThreadMarker;
-    use objc2_app_kit::{NSApplication, NSApplicationPresentationOptions};
-
-    let Some(mtm) = MainThreadMarker::new() else {
-        return;
-    };
-    let app = NSApplication::sharedApplication(mtm);
-    app.setPresentationOptions(
-        NSApplicationPresentationOptions::HideDock | NSApplicationPresentationOptions::HideMenuBar,
-    );
+    let result = fullscreen::set(&window, on);
+    #[cfg(not(target_os = "macos"))]
+    let result = window.set_fullscreen(on);
+    result.map_err(|e| e.to_string())
 }
