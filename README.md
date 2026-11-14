@@ -17,5 +17,6 @@ Claude Code で作成したアプリケーションを集めたリポジトリ�
 - [Mail Crew](./mailcrew/) — Gmail の受信トレイを、スレッドごとのカードにして横に並べて読むメーラー。完了・タグ・あとで読む・スターをカードのボタンで済ませられる(macOS)
 - [meta-gesture](./meta-gesture/) — 右ボタンを押したまま描くマウスジェスチャーに、アプリごとに違うキーを割り当てる常駐アプリ。同じジェスチャーで、どのアプリでも同じ操作ができる(macOS / Windows)
 - [myaku](./myaku/) — プロセスごとの CPU・メモリ・ネットワークの使用量を、直近 1 分のグラフで並べて見せる常駐アプリ(macOS / Windows)
+- [pecha-player](./pecha-player/) — 手持ちのスライド(PDF・Google スライド)を、20 秒×20 枚の PechaKucha 形式で自動再生して登壇の練習をするプレイヤー(macOS / Windows)
 - [tenabuku-app](./tenabuku-app/) — はてなブックマークを読むための、自分用の非公式アプリ「てなブク」(iOS)
 - [winwin](./winwin/) — キーボードショートカットで、前面のウィンドウを決まった位置・大きさに並べ直すツール(macOS / Windows)
