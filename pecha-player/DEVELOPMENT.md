@@ -114,6 +114,9 @@ macOS 標準のフルスクリーン(`setFullscreen`)を使わないのは、メ
 simple fullscreen に切り替えると、tao がウィンドウのスタイルを変え、自分のビューを first responder にします。
 そのままでは、クリックするまで web view にポインタの動きもキー入力も届きません。そこで、切り替えのたびに
 web view を first responder に戻しています。
+この処理は、ウィンドウを探すところも含めてすべてメインスレッドで行います。スタイルの変更中は web view が
+ウィンドウから一時的に外れるため、別のスレッドからウィンドウを探すと見つからずにパニックすることがあります
+(`WebviewWindow::ns_window` がそうでした)。
 
 simple fullscreen に入っているかどうかはウィンドウに問い合わせられないので、`src/main.ts` が自分で覚えています。
 緑のボタンから入る macOS 標準のフルスクリーンは OS の動きのままで、`isFullscreen` で検知して表示を合わせます。

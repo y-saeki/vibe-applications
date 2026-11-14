@@ -15,7 +15,7 @@ use std::sync::OnceLock;
 
 use dispatch2::DispatchQueue;
 use objc2::MainThreadMarker;
-use objc2_app_kit::{NSApplication, NSApplicationPresentationOptions, NSView, NSWindow};
+use objc2_app_kit::{NSApplication, NSApplicationPresentationOptions, NSView};
 use tauri::WebviewWindow;
 
 /// The main window's WKWebView, as an address (`NSView *`).
@@ -30,9 +30,11 @@ pub fn remember_web_view(window: &WebviewWindow) {
 
 pub fn set(window: &WebviewWindow, on: bool) -> tauri::Result<()> {
     window.set_simple_fullscreen(on)?;
-    let ns_window = window.ns_window()? as usize;
-    // Queued behind the switch above, which runs on the main thread when the
-    // event loop gets to it.
+    // Everything below touches AppKit, so it runs on the main thread. That
+    // includes finding the NSWindow: while the switch above restyles it, the
+    // web view is briefly out of the window, and asking from another thread
+    // (as `WebviewWindow::ns_window` would) can find it missing and panic.
+    // Queued behind the switch, which the event loop runs when it gets to it.
     window.run_on_main_thread(move || {
         let Some(mtm) = MainThreadMarker::new() else {
             return;
@@ -48,19 +50,16 @@ pub fn set(window: &WebviewWindow, on: bool) -> tauri::Result<()> {
         }
         // Leaving changes the style on the main dispatch queue, so this goes
         // on that queue too, after it.
-        DispatchQueue::main().exec_async(move || {
+        DispatchQueue::main().exec_async(|| {
             let Some(&web_view) = WEB_VIEW.get() else {
                 return;
             };
-            // SAFETY: both are the main window's, which lives as long as the
-            // app, and this runs on the main thread.
-            let (ns_window, web_view) = unsafe {
-                (
-                    &*(ns_window as *const NSWindow),
-                    &*(web_view as *const NSView),
-                )
-            };
-            ns_window.makeFirstResponder(Some(web_view));
+            // SAFETY: the main window's web view, which lives as long as the
+            // app; this runs on the main thread.
+            let web_view = unsafe { &*(web_view as *const NSView) };
+            if let Some(ns_window) = web_view.window() {
+                ns_window.makeFirstResponder(Some(web_view));
+            }
         });
     })
 }
