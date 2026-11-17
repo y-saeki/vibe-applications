@@ -128,7 +128,11 @@ enum Mover {
             let value, CFGetTypeID(value) == AXUIElementGetTypeID()
         else { return nil }
         let window = value as! AXUIElement
-        guard let current = frame(of: window) else { return nil }
+        // The window server's bounds come first. The Accessibility API asks
+        // the application, which is not told when Mission Control moves its
+        // window to another display, and keeps answering with the old one.
+        guard let current = Windows.number(of: window).flatMap(Windows.bounds) ?? frame(of: window)
+        else { return nil }
         return Focused(pid: pid, window: window, frame: current)
     }
 
@@ -184,6 +188,23 @@ enum Windows {
         var number = CGWindowID(0)
         guard axWindowNumber(window, &number) == .success, number != 0 else { return nil }
         return UInt64(number)
+    }
+
+    /// Where the window server has window `number`, in the coordinates the
+    /// Accessibility API uses.
+    static func bounds(of number: UInt64) -> Frame? {
+        guard let list = CGWindowListCopyWindowInfo(.optionIncludingWindow, CGWindowID(number))
+            as? [[String: Any]],
+            let info = list.first(where: { ($0[kCGWindowNumber as String] as? CGWindowID) == CGWindowID(number) }),
+            let dictionary = info[kCGWindowBounds as String] as? NSDictionary,
+            let rect = CGRect(dictionaryRepresentation: dictionary)
+        else { return nil }
+        return Frame(
+            left: Int32(rect.minX.rounded()),
+            top: Int32(rect.minY.rounded()),
+            right: Int32(rect.maxX.rounded()),
+            bottom: Int32(rect.maxY.rounded())
+        )
     }
 
     /// The application `pid` as it was started, so that a window number
