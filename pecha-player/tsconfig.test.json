@@ -1,0 +1,9 @@
+{
+  // The tests run under Node (Playwright) as well as in the browser, so they
+  // get the Node types that src/ deliberately does without.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["node"]
+  },
+  "include": ["tests", "playwright.config.ts"]
+}
