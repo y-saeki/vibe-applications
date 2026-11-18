@@ -203,6 +203,10 @@ sessions reads as the list of issues being worked on.
 Replies in the chat — answers, questions and progress reports alike — are written in
 Japanese, whatever language the request or the surrounding context happens to be in.
 
+`.claude/settings.json` sets `language` to Japanese, and a Stop hook
+(`.claude/hooks/require-japanese.py`) sends a final reply with too little Japanese in it
+back to be rewritten. Code, paths and URLs do not count against a reply.
+
 ## Write issues and pull requests in Japanese
 
 GitHub issues and pull requests — titles and bodies alike — are written in Japanese.
