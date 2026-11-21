@@ -166,6 +166,63 @@ updates:
           - "@tauri-apps/*"
 
   - package-ecosystem: cargo
+    directory: /pecha-player/src-tauri
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    labels:
+      - dependencies
+      - no-release
+    commit-message:
+      prefix: pecha-player
+    groups:
+      # See the tauri group of /draftpad/src-tauri, including why
+      # minor-and-patch excludes it. objc2, objc2-app-kit and dispatch2 stay
+      # on the versions Tauri itself uses, so they move with it.
+      tauri:
+        patterns:
+          - tauri
+          - tauri-*
+          - objc2
+          - objc2-*
+          - dispatch2
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+        exclude-patterns:
+          - tauri
+          - tauri-*
+          - objc2
+          - objc2-*
+          - dispatch2
+
+  - package-ecosystem: npm
+    directory: /pecha-player
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    labels:
+      - dependencies
+      - no-release
+    commit-message:
+      prefix: pecha-player
+    groups:
+      # See the tauri group of /draftpad/src-tauri, including why
+      # minor-and-patch excludes it.
+      tauri:
+        patterns:
+          - "@tauri-apps/*"
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+        exclude-patterns:
+          - "@tauri-apps/*"
+
+  - package-ecosystem: cargo
     directory: /mailcrew/core
     schedule:
       interval: weekly
